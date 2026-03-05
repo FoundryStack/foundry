@@ -1,0 +1,129 @@
+# ADR-007: Test Generation — DSL Declarations Drive Skeletons, Compliance Requirements Drive E2E
+
+**Status:** Accepted  
+**Date:** 2026-03  
+**Deciders:** Platform team
+
+---
+
+## Context
+
+Testing a regulated platform has five distinct layers. The platform needs to generate
+meaningful test skeletons, not empty files. The question is what information drives generation
+and what requires human authorship.
+
+## Decision
+
+**DSL declarations generate structural test skeletons. Compliance requirements generate E2E scenarios.
+Developers fill in expected values and generators. The platform never generates expected values.**
+
+## Test Tool Assignments
+
+The following tools are used in generated tests. The copilot reads the project's
+`<AppName>Test.Generators` module to confirm availability before referencing any generator.
+
+| Tool | Used for | Approval category (ADR-004) |
+|---|---|---|
+| `stream_data` | Property-based tests: Transfer rules, Blueprint boundaries, Rule invariants | `:auto_approve` |
+| `mox` | Adapter contract test doubles; mock boundaries at provider adapters | `:auto_approve` |
+| `bypass` | HTTP mock server for external adapter integration tests | `:auto_approve` |
+| `ex_machina` | Fixture factories in `<AppName>Test.Generators` | `:auto_approve` |
+| `faker` | Realistic data (names, emails, currency amounts) in fixtures | `:auto_approve` |
+
+**`mox` usage pattern:** Adapter modules define a behaviour. The test environment uses
+a `mox`-generated mock. The `bypass` server is used when the real HTTP response format
+matters (e.g., provider callback parsing tests). The two tools serve different layers.
+
+**`bypass` usage pattern:** `bypass` starts a local HTTP server. The adapter under test
+is configured to point to `bypass`'s port. Tests assert on the HTTP request made, not
+just the Elixir return value. This is the mechanism for adapter contract tests (referenced
+in INV-004 and the Operations Board).
+
+### What is generated automatically
+
+| Source declaration | Generated test | Tool used |
+|---|---|---|
+| `Transfer` with `idempotency` | Property test: duplicate key never double-debits | `stream_data` |
+| `Transfer` with `rules:` | Property test: each rule's rejection path | `stream_data` |
+| `Rule` with `spec_invariants` | Property test skeleton per declared invariant | `stream_data` |
+| `Blueprint` | Eligibility, calculation boundary, wagering, expiry, forfeiture skeletons | `stream_data` |
+| `LiveResource` declaration | Renders correctly, filter tests, action tests | ExUnit + Wallaby |
+| `AshJsonApi route` | Auth (401), multitenancy (403), validation tests | ExUnit + `bypass` |
+| `AshStateMachine` | Transition guard tests, invalid transition rejection tests | ExUnit |
+| Provider adapter module | HTTP contract test against `bypass` server | `bypass` + `mox` |
+| RG-* requirement in regulation file | E2E browser test scenario stub with compliance tags | Wallaby + ExUnit tags |
+
+### What is NOT generated
+
+- Expected amounts or monetary values
+- Business-specific assertions ("the fee is 2.5%")
+- User journey steps for scenarios without a regulation source
+- Test data generators (these live in `<AppName>Test.Generators` and are maintained by the team)
+
+### The compliance → E2E link
+
+Every RG-* requirement gets an E2E scenario stub tagged `:compliance, :rg_xx_nnn`.
+`mix foundry.compliance.check` verifies that tagged tests exist AND pass.
+The compliance dashboard shows: "RG-UK-002: ✅ PASS (last CI run: 2026-03-04)".
+
+This closes the loop: requirement → implementation → test → evidence. All machine-linked.
+
+### Generators are the shared foundation
+
+Each target project maintains a `<AppName>Test.Generators` module providing the data generators
+all tests share. Foundry provides a default implementation via `mix foundry.spec_kit.init`;
+projects extend it. Generated test skeletons reference generators by convention name —
+e.g., `entity_with_state/1`, `event_fixture/1`. The copilot reads the project's generator
+module to know what's available and uses only generators that actually exist in the project.
+
+## The `data-*` attribute convention (required for E2E stability)
+
+Every generated LiveView component must include semantic `data-*` attributes:
+- `data-action="suspend"` on action buttons
+- `data-field="email"` on form inputs
+- `data-player-id="{id}"` on row elements
+- `data-column="status"` on table headers
+
+E2E tests target these attributes, not CSS classes. This makes tests stable across UI redesigns.
+The `LiveResource` macro enforces this in its generated output. The linter checks for it.
+
+**AshPyro components:** When `AshPyro` is used as the back-office component library, its
+generated components include `data-*` attributes in the same convention. The linter rule
+that checks for `data-*` attributes understands `AshPyro`-generated component structure
+and does not require manual attribute addition for components generated by `AshPyro`'s macros.
+
+## Domain Coverage Formula
+
+The Test Coverage Map panel shows domain coverage, not line coverage. The formula:
+
+```
+transfer_coverage     = transfers_with_property_test / total_transfers
+rule_coverage         = rules_with_invariant_tests / total_rules
+blueprint_coverage    = blueprints_with_scenario_tests / total_blueprints
+compliance_coverage   = requirements_with_e2e_test / total_rg_requirements
+ui_coverage           = live_resources_with_integration_test / total_live_resources
+
+domain_coverage = weighted_mean([
+  {transfer_coverage,   0.25},
+  {rule_coverage,       0.20},
+  {blueprint_coverage,  0.20},
+  {compliance_coverage, 0.25},
+  {ui_coverage,         0.10}
+])
+```
+
+Weights are configurable per project in the manifest under `coverage_weights:`.
+The defaults above reflect the relative risk of each layer in regulated platforms —
+compliance E2E and Transfer property tests are the most critical to have.
+
+A score below 0.8 triggers a warning in CI. Below 0.6 fails CI if the project manifest
+has `coverage_gate: true` (default false for new projects, recommended true before go-live).
+
+## Consequences
+
+- Line coverage metrics are not the primary measure — domain coverage is (see Studio's Test Coverage Map panel)
+- A Transfer with no property test is a lint warning
+- A compliance requirement with no E2E scenario is flagged in the compliance dashboard
+- The copilot can generate tests on demand: "generate tests for the withdrawal flow" → complete test module as diff
+- `bypass` is the mechanism for adapter contract tests; the copilot knows to include it when generating adapter test modules
+- The copilot reads the project's generator module before generating any test that references fixtures
