@@ -107,7 +107,19 @@ When in doubt about a DSL option, retrieve the ExDoc JSON for that specific elem
 Never generate code from training memory alone when the current API surface is retrievable.
 
 **INV-007: Approved dependency policy governs additions**
-Category-based. See ADR-004-dependency-governance.md.
+Category-based. See ADR-004-dependency-governance.md. The `:ecto` forbidden rule targets
+direct application-level usage; `ecto_sql` and `postgrex` as transitive dependencies of
+`ash_postgres` are permitted.
+
+**INV-011: Sensitive resources must have change history**
+All `:sensitive` resources must use `AshPaperTrail`. Lint error. Exemptions are `:compliance` class changes.
+
+**INV-012: Sensitive resources must use soft delete**
+All `:sensitive` resources must use `AshArchival`. Hard deletion prohibited without exemption.
+
+**INV-013: Compliance-gated feature flags must have ADR links**
+Any `fun_with_flags` flag gating a compliance control must declare an ADR link.
+Adding or toggling a compliance-gated flag is a `:compliance` class change.
 
 ---
 
@@ -151,16 +163,16 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 
 | ID | Slug | Decision summary |
 |---|---|---|
-| ADR-001 | stack-selection | Elixir/Ash 3.x/Phoenix/Spark — not negotiable |
-| ADR-002 | code-generation | Igniter operations (structured or raw) — no string interpolation |
-| ADR-003 | agent-context-strategy | Structured retrieval over live DSL introspection, not RAG over code |
-| ADR-004 | dependency-governance | Category-based approval, forbidden list, ADR for sensitive categories |
-| ADR-005 | change-approval-model | Four-class classification, dual approval for :sensitive, audit log always |
+| ADR-001 | stack-selection | Elixir/Ash 3.x/Phoenix/Spark — full ecosystem including ash_postgres, money stack, auth, observability |
+| ADR-002 | code-generation | Igniter operations (structured or raw) — no string interpolation; migration generation included |
+| ADR-003 | agent-context-strategy | Structured retrieval over live DSL introspection, not RAG over code; full context schema |
+| ADR-004 | dependency-governance | Category-based approval, forbidden list, ecto direct-only rule, test tool assignments |
+| ADR-005 | change-approval-model | Four-class classification, dual approval for :sensitive, migration classification, audit log always |
 | ADR-006 | infrastructure-governance | Proposal-only from agents, human apply, base CI pipeline owned by platform |
-| ADR-007 | test-generation-strategy | DSL declarations drive skeleton generation, compliance reqs drive E2E |
+| ADR-007 | test-generation-strategy | DSL declarations drive skeleton generation, compliance reqs drive E2E, tool assignments |
 | ADR-008 | visualization-paradigm | Read-only system map, copilot is the only change interface |
 | ADR-009 | concurrent-proposals | Optimistic locking via git blob hashes — stale proposals are surfaced, not silently applied |
-| ADR-010 | llm-model-and-context | Claude Sonnet, bounded context budgets, structured retrieval never raw file dumps |
+| ADR-010 | llm-model-and-context | Claude Sonnet, bounded context budgets, full ecosystem version manifest, structured retrieval |
 
 ---
 
@@ -215,11 +227,30 @@ They are not a server. They are idempotent commands.
     "property_tests": true,
     "scenario_tests": true,
     "e2e_tests": false
-  }
+  },
+  "data_layer": "ash_postgres",
+  "pending_migrations": false,
+  "paper_trail": true,
+  "archival": true,
+  "state_machine": {
+    "present": false,
+    "states": [],
+    "transitions": [],
+    "state_attribute": null
+  },
+  "api_routes": [],
+  "telemetry_prefix": ["my_app", "finance", "withdrawal_transfer"],
+  "money_attributes": [
+    { "name": "amount", "type": "Ash.Type.Money", "cldr_backend": "MyApp.Cldr" }
+  ],
+  "authentication_subject": false,
+  "oban_queues": [],
+  "rate_limited": false,
+  "feature_flags": []
 }
 ```
 
-Use this schema exactly. Do not invent fields.
+Use this schema exactly. Do not invent fields. The full schema is defined in ADR-003.
 
 ---
 

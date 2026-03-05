@@ -17,18 +17,24 @@
 If the JSON schema is unstable, everything built on top breaks. Stabilize it before building on it.
 
 **Deliverables:**
-- `mix foundry.context <Module> --json` — DSL introspection for a single module
+- `mix foundry.context <Module> --json` — DSL introspection for a single module (full schema per ADR-003)
 - `mix foundry.context.all --json` — all modules in the project, indexed by domain
 - `mix foundry.diagram.generate --json` — system map as graph (nodes, edges, clusters)
 - `mix foundry.compliance.check --json` — requirement coverage status
-- `mix foundry.lint.all --json` — lint results with structured violations
-- `mix foundry.versions.check --json` — current stack versions from mix.exs
+- `mix foundry.lint.all --json` — lint results with structured violations (includes INV-011, INV-012, INV-013 rules)
+- `mix foundry.versions.check --json` — current stack versions from mix.exs (full ecosystem per ADR-001)
+
+**Schema design review before freeze:** Before the Phase 1 schema is frozen, conduct a
+review against the full ADR-001 ecosystem. The schema must include all fields defined in
+ADR-003 (`data_layer`, `pending_migrations`, `paper_trail`, `archival`, `state_machine`,
+`api_routes`, `telemetry_prefix`, `money_attributes`, `authentication_subject`, `oban_queues`,
+`rate_limited`, `feature_flags`). Adding these fields after the freeze requires an ADR.
 
 **JSON schemas are frozen** at the end of Phase 1. Breaking schema changes require an ADR.
-The `mix foundry.context` schema in AGENTS.md is the contract.
+The `mix foundry.context` schema in ADR-003 is the contract.
 
-**Done when:** All six tasks run against the iGaming reference project and produce valid JSON.
-CI uses `mix foundry.lint.all` and fails on violations.
+**Done when:** All six tasks run against the iGaming reference project and produce valid JSON
+matching the full ADR-003 schema. CI uses `mix foundry.lint.all` and fails on violations.
 
 ---
 
@@ -86,20 +92,22 @@ reference project, citing specific modules and ADRs, with no Ash 2.x syntax in r
 generation quality is poor, the cost is a rejected diff, not a broken codebase.
 
 **Deliverables:**
-- `Foundry.Operations` catalogue — all 15 operations (ADR-002)
+- `Foundry.Operations` catalogue — all 20 operations (ADR-002)
 - `Foundry.Operations.run/2` with `dry_run: true` support
-- Diff renderer in the review panel
+- Migration proposal generation — `Op.AddResource`, `Op.AddAttribute`, `Op.AddRelationship` include migration diffs
+- Diff renderer in the review panel (code diff + migration diff side by side)
 - Pre-approval validation: lint result + semantic checks + impact analysis
-- Change classifier (ADR-005) — tags every proposal with its class
+- Change classifier (ADR-005) — tags every proposal with its class, including migration classification
 - Approval routing to correct approver per manifest (ADR-005)
-- Proposal storage with blob hash (ADR-009 — stale detection)
+- Proposal storage with blob hash (ADR-009 — stale detection), including migration file hashes
 - Audit log for `:sensitive` and `:compliance` proposals
 
 **The diff is shown. The human copies it and applies it manually (or pastes into their terminal).**
 No auto-apply. This is intentional — it forces validation of diff quality before auto-apply is trusted.
 
-**Done when:** The copilot generates correct, lint-passing diffs for all 15 operation types
-against the iGaming reference project. Approval routing works. Audit log records correctly.
+**Done when:** The copilot generates correct, lint-passing diffs for all 20 operation types
+against the iGaming reference project, including migrations for structural changes.
+Approval routing works. Audit log records correctly.
 
 ---
 
