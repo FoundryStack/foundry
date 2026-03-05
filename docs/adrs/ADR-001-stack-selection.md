@@ -30,7 +30,36 @@ Both stacks share the same core. Where they differ, this ADR says so explicitly.
 
 ---
 
-## Core Stack (both Foundry and all target platforms)
+## Core Stack
+
+The core stack is split: Foundry's own dependencies are minimal. Target platforms carry
+the full Ash/Postgres ecosystem. Foundry reads target platform code via Mix task subprocess
+in the target project's environment — it does not load target platform dependencies into
+its own process.
+
+### Foundry meta-platform dependencies
+
+| Library | Version constraint | Role |
+|---|---|---|
+| Ash Framework | 3.x only | Domain resource layer for Foundry's own internal resources (manifest, lint rules) |
+| Spark DSL | bundled with Ash 3.x | DSL introspection foundation |
+| Phoenix | 1.7.x+ | Studio UI web layer |
+| Phoenix LiveView | 0.20.x+ | Studio UI components |
+| Igniter | current stable | All code generation and AST manipulation |
+| Jason | current stable | JSON serialisation — implicit in every Mix task output |
+| Req | current stable | HTTP client for LLM API calls (see ADR-004: no HTTPoison) |
+| Finch | current stable | HTTP connection pool (transitive via Req) |
+| Bandit | current stable | HTTP server adapter (replaces Cowboy) |
+| Nebulex | current stable | ETS-backed caches (spec-kit, ExDoc, version manifest) |
+| Telemetry | current stable | Instrumentation events |
+| telemetry_metrics | current stable | Metrics aggregation |
+| telemetry_poller | current stable | VM and process metrics |
+
+**Foundry does not depend on `ash_postgres`, `ecto_sql`, or `postgrex`.** Foundry's own
+persistent state uses git-backed files under `.foundry/` (ADR-015). There is no Foundry
+database to provision. `mix foundry.studio` requires only Elixir and git.
+
+### Target platform dependencies (required in every target platform)
 
 | Library | Version constraint | Role |
 |---|---|---|
@@ -201,7 +230,7 @@ declare `hammer_plug` middleware.
 
 ## Caching
 
-`nebulex` is the caching library for both Foundry's internal caches and target platforms.
+`nebulex` is a Foundry dependency used for its internal ETS caches (ADR-015).
 
 Foundry internal usage:
 - `Foundry.Context.DocCache` — spec-kit document cache, keyed by `{file_path, mtime}` (ADR-003)
@@ -209,6 +238,7 @@ Foundry internal usage:
 - Both caches use a simple L1 (in-process ETS via Nebulex) configuration
 
 Target platform usage: project-level concern, not governed by Foundry directly.
+Target platforms may use Nebulex independently — it is not imposed on them by Foundry.
 
 ---
 
@@ -286,6 +316,7 @@ The following are explicitly excluded. Exclusion is a decision, not an oversight
 ## Consequences
 
 - Every agent prompt includes the full version manifest from `mix foundry.versions.check` (INV-006 / ADR-010)
+- Foundry itself has no `ash_postgres` dependency — it is a target platform dependency. `mix foundry.studio` requires only Elixir and git (ADR-015).
 - `ash_postgres` migration lifecycle is in scope for all scaffold operations that add resources or attributes
 - Monetary attributes use `Ash.Type.Money` exclusively; the linter rejects raw `Money.t()` declarations
 - Authentication resources are always `:sensitive`; `ash_authentication_phoenix` scaffold is via `Op.AddAuthenticationResource`

@@ -48,15 +48,25 @@ Every team member immediately benefits. Builds trust in the platform before it c
 **Deliverables:**
 - Phoenix LiveView application (`mix foundry.studio`)
 - System Map panel — D3 interactive graph from `diagram.generate --json`
-- Node detail panel — moduledoc, attributes, actions, linked ADRs, test status
+- Node detail panel — moduledoc, attributes, actions, linked ADRs, test status (ADR-012 §System Map Interaction Details)
+- System map table view alternative — required for WCAG 2.1 AA compliance (ADR-012 §Accessibility)
+- Empty and loading states for all panels (ADR-012 §Empty and Loading States)
 - Compliance Matrix panel — from `compliance.check --json`
+- Bootstrap / onboarding overlay for projects with no spec-kit (ADR-012 §Onboarding)
+- Command palette (`Cmd+K`) — navigation and operation preview, with phase-gate (ADR-012 §Command Palette)
+- Notification inbox UI (ADR-012 §Notification Inbox)
 - inotify file watcher → live reload on source change
 - `mix foundry.diagram.generate` running in CI with diff check (INV-008)
 
+**UX specification:** ADR-012. All interaction details, performance budgets, and accessibility
+requirements in that document govern Phase 2 implementation.
+
 **No copilot. No code generation. Read-only.**
 
-**Done when:** The iGaming reference project's system map opens, shows all domains,
-all resources clickable with correct detail panels, and updates within 2 seconds of a file save.
+**Done when:** The iGaming reference project's system map opens, shows all domains, all
+resources clickable with correct detail panels (content matches `mix foundry.context` output),
+updates within 2 seconds of a file save, passes WCAG 2.1 AA audit for all rendered panels,
+and renders within the performance budgets defined in ADR-012 §Performance Budgets.
 
 ---
 
@@ -70,17 +80,26 @@ Mis-answers to questions are recoverable. Mis-generated code changes are not.
 
 **Deliverables:**
 - Copilot panel in the Studio UI (conversation interface)
-- `Foundry.Copilot.ContextBuilder` — assembles context from Phase 1 tasks + spec-kit full inclusion
-- `Foundry.Context.SpecKitReader` — reads all spec-kit docs from disk, mtime-cached (ADR-003)
-- Intent classifier (ADR-010) — routes questions vs change requests
-- Change requests in this phase: "I can propose this change but code generation is not yet enabled. Here's what I would do: [description]."
-- ADR contradiction check (ADR-010)
+- `Foundry.Copilot.ContextBuilder` — assembles context per ADR-010 §Context Window Budget Allocation
+- `Foundry.Context.SpecKitReader` — reads all spec-kit docs from disk, mtime-cached (ADR-003, ADR-010 §Nebulex Cache Strategy)
+- `Foundry.Copilot.IntentClassifier` — Task 1 structured classification prompt (ADR-010 §Task 1, ADR-013 §Intent Classification)
+- `Foundry.Copilot.ConfidenceClassifier` — four confidence states: HIGH, MEDIUM, LOW, BLOCKED (ADR-013 §Confidence States)
+- Clarifying question UX — binary-choice button presentation, not free-text (ADR-013 §Clarifying Question UX)
+- `CHANGE_PREVIEW` handler — describes what would be proposed without generating a diff (ADR-010 §Phase-Gated Behaviour, ADR-013 §Phase-Gated Copilot Behaviour); controlled by `change_generation_enabled: false` in config
+- ADR contradiction check (ADR-010 §ADR Contradiction Check)
+- All five error recovery responses — `:context_build_failed`, `:llm_api_error`, `:version_mismatch`, `:adr_contradiction`, `:context_budget_exceeded` (ADR-013 §Error Recovery Responses)
 - LLM API key configuration
+
+**Agent behaviour specification:** ADR-013. Response format contract, confidence handling,
+and error recovery in that document govern Phase 3 copilot implementation.
 
 **No Igniter. No diffs. No apply.**
 
 **Done when:** The copilot correctly answers 10 representative questions about the iGaming
-reference project, citing specific modules and ADRs, with no Ash 2.x syntax in responses.
+reference project, citing specific modules and ADRs, with no Ash 2.x syntax in responses;
+AND all five error codes are exercised in the test environment with correct responses;
+AND clarifying question UX renders as binary-choice buttons (not free-text prompts);
+AND `CHANGE_PREVIEW` responses correctly describe operation scope without generating code.
 
 ---
 
@@ -95,19 +114,32 @@ generation quality is poor, the cost is a rejected diff, not a broken codebase.
 - `Foundry.Operations` catalogue — all 20 operations (ADR-002)
 - `Foundry.Operations.run/2` with `dry_run: true` support
 - Migration proposal generation — `Op.AddResource`, `Op.AddAttribute`, `Op.AddRelationship` include migration diffs
-- Diff renderer in the review panel (code diff + migration diff side by side)
+- Diff renderer in the review panel — code diff + migration diff + lint tab + impact tab (ADR-012 §Review Panel Rendering)
+- `Foundry.Copilot.ImpactAnalyzer` — deterministic impact analysis (ADR-012 §Impact Tab)
 - Pre-approval validation: lint result + semantic checks + impact analysis
 - Change classifier (ADR-005) — tags every proposal with its class, including migration classification
 - Approval routing to correct approver per manifest (ADR-005)
+- Proposal state machine — DRAFT → PENDING_REVIEW → APPROVED → APPLIED → COMMITTED, plus REJECTED / STALE / SUPERSEDED (ADR-014 §Proposal State Machine)
+- Dual approval mechanics — two-slot tracking, revocation, audit records (ADR-014 §Dual Approval Mechanics)
+- ADR link field for `:compliance` proposals — validation and warning states (ADR-014 §ADR Linking)
 - Proposal storage with blob hash (ADR-009 — stale detection), including migration file hashes
+- Stale proposal banner in review panel (ADR-012 §Stale Proposal Banner)
+- Proposal visibility — PENDING_REVIEW and later visible to all project users; DRAFT private to requester (ADR-014 §Proposal Visibility)
+- Approval tracking UI and notification inbox (ADR-012 §Approval Tracking UI, §Notification Inbox)
 - Audit log for `:sensitive` and `:compliance` proposals
+- `change_generation_enabled: true` set in Phase 4 deployment config
 
-**The diff is shown. The human copies it and applies it manually (or pastes into their terminal).**
-No auto-apply. This is intentional — it forces validation of diff quality before auto-apply is trusted.
+**Proposal lifecycle specification:** ADR-014. State machine, apply step, and failure paths
+in that document govern Phase 4 implementation.
+
+**The diff is shown. The human presses "Apply" in the review panel.**
+No auto-apply in Phase 4. This is intentional — it validates diff quality before auto-apply is trusted.
 
 **Done when:** The copilot generates correct, lint-passing diffs for all 20 operation types
-against the iGaming reference project, including migrations for structural changes.
-Approval routing works. Audit log records correctly.
+against the iGaming reference project, including migrations for structural changes. Proposal
+state machine transitions are correct. Dual approval blocks application until both slots are
+filled. ADR link field blocks `:compliance` submission when empty. Audit log records all
+`:sensitive` and `:compliance` approvals with timestamp, approver, and diff hash.
 
 ---
 

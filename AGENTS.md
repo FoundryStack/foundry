@@ -99,6 +99,7 @@ coverage, not a normal operating condition. When a clarifying question is necess
 exposes a gap that should be closed in the spec-kit or DSL declarations.
 If the answer is still ambiguous: state the two interpretations explicitly and ask the user
 to choose. Never ask a third question. Never generate on unresolved ambiguity.
+The clarifying question UX (binary-choice buttons, not free-text) is specified in ADR-013.
 
 **INV-006: Stack versions always in every LLM prompt**
 Every LLM call includes the current `mix.exs` dependency versions as the first item.
@@ -156,6 +157,7 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 | Correct DSL syntax for X? | ExDoc JSON for the exact library version in mix.exs |
 | Pattern for a new Rule/Transfer/Blueprint? | Closest existing example in lib/ — via Foundry.Context.PatternFinder |
 | Which ADR covers this decision? | ADR index below |
+| Copilot behaviour in edge cases? | ADR-013 |
 
 ---
 
@@ -173,6 +175,10 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 | ADR-008 | visualization-paradigm | Read-only system map, copilot is the only change interface |
 | ADR-009 | concurrent-proposals | Optimistic locking via git blob hashes — stale proposals are surfaced, not silently applied |
 | ADR-010 | llm-model-and-context | Claude Sonnet, bounded context budgets, full ecosystem version manifest, structured retrieval |
+| ADR-012 | studio-ux-specification | Command palette (Cmd+K), review panel, panel interactions, approval tracking UI, performance budgets, data retention |
+| ADR-013 | copilot-agent-behavior | Epistemic contract, confidence states, clarifying question UX, error recovery, phase-gated behaviour |
+| ADR-014 | proposal-lifecycle | Proposal state machine, dual approval mechanics, ADR linking for :compliance, apply step, compilation failure path |
+| ADR-015 | storage-model | Git-backed files + ETS only — no Postgres dependency for Foundry itself |
 
 ---
 
@@ -299,14 +305,19 @@ docs/
     ADR-008-visualization-paradigm.md
     ADR-009-concurrent-proposals.md
     ADR-010-llm-model-and-context.md
+    ADR-012-studio-ux-specification.md
+    ADR-013-copilot-agent-behavior.md
+    ADR-014-proposal-lifecycle.md
+    ADR-015-storage-model.md
   regulations/
-    platform_invariants.md                   ← INV-001 through INV-010
+    platform_invariants.md                   ← INV-001 through INV-013
   runbooks/
     studio_copilot_failure.md
     igniter_operation_failure.md
     project_reader_unavailable.md
     compliance_test_failure.md
     approval_queue_blocked.md
+    studio_ux_degradation.md
 ```
 
 The Ash resources and Reactor code are the specification for everything else.

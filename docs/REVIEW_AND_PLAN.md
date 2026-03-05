@@ -51,6 +51,20 @@
 | 35 | bandit vs cowboy unspecified | Closed | ADR-001 Core Stack table (Bandit) |
 | 36 | Asset pipeline (esbuild/tailwind) absent | Closed | ADR-001 Studio UI Asset Pipeline section |
 | 37 | bypass test mechanism unspecified | Closed | ADR-004 Test Tool Specs; ADR-007 tool assignments |
+| 38 | ADR-010 file contained ADR-001 content (duplicate) | Closed | ADR-010 rewritten with correct LLM/context content |
+| 39 | No copilot agent behaviour spec (confidence, errors, clarifying question UX) | Closed | ADR-013 |
+| 40 | No proposal lifecycle state machine | Closed | ADR-014 |
+| 41 | No Studio UX specification (panels, palette, interactions) | Closed | ADR-012 |
+| 42 | "Impact analysis" term used but never defined | Closed | ADR-012 §Impact Tab |
+| 43 | Dual approval mechanics unspecified (revocation, timeouts, audit record) | Closed | ADR-014 §Dual Approval Mechanics |
+| 44 | ADR linking UX for :compliance proposals unspecified | Closed | ADR-014 §ADR Linking for Compliance Changes |
+| 45 | Phase-gate flag mechanics unspecified | Closed | ADR-010 §Phase-Gated Behaviour; ADR-013 §Phase-Gated Copilot Behaviour; ADR-014 §Phase-Gated Features |
+| 46 | Performance budgets absent | Closed | ADR-012 §Performance Budgets |
+| 47 | Data retention policy absent | Closed | ADR-012 §Data Retention |
+| 48 | No Studio UX degradation runbook | Closed | docs/runbooks/studio_ux_degradation.md |
+| 49 | Cmd+P shortcut incorrect (should be Cmd+K) | Closed | ADR-012 §Command Palette; AGENTS.md updated |
+| 50 | Foundry incorrectly implied Postgres dependency for its own state | Closed | ADR-015: git-backed files + ETS; ADR-001 core stack table split; ADR-012 retention table updated; ADR-014 storage section updated |
+| 51 | ADR-001 core stack table conflated Foundry and target platform dependencies | Closed | ADR-001 split into Foundry dependencies and target platform dependencies |
 
 ---
 
@@ -74,13 +88,19 @@ The following are intentionally absent from spec-kit. They live as `@moduledoc` 
 | Migration proposal generation | `Foundry.Operations.MigrationProposer` |
 | Authentication scaffold composition | `Foundry.Operations.Op.AddAuthenticationResource` |
 | Feature flag governance metadata | `Foundry.FeatureFlags.GovernanceRegistry` |
+| Proposal state machine | `Foundry.Proposals.StateMachine` |
+| Impact analysis computation | `Foundry.Copilot.ImpactAnalyzer` |
+| Confidence classification | `Foundry.Copilot.ConfidenceClassifier` |
+| Intent classification | `Foundry.Copilot.IntentClassifier` |
+| Prompt construction | `Foundry.Copilot.PromptBuilder` |
 
 ---
 
 ## Deferred ADRs (write when the corresponding code exists)
 
 - **ADR-011**: Project Manifest contract — when `Foundry.Manifest` Ash resource is defined
-- **ADR-012**: Bootstrap spec-kit generation — when `mix foundry.spec_kit.init` is built
+- **ADR-015**: Storage model (git + ETS) — **written**, see `ADR-015-storage-model.md`
+- **ADR-016**: Bootstrap spec-kit generation — when `mix foundry.spec_kit.init` is built (previously ADR-012, then ADR-015 — renumbered now that ADR-015 is the storage model)
 
 Do not write these speculatively. A spec-kit document without corresponding code is
 pre-emptive documentation — the very thing the discipline exists to prevent.
@@ -110,7 +130,11 @@ spec-kit/
     ADR-007-test-generation-strategy.md  ← updated: tool assignments, AshPyro note
     ADR-008-visualization-paradigm.md
     ADR-009-concurrent-proposals.md
-    ADR-010-llm-model-and-context.md     ← updated: full version manifest, Nebulex
+    ADR-010-llm-model-and-context.md     ← rewritten: correct LLM/context content
+    ADR-012-studio-ux-specification.md   ← new
+    ADR-013-copilot-agent-behavior.md    ← new
+    ADR-014-proposal-lifecycle.md        ← new
+    ADR-015-storage-model.md               ← new: git + ETS, no Postgres for Foundry
   regulations/
     platform_invariants.md               ← updated: INV-011, INV-012, INV-013
   runbooks/
@@ -119,4 +143,5 @@ spec-kit/
     project_reader_unavailable.md
     compliance_test_failure.md
     approval_queue_blocked.md
+    studio_ux_degradation.md             ← new
 ```

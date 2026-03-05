@@ -45,24 +45,32 @@ Copilot: [shows diff of compliance: ["RG-UK-001"] added to StakeLimitRule] → a
 ## The Five Visualization Panels
 
 **1. System Map** — Interactive D3 graph. Nodes are Ash resources, edges are relationships.
-Clusters are domains. Click a node → detail panel (moduledoc, attributes, actions, linked ADRs, test status).
+Clusters are domains. Click a node → left-side detail drawer (moduledoc, attributes, actions,
+linked ADRs, test status, contextual intent shortcuts).
 
 **2. Compliance Matrix** — Rows: RG-* requirements. Columns: implementation module, test, last pass, status.
-Color-coded. Click a gap → copilot pre-loaded with context to address it.
+Color-coded. Click a gap → intent shortcut pre-populates the Activity Feed.
 
 **3. Operations Board** — Runbook status, adapter verification schedule, last backup restore result,
 failed Reactor log with runbook links, alert configuration preview.
 
 **4. Test Coverage Map** — Domain coverage (not line coverage). By domain, by type (Transfers, Rules, etc.).
-Click a gap → copilot pre-loaded to generate the missing test.
+Click a gap → intent shortcut pre-populates the Activity Feed.
 
-**5. Copilot Panel** — The change interface. All changes flow through here. The other four panels
-feed context into this one; this one is the only way anything changes.
+**5. Activity Feed** — The persistent right sidebar. A chronological event stream showing all
+system activity (proposals, approvals, CI results, compliance events, copilot responses) with
+a chat input at the bottom. All changes flow through the copilot engine via this feed.
+The other four panels feed context into it via intent shortcuts; this is the only way anything
+changes. Previously called "Copilot Panel" — renamed to reflect that it is primarily an event
+stream with a chat input, not primarily a chat interface.
+
+Layout and interaction details: ADR-012.
 
 ## Consequences
 
 - No editing capabilities are built into the System Map, Compliance Matrix, Operations Board, or Test Coverage Map
-- The copilot panel is the bottleneck for all changes — this is intentional
+- The Activity Feed is the bottleneck for all changes — this is intentional
 - The visualization stack (D3 or equivalent) is used for rendering only
-- All user intent for change is expressed as natural language or command palette input
-- The command palette (Cmd+P) surfaces the 15 primary scaffold operations as typed commands
+- All user intent for change is expressed as natural language in the Activity Feed input, or via contextual intent shortcuts in node detail drawers — both route to the same copilot engine
+- The command palette (`Cmd+K`) is for navigation only — it does not expose scaffold operations
+- The node detail drawer opens from the left side of the map to avoid spatial collision with the Activity Feed sidebar (right) and review panel (bottom) — see ADR-012
