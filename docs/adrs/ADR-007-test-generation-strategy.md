@@ -19,25 +19,9 @@ Developers fill in expected values and generators. The platform never generates 
 
 ## Test Tool Assignments
 
-The following tools are used in generated tests. The copilot reads the project's
-`<AppName>Test.Generators` module to confirm availability before referencing any generator.
-
-| Tool | Used for | Approval category (ADR-004) |
-|---|---|---|
-| `stream_data` | Property-based tests: Transfer rules, Blueprint boundaries, Rule invariants | `:auto_approve` |
-| `mox` | Adapter contract test doubles; mock boundaries at provider adapters | `:auto_approve` |
-| `bypass` | HTTP mock server for external adapter integration tests | `:auto_approve` |
-| `ex_machina` | Fixture factories in `<AppName>Test.Generators` | `:auto_approve` |
-| `faker` | Realistic data (names, emails, currency amounts) in fixtures | `:auto_approve` |
-
-**`mox` usage pattern:** Adapter modules define a behaviour. The test environment uses
-a `mox`-generated mock. The `bypass` server is used when the real HTTP response format
-matters (e.g., provider callback parsing tests). The two tools serve different layers.
-
-**`bypass` usage pattern:** `bypass` starts a local HTTP server. The adapter under test
-is configured to point to `bypass`'s port. Tests assert on the HTTP request made, not
-just the Elixir return value. This is the mechanism for adapter contract tests (referenced
-in INV-004 and the Operations Board).
+Test tools and approval categories: ADR-004 §Test Tool Specifications. Usage patterns:
+`mox` for adapter contract doubles (behaviour-level), `bypass` for HTTP mock server (request-level).
+The copilot reads `<AppName>Test.Generators` to confirm generator availability before referencing any generator in a skeleton.
 
 ### What is generated automatically
 

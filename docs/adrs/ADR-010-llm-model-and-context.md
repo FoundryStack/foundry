@@ -184,32 +184,9 @@ is rejected, not silently truncated.
 
 ## Nebulex Cache Strategy
 
-The three cache stores used by the copilot engine, all via Nebulex L1 (in-process ETS):
-
-| Cache | Key | TTL | Eviction trigger |
-|---|---|---|---|
-| Spec-kit document cache | `{:spec_kit, file_path, mtime}` | None | mtime change on any spec-kit file |
-| ExDoc API cache | `{:exdoc, library_name, version}` | 24 hours | mix.exs version change for that library |
-| Version manifest cache | `{:versions, mix_exs_mtime}` | None | mix.exs mtime change |
-
-**Spec-kit cache:** All spec-kit files are read from disk once per request cycle and cached
-by `{file_path, mtime}`. If no file has changed, the cached concatenation is reused. The
-concatenation is keyed separately as `{:spec_kit_concat, [list_of_{path,mtime}_tuples]}`.
-
-**ExDoc cache:** Per-library-per-version keys. When `mix.exs` changes, only entries for
-libraries whose version changed are evicted. Other libraries' cached docs remain valid.
-The 24-hour TTL is a backstop for cases where the ExDoc source is updated without a
-version bump (rare, but possible for pre-release versions).
-
-**Version manifest cache:** The output of `mix foundry.versions.check` is cached by
-mix.exs mtime. It is the cheapest fetch (subprocess reading mix.exs) but is called on
-every request — caching eliminates the subprocess overhead on hot paths.
-
-**No Redis, no external cache, no distributed cache.** In cloud mode, each node has its
-own L1 cache. Cache misses are cheap (re-read from disk or re-fetch ExDoc) — the cost
-of a cold node does not justify the operational complexity of a shared cache layer.
-
----
+Cache keys, TTLs, and eviction rules are fully specified in ADR-003 §Three-tier library documentation.
+Summary: spec-kit documents cached by `{:spec_kit, file_path, mtime}`, ExDoc by `{:exdoc, library, version}` (24h TTL), version manifest by `{:versions, mix_exs_mtime}`.
+On budget overflow: spec-kit evicted first, then ExDoc, then version manifest — all via Nebulex L1 (ETS).
 
 ## Phase-Gated Behaviour
 

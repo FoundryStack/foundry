@@ -154,41 +154,12 @@ the git-backed file storage described here:
 
 ---
 
-## What This Does NOT Change
+## Scope Boundary
 
-- **Target platforms** use `ash_postgres` for their own domain resources. This is unchanged.
-  ADR-001's core stack table applies to target platforms. Foundry reads those resources via
-  Mix task introspection — it does not own or manage the target platform's database.
-- **`ash_postgres` is not a Foundry dependency.** It is a target platform dependency that
-  Foundry introspects. Foundry's `mix.exs` does not include `ash_postgres`.
-- **The audit log's regulatory requirements** (7-year retention, append-only, integrity)
-  are met by git history, not by database constraints.
-- **The Nebulex caches** were already ETS — no change.
-
----
-
-## ADR-001 Correction
-
-ADR-001 §Core Stack lists `ash_postgres` under "both Foundry and all target platforms."
-This was incorrect. The corrected table applies `ash_postgres` to target platforms only.
-Foundry's own dependencies are:
-
-```
-Ash Framework    — for Foundry's own internal resources (manifest, lint rules, etc.)
-Phoenix          — Studio UI
-Phoenix LiveView — Studio UI components
-Igniter          — code generation
-Req              — LLM API calls
-Nebulex          — ETS caches
-Jason            — JSON serialisation
-Bandit           — HTTP server
-Telemetry stack  — instrumentation
-```
-
-Foundry does not depend on `ash_postgres`, `ecto_sql`, or `postgrex` directly.
-These appear in the lockfile as transitive dependencies only if a target platform's
-introspection libraries require them — and they do not, because introspection runs via
-Mix task subprocess in the target project's own environment, not in Foundry's process.
+Foundry's git-backed storage is for Foundry's own operational state (proposals, audit log).
+Target platform domain resources still use `ash_postgres` — Foundry introspects those via
+Mix task subprocess and does not own their database. Nebulex caches were already ETS.
+ADR-001 is updated to reflect that `ash_postgres` is a target platform dependency, not a Foundry dependency.
 
 ---
 

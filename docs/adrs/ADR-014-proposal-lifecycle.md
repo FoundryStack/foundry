@@ -68,16 +68,11 @@ Any approver, or the requester, may reject. Rejection requires a reason (text fi
 A rejected proposal can be revised by regenerating (which creates a new DRAFT).
 
 **STALE**
-Blob hash mismatch detected at apply time (ADR-009). The proposal was APPROVED but cannot
-be applied because a file it would touch has changed since generation. Transitions from
-APPROVED back to a pending state. The requester is notified with the specific file that changed.
-One-click regenerate is available in the review panel stale banner.
+Blob hash mismatch at apply time (ADR-009). Transitions from APPROVED back to pending.
+Requester notified with the specific file that changed. One-click regenerate in stale banner (ADR-012).
 
 **SUPERSEDED**
-A different proposal touching at least one of the same files was applied first. The
-original proposal's stored blob hashes are now stale. The requester is notified:
-"This proposal has been superseded by [other proposal title] applied by [user]. Regenerate
-to produce a fresh proposal against the current codebase."
+A different proposal touching the same files was applied first. Requester notified to regenerate.
 
 ---
 

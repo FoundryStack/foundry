@@ -63,10 +63,7 @@ for Y?" (question form, but clearly describing an addition).
 When `ambiguous`, the classifier returns `confidence < 0.7` and the engine invokes the
 clarifying question path (see §Clarifying Questions).
 
-**Classification is not overridable from the UI.** If a user says "just do it, don't ask"
-on an ambiguous request, the engine still classifies. If confidence is below threshold after
-the clarifying answer, the engine presents two explicit interpretations and asks the user
-to choose — it does not generate on unresolved ambiguity (INV-005).
+**Not overridable from the UI.** Unresolved ambiguity always goes to clarifying question path (INV-005).
 
 ---
 
@@ -121,21 +118,15 @@ Example responses:
 - The request would produce a `:sensitive` change that cannot be auto-applied (INV-001)
 - The project manifest has no `sensitive_resources:` declared but the request targets a resource type that is always `:sensitive` (e.g., authentication User resource)
 
-**Behaviour:** State the specific rule violated. Describe what would need to change for the
-request to proceed. Do not generate.
+**Behaviour:** State the specific rule violated and what must change to proceed. Do not generate.
+No hedging. No "I'm sorry, but...". No workarounds. If the spec-kit blocks it, it's blocked.
 
 Format:
 ```
-This proposal cannot proceed. It contradicts ADR-005 §Dual Approval for :sensitive:
-[one sentence explaining the specific conflict].
-
-To proceed: [one sentence describing what must happen — e.g., "add a delegate approver
-to the manifest", "update ADR-005 if the constraint is outdated", "provide an ADR link
-for this compliance change"].
+This proposal cannot proceed. It contradicts [ADR/INV reference]:
+[one sentence on the specific conflict].
+To proceed: [one sentence on what must happen].
 ```
-
-No hedging. No "I'm sorry, but...". No offering to "try a different approach" — if the
-spec-kit blocks it, it's blocked. If the spec-kit is wrong, the spec-kit is updated by a human.
 
 ---
 
@@ -279,12 +270,7 @@ No diff has been generated. When code generation is enabled, this operation
 will produce a full diff for review.
 ```
 
-This behaviour serves two purposes:
-1. Lets the team validate classification and intent-reading quality before trusting code output
-2. Gives users a useful preview of scope even while generation is disabled
-
-The copilot does not explain why code generation is disabled in its response. That detail
-is visible in the Studio status bar. The response focuses on what it understood.
+The copilot does not explain to the user why generation is disabled — that is visible in the Studio status bar. The response shows only what it understood.
 
 ---
 

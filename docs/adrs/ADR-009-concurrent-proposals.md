@@ -50,12 +50,8 @@ merge is high.
 
 ## The Stale Proposal UX
 
-A stale proposal in the review panel shows a clear visual indicator:
-- The diff is still visible (so the developer can see what they intended)
-- A banner: "Stale — file changed since generation. Regenerate to continue."
-- One-click regenerate button that re-runs the same operation against the current codebase
-- If the regenerated diff is identical: applies immediately (the conflict was in an unrelated part of the file)
-- If different: shows a new diff for review
+Stale banner rendering and regenerate interaction: ADR-012 §Stale Proposal Banner.
+The mechanism: re-run the original operation; if diff is identical the conflict was in an unrelated part of the file and it proceeds; if different, a new diff is shown.
 
 ## Consequences
 
