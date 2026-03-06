@@ -5,8 +5,9 @@
 - Structured retrieval over RAG for code — ADR-003
 - Igniter for all generation, no string interpolation — ADR-002
 - Four-class change approval, :sensitive configured per project — ADR-005
-- No drag-and-drop, copilot is the only change interface — ADR-008
+- No drag-and-drop, Activity Feed is the only change interface — ADR-008
 - Spec-kit is decisions + constraints only, not code duplication — this document
+- Git + ETS storage, no Postgres dependency for Foundry itself — ADR-015
 
 ---
 
@@ -14,7 +15,7 @@
 
 | # | Description | Status | Resolution |
 |---|---|---|---|
-| 1 | Project Manifest underspecified | **Open** | Needs ADR-011 when Ash resource exists |
+| 1 | Project Manifest underspecified | Closed | `docs/manifest-schema-draft.md` consolidates all manifest fields. `lib/foundry/manifest.ex` Ash resource designed. ADR-011 to be written once resource is stable in production. |
 | 2 | Copilot disambiguation failure modes | Closed | AGENTS.md INV-005 |
 | 3 | ExDoc cache per-library key | Closed | ADR-003 consequences |
 | 4 | Domain coverage formula missing | Closed | ADR-007 Domain Coverage Formula section |
@@ -45,7 +46,7 @@
 | 29 | ash_state_machine underspecified | Closed | ADR-001 listed; ADR-002 Op.AddStateTransition; ADR-003 schema; ADR-005 classifier |
 | 30 | ash_json_api governance gaps | Closed | ADR-001 listed; ADR-002 Op.AddApiRoute; ADR-003 schema; ADR-005 classifier |
 | 31 | Migration governance absent | Closed | ADR-001 Migration Lifecycle; ADR-002 migration generation; ADR-005 migration classification |
-| 32 | decorator library unaddressed | **Open** | Low priority — no governance model yet; agents treat decorated functions as opaque |
+| 32 | decorator library unaddressed | Closed | `docs/lint-catalogue.md` `:decorated_transfer_step` lint rule — warning on decorated Transfer steps, no introspection in v1. See Gap #53. |
 | 33 | Beacon CMS stance | Closed | ADR-001 Out of Scope for v1 |
 | 34 | jason implicit dependency | Closed | ADR-001 Core Stack table |
 | 35 | bandit vs cowboy unspecified | Closed | ADR-001 Core Stack table (Bandit) |
@@ -65,6 +66,9 @@
 | 49 | Cmd+P shortcut incorrect (should be Cmd+K) | Closed | ADR-012 §Command Palette; AGENTS.md updated |
 | 50 | Foundry incorrectly implied Postgres dependency for its own state | Closed | ADR-015: git-backed files + ETS; ADR-001 core stack table split; ADR-012 retention table updated; ADR-014 storage section updated |
 | 51 | ADR-001 core stack table conflated Foundry and target platform dependencies | Closed | ADR-001 split into Foundry dependencies and target platform dependencies |
+| 52 | INV-008 and INV-010 missing from AGENTS.md Hard Invariants summary | Closed | AGENTS.md updated: INV-008, INV-009, INV-010 added to invariants summary with cross-references |
+| 53 | decorator library creates silent governance hole on Transfer steps | Closed | `docs/lint-catalogue.md` — `:decorated_transfer_step` lint rule defined (status: planned). Warning surfaced in review panel and CLI. Gap #32 also closed. |
+| 54 | iGaming reference project undeclared — Phase acceptance criteria have no verifiable target | Closed | `docs/reference-project-fixture.md` — 3 domains, 9 resources, 2 transfers, 5 rules, 11 RG-* requirements, manifest config, expected lint/context output counts. |
 
 ---
 
@@ -98,8 +102,7 @@ The following are intentionally absent from spec-kit. They live as `@moduledoc` 
 
 ## Deferred ADRs (write when the corresponding code exists)
 
-- **ADR-011**: Project Manifest contract — when `Foundry.Manifest` Ash resource is defined
-- **ADR-015**: Storage model (git + ETS) — **written**, see `ADR-015-storage-model.md`
+- **ADR-011**: Project Manifest contract — `Foundry.Manifest` Ash resource is now designed (`lib/foundry/manifest.ex`). Write ADR-011 after the resource is stable in production (Phase 1 complete). Pre-ADR schema: `docs/manifest-schema-draft.md`.
 - **ADR-016**: Bootstrap spec-kit generation — when `mix foundry.spec_kit.init` is built (previously ADR-012, then ADR-015 — renumbered now that ADR-015 is the storage model)
 
 Do not write these speculatively. A spec-kit document without corresponding code is
@@ -109,39 +112,50 @@ pre-emptive documentation — the very thing the discipline exists to prevent.
 
 ## Open Items Requiring Future ADRs
 
-- **`decorator` library governance** — agents currently treat decorated functions as opaque (no introspection). If `decorator` is used on Transfer steps or compliance-critical paths, a governance model is needed. Track as Gap #32 above.
+None outstanding. All gaps closed. See gap tracker above.
 
 ---
 
 ## Current Spec-Kit File List
 
 ```
-spec-kit/
-  AGENTS.md                              ← primary agent context
-  BUILD_SEQUENCE.md                      ← implementation phases
-  REVIEW_AND_PLAN.md                     ← this file
+AGENTS.md                              ← primary agent context (updated: INV-008–010 added)
+docs/
+  BUILD_SEQUENCE.md                    ← implementation phases
+  REVIEW_AND_PLAN.md                   ← this file (updated: all gaps closed)
+  manifest-schema-draft.md             ← pre-ADR-011 manifest field schema
+  reference-project-fixture.md         ← iGaming reference project declaration (Gap #54)
+  lint-catalogue.md                    ← all planned lint rules (Gap #53, closes Gap #32)
   adrs/
-    ADR-001-stack-selection.md           ← updated: full ecosystem
-    ADR-002-code-generation.md           ← updated: migration generation, 20 operations
-    ADR-003-agent-context-strategy.md    ← updated: full context schema
-    ADR-004-dependency-governance.md     ← updated: ecto clarification, test tools
-    ADR-005-change-approval-model.md     ← updated: migration classification, auth, feature flags
+    ADR-001-stack-selection.md         ← updated: full ecosystem
+    ADR-002-code-generation.md         ← updated: migration generation, 20 operations
+    ADR-003-agent-context-strategy.md  ← updated: full context schema
+    ADR-004-dependency-governance.md   ← updated: ecto clarification, test tools
+    ADR-005-change-approval-model.md   ← updated: migration classification, auth, feature flags
     ADR-006-infrastructure-governance.md
-    ADR-007-test-generation-strategy.md  ← updated: tool assignments, AshPyro note
+    ADR-007-test-generation-strategy.md ← updated: tool assignments, AshPyro note
     ADR-008-visualization-paradigm.md
     ADR-009-concurrent-proposals.md
-    ADR-010-llm-model-and-context.md     ← rewritten: correct LLM/context content
-    ADR-012-studio-ux-specification.md   ← new
-    ADR-013-copilot-agent-behavior.md    ← new
-    ADR-014-proposal-lifecycle.md        ← new
-    ADR-015-storage-model.md               ← new: git + ETS, no Postgres for Foundry
+    ADR-010-llm-model-and-context.md   ← rewritten: correct LLM/context content
+    ADR-012-studio-ux-specification.md ← new
+    ADR-013-copilot-agent-behavior.md  ← new
+    ADR-014-proposal-lifecycle.md      ← new
+    ADR-015-storage-model.md           ← new: git + ETS, no Postgres for Foundry
   regulations/
-    platform_invariants.md               ← updated: INV-011, INV-012, INV-013
+    platform_invariants.md             ← INV-001 through INV-013
   runbooks/
     studio_copilot_failure.md
     igniter_operation_failure.md
     project_reader_unavailable.md
     compliance_test_failure.md
     approval_queue_blocked.md
-    studio_ux_degradation.md             ← new
+    studio_ux_degradation.md           ← new
+lib/foundry/
+  manifest.ex                          ← Foundry.Manifest Ash resource + embedded resources
+  proposals/
+    proposal.ex                        ← Foundry.Proposals.Proposal + embedded resources
+  audit/
+    event.ex                           ← Foundry.Audit.Event (append-only)
+  context/
+    structs.ex                         ← Mix task output struct definitions (Phase 1 JSON contract)
 ```
