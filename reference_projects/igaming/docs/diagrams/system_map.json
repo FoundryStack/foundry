@@ -1,0 +1,110 @@
+{
+  "nodes": [
+    {
+      "id": "Elixir.IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
+      "label": "WithdrawalLimitNotExceeded",
+      "module": "Elixir.IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
+      "sensitive": false,
+      "type": "rule",
+      "domain": "Finance",
+      "has_compliance": false,
+      "test_coverage": "none",
+      "pending_migrations": false
+    },
+    {
+      "id": "Elixir.IgamingRef.Finance.Rules.SufficientBalance",
+      "label": "SufficientBalance",
+      "module": "Elixir.IgamingRef.Finance.Rules.SufficientBalance",
+      "sensitive": false,
+      "type": "rule",
+      "domain": "Finance",
+      "has_compliance": false,
+      "test_coverage": "none",
+      "pending_migrations": false
+    },
+    {
+      "id": "Elixir.IgamingRef.Finance.WithdrawalTransfer",
+      "label": "WithdrawalTransfer",
+      "module": "Elixir.IgamingRef.Finance.WithdrawalTransfer",
+      "sensitive": false,
+      "type": "resource",
+      "domain": "Finance",
+      "has_compliance": false,
+      "test_coverage": "none",
+      "pending_migrations": false
+    },
+    {
+      "id": "Elixir.IgamingRef.Players.Rules.PlayerNotSelfExcluded",
+      "label": "PlayerNotSelfExcluded",
+      "module": "Elixir.IgamingRef.Players.Rules.PlayerNotSelfExcluded",
+      "sensitive": false,
+      "type": "rule",
+      "domain": "Players",
+      "has_compliance": false,
+      "test_coverage": "none",
+      "pending_migrations": false
+    },
+    {
+      "id": "Elixir.IgamingRef.Promotions.Rules.PlayerEligibleForCampaign",
+      "label": "PlayerEligibleForCampaign",
+      "module": "Elixir.IgamingRef.Promotions.Rules.PlayerEligibleForCampaign",
+      "sensitive": false,
+      "type": "rule",
+      "domain": "Promotions",
+      "has_compliance": false,
+      "test_coverage": "none",
+      "pending_migrations": false
+    },
+    {
+      "id": "Elixir.IgamingRef.Promotions.Rules.CampaignNotExpired",
+      "label": "CampaignNotExpired",
+      "module": "Elixir.IgamingRef.Promotions.Rules.CampaignNotExpired",
+      "sensitive": false,
+      "type": "rule",
+      "domain": "Promotions",
+      "has_compliance": false,
+      "test_coverage": "none",
+      "pending_migrations": false
+    },
+    {
+      "id": "Elixir.IgamingRef.Promotions.BonusGrantTransfer",
+      "label": "BonusGrantTransfer",
+      "module": "Elixir.IgamingRef.Promotions.BonusGrantTransfer",
+      "sensitive": false,
+      "type": "resource",
+      "domain": "Promotions",
+      "has_compliance": false,
+      "test_coverage": "none",
+      "pending_migrations": false
+    }
+  ],
+  "edges": [],
+  "clusters": [
+    {
+      "id": "Finance",
+      "label": "Finance",
+      "node_ids": [
+        "Elixir.IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
+        "Elixir.IgamingRef.Finance.Rules.SufficientBalance",
+        "Elixir.IgamingRef.Finance.WithdrawalTransfer"
+      ]
+    },
+    {
+      "id": "Players",
+      "label": "Players",
+      "node_ids": [
+        "Elixir.IgamingRef.Players.Rules.PlayerNotSelfExcluded"
+      ]
+    },
+    {
+      "id": "Promotions",
+      "label": "Promotions",
+      "node_ids": [
+        "Elixir.IgamingRef.Promotions.Rules.PlayerEligibleForCampaign",
+        "Elixir.IgamingRef.Promotions.Rules.CampaignNotExpired",
+        "Elixir.IgamingRef.Promotions.BonusGrantTransfer"
+      ]
+    }
+  ],
+  "generated_at": "2026-03-06T15:42:56.852413Z"
+}

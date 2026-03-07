@@ -52,18 +52,19 @@ defmodule IgamingRef.MixProject do
       {:ash_money, "~> 0.1"},
       {:ex_money, "~> 5.15"},
       {:ex_money_sql, "~> 1.7"},
+      {:ex_cldr, "~> 2.0"},
 
-      # Feature flags
-      {:fun_with_flags, "~> 1.11"},
-      {:fun_with_flags_ui, "~> 1.0"},
+      # Feature flags (runtime: false — no Redis; configure Ecto persistence when needed)
+      {:fun_with_flags, "~> 1.11", runtime: false},
+      {:fun_with_flags_ui, "~> 1.0", runtime: false},
 
       # Background jobs
       {:oban, "~> 2.17"},
       {:ash_oban, "~> 0.2", override: true},
 
-      # Rate limiting
-      {:hammer, "~> 6.1"},
-      {:hammer_plug, "~> 3.0"},
+      # Rate limiting (runtime: false — configure when needed)
+      {:hammer, "~> 6.1", runtime: false},
+      {:hammer_plug, "~> 3.0", runtime: false},
 
       # Observability
       {:opentelemetry, "~> 1.3"},

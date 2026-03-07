@@ -34,7 +34,9 @@ defmodule Foundry.Audit.Event do
 
   use Ash.Resource,
     domain: Foundry.Audit,
-    data_layer: Ash.DataLayer.Simple
+    data_layer: Ash.DataLayer.Simple,
+    authorizers: [Ash.Policy.Authorizer]
+
   # AshPaperTrail and AshArchival are intentionally absent here.
   #
   # AshPaperTrail would create an audit trail of changes to audit events —
@@ -54,72 +56,107 @@ defmodule Foundry.Audit.Event do
   # ---------------------------------------------------------------------------
 
   attributes do
-    uuid_primary_key :id
+    uuid_primary_key(:id)
 
     attribute :event_type, :atom do
-      description "The type of audit event. See event type definitions below."
-      constraints one_of: [
-        :approved,        # An approval slot was filled
-        :applied,         # Igniter apply executed
-        :committed,       # Git commit created
-        :rejected,        # Proposal rejected
-        :superseded,      # Proposal superseded by a newer proposal
-        :emergency_override  # Break-glass path used (approval_queue_blocked runbook)
-      ]
-      allow_nil? false
+      description("The type of audit event. See event type definitions below.")
+
+      constraints(
+        one_of: [
+          # An approval slot was filled
+          :approved,
+          # Igniter apply executed
+          :applied,
+          # Git commit created
+          :committed,
+          # Proposal rejected
+          :rejected,
+          # Proposal superseded by a newer proposal
+          :superseded,
+          # Break-glass path used (approval_queue_blocked runbook)
+          :emergency_override
+        ]
+      )
+
+      allow_nil?(false)
     end
 
     attribute :proposal_id, :string do
-      description "The proposal_id this event relates to."
-      allow_nil? false
+      description("The proposal_id this event relates to.")
+      allow_nil?(false)
     end
 
     attribute :change_class, :atom do
-      description "The change class of the proposal at the time of this event."
-      constraints one_of: [:structural, :behavioral, :sensitive, :compliance]
-      allow_nil? false
+      description("The change class of the proposal at the time of this event.")
+      constraints(one_of: [:structural, :behavioral, :sensitive, :compliance])
+      allow_nil?(false)
     end
 
     attribute :actor, :string do
-      description "Email address of the human who triggered this event. For :applied events triggered by auto-apply, this is the foundry-bot identity."
-      allow_nil? false
+      description(
+        "Email address of the human who triggered this event. For :applied events triggered by auto-apply, this is the foundry-bot identity."
+      )
+
+      allow_nil?(false)
     end
 
     attribute :actor_role, :atom do
-      description "The manifest role under which the actor acted. nil for :applied and :committed events."
-      constraints one_of: [:sensitive_lead, :domain_lead, :platform_lead, :compliance_officer, :developer, :foundry_bot]
-      allow_nil? true
+      description(
+        "The manifest role under which the actor acted. nil for :applied and :committed events."
+      )
+
+      constraints(
+        one_of: [
+          :sensitive_lead,
+          :domain_lead,
+          :platform_lead,
+          :compliance_officer,
+          :developer,
+          :foundry_bot
+        ]
+      )
+
+      allow_nil?(true)
     end
 
     attribute :approval_slot, :integer do
-      description "Which approval slot was filled (1 or 2). Only set for :approved events on :sensitive proposals."
-      constraints one_of: [1, 2]
-      allow_nil? true
+      description(
+        "Which approval slot was filled (1 or 2). Only set for :approved events on :sensitive proposals."
+      )
+
+      constraints(min: 1, max: 2)
+      allow_nil?(true)
     end
 
     attribute :diff_hash, :string do
-      description "SHA-256 hash of the proposal's diff at the time of this event. Allows verification that the approved diff matches the applied diff."
-      allow_nil? true
+      description(
+        "SHA-256 hash of the proposal's diff at the time of this event. Allows verification that the approved diff matches the applied diff."
+      )
+
+      allow_nil?(true)
     end
 
     attribute :adr_link, :string do
-      description "ADR identifier. Required for :compliance change events."
-      allow_nil? true
+      description("ADR identifier. Required for :compliance change events.")
+      allow_nil?(true)
     end
 
     attribute :commit_sha, :string do
-      description "The git commit SHA. Only set for :applied and :committed events."
-      allow_nil? true
+      description("The git commit SHA. Only set for :applied and :committed events.")
+      allow_nil?(true)
     end
 
     attribute :notes, :string do
-      description "Free-text notes. Required for :emergency_override events. Optional for others."
-      allow_nil? true
+      description(
+        "Free-text notes. Required for :emergency_override events. Optional for others."
+      )
+
+      allow_nil?(true)
     end
 
     attribute :occurred_at, :utc_datetime do
-      description "When this event occurred. Set at creation time."
-      allow_nil? false
+      description("When this event occurred. Set at creation time.")
+      allow_nil?(false)
     end
 
     timestamps()
@@ -130,17 +167,29 @@ defmodule Foundry.Audit.Event do
   # ---------------------------------------------------------------------------
 
   actions do
-    defaults [:read]
+    defaults([:read])
 
     create :record do
-      description "Append a new audit event. This is the only write action — there is no update or destroy."
-      accept [
-        :event_type, :proposal_id, :change_class, :actor, :actor_role,
-        :approval_slot, :diff_hash, :adr_link, :commit_sha, :notes
-      ]
-      change set_attribute(:occurred_at, &DateTime.utc_now/0)
-      validate Foundry.Audit.Validations.ComplianceAdrLinkPresent
-      validate Foundry.Audit.Validations.EmergencyOverrideNotes
+      description(
+        "Append a new audit event. This is the only write action — there is no update or destroy."
+      )
+
+      accept([
+        :event_type,
+        :proposal_id,
+        :change_class,
+        :actor,
+        :actor_role,
+        :approval_slot,
+        :diff_hash,
+        :adr_link,
+        :commit_sha,
+        :notes
+      ])
+
+      change(set_attribute(:occurred_at, &DateTime.utc_now/0))
+      validate(Foundry.Audit.Validations.ComplianceAdrLinkPresent)
+      validate(Foundry.Audit.Validations.EmergencyOverrideNotes)
     end
   end
 
@@ -150,13 +199,16 @@ defmodule Foundry.Audit.Event do
 
   policies do
     policy action(:read) do
-      description "All authenticated Foundry users can read audit events."
-      authorize_if always()
+      description("All authenticated Foundry users can read audit events.")
+      authorize_if(always())
     end
 
     policy action(:record) do
-      description "Only the Foundry backend (foundry_bot identity) can create audit events. No user-initiated audit event creation."
-      authorize_if Foundry.Audit.Policies.FoundryBotOnly
+      description(
+        "Only the Foundry backend (foundry_bot identity) can create audit events. No user-initiated audit event creation."
+      )
+
+      authorize_if(Foundry.Audit.Policies.FoundryBotOnly)
     end
 
     # No update or destroy policies — these actions do not exist.
@@ -169,15 +221,13 @@ defmodule Foundry.Audit.Event do
 
   validations do
     validate Foundry.Audit.Validations.ComplianceAdrLinkPresent do
-      description ":compliance change events must have an adr_link."
-      message "adr_link is required for :compliance change events"
-      where [change_class: :compliance, event_type: [:approved, :applied]]
+      description(":compliance change events must have an adr_link.")
+      message("adr_link is required for :compliance change events")
     end
 
     validate present(:notes) do
-      description "Emergency override events must have notes explaining the override."
-      message "notes are required for emergency_override events"
-      where [event_type: :emergency_override]
+      description("Emergency override events must have notes explaining the override.")
+      message("notes are required for emergency_override events")
     end
   end
 end

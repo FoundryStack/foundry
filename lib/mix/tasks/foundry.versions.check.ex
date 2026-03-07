@@ -39,22 +39,38 @@ defmodule Mix.Tasks.Foundry.Versions.Check do
 
   @known_deps [
     # Core
-    :ash, :ash_postgres, :spark, :phoenix, :phoenix_live_view, :igniter,
-    :ecto_sql, :postgrex,
+    :ash,
+    :ash_postgres,
+    :spark,
+    :phoenix,
+    :phoenix_live_view,
+    :igniter,
+    :ecto_sql,
+    :postgrex,
     # Ash extensions
-    :ash_state_machine, :ash_oban, :ash_double_entry, :ash_json_api,
-    :ash_paper_trail, :ash_archival, :ash_authentication,
-    :ash_authentication_phoenix, :ash_money,
+    :ash_state_machine,
+    :ash_oban,
+    :ash_double_entry,
+    :ash_json_api,
+    :ash_paper_trail,
+    :ash_archival,
+    :ash_authentication,
+    :ash_authentication_phoenix,
+    :ash_money,
     # Money
-    :ex_money, :ex_money_sql,
+    :ex_money,
+    :ex_money_sql,
     # Jobs
     :oban,
     # Feature flags
     :fun_with_flags,
     # Rate limiting
-    :hammer, :hammer_plug,
+    :hammer,
+    :hammer_plug,
     # HTTP
-    :req, :finch, :bandit,
+    :req,
+    :finch,
+    :bandit,
     # Email
     :swoosh,
     # Caching
@@ -62,9 +78,14 @@ defmodule Mix.Tasks.Foundry.Versions.Check do
     # Clustering
     :libcluster,
     # Observability
-    :opentelemetry, :opentelemetry_exporter,
+    :opentelemetry,
+    :opentelemetry_exporter,
     # Testing
-    :stream_data, :bypass, :mox, :wallaby, :ex_machina,
+    :stream_data,
+    :bypass,
+    :mox,
+    :wallaby,
+    :ex_machina,
     # UI
     :ash_pyro
   ]
@@ -84,7 +105,7 @@ defmodule Mix.Tasks.Foundry.Versions.Check do
       |> Map.put(:otp_version, otp_version())
       |> Map.put(:generated_at, DateTime.utc_now() |> DateTime.to_iso8601())
 
-    Mix.shell().info(Jason.encode!(result, pretty: true))
+    IO.puts(Jason.encode!(result, pretty: true))
   end
 
   # ---------------------------------------------------------------------------
@@ -116,7 +137,9 @@ defmodule Mix.Tasks.Foundry.Versions.Check do
 
   defp otp_version do
     major = :erlang.system_info(:otp_release) |> List.to_string()
-    minor_path = Path.join([:code.root_dir() |> List.to_string(), "releases", major, "OTP_VERSION"])
+
+    minor_path =
+      Path.join([:code.root_dir() |> List.to_string(), "releases", major, "OTP_VERSION"])
 
     case File.read(minor_path) do
       {:ok, vsn} -> String.trim(vsn)

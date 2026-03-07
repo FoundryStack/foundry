@@ -48,6 +48,9 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
 
   @impl Mix.Task
   def run(args) do
+    app = Mix.Project.config()[:app]
+    Application.put_env(app, :foundry_tasks_only, true)
+
     Mix.Task.run("app.start")
 
     project_root = File.cwd!()
@@ -70,11 +73,12 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
       generated_at: DateTime.utc_now() |> DateTime.to_iso8601()
     }
 
-    Mix.shell().info(Jason.encode!(result, pretty: true))
+    IO.puts(Jason.encode!(result, pretty: true))
 
     # Exit non-zero if coverage_gate: true and any unimplemented requirements
     if manifest[:coverage_gate] do
       unimplemented = Enum.count(requirements, &(&1.status == :unimplemented))
+
       if unimplemented > 0 do
         Mix.shell().error("#{unimplemented} unimplemented requirement(s). Coverage gate failed.")
         exit({:shutdown, 1})
@@ -88,12 +92,15 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
 
   defp find_regulation_files(project_root) do
     regs_dir = Path.join(project_root, "docs/regulations")
+
     case File.ls(regs_dir) do
       {:ok, files} ->
         files
         |> Enum.filter(&String.ends_with?(&1, ".md"))
         |> Enum.map(&Path.join(regs_dir, &1))
-      _ -> []
+
+      _ ->
+        []
     end
   end
 
@@ -103,7 +110,9 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
 
   defp parse_requirements(file_path, _project_root) do
     case File.read(file_path) do
-      {:error, _} -> []
+      {:error, _} ->
+        []
+
       {:ok, content} ->
         content
         |> String.split("\n")
@@ -113,47 +122,51 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
 
   # State machine parser — walks lines looking for RG-* headings then reads
   # Summary, Implementation, Test tag, and Status from the following lines.
-  defp parse_lines(lines, file_path) do
+  defp parse_lines(lines, _file_path) do
     lines
     |> Enum.with_index()
     |> Enum.chunk_while(
       nil,
-      fn
-        # New requirement heading
-        {line, _idx}, _acc when line =~ ~r/^#+\s+RG-[A-Z]+-\d+/ ->
-          id = Regex.run(~r/RG-[A-Z]+-\d+/, line) |> hd()
-          {:cont, %Requirement{id: id, summary: "", status: :unimplemented}}
+      fn {line, _idx}, acc ->
+        cond do
+          # New requirement heading
+          Regex.match?(~r/^#+\s+RG-[A-Z]+-\d+/, line) ->
+            id = Regex.run(~r/RG-[A-Z]+-\d+/, line) |> hd()
+            {:cont, %Requirement{id: id, summary: "", status: :unimplemented}}
 
-        # Summary line
-        {line, _idx}, %Requirement{} = req when line =~ ~r/\*\*Summary:\*\*/ ->
-          summary = Regex.replace(~r/\*\*Summary:\*\*\s*/, line, "") |> String.trim()
-          {:cont, %{req | summary: summary}}
+          # Summary line
+          Regex.match?(~r/\*\*Summary:\*\*/, line) and is_struct(acc, Requirement) ->
+            summary = Regex.replace(~r/\*\*Summary:\*\*\s*/, line, "") |> String.trim()
+            {:cont, %{acc | summary: summary}}
 
-        # Implementation pointer
-        {line, _idx}, %Requirement{} = req when line =~ ~r/\*\*Implementation:\*\*/ ->
-          mods =
-            Regex.scan(~r/`([A-Z][A-Za-z0-9.]+)`/, line)
-            |> Enum.map(fn [_, m] -> m end)
-          status = if mods != [], do: :partial, else: :unimplemented
-          {:cont, %{req | implementing_modules: mods, status: status}}
+          # Implementation pointer
+          Regex.match?(~r/\*\*Implementation:\*\*/, line) and is_struct(acc, Requirement) ->
+            mods =
+              Regex.scan(~r/`([A-Z][A-Za-z0-9.]+)`/, line)
+              |> Enum.map(fn [_, m] -> m end)
 
-        # Test tag
-        {line, _idx}, %Requirement{} = req when line =~ ~r/\*\*Test tag:\*\*/ ->
-          tags =
-            Regex.scan(~r/`:([a-z_\d]+)`/, line)
-            |> Enum.map(fn [_, t] -> t end)
-          {:cont, %{req | test_tags: tags}}
+            status = if mods != [], do: :partial, else: :unimplemented
+            {:cont, %{acc | implementing_modules: mods, status: status}}
 
-        # Explicit planned status
-        {line, _idx}, %Requirement{} = req when line =~ ~r/\*\*Status:\*\*\s*planned/ ->
-          {:cont, %{req | status: :planned}}
+          # Test tag
+          Regex.match?(~r/\*\*Test tag:\*\*/, line) and is_struct(acc, Requirement) ->
+            tags =
+              Regex.scan(~r/`:([a-z_\d]+)`/, line)
+              |> Enum.map(fn [_, t] -> t end)
 
-        # Blank line after content — flush current requirement
-        {"", _idx}, %Requirement{id: _} = req ->
-          {:cont, req, nil}
+            {:cont, %{acc | test_tags: tags}}
 
-        _line, acc ->
-          {:cont, acc}
+          # Explicit planned status
+          Regex.match?(~r/\*\*Status:\*\*\s*planned/, line) and is_struct(acc, Requirement) ->
+            {:cont, %{acc | status: :planned}}
+
+          # Blank line after content — flush current requirement
+          line == "" and is_struct(acc, Requirement) ->
+            {:cont, acc, nil}
+
+          true ->
+            {:cont, acc}
+        end
       end,
       fn
         nil -> {:cont, []}
@@ -169,6 +182,7 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
   # ---------------------------------------------------------------------------
 
   defp enrich_with_test_status(%Requirement{test_tags: []} = req, _), do: req
+
   defp enrich_with_test_status(%Requirement{} = req, project_root) do
     # Look for the last CI run result by checking test result files.
     # In absence of a CI result file, we check if the test file exists.
@@ -181,7 +195,9 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
         {:ok, _} ->
           # Recursively search for tagged test files
           find_tagged_tests(test_dir, tag_pattern)
-        _ -> false
+
+        _ ->
+          false
       end
 
     # Check for a CI result file at .foundry/ci_results/<tag>.json
@@ -213,13 +229,16 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
     tags
     |> Enum.find_value(fn tag ->
       path = Path.join([project_root, ".foundry", "ci_results", "#{tag}.json"])
+
       case File.read(path) do
         {:ok, content} ->
           case Jason.decode(content) do
             {:ok, data} -> %{passed: data["passed"], run_at: data["run_at"]}
             _ -> nil
           end
-        _ -> nil
+
+        _ ->
+          nil
       end
     end)
     |> Kernel.||(%{passed: nil, run_at: nil})
@@ -230,19 +249,20 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
   # ---------------------------------------------------------------------------
 
   defp filter_requirements(reqs, nil), do: reqs
+
   defp filter_requirements(reqs, prefix) do
     Enum.filter(reqs, &String.starts_with?(&1.id, prefix))
   end
 
   defp build_summary(requirements) do
     %Summary{
-      total:          length(requirements),
-      implemented:    Enum.count(requirements, &(&1.status == :implemented)),
-      partial:        Enum.count(requirements, &(&1.status == :partial)),
-      unimplemented:  Enum.count(requirements, &(&1.status == :unimplemented)),
-      planned:        Enum.count(requirements, &(&1.status == :planned)),
-      passing_tests:  Enum.count(requirements, &(&1.last_test_passed == true)),
-      failing_tests:  Enum.count(requirements, &(&1.last_test_passed == false))
+      total: length(requirements),
+      implemented: Enum.count(requirements, &(&1.status == :implemented)),
+      partial: Enum.count(requirements, &(&1.status == :partial)),
+      unimplemented: Enum.count(requirements, &(&1.status == :unimplemented)),
+      planned: Enum.count(requirements, &(&1.status == :planned)),
+      passing_tests: Enum.count(requirements, &(&1.last_test_passed == true)),
+      failing_tests: Enum.count(requirements, &(&1.last_test_passed == false))
     }
   end
 
@@ -258,9 +278,14 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
 
   defp load_manifest(project_root) do
     path = Path.join([project_root, ".foundry", "manifest.exs"])
+
     case File.read(path) do
-      {:ok, content} -> {kw, _} = Code.eval_string(content); kw
-      _ -> []
+      {:ok, content} ->
+        {kw, _} = Code.eval_string(content)
+        kw
+
+      _ ->
+        []
     end
   end
 end

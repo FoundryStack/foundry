@@ -31,14 +31,20 @@ defmodule Foundry.Lint.Rules.DescriptionRule do
     violations =
       case Code.fetch_docs(mod) do
         {:docs_v1, _, _, _, :none, _, _} ->
-          [%Violation{
-            rule_id:  :missing_description,
-            severity: :error,
-            message:  "#{mod} is missing @moduledoc",
-            module:   to_string(mod)
-          } | violations]
+          [
+            %Violation{
+              rule_id: :missing_description,
+              severity: :error,
+              message: "#{mod} is missing @moduledoc",
+              module: to_string(mod)
+            }
+            | violations
+          ]
+
         {:docs_v1, _, _, _, :hidden, _, _} ->
-          violations  # @moduledoc false is acceptable (intentionally hidden)
+          # @moduledoc false is acceptable (intentionally hidden)
+          violations
+
         _ ->
           violations
       end
@@ -51,12 +57,14 @@ defmodule Foundry.Lint.Rules.DescriptionRule do
           |> Enum.reject(&(&1.name in [:id, :inserted_at, :updated_at]))
           |> Enum.flat_map(fn attr ->
             if is_nil(attr.description) or attr.description == "" do
-              [%Violation{
-                rule_id:  :missing_description,
-                severity: :error,
-                message:  "#{mod}.#{attr.name} is missing a description:",
-                module:   to_string(mod)
-              }]
+              [
+                %Violation{
+                  rule_id: :missing_description,
+                  severity: :error,
+                  message: "#{mod}.#{attr.name} is missing a description:",
+                  module: to_string(mod)
+                }
+              ]
             else
               []
             end
@@ -93,12 +101,15 @@ defmodule Foundry.Lint.Rules.PaperTrailRule do
     sensitive = sensitive_set(manifest)
 
     if sensitive?(mod, sensitive) and not has_paper_trail?(mod) do
-      [%Violation{
-        rule_id:  :missing_paper_trail,
-        severity: :error,
-        message:  "#{mod} is a sensitive resource but does not use AshPaperTrail.Resource (INV-011)",
-        module:   to_string(mod)
-      }]
+      [
+        %Violation{
+          rule_id: :missing_paper_trail,
+          severity: :error,
+          message:
+            "#{mod} is a sensitive resource but does not use AshPaperTrail.Resource (INV-011)",
+          module: to_string(mod)
+        }
+      ]
     else
       []
     end
@@ -147,12 +158,15 @@ defmodule Foundry.Lint.Rules.ArchivalRule do
     sensitive = sensitive_set(manifest)
 
     if sensitive?(mod, sensitive) and not has_archival?(mod) do
-      [%Violation{
-        rule_id:  :missing_archival,
-        severity: :error,
-        message:  "#{mod} is a sensitive resource but does not use AshArchival.Resource (INV-012)",
-        module:   to_string(mod)
-      }]
+      [
+        %Violation{
+          rule_id: :missing_archival,
+          severity: :error,
+          message:
+            "#{mod} is a sensitive resource but does not use AshArchival.Resource (INV-012)",
+          module: to_string(mod)
+        }
+      ]
     else
       []
     end
@@ -201,25 +215,33 @@ defmodule Foundry.Lint.Rules.IdempotencyRule do
 
   @impl true
   def check(%{module: mod}) do
-    unless transfer_module?(mod), do: return([])
-
-    has_idempotency =
-      mod.__info__(:attributes)[:idempotency_key] != nil or
-      mod.__info__(:attributes)[:idempotency] != nil
-    rescue _ -> false
-
-    steps = reactor_steps(mod)
-    has_external = Enum.any?(steps, &(&1.type in @side_effect_steps))
-
-    if has_external and not has_idempotency do
-      [%Violation{
-        rule_id:  :missing_idempotency,
-        severity: :error,
-        message:  "#{mod} is a Transfer with external side effects but declares no idempotency key (INV-004)",
-        module:   to_string(mod)
-      }]
-    else
+    if not transfer_module?(mod) do
       []
+    else
+      has_idempotency =
+        try do
+          mod.__info__(:attributes)[:idempotency_key] != nil or
+            mod.__info__(:attributes)[:idempotency] != nil
+        rescue
+          _ -> false
+        end
+
+      steps = reactor_steps(mod)
+      has_external = Enum.any?(steps, &(&1.type in @side_effect_steps))
+
+      if has_external and not has_idempotency do
+        [
+          %Violation{
+            rule_id: :missing_idempotency,
+            severity: :error,
+            message:
+              "#{mod} is a Transfer with external side effects but declares no idempotency key (INV-004)",
+            module: to_string(mod)
+          }
+        ]
+      else
+        []
+      end
     end
   end
 
@@ -251,36 +273,49 @@ defmodule Foundry.Lint.Rules.RunbookRule do
 
   @impl true
   def check(%{module: mod, project_root: project_root}) do
-    unless reactor_module?(mod), do: return([])
+    if not reactor_module?(mod) do
+      []
+    else
+      steps = reactor_steps(mod)
 
-    steps = reactor_steps(mod)
-    unless length(steps) > 3, do: return([])
+      if length(steps) <= 3 do
+        []
+      else
+        runbook =
+          try do
+            mod.__info__(:attributes)[:runbook]
+            |> List.wrap()
+            |> List.first()
+          rescue
+            _ -> nil
+          end
 
-    runbook =
-      mod.__info__(:attributes)[:runbook]
-      |> List.wrap()
-      |> List.first()
-    rescue _ -> nil
+        cond do
+          is_nil(runbook) ->
+            [
+              %Violation{
+                rule_id: :missing_runbook,
+                severity: :error,
+                message: "#{mod} has #{length(steps)} steps but declares no @runbook (INV-005)",
+                module: to_string(mod)
+              }
+            ]
 
-    cond do
-      is_nil(runbook) ->
-        [%Violation{
-          rule_id:  :missing_runbook,
-          severity: :error,
-          message:  "#{mod} has #{length(steps)} steps but declares no @runbook (INV-005)",
-          module:   to_string(mod)
-        }]
+          not File.exists?(Path.join(project_root, runbook)) ->
+            [
+              %Violation{
+                rule_id: :missing_runbook,
+                severity: :error,
+                message: "#{mod} @runbook points to #{runbook} which does not exist (INV-005)",
+                module: to_string(mod),
+                file_path: runbook
+              }
+            ]
 
-      not File.exists?(Path.join(project_root, runbook)) ->
-        [%Violation{
-          rule_id:  :missing_runbook,
-          severity: :error,
-          message:  "#{mod} @runbook points to #{runbook} which does not exist (INV-005)",
-          module:   to_string(mod),
-          file_path: runbook
-        }]
-
-      true -> []
+          true ->
+            []
+        end
+      end
     end
   end
 
@@ -316,14 +351,14 @@ defmodule Foundry.Lint.Rules.AdminRouteRule do
   @impl true
   def check(%{module: mod}) do
     # Only applies to Router modules
-    unless router_module?(mod), do: return([])
-
-    # This is a structural check — we look for the admin route mounts
-    # and verify they are inside a pipeline that includes ash_authentication.
-    # Full implementation requires parsing the router's __routes__/0.
-    # Stub returns no violations — full implementation in Phase 1 lint pass.
-    # TODO: implement route authentication check by inspecting mod.__routes__()
-    []
+    if not router_module?(mod),
+      do: [],
+      # This is a structural check — we look for the admin route mounts
+      # and verify they are inside a pipeline that includes ash_authentication.
+      # Full implementation requires parsing the router's __routes__/0.
+      # Stub returns no violations — full implementation in Phase 1 lint pass.
+      # TODO: implement route authentication check by inspecting mod.__routes__()
+      else: []
   end
 
   defp router_module?(mod) do
@@ -346,24 +381,28 @@ defmodule Foundry.Lint.Rules.MoneyTypeRule do
 
   @impl true
   def check(%{module: mod}) do
-    unless ash_resource?(mod), do: return([])
-
-    try do
-      Ash.Resource.Info.attributes(mod)
-      |> Enum.flat_map(fn attr ->
-        if raw_money_type?(attr.type) do
-          [%Violation{
-            rule_id:  :raw_money_type,
-            severity: :error,
-            message:  "#{mod}.#{attr.name} uses raw Money.t() — use Ash.Type.Money instead",
-            module:   to_string(mod)
-          }]
-        else
-          []
-        end
-      end)
-    rescue
-      _ -> []
+    if not ash_resource?(mod) do
+      []
+    else
+      try do
+        Ash.Resource.Info.attributes(mod)
+        |> Enum.flat_map(fn attr ->
+          if raw_money_type?(attr.type) do
+            [
+              %Violation{
+                rule_id: :raw_money_type,
+                severity: :error,
+                message: "#{mod}.#{attr.name} uses raw Money.t() — use Ash.Type.Money instead",
+                module: to_string(mod)
+              }
+            ]
+          else
+            []
+          end
+        end)
+      rescue
+        _ -> []
+      end
     end
   end
 
@@ -395,30 +434,35 @@ defmodule Foundry.Lint.Rules.DecoratorRule do
 
   @impl true
   def check(%{module: mod}) do
-    unless transfer_module?(mod), do: return([])
-
-    decorated_fns =
-      try do
-        mod.__info__(:attributes)
-        |> Enum.flat_map(fn
-          {:decorate_all_opts, fns} -> Enum.map(fns, &to_string/1)
-          {:decorate, [{name, _arity} | _]} -> [to_string(name)]
-          _ -> []
-        end)
-      rescue
-        _ -> []
-      end
-
-    if decorated_fns != [] do
-      [%Violation{
-        rule_id:  :decorated_transfer_step,
-        severity: :warning,
-        message:  "#{mod} contains decorated Transfer steps (#{Enum.join(decorated_fns, ", ")}). " <>
-                  "Foundry cannot auto-classify changes to decorated steps — manual review required.",
-        module:   to_string(mod)
-      }]
-    else
+    if not transfer_module?(mod) do
       []
+    else
+      decorated_fns =
+        try do
+          mod.__info__(:attributes)
+          |> Enum.flat_map(fn
+            {:decorate_all_opts, fns} -> Enum.map(fns, &to_string/1)
+            {:decorate, [{name, _arity} | _]} -> [to_string(name)]
+            _ -> []
+          end)
+        rescue
+          _ -> []
+        end
+
+      if decorated_fns != [] do
+        [
+          %Violation{
+            rule_id: :decorated_transfer_step,
+            severity: :warning,
+            message:
+              "#{mod} contains decorated Transfer steps (#{Enum.join(decorated_fns, ", ")}). " <>
+                "Foundry cannot auto-classify changes to decorated steps — manual review required.",
+            module: to_string(mod)
+          }
+        ]
+      else
+        []
+      end
     end
   end
 
@@ -458,21 +502,27 @@ defmodule Foundry.Lint.Rules.ManifestValidator do
 
     acc =
       if Keyword.get(approvers, :sensitive_lead) in [nil, ""] do
-        [%Violation{
-          rule_id:  :manifest_missing_required_approver,
-          severity: :error,
-          message:  "manifest.exs: approvers.sensitive_lead is required"
-        } | acc]
+        [
+          %Violation{
+            rule_id: :manifest_missing_required_approver,
+            severity: :error,
+            message: "manifest.exs: approvers.sensitive_lead is required"
+          }
+          | acc
+        ]
       else
         acc
       end
 
     if Keyword.get(approvers, :compliance_officer) in [nil, ""] do
-      [%Violation{
-        rule_id:  :manifest_missing_required_approver,
-        severity: :error,
-        message:  "manifest.exs: approvers.compliance_officer is required"
-      } | acc]
+      [
+        %Violation{
+          rule_id: :manifest_missing_required_approver,
+          severity: :error,
+          message: "manifest.exs: approvers.compliance_officer is required"
+        }
+        | acc
+      ]
     else
       acc
     end
@@ -482,21 +532,29 @@ defmodule Foundry.Lint.Rules.ManifestValidator do
     notifications = manifest[:notifications]
 
     if is_nil(notifications) do
-      [%Violation{
-        rule_id:  :missing_notification_config,
-        severity: :warning,
-        message:  "manifest.exs: notifications are not configured (INV-010). " <>
-                  "runbook_stale, adapter_verify_failed, and compliance_test_failed channels required."
-      } | acc]
+      [
+        %Violation{
+          rule_id: :missing_notification_config,
+          severity: :warning,
+          message:
+            "manifest.exs: notifications are not configured (INV-010). " <>
+              "runbook_stale, adapter_verify_failed, and compliance_test_failed channels required."
+        }
+        | acc
+      ]
     else
       required = [:runbook_stale, :adapter_verify_failed, :compliance_test_failed]
+
       Enum.reduce(required, acc, fn key, a ->
         if is_nil(Keyword.get(notifications, key)) do
-          [%Violation{
-            rule_id:  :missing_notification_config,
-            severity: :warning,
-            message:  "manifest.exs: notifications.#{key} is not configured (INV-010)"
-          } | a]
+          [
+            %Violation{
+              rule_id: :missing_notification_config,
+              severity: :warning,
+              message: "manifest.exs: notifications.#{key} is not configured (INV-010)"
+            }
+            | a
+          ]
         else
           a
         end
@@ -506,22 +564,45 @@ defmodule Foundry.Lint.Rules.ManifestValidator do
 
   defp check_coverage_weights(acc, manifest) do
     weights = manifest[:coverage_weights]
-    unless weights, do: return(acc)
 
-    total =
-      [:transfer_coverage, :rule_coverage, :blueprint_coverage,
-       :compliance_coverage, :ui_coverage]
-      |> Enum.map(&Keyword.get(weights, &1, 0))
-      |> Enum.sum()
-
-    if abs(total - 1.0) > 0.001 do
-      [%Violation{
-        rule_id:  :manifest_invalid_coverage_weights,
-        severity: :error,
-        message:  "manifest.exs: coverage_weights sum to #{total}, must equal 1.0 (±0.001)"
-      } | acc]
-    else
+    if is_nil(weights) or weights == [] do
       acc
+    else
+      get_weight = fn key ->
+        val =
+          cond do
+            is_list(weights) -> Keyword.get(weights, key, 0)
+            is_map(weights) and not is_struct(weights) -> Map.get(weights, key, 0)
+            is_struct(weights) -> Map.get(weights, key, 0)
+            true -> 0
+          end
+
+        (is_number(val) && val) || 0
+      end
+
+      total =
+        [
+          :transfer_coverage,
+          :rule_coverage,
+          :blueprint_coverage,
+          :compliance_coverage,
+          :ui_coverage
+        ]
+        |> Enum.map(get_weight)
+        |> Enum.sum()
+
+      if abs(total - 1.0) > 0.001 do
+        [
+          %Violation{
+            rule_id: :manifest_invalid_coverage_weights,
+            severity: :error,
+            message: "manifest.exs: coverage_weights sum to #{total}, must equal 1.0 (±0.001)"
+          }
+          | acc
+        ]
+      else
+        acc
+      end
     end
   end
 

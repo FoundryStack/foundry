@@ -10,44 +10,58 @@ defmodule Foundry.Context.ModuleContext do
   """
 
   @type state_machine :: %{
-    present: boolean(),
-    states: [String.t()],
-    transitions: [%{from: String.t(), to: String.t(), action: String.t()}],
-    state_attribute: String.t() | nil
-  }
+          present: boolean(),
+          states: [String.t()],
+          transitions: [%{from: String.t(), to: String.t(), action: String.t()}],
+          state_attribute: String.t() | nil
+        }
 
   @type money_attribute :: %{
-    name: String.t(),
-    type: String.t(),
-    cldr_backend: String.t()
-  }
+          name: String.t(),
+          type: String.t(),
+          cldr_backend: String.t()
+        }
 
   @type test_coverage :: %{
-    property_tests: boolean(),
-    scenario_tests: boolean(),
-    e2e_tests: boolean()
-  }
+          property_tests: boolean(),
+          scenario_tests: boolean(),
+          e2e_tests: boolean()
+        }
 
+  @derive Jason.Encoder
   @enforce_keys [:module, :type, :domain, :description]
   defstruct [
     # Identity
-    :module,              # String — fully qualified module name
-    :type,                # atom — :resource | :transfer | :rule | :blueprint | :adapter | :live_page | :oban_job
-    :domain,              # String — parent domain name
-    :description,         # String — @moduledoc first paragraph
+    # String — fully qualified module name
+    :module,
+    # atom — :resource | :transfer | :rule | :blueprint | :adapter | :live_page | :oban_job
+    :type,
+    # String — parent domain name
+    :domain,
+    # String — @moduledoc first paragraph
+    :description,
 
     # Relationships
-    steps:               [],   # [String] — Transfer step function names
-    rules:               [],   # [String] — Rule module names applied to this Transfer
-    compliance:          [],   # [String] — RG-* requirement IDs
-    runbook:             nil,  # String | nil — path to runbook file
-    invariants:          [],   # [String] — declared spec_invariants
-    related_resources:   [],   # [String] — resource module names referenced
-    adrs:                [],   # [String] — ADR IDs referenced in @moduledoc
+    # [String] — Transfer step function names
+    steps: [],
+    # [String] — Rule module names applied to this Transfer
+    rules: [],
+    # [String] — RG-* requirement IDs
+    compliance: [],
+    # String | nil — path to runbook file
+    runbook: nil,
+    # [String] — declared spec_invariants
+    invariants: [],
+    # [String] — resource module names referenced
+    related_resources: [],
+    # [String] — ADR IDs referenced in @moduledoc
+    adrs: [],
 
     # Metadata
-    last_modified:        nil,  # String — ISO 8601 date
-    sensitive:            false, # boolean
+    # String — ISO 8601 date
+    last_modified: nil,
+    # boolean
+    sensitive: false,
 
     # Test coverage
     test_coverage: %{
@@ -57,12 +71,16 @@ defmodule Foundry.Context.ModuleContext do
     },
 
     # Data layer
-    data_layer:          nil,   # String | nil — "ash_postgres" | "ash_ets" | nil
-    pending_migrations:  false, # boolean — true if mix ash.codegen --check exits non-zero
+    # String | nil — "ash_postgres" | "ash_ets" | nil
+    data_layer: nil,
+    # boolean — true if mix ash.codegen --check exits non-zero
+    pending_migrations: false,
 
     # Extensions
-    paper_trail:         false, # boolean
-    archival:            false, # boolean
+    # boolean
+    paper_trail: false,
+    # boolean
+    archival: false,
 
     # State machine (always present; present: false when no state machine)
     state_machine: %{
@@ -73,25 +91,32 @@ defmodule Foundry.Context.ModuleContext do
     },
 
     # API routes
-    api_routes: [],     # [%{path: String, method: String, auth_required: boolean}]
+    # [%{path: String, method: String, auth_required: boolean}]
+    api_routes: [],
 
     # Observability
-    telemetry_prefix: [], # [String] — telemetry event prefix segments
+    # [String] — telemetry event prefix segments
+    telemetry_prefix: [],
 
     # Money
-    money_attributes: [], # [%{name, type, cldr_backend}]
+    # [%{name, type, cldr_backend}]
+    money_attributes: [],
 
     # Auth
-    authentication_subject: false, # boolean — true if this resource is an ash_authentication subject
+    # boolean — true if this resource is an ash_authentication subject
+    authentication_subject: false,
 
     # Background jobs
-    oban_queues: [], # [String] — queue names if this is an Oban worker
+    # [String] — queue names if this is an Oban worker
+    oban_queues: [],
 
     # Rate limiting
-    rate_limited: false, # boolean — true if hammer_plug middleware declared
+    # boolean — true if hammer_plug middleware declared
+    rate_limited: false,
 
     # Feature flags
-    feature_flags: [] # [String] — flag names referenced in this module
+    # [String] — flag names referenced in this module
+    feature_flags: []
   ]
 end
 
@@ -120,21 +145,30 @@ defmodule Foundry.Diagram.SystemMap do
   Frozen at end of Phase 1. Breaking changes require an ADR.
   """
 
+  @derive Jason.Encoder
   @enforce_keys [:nodes, :edges, :clusters, :generated_at]
   defstruct [:nodes, :edges, :clusters, :generated_at]
 
   defmodule Node do
     @moduledoc "A node in the system map graph. Corresponds to one Ash resource, Transfer, Rule, etc."
 
+    @derive Jason.Encoder
     @enforce_keys [:id, :module, :type, :domain, :label]
     defstruct [
-      :id,          # String — same as module name, used as D3 node id
-      :module,      # String — fully qualified module name
-      :type,        # atom — :resource | :transfer | :rule | :blueprint | :adapter
-      :domain,      # String — parent domain
-      :label,       # String — short display name (last module segment)
-      sensitive: false,        # boolean
-      has_compliance: false,   # boolean — has at least one RG-* link
+      # String — same as module name, used as D3 node id
+      :id,
+      # String — fully qualified module name
+      :module,
+      # atom — :resource | :transfer | :rule | :blueprint | :adapter
+      :type,
+      # String — parent domain
+      :domain,
+      # String — short display name (last module segment)
+      :label,
+      # boolean
+      sensitive: false,
+      # boolean — has at least one RG-* link
+      has_compliance: false,
       # Derived from ModuleContext.test_coverage (three booleans → single atom):
       # :none    — property_tests: false, scenario_tests: false, e2e_tests: false
       # :partial — at least one true, not all three
@@ -147,17 +181,22 @@ defmodule Foundry.Diagram.SystemMap do
   defmodule Edge do
     @moduledoc "A directed edge between two nodes. Represents a relationship, rule application, or Transfer step dependency."
 
+    @derive Jason.Encoder
     @enforce_keys [:from, :to, :kind]
     defstruct [
-      :from,   # String — source node id
-      :to,     # String — target node id
-      :kind    # atom — :belongs_to | :has_many | :has_one | :many_to_many | :applies_rule | :transfer_step
+      # String — source node id
+      :from,
+      # String — target node id
+      :to,
+      # atom — :belongs_to | :has_many | :has_one | :many_to_many | :applies_rule | :transfer_step
+      :kind
     ]
   end
 
   defmodule Cluster do
     @moduledoc "A named cluster of nodes — corresponds to one domain."
 
+    @derive Jason.Encoder
     @enforce_keys [:id, :label, :node_ids]
     defstruct [:id, :label, :node_ids]
   end
@@ -171,36 +210,44 @@ defmodule Foundry.Compliance.CheckResult do
   Frozen at end of Phase 1. Breaking changes require an ADR.
   """
 
+  @derive Jason.Encoder
   @enforce_keys [:requirements, :summary, :generated_at]
   defstruct [:requirements, :summary, :generated_at]
 
   defmodule Requirement do
     @moduledoc "The status of a single RG-* compliance requirement."
 
+    @derive Jason.Encoder
     @enforce_keys [:id, :summary, :status]
     defstruct [
-      :id,                 # String — e.g. "RG-UK-014"
-      :summary,            # String — one-line description
-      :status,             # atom — :implemented | :partial | :unimplemented | :planned
-      implementing_modules: [],  # [String] — modules that declare this requirement
-      test_tags: [],             # [String] — ExUnit tags linking tests to this requirement
-      last_test_run: nil,        # String | nil — ISO 8601 datetime of last CI run result
-      last_test_passed: nil      # boolean | nil — whether the last CI run passed
+      # String — e.g. "RG-UK-014"
+      :id,
+      # String — one-line description
+      :summary,
+      # atom — :implemented | :partial | :unimplemented | :planned
+      :status,
+      # [String] — modules that declare this requirement
+      implementing_modules: [],
+      # [String] — ExUnit tags linking tests to this requirement
+      test_tags: [],
+      # String | nil — ISO 8601 datetime of last CI run result
+      last_test_run: nil,
+      # boolean | nil — whether the last CI run passed
+      last_test_passed: nil
     ]
   end
 
   defmodule Summary do
     @moduledoc "Aggregate counts across all requirements."
 
-    defstruct [
-      total: 0,
-      implemented: 0,
-      partial: 0,
-      unimplemented: 0,
-      planned: 0,
-      passing_tests: 0,
-      failing_tests: 0
-    ]
+    @derive Jason.Encoder
+    defstruct total: 0,
+              implemented: 0,
+              partial: 0,
+              unimplemented: 0,
+              planned: 0,
+              passing_tests: 0,
+              failing_tests: 0
   end
 end
 
@@ -213,23 +260,25 @@ defmodule Foundry.Lint.LintReport do
   """
 
   @enforce_keys [:passed, :violations, :generated_at]
-  defstruct [:passed, :violations, :generated_at,
-    error_count: 0,
-    warning_count: 0,
-    info_count: 0
-  ]
+  defstruct [:passed, :violations, :generated_at, error_count: 0, warning_count: 0, info_count: 0]
 
   defmodule Violation do
     @moduledoc "A single lint violation from any lint rule."
 
     @enforce_keys [:rule_id, :severity, :message]
     defstruct [
-      :rule_id,     # atom — e.g. :missing_description
-      :severity,    # atom — :error | :warning | :info
-      :message,     # String — human-readable description
-      module: nil,  # String | nil
-      file_path: nil, # String | nil
-      line: nil       # integer | nil
+      # atom — e.g. :missing_description
+      :rule_id,
+      # atom — :error | :warning | :info
+      :severity,
+      # String — human-readable description
+      :message,
+      # String | nil
+      module: nil,
+      # String | nil
+      file_path: nil,
+      # integer | nil
+      line: nil
     ]
   end
 end

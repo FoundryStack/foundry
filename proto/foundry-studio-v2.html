@@ -1,0 +1,1508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Foundry Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg:        #09090c;
+  --surface:   #101014;
+  --surface2:  #161619;
+  --surface3:  #1c1c22;
+  --surface4:  #222229;
+  --border:    #252530;
+  --border2:   #30303e;
+  --border3:   #3a3a4a;
+  --text:      #eaeaf2;
+  --text2:     #8e8ea8;
+  --text3:     #52526a;
+  --text4:     #363650;
+  --accent:    #7c6dfa;
+  --accent2:   #9d91ff;
+  --accent3:   #c4beff;
+  --accent-bg: rgba(124,109,250,0.08);
+  --accent-bd: rgba(124,109,250,0.2);
+  --green:     #34d399;
+  --green2:    #6ee7b7;
+  --green-bg:  rgba(52,211,153,0.08);
+  --green-bd:  rgba(52,211,153,0.2);
+  --yellow:    #fbbf24;
+  --yellow2:   #fcd34d;
+  --yellow-bg: rgba(251,191,36,0.08);
+  --yellow-bd: rgba(251,191,36,0.22);
+  --red:       #f87171;
+  --red2:      #fca5a5;
+  --red-bg:    rgba(248,113,113,0.08);
+  --red-bd:    rgba(248,113,113,0.2);
+  --blue:      #60a5fa;
+  --blue2:     #93c5fd;
+  --blue-bg:   rgba(96,165,250,0.08);
+  --blue-bd:   rgba(96,165,250,0.2);
+  --purple:    #c084fc;
+  --purple-bg: rgba(192,132,252,0.08);
+  --purple-bd: rgba(192,132,252,0.2);
+  --gray-bg:   rgba(148,163,184,0.08);
+  --gray-bd:   rgba(148,163,184,0.15);
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+  --r: 5px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;display:flex;flex-direction:column}
+
+/* SCROLLBARS */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border3);border-radius:99px}
+
+/* ── TOP BAR ── */
+.topbar{height:38px;min-height:38px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:8px;z-index:100;user-select:none}
+.logo{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent2);letter-spacing:.12em;display:flex;align-items:center;gap:7px}
+.logo-mark{width:22px;height:22px;background:linear-gradient(135deg,var(--accent),#4f46e5);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:700;font-family:var(--mono)}
+.tb-sep{width:1px;height:16px;background:var(--border2)}
+.tb-proj{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:5px}
+.tb-proj strong{color:var(--text);font-weight:500}
+.tb-chip{font-family:var(--mono);font-size:9px;padding:1px 5px;border-radius:3px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+.tb-chip.warn{background:var(--yellow-bg);color:var(--yellow);border-color:var(--yellow-bd)}
+.tb-phase{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.tb-spacer{flex:1}
+.tb-cmd{font-family:var(--mono);font-size:11px;color:var(--text3);background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r);padding:3px 10px;display:flex;align-items:center;gap:7px;cursor:pointer;transition:.12s}
+.tb-cmd:hover{border-color:var(--border3);color:var(--text2)}
+.tb-cmd kbd{font-family:var(--mono);font-size:10px;background:var(--surface3);border:1px solid var(--border3);border-radius:3px;padding:0 4px;color:var(--text3)}
+.tb-btn{width:28px;height:28px;border-radius:var(--r);background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;font-size:13px;transition:.12s}
+.tb-btn:hover{background:var(--surface2);border-color:var(--border3)}
+.notif-dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--red);border:1.5px solid var(--surface)}
+
+/* ── WORKSPACE ── */
+.workspace{flex:1;display:flex;overflow:hidden}
+
+/* ── RAIL ── */
+.rail{width:44px;min-width:44px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:1px;z-index:50}
+.rail-btn{width:32px;height:32px;border-radius:var(--r);border:none;background:none;color:var(--text3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:.1s;position:relative}
+.rail-btn:hover{background:var(--surface3);color:var(--text2)}
+.rail-btn.active{background:var(--accent-bg);color:var(--accent2)}
+.rail-tip{position:absolute;left:calc(100% + 9px);top:50%;transform:translateY(-50%);background:var(--surface4);border:1px solid var(--border3);border-radius:var(--r);padding:3px 8px;font-size:11px;color:var(--text);white-space:nowrap;pointer-events:none;z-index:200;display:none}
+.rail-btn:hover .rail-tip{display:block}
+.rail-spacer{flex:1}
+
+/* ── SIDEBAR ── */
+.sidebar{width:220px;min-width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sb-header{padding:9px 12px 7px;border-bottom:1px solid var(--border)}
+.sb-label{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:6px}
+.sb-search{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r);padding:5px 8px;font-family:var(--sans);font-size:12px;color:var(--text);width:100%;outline:none;transition:.12s}
+.sb-search:focus{border-color:var(--accent);background:var(--surface3)}
+.sb-search::placeholder{color:var(--text3)}
+.sb-stats{display:flex;gap:6px;margin-top:7px}
+.sb-stat{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:4px 6px;text-align:center}
+.sb-stat-n{font-family:var(--mono);font-size:13px;font-weight:600;line-height:1.2}
+.sb-stat-l{font-size:9px;color:var(--text3);margin-top:1px}
+.sb-body{flex:1;overflow-y:auto;padding:4px 0 8px}
+.domain-grp{margin-bottom:0}
+.domain-hdr{padding:7px 12px 3px;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);display:flex;align-items:center;gap:5px;cursor:pointer}
+.domain-hdr::after{content:'';flex:1;height:1px;background:var(--border)}
+.node-row{padding:4px 12px;display:flex;align-items:center;gap:7px;cursor:pointer;border-left:2px solid transparent;transition:.1s}
+.node-row:hover{background:var(--surface2)}
+.node-row.active{background:var(--accent-bg);border-left-color:var(--accent)}
+.ni{width:18px;height:18px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:8px;font-weight:600;flex-shrink:0}
+.ni-resource{background:var(--blue-bg);color:var(--blue)}
+.ni-transfer{background:var(--green-bg);color:var(--green)}
+.ni-rule{background:var(--yellow-bg);color:var(--yellow)}
+.ni-reactor{background:var(--purple-bg);color:var(--purple)}
+.node-name{font-size:11px;color:var(--text);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ndot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.ndot-red{background:var(--red)}
+.ndot-yellow{background:var(--yellow)}
+.ndot-green{background:var(--green)}
+
+/* ── MAIN ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+
+/* TABS */
+.tabs{height:36px;min-height:36px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:flex-end;padding:0 14px;gap:0}
+.tab{padding:7px 12px 8px;font-size:12px;font-weight:500;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:.1s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.tab:hover{color:var(--text2)}
+.tab.active{color:var(--text);border-bottom-color:var(--accent)}
+.tab-badge{font-family:var(--mono);font-size:9px;padding:1px 4px;border-radius:3px;background:var(--yellow-bg);color:var(--yellow);border:1px solid var(--yellow-bd)}
+
+/* CONTENT AREA = map + right feed */
+.content-area{flex:1;display:flex;overflow:hidden}
+
+/* ── MAP AREA ── */
+.map-area{flex:1;display:flex;overflow:hidden;min-width:0;position:relative}
+.map-canvas{flex:1;position:relative;overflow:hidden;background:radial-gradient(ellipse 60% 50% at 30% 40%,rgba(124,109,250,.04) 0%,transparent 70%),radial-gradient(ellipse 40% 60% at 75% 25%,rgba(96,165,250,.025) 0%,transparent 60%),var(--bg)}
+.map-canvas::before{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(37,37,48,.6) 1px,transparent 1px),linear-gradient(90deg,rgba(37,37,48,.6) 1px,transparent 1px);background-size:32px 32px;pointer-events:none}
+svg#graph{width:100%;height:100%;position:absolute;top:0;left:0;overflow:visible}
+.map-toolbar{position:absolute;top:10px;right:10px;display:flex;gap:4px}
+.mtb-btn{height:26px;padding:0 8px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);color:var(--text2);font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;transition:.1s;white-space:nowrap;font-family:var(--sans)}
+.mtb-btn:hover{background:var(--surface2);border-color:var(--border3);color:var(--text)}
+.mtb-btn.active{background:var(--accent-bg);border-color:var(--accent-bd);color:var(--accent2)}
+.map-legend{position:absolute;bottom:12px;left:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--text3)}
+.leg-item{display:flex;align-items:center;gap:6px}
+.leg-dot{width:8px;height:8px;border-radius:2px}
+
+/* ── DETAIL DRAWER (left, per ADR-012) ── */
+.detail-drawer{width:0;min-width:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .2s ease,min-width .2s ease;position:relative;z-index:10}
+.detail-drawer.open{width:360px;min-width:360px}
+.dd-header{padding:12px 14px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+.dd-toprow{display:flex;align-items:flex-start;gap:6px;margin-bottom:8px}
+.dd-close{width:22px;height:22px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;border-radius:3px;transition:.1s;flex-shrink:0;margin-left:auto}
+.dd-close:hover{background:var(--surface3);color:var(--text)}
+.dd-module{font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:2px}
+.dd-name{font-size:15px;font-weight:600;color:var(--text)}
+.dd-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.tag{font-family:var(--mono);font-size:9px;padding:2px 5px;border-radius:3px;border:1px solid}
+.tag-type{background:var(--blue-bg);color:var(--blue);border-color:var(--blue-bd)}
+.tag-domain{background:var(--accent-bg);color:var(--accent2);border-color:var(--accent-bd)}
+.tag-sensitive{background:var(--red-bg);color:var(--red);border-color:var(--red-bd)}
+.tag-ok{background:var(--green-bg);color:var(--green);border-color:var(--green-bd)}
+.tag-warn{background:var(--yellow-bg);color:var(--yellow);border-color:var(--yellow-bd)}
+.tag-neutral{background:var(--gray-bg);color:var(--text2);border-color:var(--gray-bd)}
+
+/* DD META ROW */
+.dd-meta-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.dd-meta-pill{display:flex;align-items:center;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:3px 7px;font-size:10px;color:var(--text2)}
+.dd-meta-pill span{font-family:var(--mono);font-size:9px}
+
+.dd-body{flex:1;overflow-y:auto;padding:0}
+
+/* DD sections */
+.dd-section{padding:10px 14px;border-bottom:1px solid var(--border)}
+.dd-sec-label{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:7px;display:flex;align-items:center;gap:5px}
+.dd-sec-label .sec-count{font-family:var(--mono);font-size:9px;background:var(--surface3);border-radius:2px;padding:0 4px;color:var(--text2)}
+
+/* attributes table */
+.attr-table{width:100%;border-collapse:collapse}
+.attr-table tr{border-bottom:1px solid var(--border)}
+.attr-table tr:last-child{border-bottom:none}
+.attr-table td{padding:4px 0;vertical-align:top}
+.attr-table td:first-child{width:38%;padding-right:8px}
+.attr-name{font-family:var(--mono);font-size:10px;color:var(--text);font-weight:500}
+.attr-type{font-family:var(--mono);font-size:9px;color:var(--blue);background:var(--blue-bg);padding:1px 4px;border-radius:2px}
+.attr-desc{font-size:10px;color:var(--text3);line-height:1.4;margin-top:1px}
+.attr-flag{font-family:var(--mono);font-size:8px;padding:1px 4px;border-radius:2px;margin-left:4px;vertical-align:middle}
+.flag-s{background:var(--red-bg);color:var(--red)}
+.flag-m{background:var(--yellow-bg);color:var(--yellow)}
+
+/* actions list */
+.action-row{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border)}
+.action-row:last-child{border-bottom:none}
+.action-name{font-family:var(--mono);font-size:10px;color:var(--text);flex:1}
+.action-class{font-family:var(--mono);font-size:8px;padding:1px 4px;border-radius:2px;border:1px solid}
+.cls-structural{background:var(--blue-bg);color:var(--blue);border-color:var(--blue-bd)}
+.cls-behavioral{background:var(--purple-bg);color:var(--purple);border-color:var(--purple-bd)}
+.cls-sensitive{background:var(--red-bg);color:var(--red);border-color:var(--red-bd)}
+.cls-compliance{background:var(--yellow-bg);color:var(--yellow);border-color:var(--yellow-bd)}
+
+/* compliance reqs */
+.req-item{display:flex;align-items:center;gap:7px;padding:5px 7px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:4px;cursor:pointer;transition:.1s}
+.req-item:hover{border-color:var(--border3)}
+.req-item:last-child{margin-bottom:0}
+.req-id{font-family:var(--mono);font-size:10px;color:var(--accent2);white-space:nowrap;width:76px;flex-shrink:0}
+.req-label{font-size:10px;color:var(--text2);flex:1;line-height:1.3}
+.req-status{font-family:var(--mono);font-size:8px;padding:2px 5px;border-radius:3px}
+.rs-ok{background:var(--green-bg);color:var(--green)}
+.rs-gap{background:var(--yellow-bg);color:var(--yellow)}
+.rs-miss{background:var(--red-bg);color:var(--red)}
+
+/* coverage */
+.cov-block{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px}
+.cov-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.cov-label{font-size:11px;color:var(--text2);width:60px;flex-shrink:0}
+.cov-bar-bg{flex:1;height:4px;background:var(--surface4);border-radius:99px;overflow:hidden}
+.cov-bar-fill{height:100%;border-radius:99px;transition:width .4s}
+.cov-pct{font-family:var(--mono);font-size:10px;color:var(--text2);width:32px;text-align:right}
+.test-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-top:4px}
+.test-cell{background:var(--surface3);border:1px solid var(--border);border-radius:3px;padding:5px;text-align:center}
+.tc-icon{font-size:12px;line-height:1}
+.tc-lbl{font-size:9px;color:var(--text3);margin-top:2px}
+.tc-pass{color:var(--green)}
+.tc-fail{color:var(--red)}
+.tc-partial{color:var(--yellow)}
+
+/* infra badges */
+.infra-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.infra-cell{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:5px 7px;display:flex;align-items:center;gap:6px}
+.infra-label{font-size:10px;color:var(--text2);flex:1}
+.infra-val{font-family:var(--mono);font-size:9px;color:var(--text3)}
+.infra-ok{color:var(--green)}
+.infra-no{color:var(--text4)}
+.infra-warn{color:var(--yellow)}
+
+/* telemetry */
+.telem-prefix{font-family:var(--mono);font-size:10px;color:var(--text3);background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:4px 7px;display:inline-flex;gap:0}
+.telem-sep{color:var(--text4);margin:0 2px}
+.telem-part{color:var(--accent2)}
+
+/* ADRs, runbook */
+.pill-list{display:flex;flex-wrap:wrap;gap:4px}
+.adr-pill{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;background:var(--accent-bg);color:var(--accent2);border:1px solid var(--accent-bd);cursor:pointer;transition:.1s}
+.adr-pill:hover{background:rgba(124,109,250,.15)}
+.runbook-link{font-family:var(--mono);font-size:10px;color:var(--blue);display:flex;align-items:center;gap:4px;cursor:pointer}
+.runbook-link:hover{text-decoration:underline}
+
+/* money attrs */
+.money-row{font-family:var(--mono);font-size:10px;padding:3px 0;display:flex;gap:8px;border-bottom:1px solid var(--border)}
+.money-row:last-child{border-bottom:none}
+.money-name{color:var(--green);width:60px}
+.money-type{color:var(--text2);flex:1}
+.money-cldr{color:var(--text3)}
+
+/* state machine */
+.sm-states{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.sm-state{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;background:var(--surface3);border:1px solid var(--border);color:var(--text2)}
+.sm-transition{font-size:10px;color:var(--text2);padding:2px 0;display:flex;align-items:center;gap:4px}
+.sm-arrow{color:var(--text4)}
+
+/* feature flags */
+.ff-row{font-family:var(--mono);font-size:10px;padding:3px 0;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border)}
+.ff-row:last-child{border-bottom:none}
+.ff-name{color:var(--yellow);flex:1}
+.ff-adr{color:var(--accent2);font-size:9px}
+
+/* DD CTA */
+.dd-cta{padding:10px 14px 12px;display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--border);flex-shrink:0}
+.btn-primary{display:flex;align-items:center;justify-content:center;gap:5px;padding:7px 12px;background:var(--accent);color:#fff;border:none;border-radius:var(--r);font-family:var(--sans);font-size:12px;font-weight:500;cursor:pointer;transition:.15s;width:100%}
+.btn-primary:hover{background:var(--accent2)}
+.btn-ghost{display:flex;align-items:center;justify-content:center;gap:5px;padding:6px 12px;background:none;color:var(--text2);border:1px solid var(--border2);border-radius:var(--r);font-family:var(--sans);font-size:12px;cursor:pointer;transition:.15s;width:100%}
+.btn-ghost:hover{border-color:var(--border3);color:var(--text)}
+
+/* ── ACTIVITY FEED (right, ADR-012) ── */
+.activity-feed{width:280px;min-width:280px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .2s,min-width .2s}
+.activity-feed.hidden{width:28px;min-width:28px}
+.feed-header{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-shrink:0}
+.feed-title{font-size:11px;font-weight:600;color:var(--text);flex:1}
+.feed-toggle{background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px;transition:.1s}
+.feed-toggle:hover{color:var(--text2)}
+.feed-tab-strip{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
+.feed-tab{flex:1;padding:5px 0;text-align:center;font-size:10px;font-weight:500;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:.1s}
+.feed-tab:hover{color:var(--text2)}
+.feed-tab.active{color:var(--text);border-bottom-color:var(--accent)}
+.feed-body{flex:1;overflow-y:auto;padding:8px}
+.feed-collapsed{display:none;flex-direction:column;align-items:center;padding:10px 0;gap:8px}
+.activity-feed.hidden .feed-header,.activity-feed.hidden .feed-tab-strip,.activity-feed.hidden .feed-body{display:none}
+.activity-feed.hidden .feed-collapsed{display:flex}
+.fc-label{writing-mode:vertical-rl;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);font-weight:600}
+.fc-badge{background:var(--red-bg);color:var(--red);border-radius:50%;width:16px;height:16px;font-family:var(--mono);font-size:9px;display:flex;align-items:center;justify-content:center}
+
+/* feed cards */
+.feed-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;margin-bottom:6px;font-size:11px}
+.feed-card.card-question{border-left:2px solid var(--accent)}
+.feed-card.card-response{border-left:2px solid var(--text4)}
+.feed-card.card-proposal{border-left:2px solid var(--yellow)}
+.feed-card.card-error{border-left:2px solid var(--red)}
+.feed-card.card-ci{border-left:2px solid var(--green)}
+.fc-top{display:flex;align-items:center;gap:5px;margin-bottom:4px}
+.fc-who{font-size:10px;font-weight:600;color:var(--text2)}
+.fc-time{font-size:9px;color:var(--text3);margin-left:auto;font-family:var(--mono)}
+.fc-body{color:var(--text2);line-height:1.5}
+.fc-body strong{color:var(--text)}
+.fc-action{margin-top:6px;display:flex;gap:4px}
+.fc-btn{font-size:10px;padding:3px 8px;background:none;border:1px solid var(--border2);border-radius:3px;color:var(--text2);cursor:pointer;transition:.1s}
+.fc-btn:hover{border-color:var(--accent-bd);color:var(--accent2)}
+.fc-btn.primary{background:var(--accent-bg);border-color:var(--accent-bd);color:var(--accent2)}
+.fc-btn.primary:hover{background:rgba(124,109,250,.15)}
+.confidence-badge{font-family:var(--mono);font-size:8px;padding:1px 4px;border-radius:2px;border:1px solid}
+.conf-high{background:var(--green-bg);color:var(--green);border-color:var(--green-bd)}
+.conf-medium{background:var(--yellow-bg);color:var(--yellow);border-color:var(--yellow-bd)}
+.conf-low{background:var(--red-bg);color:var(--red);border-color:var(--red-bd)}
+.conf-blocked{background:var(--gray-bg);color:var(--text2);border-color:var(--gray-bd)}
+
+/* feed input */
+.feed-input-wrap{padding:8px;border-top:1px solid var(--border);flex-shrink:0}
+.feed-input{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r);padding:6px 9px;font-family:var(--sans);font-size:11px;color:var(--text);outline:none;resize:none;transition:.12s;line-height:1.4}
+.feed-input:focus{border-color:var(--accent)}
+.feed-input::placeholder{color:var(--text3)}
+.feed-input-hint{font-size:9px;color:var(--text3);margin-top:4px;text-align:right;font-family:var(--mono)}
+
+/* ── COMPLIANCE PANEL ── */
+#panel-compliance{display:none;flex:1;flex-direction:column;overflow:hidden}
+.c-toolbar{padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0}
+.c-filter{padding:3px 9px;border-radius:12px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);color:var(--text3);background:none;transition:.1s}
+.c-filter:hover{border-color:var(--border3);color:var(--text2)}
+.c-filter.active{background:var(--accent-bg);border-color:var(--accent-bd);color:var(--accent2)}
+.c-filter.gap-filter.active{background:var(--yellow-bg);border-color:var(--yellow-bd);color:var(--yellow)}
+.c-spacer{flex:1}
+.c-stat{font-family:var(--mono);font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px}
+.c-layout{flex:1;display:flex;overflow:hidden}
+.c-grid{flex:1;overflow-y:auto;padding:10px 12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px;align-content:start}
+.c-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px;cursor:pointer;transition:.15s;display:flex;flex-direction:column;gap:7px}
+.c-card:hover{border-color:var(--border3);box-shadow:0 2px 16px rgba(0,0,0,.4)}
+.c-card.gap{border-color:rgba(251,191,36,.25)}
+.c-card.gap:hover{border-color:var(--yellow)}
+.c-card.selected{border-color:var(--accent);box-shadow:0 2px 16px rgba(124,109,250,.15)}
+.c-card-head{display:flex;align-items:flex-start;gap:8px}
+.c-card-icon{width:30px;height:30px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.c-card-meta{flex:1;min-width:0}
+.c-card-name{font-size:12px;font-weight:600;color:var(--text)}
+.c-card-sub{font-size:10px;color:var(--text3);margin-top:1px;font-family:var(--mono)}
+.c-card-bar{display:flex;align-items:center;gap:6px}
+.c-bar-bg{flex:1;height:3px;background:var(--surface4);border-radius:99px;overflow:hidden}
+.c-bar-fill{height:100%;border-radius:99px}
+.c-bar-pct{font-family:var(--mono);font-size:9px;color:var(--text3);width:28px;text-align:right}
+.c-chips{display:flex;flex-wrap:wrap;gap:3px}
+.c-chip{font-family:var(--mono);font-size:9px;padding:2px 5px;border-radius:3px;border:1px solid;cursor:pointer;transition:.1s}
+.c-chip:hover{opacity:.75}
+.chip-ok{background:var(--green-bg);color:var(--green);border-color:var(--green-bd)}
+.chip-gap{background:var(--yellow-bg);color:var(--yellow);border-color:var(--yellow-bd)}
+.chip-miss{background:var(--red-bg);color:var(--red);border-color:var(--red-bd)}
+
+/* compliance detail pane */
+.c-detail{width:0;min-width:0;background:var(--surface);border-left:1px solid var(--border);overflow:hidden;transition:.2s;display:flex;flex-direction:column}
+.c-detail.open{width:320px;min-width:320px}
+.cd-header{padding:11px 13px;border-bottom:1px solid var(--border)}
+.cd-id{font-family:var(--mono);font-size:11px;color:var(--accent2)}
+.cd-name{font-size:13px;font-weight:600;color:var(--text);margin-top:2px}
+.cd-body-text{font-size:11px;color:var(--text2);margin-top:5px;line-height:1.6}
+.cd-body{flex:1;overflow-y:auto;padding:10px 13px;display:flex;flex-direction:column;gap:10px}
+.cd-sec{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:5px}
+.cd-resource-row{display:flex;align-items:center;gap:7px;padding:5px 7px;background:var(--surface2);border:1px solid var(--border);border-radius:3px;margin-bottom:3px;cursor:pointer;transition:.1s}
+.cd-resource-row:hover{border-color:var(--border3)}
+.cd-rname{font-size:11px;color:var(--text);flex:1}
+.cd-rtype{font-family:var(--mono);font-size:9px;color:var(--text3)}
+.gap-banner{background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.2);border-radius:var(--r);padding:9px 11px;display:flex;flex-direction:column;gap:5px}
+.gap-title{font-size:11px;font-weight:600;color:var(--yellow);display:flex;align-items:center;gap:5px}
+.gap-desc{font-size:10px;color:var(--text2);line-height:1.5}
+.cd-footer{padding:10px 13px;border-top:1px solid var(--border);flex-shrink:0}
+
+/* ── BOTTOM SHEET (review panel, ADR-012) ── */
+.bottom-sheet-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;backdrop-filter:blur(1px)}
+.bottom-sheet-backdrop.open{display:block}
+.bottom-sheet{position:fixed;bottom:-60%;left:0;right:0;height:55%;min-height:200px;max-height:80%;background:var(--surface);border-top:1px solid var(--border2);z-index:210;display:flex;flex-direction:column;transition:bottom .28s cubic-bezier(.22,1,.36,1);border-radius:8px 8px 0 0}
+.bottom-sheet.open{bottom:0}
+.bs-handle{padding:8px 0 4px;display:flex;justify-content:center;cursor:ns-resize;flex-shrink:0}
+.bs-handle-bar{width:36px;height:3px;background:var(--border3);border-radius:99px}
+.bs-header{padding:0 16px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.bs-title{font-size:13px;font-weight:600;color:var(--text);flex:1}
+.bs-close{width:24px;height:24px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;border-radius:3px;transition:.1s}
+.bs-close:hover{background:var(--surface2);color:var(--text)}
+.bs-tabs{display:flex;border-bottom:1px solid var(--border);padding:0 16px;flex-shrink:0}
+.bs-tab{padding:6px 10px 7px;font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:.1s}
+.bs-tab:hover{color:var(--text2)}
+.bs-tab.active{color:var(--text);border-bottom-color:var(--accent)}
+.bs-body{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+.bs-body::-webkit-scrollbar{width:3px}
+
+/* diff */
+.diff-block{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;font-family:var(--mono);font-size:11px;line-height:1.7}
+.diff-file-header{padding:4px 10px;background:var(--surface2);border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;display:flex;align-items:center;gap:6px}
+.diff-path{color:var(--text2)}
+.diff-stat-add{color:var(--green)}
+.diff-stat-del{color:var(--red)}
+.diff-line{padding:0 10px;display:flex;gap:8px;transition:.05s}
+.diff-line.add{background:rgba(52,211,153,.06);color:var(--green2)}
+.diff-line.add:hover{background:rgba(52,211,153,.1)}
+.diff-line.del{background:rgba(248,113,113,.06);color:var(--red2)}
+.diff-line.ctx{color:var(--text3)}
+.diff-gutter{width:18px;text-align:right;opacity:.5;user-select:none;flex-shrink:0}
+
+/* adr input */
+.adr-field{display:flex;flex-direction:column;gap:5px}
+.adr-input{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r);padding:6px 9px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;transition:.15s;width:100%}
+.adr-input:focus{border-color:var(--accent)}
+.adr-input.invalid{border-color:var(--yellow)}
+.adr-input.valid{border-color:var(--green)}
+.adr-warn{font-size:10px;color:var(--yellow);display:flex;align-items:center;gap:4px}
+
+/* approval slots */
+.approval-slots{display:flex;flex-direction:column;gap:5px}
+.slot{display:flex;align-items:center;gap:9px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r)}
+.slot-av{width:26px;height:26px;border-radius:50%;background:var(--surface3);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text3);flex-shrink:0}
+.slot-av.filled{background:var(--accent-bg);border-color:var(--accent-bd);color:var(--accent2);font-weight:600}
+.slot-role{font-size:9px;color:var(--text3)}
+.slot-name{font-size:11px;color:var(--text2)}
+.slot-name.pending{color:var(--text3);font-style:italic}
+.slot-check{color:var(--green);font-size:13px;margin-left:auto}
+
+/* bs footer */
+.bs-footer{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:6px;flex-shrink:0}
+.bs-footer .btn-primary{flex:1}
+.bs-footer .btn-ghost{flex:1}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--surface4);border:1px solid var(--border3);border-radius:var(--r);padding:7px 14px;font-size:11px;color:var(--text);z-index:400;transition:.22s cubic-bezier(.22,1,.36,1);opacity:0;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+/* ── CMD PALETTE ── */
+.palette-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;backdrop-filter:blur(2px);align-items:flex-start;justify-content:center;padding-top:15vh}
+.palette-backdrop.open{display:flex}
+.palette{width:520px;background:var(--surface2);border:1px solid var(--border3);border-radius:8px;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.6)}
+.pal-input{width:100%;background:none;border:none;border-bottom:1px solid var(--border);padding:12px 16px;font-family:var(--sans);font-size:14px;color:var(--text);outline:none}
+.pal-input::placeholder{color:var(--text3)}
+.pal-section{padding:8px 0}
+.pal-label{padding:4px 16px;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3)}
+.pal-item{padding:7px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;transition:.08s}
+.pal-item:hover,.pal-item.focused{background:var(--surface3)}
+.pal-item-icon{width:24px;height:24px;border-radius:4px;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.pal-item-label{color:var(--text);flex:1}
+.pal-item-type{font-family:var(--mono);font-size:9px;color:var(--text3)}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo"><div class="logo-mark">F</div>FOUNDRY</div>
+  <div class="tb-sep"></div>
+  <div class="tb-proj"><strong>igaming-platform</strong> <div class="tb-chip">local</div></div>
+  <div class="tb-sep"></div>
+  <div class="tb-phase">Phase 2 · read-only</div>
+  <div class="tb-sep"></div>
+  <div class="tb-proj" style="font-size:10px;">Last sync <span style="font-family:var(--mono);color:var(--text2)">32s ago</span></div>
+  <div class="tb-spacer"></div>
+  <div class="tb-cmd" onclick="openPalette()">Jump to… <kbd>⌘K</kbd></div>
+  <button class="tb-btn" onclick="showToast('📬 2 proposals pending your approval')">🔔<span class="notif-dot"></span></button>
+</div>
+
+<div class="workspace">
+
+  <!-- RAIL -->
+  <nav class="rail">
+    <button class="rail-btn active" onclick="switchRail(this,'map')">⬡<span class="rail-tip">System Map</span></button>
+    <button class="rail-btn" onclick="switchRail(this,'compliance')">⚖<span class="rail-tip">Compliance</span></button>
+    <button class="rail-btn" onclick="showToast('Operations board — Phase 4')">⚡<span class="rail-tip">Operations</span></button>
+    <button class="rail-btn" onclick="showToast('Test coverage map — Phase 4')">✦<span class="rail-tip">Test Coverage</span></button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn" onclick="showToast('Settings')">⚙<span class="rail-tip">Settings</span></button>
+  </nav>
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-header">
+      <div class="sb-label" id="sb-label">Domains & Resources</div>
+      <input class="sb-search" placeholder="Filter…" oninput="filterSidebar(this.value)" />
+      <div class="sb-stats">
+        <div class="sb-stat"><div class="sb-stat-n" style="color:var(--text)">12</div><div class="sb-stat-l">modules</div></div>
+        <div class="sb-stat"><div class="sb-stat-n" style="color:var(--red)">3</div><div class="sb-stat-l">gaps</div></div>
+        <div class="sb-stat"><div class="sb-stat-n" style="color:var(--yellow)">2</div><div class="sb-stat-l">pending</div></div>
+      </div>
+    </div>
+    <div class="sb-body" id="sb-body"></div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="tabs">
+      <div class="tab active" id="tab-map" onclick="switchTab('map')">System Map</div>
+      <div class="tab" id="tab-compliance" onclick="switchTab('compliance')">Compliance <span class="tab-badge">3 gaps</span></div>
+    </div>
+
+    <div class="content-area">
+
+      <!-- MAP PANEL -->
+      <div id="panel-map" style="display:flex;flex:1;overflow:hidden;min-width:0">
+
+        <!-- DETAIL DRAWER (left, per ADR-012) -->
+        <div class="detail-drawer" id="detail-drawer">
+          <div id="dd-header" class="dd-header"></div>
+          <div id="dd-body" class="dd-body"></div>
+          <div id="dd-cta" class="dd-cta" style="display:none"></div>
+        </div>
+
+        <!-- MAP CANVAS -->
+        <div class="map-area">
+          <div class="map-canvas" id="map-canvas">
+            <svg id="graph"></svg>
+            <div class="map-toolbar">
+              <button class="mtb-btn active" id="filter-all" onclick="setMapFilter('all',this)">All</button>
+              <button class="mtb-btn" id="filter-sensitive" onclick="setMapFilter('sensitive',this)">⚠ Sensitive</button>
+              <button class="mtb-btn" id="filter-gaps" onclick="setMapFilter('gaps',this)">◆ Gaps</button>
+              <button class="mtb-btn" id="filter-untested" onclick="setMapFilter('untested',this)">✗ Untested</button>
+            </div>
+            <div class="map-legend">
+              <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:3px">Type</div>
+              <div class="leg-item"><div class="leg-dot" style="background:var(--blue)"></div>Resource</div>
+              <div class="leg-item"><div class="leg-dot" style="background:var(--green)"></div>Transfer</div>
+              <div class="leg-item"><div class="leg-dot" style="background:var(--yellow)"></div>Rule</div>
+              <div class="leg-item"><div class="leg-dot" style="background:var(--purple)"></div>Reactor</div>
+              <div style="margin-top:5px;font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:3px">Status</div>
+              <div class="leg-item"><div class="ndot ndot-red"></div>Sensitive</div>
+              <div class="leg-item"><div class="ndot ndot-yellow"></div>Gap</div>
+              <div class="leg-item"><div class="ndot ndot-green"></div>Covered</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ACTIVITY FEED (right) -->
+        <div class="activity-feed" id="activity-feed">
+          <div class="feed-header">
+            <div class="feed-title">Activity</div>
+            <button class="feed-toggle" onclick="toggleFeed()" title="⌘\">◧</button>
+          </div>
+          <div class="feed-collapsed"><div class="fc-label">Activity</div><div class="fc-badge">3</div></div>
+          <div class="feed-tab-strip">
+            <div class="feed-tab active" onclick="switchFeedTab('feed',this)">Feed</div>
+            <div class="feed-tab" onclick="switchFeedTab('copilot',this)">Copilot</div>
+          </div>
+          <div class="feed-body" id="feed-body">
+            <!-- filled by JS -->
+          </div>
+          <div class="feed-input-wrap">
+            <textarea class="feed-input" rows="2" placeholder="Ask a question or describe a change…" onkeydown="handleFeedInput(event)"></textarea>
+            <div class="feed-input-hint">⏎ send · ⇧⏎ newline</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COMPLIANCE PANEL -->
+      <div id="panel-compliance" style="display:none;flex:1;flex-direction:column;overflow:hidden">
+        <div class="c-toolbar">
+          <button class="c-filter active" onclick="setCFilter('all',this)">All</button>
+          <button class="c-filter gap-filter" onclick="setCFilter('gap',this)">Gaps only</button>
+          <button class="c-filter" onclick="setCFilter('covered',this)">Fully covered</button>
+          <div class="c-spacer"></div>
+          <div class="c-stat"><span style="color:var(--red);font-size:12px;font-weight:600">3</span> gaps · <span style="color:var(--green);font-size:12px;font-weight:600;margin-left:4px">14</span> covered</div>
+        </div>
+        <div class="c-layout">
+          <div class="c-grid" id="c-grid"></div>
+          <div class="c-detail" id="c-detail"></div>
+        </div>
+      </div>
+
+    </div><!-- content-area -->
+  </div><!-- main -->
+</div><!-- workspace -->
+
+<!-- BOTTOM SHEET (review panel, ADR-012) -->
+<div class="bottom-sheet-backdrop" id="bs-backdrop" onclick="closeBs()"></div>
+<div class="bottom-sheet" id="bottom-sheet">
+  <div class="bs-handle"><div class="bs-handle-bar"></div></div>
+  <div class="bs-header">
+    <div class="bs-title" id="bs-title">Generate compliance test</div>
+    <button class="bs-close" onclick="closeBs()">✕</button>
+  </div>
+  <div class="bs-tabs">
+    <div class="bs-tab active" onclick="switchBsTab('diff',this)">Code diff</div>
+    <div class="bs-tab" onclick="switchBsTab('lint',this)">Lint <span style="color:var(--green);margin-left:3px">✓</span></div>
+    <div class="bs-tab" onclick="switchBsTab('impact',this)">Impact</div>
+    <div class="bs-tab" onclick="switchBsTab('approval',this)">Approval</div>
+  </div>
+  <div class="bs-body" id="bs-body"></div>
+  <div class="bs-footer">
+    <button class="btn-ghost" onclick="closeBs()">Dismiss</button>
+    <button class="btn-primary" id="bs-submit" onclick="submitProposal()" style="opacity:.5" disabled>Submit for review</button>
+  </div>
+</div>
+
+<!-- CMD PALETTE -->
+<div class="palette-backdrop" id="pal-backdrop" onclick="closePalette()">
+  <div class="palette" onclick="e=>e.stopPropagation()">
+    <input class="pal-input" id="pal-input" placeholder="Jump to module, ADR, requirement…" autofocus oninput="filterPalette(this.value)" />
+    <div id="pal-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── DATA ─────────────────────────────────────────────────────────────────────
+
+const NODES = {
+  wallet:{id:'wallet',name:'Wallet',type:'resource',domain:'Finance',module:'MyApp.Finance.Wallet',sensitive:true,gap:false,coverage:100,
+    description:'Holds player balance. Debited and credited exclusively through Transfer operations. Soft-delete only.',
+    attributes:[
+      {name:'id',type:'UUID',desc:'Primary key',sensitive:false,flags:[]},
+      {name:'balance',type:'Ash.Type.Money',desc:'Current balance in player currency',sensitive:true,flags:['money']},
+      {name:'player_id',type:'UUID',desc:'Owner reference',sensitive:false,flags:[]},
+      {name:'currency',type:':atom',desc:'ISO-4217 currency code',sensitive:false,flags:[]},
+      {name:'locked_at',type:'DateTime',desc:'Set when withdrawal in progress',sensitive:false,flags:[]},
+    ],
+    actions:[{name:'credit',cls:'sensitive'},{name:'debit',cls:'sensitive'},{name:'lock',cls:'behavioral'},{name:'read',cls:'structural'}],
+    reqs:['RG-UK-014','RG-MGA-007'],
+    adrs:['ADR-005','ADR-002'],runbook:'docs/runbooks/wallet.md',
+    tests:{prop:true,scenario:true,e2e:true},
+    data_layer:'ash_postgres',paper_trail:true,archival:true,pending_migrations:false,
+    state_machine:{present:false,states:[],transitions:[]},
+    api_routes:[],telemetry:['my_app','finance','wallet'],
+    money_attributes:[{name:'balance',type:'Ash.Type.Money',cldr:'MyApp.Cldr'}],
+    auth_subject:false,oban_queues:[],rate_limited:false,feature_flags:[],
+    last_modified:'2026-03-01',
+  },
+  ledger:{id:'ledger',name:'LedgerEntry',type:'resource',domain:'Finance',module:'MyApp.Finance.LedgerEntry',sensitive:true,gap:false,coverage:100,
+    description:'Immutable double-entry ledger record. Created only on Transfer completion. Never hard-deleted.',
+    attributes:[
+      {name:'id',type:'UUID',desc:'Primary key',sensitive:false,flags:[]},
+      {name:'amount',type:'Ash.Type.Money',desc:'Transaction amount',sensitive:true,flags:['money']},
+      {name:'direction',type:':atom',desc:'`:debit` or `:credit`',sensitive:false,flags:[]},
+      {name:'transfer_id',type:'UUID',desc:'Originating transfer',sensitive:false,flags:[]},
+      {name:'wallet_id',type:'UUID',desc:'Affected wallet',sensitive:false,flags:[]},
+    ],
+    actions:[{name:'create',cls:'sensitive'},{name:'read',cls:'structural'}],
+    reqs:['RG-UK-014','AML-003'],adrs:['ADR-005'],runbook:null,
+    tests:{prop:true,scenario:true,e2e:true},
+    data_layer:'ash_postgres',paper_trail:true,archival:true,pending_migrations:false,
+    state_machine:{present:false,states:[],transitions:[]},
+    api_routes:[],telemetry:['my_app','finance','ledger_entry'],
+    money_attributes:[{name:'amount',type:'Ash.Type.Money',cldr:'MyApp.Cldr'}],
+    auth_subject:false,oban_queues:[],rate_limited:false,feature_flags:[],
+    last_modified:'2026-02-28',
+  },
+  withdraw:{id:'withdraw',name:'WithdrawalTransfer',type:'transfer',domain:'Finance',module:'MyApp.Finance.WithdrawalTransfer',sensitive:true,gap:false,coverage:88,
+    description:'Multi-step Reactor that executes player withdrawal. Enforces KYC, cooling-off, and balance checks before releasing funds.',
+    attributes:[],
+    actions:[{name:'execute',cls:'sensitive'},{name:'rollback',cls:'sensitive'}],
+    reqs:['RG-UK-014','RG-MGA-007'],adrs:['ADR-002','ADR-005'],runbook:'docs/runbooks/withdrawal_transfer.md',
+    tests:{prop:true,scenario:true,e2e:false},
+    data_layer:'ash_postgres',paper_trail:true,archival:true,pending_migrations:false,
+    state_machine:{present:false,states:[],transitions:[]},
+    api_routes:[],telemetry:['my_app','finance','withdrawal_transfer'],
+    money_attributes:[{name:'amount',type:'Ash.Type.Money',cldr:'MyApp.Cldr'}],
+    auth_subject:false,oban_queues:[],rate_limited:true,feature_flags:[],
+    last_modified:'2026-03-02',
+  },
+  deposit:{id:'deposit',name:'DepositTransfer',type:'transfer',domain:'Finance',module:'MyApp.Finance.DepositTransfer',sensitive:false,gap:false,coverage:85,
+    description:'Processes incoming deposits from payment gateway. Triggers AML screening asynchronously.',
+    attributes:[],
+    actions:[{name:'execute',cls:'behavioral'}],
+    reqs:['AML-003'],adrs:['ADR-002'],runbook:null,
+    tests:{prop:true,scenario:true,e2e:false},
+    data_layer:'ash_postgres',paper_trail:false,archival:false,pending_migrations:false,
+    state_machine:{present:false,states:[],transitions:[]},
+    api_routes:[{route:'/deposits',method:'POST',auth:true}],telemetry:['my_app','finance','deposit_transfer'],
+    money_attributes:[],auth_subject:false,oban_queues:[],rate_limited:false,feature_flags:[],
+    last_modified:'2026-02-25',
+  },
+  kyccheck:{id:'kyccheck',name:'KycCheck',type:'rule',domain:'Compliance',module:'MyApp.Compliance.KycCheck',sensitive:false,gap:true,coverage:40,
+    description:'Validates KYC status before high-value actions. Blocks withdrawals and high-value deposits for unverified players.',
+    attributes:[],
+    actions:[{name:'check',cls:'behavioral'}],
+    reqs:['RG-UK-019','RG-MGA-011'],adrs:['ADR-005'],runbook:null,
+    tests:{prop:false,scenario:false,e2e:false},
+    data_layer:null,paper_trail:false,archival:false,pending_migrations:false,
+    state_machine:{present:false,states:[],transitions:[]},
+    api_routes:[],telemetry:['my_app','compliance','kyc_check'],
+    money_attributes:[],auth_subject:false,oban_queues:[],rate_limited:false,feature_flags:[{name:'strict_kyc_mode',adr:'ADR-013'}],
+    last_modified:'2026-02-20',
+  },
+  rgcheck:{id:'rgcheck',name:'ResponsibleGamingCheck',type:'rule',domain:'Compliance',module:'MyApp.Compliance.ResponsibleGamingCheck',sensitive:false,gap:true,coverage:55,
+    description:'Enforces responsible gaming limits. Checks daily/weekly/monthly spend and self-exclusion before allowing play.',
+    attributes:[],
+    actions:[{name:'evaluate',cls:'behavioral'}],
+    reqs:['RG-UK-031','RG-MGA-022'],adrs:['ADR-005'],runbook:null,
+    tests:{prop:true,scenario:false,e2e:false},
+    data_layer:null,paper_trail:false,archival:false,pending_migrations:false,
+    state_machine:{present:false,states:[],transitions:[]},
+    api_routes:[],telemetry:['my_app','compliance','responsible_gaming_check'],
+    money_attributes:[],auth_subject:false,oban_queues:[],rate_limited:false,feature_flags:[],
+    last_modified:'2026-02-18',
+  },
+  amlscreen:{id:'amlscreen',name:'AmlScreeningReactor',type:'reactor',domain:'Compliance',module:'MyApp.Compliance.AmlScreeningReactor',sensitive:false,gap:false,coverage:90,
+    description:'Async AML screening via Oban. Triggered post-deposit. Submits SAR records for flagged transactions.',
+    attributes:[],
+    actions:[{name:'perform',cls:'behavioral'}],
+    reqs:['AML-003','AML-007'],adrs:['ADR-002'],runbook:'docs/runbooks/aml_screening.md',
+    tests:{prop:true,scenario:true,e2e:false},
+    data_layer:null,paper_trail:false,archival:false,pending_migrations:false,
+    state_machine:{present:false,states:[],transitions:[]},
+    api_routes:[],telemetry:['my_app','compliance','aml_screening'],
+    money_attributes:[],auth_subject:false,oban_queues:['aml_screening'],rate_limited:false,feature_flags:[],
+    last_modified:'2026-03-01',
+  },
+  player:{id:'player',name:'Player',type:'resource',domain:'Identity',module:'MyApp.Identity.Player',sensitive:true,gap:false,coverage:100,
+    description:'Core identity resource. PII-bearing; encrypted at rest. Auth subject for ash_authentication.',
+    attributes:[
+      {name:'id',type:'UUID',desc:'Primary key',sensitive:false,flags:[]},
+      {name:'email',type:':ci_string',desc:'Login email — case-insensitive',sensitive:true,flags:['pii']},
+      {name:'display_name',type:':string',desc:'Public username',sensitive:false,flags:[]},
+      {name:'kyc_status',type:':atom',desc:'`:unverified` | `:pending` | `:verified`',sensitive:false,flags:[]},
+      {name:'self_excluded',type:':boolean',desc:'Permanent exclusion flag',sensitive:true,flags:[]},
+    ],
+    actions:[{name:'register',cls:'sensitive'},{name:'verify_kyc',cls:'compliance'},{name:'self_exclude',cls:'sensitive'},{name:'read',cls:'structural'}],
+    reqs:['RG-UK-019','GDPR-001'],adrs:['ADR-005','ADR-002'],runbook:'docs/runbooks/player.md',
+    tests:{prop:true,scenario:true,e2e:true},
+    data_layer:'ash_postgres',paper_trail:true,archival:true,pending_migrations:false,
+    state_machine:{present:true,states:['unverified','pending','verified','excluded'],transitions:[{from:'unverified',to:'pending',event:'submit_kyc'},{from:'pending',to:'verified',event:'kyc_approved'},{from:'any',to:'excluded',event:'self_exclude'}],state_attribute:'kyc_status'},
+    api_routes:[{route:'/players/:id',method:'GET',auth:true}],telemetry:['my_app','identity','player'],
+    money_attributes:[],auth_subject:true,oban_queues:[],rate_limited:true,feature_flags:[],
+    last_modified:'2026-03-03',
+  },
+  limit:{id:'limit',name:'SpendingLimit',type:'resource',domain:'Identity',module:'MyApp.Identity.SpendingLimit',sensitive:false,gap:true,coverage:30,
+    description:'Configurable per-player spending limits for daily, weekly and monthly periods. Compliance-critical.',
+    attributes:[
+      {name:'player_id',type:'UUID',desc:'Owner',sensitive:false,flags:[]},
+      {name:'period',type:':atom',desc:'`:daily` | `:weekly` | `:monthly`',sensitive:false,flags:[]},
+      {name:'amount',type:'Ash.Type.Money',desc:'Limit ceiling',sensitive:false,flags:['money']},
+    ],
+    actions:[{name:'set',cls:'compliance'},{name:'reduce',cls:'compliance'},{name:'read',cls:'structural'}],
+    reqs:['RG-UK-031','RG-MGA-022'],adrs:['ADR-005'],runbook:null,
+    tests:{prop:false,scenario:false,e2e:false},
+    data_layer:'ash_postgres',paper_trail:false,archival:false,pending_migrations:true,
+    state_machine:{present:false,states:[],transitions:[]},
+    api_routes:[],telemetry:['my_app','identity','spending_limit'],
+    money_attributes:[{name:'amount',type:'Ash.Type.Money',cldr:'MyApp.Cldr'}],
+    auth_subject:false,oban_queues:[],rate_limited:false,feature_flags:[],
+    last_modified:'2026-02-15',
+  },
+  round:{id:'round',name:'GameRound',type:'resource',domain:'Game',module:'MyApp.Game.GameRound',sensitive:false,gap:false,coverage:75,
+    description:'Represents a single game round lifecycle from initiation to settlement.',
+    attributes:[
+      {name:'id',type:'UUID',desc:'Primary key',sensitive:false,flags:[]},
+      {name:'status',type:':atom',desc:'Round state machine attribute',sensitive:false,flags:[]},
+      {name:'wager',type:'Ash.Type.Money',desc:'Initial wager amount',sensitive:false,flags:['money']},
+      {name:'result_amount',type:'Ash.Type.Money',desc:'Final settlement amount',sensitive:false,flags:['money']},
+    ],
+    actions:[{name:'initiate',cls:'behavioral'},{name:'settle',cls:'behavioral'},{name:'void',cls:'behavioral'}],
+    reqs:[],adrs:['ADR-002'],runbook:null,
+    tests:{prop:true,scenario:true,e2e:false},
+    data_layer:'ash_postgres',paper_trail:false,archival:false,pending_migrations:false,
+    state_machine:{present:true,states:['open','settled','void'],transitions:[{from:'open',to:'settled',event:'settle'},{from:'open',to:'void',event:'void'}],state_attribute:'status'},
+    api_routes:[],telemetry:['my_app','game','game_round'],
+    money_attributes:[{name:'wager',type:'Ash.Type.Money',cldr:'MyApp.Cldr'},{name:'result_amount',type:'Ash.Type.Money',cldr:'MyApp.Cldr'}],
+    auth_subject:false,oban_queues:[],rate_limited:false,feature_flags:[{name:'high_stake_mode',adr:'ADR-013'}],
+    last_modified:'2026-02-28',
+  },
+};
+
+const EDGES=[
+  ['player','wallet'],['player','kyccheck'],['player','rgcheck'],['player','limit'],
+  ['wallet','withdraw'],['wallet','deposit'],['ledger','withdraw'],['ledger','deposit'],
+  ['deposit','amlscreen'],['round','withdraw'],['kyccheck','withdraw'],['rgcheck','limit'],
+];
+
+const REQ_META={
+  'RG-UK-014':{label:'UK — Withdrawal controls',body:'Withdrawal operations must enforce cooling-off periods and self-exclusion checks before funds are released.'},
+  'RG-UK-019':{label:'UK — KYC verification',body:'Identity verification must be completed before players can deposit or withdraw above threshold limits.'},
+  'RG-UK-031':{label:'UK — Spending limits enforcement',body:'Daily, weekly and monthly spending limits must be enforced and auditable.'},
+  'RG-MGA-007':{label:'MGA — Wallet integrity',body:'All wallet operations must be idempotent and auditable. Balance must never go negative without explicit overdraft allowance.'},
+  'RG-MGA-011':{label:'MGA — KYC for high-value play',body:'KYC must be re-validated when cumulative spend exceeds €2,000 in a 30-day rolling window.'},
+  'RG-MGA-022':{label:'MGA — Player protection limits',body:'Operators must provide real-time limit management and confirmation flows for players modifying limits downward.'},
+  'AML-003':{label:'AML — Transaction monitoring',body:'All transactions above €1,000 must be submitted to the AML screening pipeline within 60 seconds.'},
+  'AML-007':{label:'AML — Suspicious activity reporting',body:'Flagged transactions must generate a SAR record and notify the compliance officer within 4 hours.'},
+  'GDPR-001':{label:'GDPR — PII data minimisation',body:'PII fields must be encrypted at rest. Deletion requests must propagate through all linked resources within 72 hours.'},
+};
+
+const GRAPH_LAYOUT=[
+  {id:'player',  x:100, y:280},
+  {id:'wallet',  x:280, y:160},
+  {id:'ledger',  x:280, y:320},
+  {id:'withdraw',x:460, y:120},
+  {id:'deposit', x:460, y:280},
+  {id:'kyccheck',x:460, y:420},
+  {id:'rgcheck', x:640, y:340},
+  {id:'amlscreen',x:640,y:220},
+  {id:'limit',   x:640, y:460},
+  {id:'round',   x:280, y:460},
+];
+
+const TYPE_COLOR={resource:'#60a5fa',transfer:'#34d399',rule:'#fbbf24',reactor:'#c084fc'};
+const TYPE_ABBR={resource:'R',transfer:'T',rule:'Ru',reactor:'Re'};
+const DOMAIN_COLORS={Finance:'rgba(96,165,250,.03)',Compliance:'rgba(251,191,36,.03)',Identity:'rgba(52,211,153,.03)',Game:'rgba(192,132,252,.03)'};
+
+let selectedNode=null, mapFilter='all';
+
+// ─── SIDEBAR ─────────────────────────────────────────────────────────────────
+
+const DOMAIN_ORDER=['Finance','Identity','Compliance','Game'];
+
+function renderSidebar(filter=''){
+  const f=filter.toLowerCase();
+  const body=document.getElementById('sb-body');
+  body.innerHTML='';
+  DOMAIN_ORDER.forEach(domain=>{
+    const nodes=Object.values(NODES).filter(n=>n.domain===domain&&(!f||n.name.toLowerCase().includes(f)||domain.toLowerCase().includes(f)));
+    if(!nodes.length)return;
+    const g=document.createElement('div');
+    g.className='domain-grp';
+    g.innerHTML=`<div class="domain-hdr">${domain}</div>`;
+    nodes.forEach(n=>{
+      const row=document.createElement('div');
+      row.className='node-row'+(selectedNode===n.id?' active':'');
+      const dot=n.gap?'yellow':n.sensitive?'red':'green';
+      row.innerHTML=`<div class="ni ni-${n.type}">${TYPE_ABBR[n.type]}</div><span class="node-name">${n.name}</span><div class="ndot ndot-${dot}"></div>`;
+      row.onclick=()=>selectNode(n.id);
+      g.appendChild(row);
+    });
+    body.appendChild(g);
+  });
+}
+
+function filterSidebar(v){renderSidebar(v)}
+
+// ─── GRAPH ────────────────────────────────────────────────────────────────────
+
+function renderGraph(){
+  const svg=document.getElementById('graph');
+  const W=svg.parentElement.clientWidth, H=svg.parentElement.clientHeight;
+  svg.setAttribute('viewBox',`-20 -20 820 560`);
+
+  // cluster rects
+  const domainPts={};
+  GRAPH_LAYOUT.forEach(p=>{const n=NODES[p.id];if(!n)return;if(!domainPts[n.domain])domainPts[n.domain]=[];domainPts[p.id]&&domainPts[n.domain].push(p)});
+  GRAPH_LAYOUT.forEach(p=>{const n=NODES[p.id];if(n){if(!domainPts[n.domain])domainPts[n.domain]=[];domainPts[n.domain].push(p)}});
+
+  let clusters='';
+  for(const[d,pts]of Object.entries(domainPts)){
+    const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+    const minX=Math.min(...xs)-16,minY=Math.min(...ys)-28,maxX=Math.max(...xs)+156,maxY=Math.max(...ys)+56;
+    clusters+=`<rect x="${minX}" y="${minY}" width="${maxX-minX}" height="${maxY-minY}" rx="8" fill="${DOMAIN_COLORS[d]||'none'}" stroke="rgba(55,55,70,.8)" stroke-width="1" stroke-dasharray="4,4"/>
+    <text x="${minX+8}" y="${minY+16}" font-family="IBM Plex Mono" font-size="8" fill="#52526a" letter-spacing=".1em">${d.toUpperCase()}</text>`;
+  }
+
+  // edges
+  let edges='';
+  EDGES.forEach(([a,b])=>{
+    const pa=GRAPH_LAYOUT.find(p=>p.id===a),pb=GRAPH_LAYOUT.find(p=>p.id===b);
+    if(!pa||!pb)return;
+    const x1=pa.x+140,y1=pa.y+22,x2=pb.x,y2=pb.y+22,mx=(x1+x2)/2;
+    const dimmed=mapFilter!=='all'&&!shouldShow(NODES[a])&&!shouldShow(NODES[b]);
+    edges+=`<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" stroke="${dimmed?'rgba(37,37,48,.4)':'#2a2a38'}" stroke-width="1.5" fill="none" marker-end="url(#arrow)" opacity="${dimmed?.3:.8}"/>`;
+  });
+
+  // nodes
+  let nodes='';
+  GRAPH_LAYOUT.forEach(p=>{
+    const n=NODES[p.id];if(!n)return;
+    const col=TYPE_COLOR[n.type];
+    const isSel=selectedNode===n.id;
+    const dimmed=mapFilter!=='all'&&!shouldShow(n);
+    const strokeCol=isSel?'#9d91ff':n.gap?'rgba(251,191,36,.6)':n.sensitive?'rgba(248,113,113,.45)':'#2e2e3c';
+    const sw=isSel?2:1.5;
+    const op=dimmed?.25:1;
+    // status indicators
+    let indicators='';
+    if(n.sensitive)indicators+=`<circle cx="132" cy="10" r="4" fill="rgba(248,113,113,.7)"/>`;
+    if(n.gap)indicators+=`<circle cx="${n.sensitive?119:132}" cy="10" r="4" fill="rgba(251,191,36,.8)"/>`;
+    if(n.pending_migrations)indicators+=`<circle cx="${n.sensitive&&n.gap?106:n.sensitive||n.gap?119:132}" cy="10" r="4" fill="rgba(96,165,250,.8)"/>`;
+    // coverage mini bar
+    const barW=Math.round((n.coverage/100)*120);
+    const barCol=n.coverage>=80?'#34d399':n.coverage>=50?'#fbbf24':'#f87171';
+    // oban queue badge
+    const hasOban=n.oban_queues&&n.oban_queues.length>0;
+    const hasStateMachine=n.state_machine&&n.state_machine.present;
+    const hasMigrations=n.pending_migrations;
+    let extraBadge='';
+    if(hasOban)extraBadge+=`<rect x="6" y="36" width="32" height="12" rx="2" fill="rgba(192,132,252,.12)" stroke="rgba(192,132,252,.3)" stroke-width=".8"/><text x="10" y="46" font-family="IBM Plex Mono" font-size="7" fill="#c084fc">oban</text>`;
+    if(hasStateMachine)extraBadge+=`<rect x="${hasOban?42:6}" y="36" width="24" height="12" rx="2" fill="rgba(96,165,250,.1)" stroke="rgba(96,165,250,.25)" stroke-width=".8"/><text x="${hasOban?46:10}" y="46" font-family="IBM Plex Mono" font-size="7" fill="#60a5fa">FSM</text>`;
+    if(hasMigrations)extraBadge+=`<rect x="${(hasOban?42:0)+(hasStateMachine?28:0)+6}" y="36" width="44" height="12" rx="2" fill="rgba(251,191,36,.1)" stroke="rgba(251,191,36,.25)" stroke-width=".8"/><text x="${(hasOban?42:0)+(hasStateMachine?28:0)+10}" y="46" font-family="IBM Plex Mono" font-size="7" fill="#fbbf24">migration</text>`;
+    const nodeH=(hasOban||hasStateMachine||hasMigrations)?56:44;
+
+    nodes+=`<g data-id="${n.id}" onclick="selectNode('${n.id}')" style="cursor:pointer;opacity:${op}">
+      <rect x="${p.x}" y="${p.y}" width="140" height="${nodeH}" rx="5" fill="#161619" stroke="${strokeCol}" stroke-width="${sw}" ${isSel?'filter="url(#sel-glow)"':''}/>
+      <rect x="${p.x}" y="${p.y}" width="3" height="${nodeH}" rx="1.5" fill="${col}"/>
+      <text x="${p.x+11}" y="${p.y+13}" font-family="IBM Plex Mono" font-size="8" fill="${col}" font-weight="600">${TYPE_ABBR[n.type]}</text>
+      <text x="${p.x+30}" y="${p.y+13}" font-family="DM Sans,sans-serif" font-size="11" fill="${isSel?'#eaeaf2':'#c0c0d0'}" font-weight="500">${n.name.length>14?n.name.substring(0,13)+'…':n.name}</text>
+      ${indicators}
+      <rect x="${p.x+10}" y="${p.y+20}" width="120" height="2" rx="1" fill="#1c1c22"/>
+      <rect x="${p.x+10}" y="${p.y+20}" width="${barW*1.2}" height="2" rx="1" fill="${barCol}" opacity=".7"/>
+      <text x="${p.x+10}" y="${p.y+32}" font-family="IBM Plex Mono" font-size="8" fill="${barCol}" opacity=".8">${n.coverage}%</text>
+      <text x="${p.x+50}" y="${p.y+32}" font-family="IBM Plex Mono" font-size="8" fill="${n.reqs.length?'#5252c0':'#363650'}">${n.reqs.length?n.reqs[0]:''}</text>
+      ${extraBadge?`<g transform="translate(${p.x},${p.y})">${extraBadge}</g>`:''}
+    </g>`;
+  });
+
+  const defs=`<defs>
+    <marker id="arrow" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto">
+      <path d="M0,0 L5,2.5 L0,5 z" fill="#2e2e3c"/>
+    </marker>
+    <filter id="sel-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>`;
+
+  svg.innerHTML=defs+clusters+edges+nodes;
+}
+
+function shouldShow(n){
+  if(!n)return false;
+  if(mapFilter==='all')return true;
+  if(mapFilter==='sensitive')return n.sensitive;
+  if(mapFilter==='gaps')return n.gap;
+  if(mapFilter==='untested')return n.coverage<60;
+  return true;
+}
+
+function setMapFilter(f,el){
+  mapFilter=f;
+  document.querySelectorAll('.mtb-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderGraph();
+}
+
+// ─── NODE DETAIL (left drawer, ADR-012) ──────────────────────────────────────
+
+function selectNode(id){
+  selectedNode=id;
+  renderSidebar();renderGraph();
+  const n=NODES[id];if(!n)return;
+  showDrawer(n);
+}
+
+function showDrawer(n){
+  const drawer=document.getElementById('detail-drawer');
+  drawer.classList.add('open');
+  renderDrawerHeader(n);
+  renderDrawerBody(n);
+  renderDrawerCta(n);
+}
+
+function renderDrawerHeader(n){
+  const typeLabel={resource:'Resource',transfer:'Transfer',rule:'Rule',reactor:'Reactor'}[n.type];
+  const domain=n.domain;
+  const h=document.getElementById('dd-header');
+  h.innerHTML=`
+    <div class="dd-toprow">
+      <div style="flex:1">
+        <div class="dd-module">${n.module}</div>
+        <div class="dd-name">${n.name}</div>
+      </div>
+      <button class="dd-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="dd-tags">
+      <span class="tag tag-type">${typeLabel}</span>
+      <span class="tag tag-domain">${domain}</span>
+      ${n.sensitive?`<span class="tag tag-sensitive">sensitive</span>`:''}
+      ${n.gap?`<span class="tag tag-warn">compliance gap</span>`:`<span class="tag tag-ok">covered</span>`}
+      ${n.auth_subject?`<span class="tag tag-neutral">auth-subject</span>`:''}
+      ${n.rate_limited?`<span class="tag tag-neutral">rate-limited</span>`:''}
+      ${n.pending_migrations?`<span class="tag tag-warn">pending migration</span>`:''}
+    </div>
+    <div class="dd-meta-row">
+      ${n.data_layer?`<div class="dd-meta-pill">🗄 <span>${n.data_layer}</span></div>`:''}
+      <div class="dd-meta-pill">📅 <span>${n.last_modified}</span></div>
+      ${n.oban_queues.length?`<div class="dd-meta-pill">⚡ <span>oban:${n.oban_queues.join(',')}</span></div>`:''}
+    </div>
+  `;
+}
+
+function renderDrawerBody(n){
+  const body=document.getElementById('dd-body');
+  const covClass=n.coverage>=80?'#34d399':n.coverage>=50?'#fbbf24':'#f87171';
+
+  // description
+  let html=`<div class="dd-section">
+    <div class="dd-sec-label">Description</div>
+    <div style="font-size:11px;color:var(--text2);line-height:1.6;">${n.description}</div>
+  </div>`;
+
+  // attributes
+  if(n.attributes.length){
+    const rows=n.attributes.map(a=>`<tr>
+      <td><span class="attr-name">${a.name}</span>${a.flags.includes('pii')?`<span class="attr-flag flag-s">PII</span>`:''}${a.flags.includes('money')?`<span class="attr-flag flag-m">₴</span>`:''}</td>
+      <td><span class="attr-type">${escH(a.type)}</span>${a.sensitive?`<span class="attr-flag flag-s" style="margin-left:4px">sensitive</span>`:''}</td>
+    </tr>
+    <tr><td colspan="2"><div class="attr-desc">${a.desc}</div></td></tr>`).join('');
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">Attributes <span class="sec-count">${n.attributes.length}</span></div>
+      <table class="attr-table">${rows}</table>
+    </div>`;
+  }
+
+  // actions
+  if(n.actions.length){
+    const rows=n.actions.map(a=>`<div class="action-row">
+      <span class="action-name">${a.name}</span>
+      <span class="action-class cls-${a.cls}">:${a.cls}</span>
+    </div>`).join('');
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">Actions <span class="sec-count">${n.actions.length}</span></div>
+      ${rows}
+    </div>`;
+  }
+
+  // coverage
+  const covFill=`<div class="cov-bar-fill" style="width:${n.coverage}%;background:${covClass}"></div>`;
+  html+=`<div class="dd-section">
+    <div class="dd-sec-label">Test Coverage</div>
+    <div class="cov-block">
+      <div class="cov-row">
+        <div class="cov-label" style="font-size:10px;color:var(--text2)">Overall</div>
+        <div class="cov-bar-bg">${covFill}</div>
+        <div class="cov-pct" style="color:${covClass}">${n.coverage}%</div>
+      </div>
+      <div class="test-grid">
+        <div class="test-cell">
+          <div class="${n.tests.prop?'tc-pass':n.coverage>0?'tc-partial':'tc-fail'} tc-icon">${n.tests.prop?'✓':n.coverage>0?'~':'✗'}</div>
+          <div class="tc-lbl">Property</div>
+        </div>
+        <div class="test-cell">
+          <div class="${n.tests.scenario?'tc-pass':'tc-fail'} tc-icon">${n.tests.scenario?'✓':'✗'}</div>
+          <div class="tc-lbl">Scenario</div>
+        </div>
+        <div class="test-cell">
+          <div class="${n.tests.e2e?'tc-pass':'tc-fail'} tc-icon">${n.tests.e2e?'✓':'✗'}</div>
+          <div class="tc-lbl">E2E</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // compliance reqs
+  if(n.reqs.length){
+    const items=n.reqs.map(r=>{
+      const meta=REQ_META[r]||{label:'—'};
+      const isGap=n.gap&&(r.includes('031')||r.includes('022')||r.includes('019')||r.includes('011'));
+      return `<div class="req-item" onclick="showReqDetail('${r}')">
+        <span class="req-id">${r}</span>
+        <span class="req-label">${meta.label}</span>
+        <span class="req-status ${isGap?'rs-gap':'rs-ok'}">${isGap?'GAP':'ok'}</span>
+      </div>`;
+    }).join('');
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">Compliance Requirements <span class="sec-count">${n.reqs.length}</span></div>
+      ${items}
+    </div>`;
+  }
+
+  // state machine
+  if(n.state_machine.present){
+    const states=n.state_machine.states.map(s=>`<span class="sm-state">${s}</span>`).join('');
+    const trans=n.state_machine.transitions.map(t=>`<div class="sm-transition"><span style="color:var(--text2)">${t.from}</span><span class="sm-arrow">→</span><span style="color:var(--green)">${t.to}</span><span style="color:var(--text3);margin-left:auto;font-family:var(--mono);font-size:9px">${t.event}</span></div>`).join('');
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">State Machine</div>
+      <div class="sm-states">${states}</div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-family:var(--mono)">${n.state_machine.state_attribute}</div>
+      ${trans}
+    </div>`;
+  }
+
+  // infrastructure
+  html+=`<div class="dd-section">
+    <div class="dd-sec-label">Infrastructure</div>
+    <div class="infra-grid">
+      <div class="infra-cell"><span class="infra-label">paper_trail</span><span class="infra-val ${n.paper_trail?'infra-ok':'infra-no'}">${n.paper_trail?'✓ yes':'— no'}</span></div>
+      <div class="infra-cell"><span class="infra-label">archival</span><span class="infra-val ${n.archival?'infra-ok':'infra-no'}">${n.archival?'✓ yes':'— no'}</span></div>
+      <div class="infra-cell"><span class="infra-label">rate_limited</span><span class="infra-val ${n.rate_limited?'infra-warn':'infra-no'}">${n.rate_limited?'⚠ yes':'— no'}</span></div>
+      <div class="infra-cell"><span class="infra-label">auth_subject</span><span class="infra-val ${n.auth_subject?'infra-ok':'infra-no'}">${n.auth_subject?'✓ yes':'— no'}</span></div>
+      <div class="infra-cell"><span class="infra-label">migrations</span><span class="infra-val ${n.pending_migrations?'infra-warn':'infra-no'}">${n.pending_migrations?'⚠ pending':'— clear'}</span></div>
+      <div class="infra-cell"><span class="infra-label">data_layer</span><span class="infra-val" style="color:var(--blue);font-size:8px">${n.data_layer||'—'}</span></div>
+    </div>
+  </div>`;
+
+  // telemetry
+  if(n.telemetry.length){
+    const parts=n.telemetry.map(p=>`<span class="telem-part">${p}</span>`).join(`<span class="telem-sep">.</span>`);
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">Telemetry prefix</div>
+      <div class="telem-prefix">${parts}</div>
+    </div>`;
+  }
+
+  // money attributes
+  if(n.money_attributes.length){
+    const rows=n.money_attributes.map(m=>`<div class="money-row"><span class="money-name">${m.name}</span><span class="money-type">${m.type}</span><span class="money-cldr">${m.cldr}</span></div>`).join('');
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">Money Attributes</div>${rows}
+    </div>`;
+  }
+
+  // api routes
+  if(n.api_routes.length){
+    const rows=n.api_routes.map(r=>`<div style="font-family:var(--mono);font-size:10px;padding:3px 0;display:flex;gap:8px;border-bottom:1px solid var(--border);color:var(--text2)"><span style="color:var(--blue)">${r.method}</span><span style="flex:1">${r.route}</span><span style="color:${r.auth?'var(--green)':'var(--red)'}">${r.auth?'auth':'no-auth'}</span></div>`).join('');
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">API Routes <span class="sec-count">${n.api_routes.length}</span></div>${rows}
+    </div>`;
+  }
+
+  // feature flags
+  if(n.feature_flags.length){
+    const rows=n.feature_flags.map(f=>`<div class="ff-row"><span class="ff-name">${f.name}</span>${f.adr?`<span class="ff-adr">${f.adr}</span>`:''}</div>`).join('');
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">Feature Flags</div>${rows}
+    </div>`;
+  }
+
+  // ADRs + runbook
+  if(n.adrs.length){
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">Linked ADRs</div>
+      <div class="pill-list">${n.adrs.map(a=>`<span class="adr-pill" onclick="showToast('Opening ${a}…')">${a}</span>`).join('')}</div>
+    </div>`;
+  }
+  if(n.runbook){
+    html+=`<div class="dd-section">
+      <div class="dd-sec-label">Runbook</div>
+      <div class="runbook-link" onclick="showToast('Opening runbook…')">📖 ${n.runbook}</div>
+    </div>`;
+  }
+
+  body.innerHTML=html;
+}
+
+function renderDrawerCta(n){
+  const cta=document.getElementById('dd-cta');
+  if(n.gap){
+    cta.style.display='flex';
+    cta.innerHTML=`
+      <button class="btn-primary" onclick="openReviewPanel('${n.id}')">⚡ Generate compliance test</button>
+      <button class="btn-ghost" onclick="switchTab('compliance')">View compliance matrix →</button>
+    `;
+  } else {
+    cta.style.display='none';
+  }
+}
+
+function closeDrawer(){
+  document.getElementById('detail-drawer').classList.remove('open');
+  selectedNode=null;renderSidebar();renderGraph();
+}
+
+// ─── COMPLIANCE PANEL ─────────────────────────────────────────────────────────
+
+let cFilter='all';
+
+function renderComplianceGrid(f='all'){
+  const grid=document.getElementById('c-grid');
+  grid.innerHTML='';
+  DOMAIN_ORDER.forEach(domain=>{
+    Object.values(NODES).filter(n=>n.domain===domain).forEach(n=>{
+      if(f==='gap'&&!n.gap)return;
+      if(f==='covered'&&n.gap)return;
+      const card=document.createElement('div');
+      card.className='c-card'+(n.gap?' gap':'')+(selectedNode===n.id?' selected':'');
+      const col=TYPE_COLOR[n.type];
+      const barCol=n.coverage>=80?'#34d399':n.coverage>=50?'#fbbf24':'#f87171';
+      const chips=n.reqs.map(r=>{
+        const isGap=n.gap&&(r.includes('031')||r.includes('022')||r.includes('019')||r.includes('011'));
+        return `<span class="c-chip ${isGap?'chip-gap':'chip-ok'}" onclick="openReqPanel('${r}','${n.id}',event)">${r}</span>`;
+      }).join('');
+      card.innerHTML=`
+        <div class="c-card-head">
+          <div class="c-card-icon" style="background:${col}18">${{resource:'📦',transfer:'⇄',rule:'⚖',reactor:'⚡'}[n.type]}</div>
+          <div class="c-card-meta">
+            <div class="c-card-name">${n.name}</div>
+            <div class="c-card-sub">${n.module.split('.').slice(-2).join('.')}</div>
+          </div>
+          ${n.gap?`<span class="tag tag-warn" style="flex-shrink:0">gap</span>`:`<span class="tag tag-ok" style="flex-shrink:0">✓</span>`}
+        </div>
+        <div class="c-card-bar">
+          <div class="c-bar-bg"><div class="c-bar-fill" style="width:${n.coverage}%;background:${barCol}"></div></div>
+          <div class="c-bar-pct">${n.coverage}%</div>
+        </div>
+        <div class="c-chips">${chips||'<span style="font-size:10px;color:var(--text3)">No compliance requirements</span>'}</div>
+      `;
+      card.onclick=(e)=>{if(!e.target.classList.contains('c-chip')){selectNode(n.id);switchTab('map');}};
+      grid.appendChild(card);
+    });
+  });
+}
+
+function setCFilter(f,el){
+  cFilter=f;
+  document.querySelectorAll('.c-filter').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderComplianceGrid(f);
+}
+
+function openReqPanel(reqId,nodeId,evt){
+  if(evt)evt.stopPropagation();
+  const pane=document.getElementById('c-detail');
+  pane.classList.add('open');
+  const meta=REQ_META[reqId]||{label:'Unknown',body:''};
+  const covered=[],gaps=[];
+  Object.values(NODES).forEach(n=>{
+    if(!n.reqs.includes(reqId))return;
+    const isGap=n.gap&&(reqId.includes('031')||reqId.includes('022')||reqId.includes('019')||reqId.includes('011'));
+    if(isGap)gaps.push(n);else covered.push(n);
+  });
+
+  const covHTML=covered.map(n=>`<div class="cd-resource-row" onclick="selectNode('${n.id}');switchTab('map')">
+    <div class="ni ni-${n.type}" style="width:18px;height:18px;font-size:8px">${TYPE_ABBR[n.type]}</div>
+    <span class="cd-rname">${n.name}</span><span class="cd-rtype">${n.domain}</span><span style="color:var(--green);font-size:11px">✓</span>
+  </div>`).join('');
+
+  const gapHTML=gaps.map(n=>`<div class="gap-banner">
+    <div class="gap-title">⚠ ${n.name}</div>
+    <div class="gap-desc">Coverage ${n.coverage}% — missing ${getMissing(n)}. References ${reqId} but lacks scenario tests.</div>
+    <button class="btn-primary" style="margin-top:5px;font-size:11px;padding:5px 10px" onclick="openReviewPanel('${n.id}')">⚡ Generate test for ${n.name}</button>
+  </div>`).join('');
+
+  pane.innerHTML=`
+    <div class="cd-header">
+      <div class="cd-id">${reqId}</div>
+      <div class="cd-name">${meta.label}</div>
+      <div class="cd-body-text">${meta.body}</div>
+    </div>
+    <div class="cd-body">
+      ${gaps.length?`<div><div class="cd-sec">⚠ Gaps (${gaps.length})</div>${gapHTML}</div>`:''}
+      ${covered.length?`<div><div class="cd-sec">Covered (${covered.length})</div>${covHTML}</div>`:''}
+    </div>
+    <div class="cd-footer">
+      <button class="btn-ghost" onclick="document.getElementById('c-detail').classList.remove('open')">Close</button>
+    </div>
+  `;
+}
+
+function showReqDetail(reqId){
+  switchTab('compliance');
+  renderComplianceGrid(cFilter);
+  // find a node that has this req
+  const n=Object.values(NODES).find(n=>n.reqs.includes(reqId));
+  if(n)openReqPanel(reqId,n.id,null);
+}
+
+function getMissing(n){
+  const m=[];
+  if(!n.tests.prop)m.push('property');
+  if(!n.tests.scenario)m.push('scenario');
+  if(!n.tests.e2e)m.push('e2e');
+  return m.join(', ')||'some';
+}
+
+// ─── REVIEW PANEL (bottom sheet, ADR-012) ────────────────────────────────────
+
+let bsNode=null, adrVal='', currentBsTab='diff';
+
+function openReviewPanel(nodeId){
+  bsNode=NODES[nodeId]; if(!bsNode)return;
+  adrVal='';
+  document.getElementById('bs-title').textContent=`Propose compliance test — ${bsNode.name}`;
+  switchBsTab('diff',document.querySelector('.bs-tab'));
+  renderBsTab('diff');
+  document.getElementById('bs-submit').disabled=true;
+  document.getElementById('bs-submit').style.opacity='.5';
+  document.getElementById('bs-backdrop').classList.add('open');
+  document.getElementById('bottom-sheet').classList.add('open');
+}
+
+function switchBsTab(tab,el){
+  currentBsTab=tab;
+  document.querySelectorAll('.bs-tab').forEach(t=>t.classList.remove('active'));
+  if(el)el.classList.add('active');
+  else document.querySelectorAll('.bs-tab')[['diff','lint','impact','approval'].indexOf(tab)]?.classList.add('active');
+  renderBsTab(tab);
+}
+
+function renderBsTab(tab){
+  const body=document.getElementById('bs-body');
+  if(tab==='diff'){
+    const n=bsNode;
+    const req=n.reqs.find(r=>r.includes('031')||r.includes('022')||r.includes('019')||r.includes('011'))||n.reqs[0]||'RG-UNKNOWN';
+    const reqMeta=REQ_META[req]||{label:'requirement'};
+    const lines=[
+      {t:'add',s:`defmodule ${n.module}ComplianceTest do`},
+      {t:'add',s:`  use ExUnit.Case, async: true`},
+      {t:'add',s:`  use Foundry.ComplianceCase`},
+      {t:'add',s:``},
+      {t:'add',s:`  @compliance_req "${req}"`},
+      {t:'add',s:`  @moduledoc "Compliance scenario tests for ${n.name}"`},
+      {t:'add',s:``},
+      {t:'add',s:`  describe "${req} — ${reqMeta.label.split('—')[0].trim()}" do`},
+      {t:'add',s:`    test "enforces restriction for qualifying player", %{player: player} do`},
+      {t:'add',s:`      # TODO: implement scenario assertion`},
+      {t:'add',s:`      assert {:error, _} = run_action(${n.name}, :restricted, player)`},
+      {t:'add',s:`    end`},
+      {t:'add',s:`  end`},
+      {t:'add',s:`end`},
+    ];
+    body.innerHTML=`
+      <div style="font-size:11px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;line-height:1.6">
+        Proposes new ExUnit scenario tests for <strong style="color:var(--text)">${n.module}</strong> to cover <strong style="color:var(--accent2)">${req}</strong> — ${reqMeta.label}. Missing: <strong style="color:var(--yellow)">${getMissing(n)} tests</strong>.
+      </div>
+      <div class="diff-block">
+        <div class="diff-file-header">
+          <span>📄</span><span class="diff-path">test/compliance/${n.id}_compliance_test.exs</span>
+          <span style="margin-left:auto" class="diff-stat-add">+${lines.length}</span>
+          <span style="margin-left:6px" class="diff-stat-del">-0</span>
+        </div>
+        <div style="padding:4px 0">
+          ${lines.map((l,i)=>`<div class="diff-line add"><span class="diff-gutter">+</span><span>${escH(l.s)}</span></div>`).join('')}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Change Classification</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <span class="action-class cls-compliance">:compliance</span>
+          <span class="tag tag-neutral">Op.AddTestModule</span>
+          <span class="tag tag-ok">no schema changes</span>
+          <span class="tag tag-ok">no migrations</span>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:6px">ADR Link <span style="color:var(--red)">* required for :compliance</span></div>
+        <div class="adr-field">
+          <input class="adr-input" id="adr-input" placeholder="e.g. ADR-007" oninput="handleAdr(this.value)" />
+          <div class="adr-warn" id="adr-warn">⚠ ADR link required before submission (INV-013)</div>
+        </div>
+      </div>
+    `;
+  } else if(tab==='lint'){
+    body.innerHTML=`
+      <div style="display:flex;align-items:center;gap:8px;padding:12px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--r)">
+        <span style="font-size:18px">✓</span>
+        <div><div style="font-size:12px;font-weight:600;color:var(--green)">All lint checks passed</div><div style="font-size:11px;color:var(--text2);margin-top:2px">No errors or warnings. INV-011, INV-012, INV-013 rules checked.</div></div>
+      </div>
+    `;
+  } else if(tab==='impact'){
+    body.innerHTML=`
+      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Impact Analysis</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;font-size:11px;color:var(--text2)">
+          <div style="font-weight:600;color:var(--text);margin-bottom:3px">Recompile scope</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--text3)">No modules import ${bsNode?.name||''} — test file only.</div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;font-size:11px;color:var(--text2)">
+          <div style="font-weight:600;color:var(--text);margin-bottom:3px">Compliance attention</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--accent2)">${bsNode?.reqs.join(', ')||'—'}</div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;font-size:11px;color:var(--text2)">
+          <div style="font-weight:600;color:var(--text);margin-bottom:3px">Pending migrations after apply</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--green)">0 — no schema changes</div>
+        </div>
+      </div>
+    `;
+  } else if(tab==='approval'){
+    body.innerHTML=`
+      <div style="font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Approval Routing</div>
+      <div class="approval-slots">
+        <div class="slot">
+          <div class="slot-av">?</div>
+          <div style="flex:1"><div class="slot-role">Compliance Officer</div><div class="slot-name pending">Awaiting submission</div></div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--text2);background:var(--yellow-bg);border:1px solid var(--yellow-bd);border-radius:var(--r);padding:8px 10px">
+        ⚠ ADR link must be provided before this proposal can be submitted. Required by INV-013.
+      </div>
+    `;
+  }
+}
+
+function handleAdr(val){
+  adrVal=val.trim();
+  const inp=document.getElementById('adr-input');
+  const warn=document.getElementById('adr-warn');
+  const btn=document.getElementById('bs-submit');
+  const ok=/^ADR-\d{3}/.test(adrVal);
+  if(inp){inp.className='adr-input '+(ok?'valid':'invalid');}
+  if(warn)warn.style.display=ok?'none':'flex';
+  if(btn){btn.disabled=!ok;btn.style.opacity=ok?'1':'.5';}
+}
+
+function submitProposal(){
+  closeBs();
+  addFeedCard({type:'proposal',title:`Compliance test — ${bsNode?.name}`,time:'just now',body:`Proposal for <strong>${bsNode?.name}</strong> submitted. Awaiting compliance officer approval.`});
+  showToast('✓ Proposal submitted · Compliance Officer notified');
+}
+
+function closeBs(){
+  document.getElementById('bs-backdrop').classList.remove('open');
+  document.getElementById('bottom-sheet').classList.remove('open');
+}
+
+// ─── ACTIVITY FEED ────────────────────────────────────────────────────────────
+
+const INITIAL_FEED=[
+  {type:'ci',time:'2m ago',title:'CI passed',body:'<strong>main@a3f9d12</strong> — all lint, compliance and property tests green.'},
+  {type:'proposal',time:'14m ago',title:'SpendingLimit migration pending',body:'<strong>Op.AddAttribute</strong> proposed: add <code style="font-family:var(--mono);font-size:10px;background:var(--surface3);padding:1px 4px;border-radius:2px">SpendingLimit.confirmed_at</code>. Classified :compliance. <span style="color:var(--yellow)">Awaiting ADR link.</span>'},
+  {type:'question',time:'22m ago',title:'You',body:'What compliance requirements apply to WithdrawalTransfer?'},
+  {type:'response',time:'22m ago',title:'Copilot',conf:'HIGH',body:'<strong>WithdrawalTransfer</strong> is governed by <span class="adr-pill" style="font-size:9px;padding:1px 5px">RG-UK-014</span> and <span class="adr-pill" style="font-size:9px;padding:1px 5px">RG-MGA-007</span>. Both require cooling-off period checks and self-exclusion validation before funds are released. E2E test coverage is currently <strong style="color:var(--yellow)">missing</strong>.'},
+  {type:'error',time:'1h ago',title:'Context build failed',body:'<code style="font-family:var(--mono);font-size:10px">:context_build_failed</code> — project had compilation errors. Resolved after <code style="font-family:var(--mono);font-size:10px">mix compile</code>.'},
+];
+
+function renderFeed(){
+  const body=document.getElementById('feed-body');
+  body.innerHTML=INITIAL_FEED.map(c=>buildFeedCard(c)).join('');
+}
+
+function buildFeedCard(c){
+  const cardClass={question:'card-question',response:'card-response',proposal:'card-proposal',error:'card-error',ci:'card-ci'}[c.type]||'';
+  const confBadge=c.conf?`<span class="confidence-badge conf-${c.conf.toLowerCase()}">${c.conf}</span>`:'';
+  const reviewBtn=c.type==='proposal'?`<div class="fc-action"><button class="fc-btn primary" onclick="showToast('Opening proposal review…')">Review →</button></div>`:'';
+  return `<div class="feed-card ${cardClass}">
+    <div class="fc-top">
+      <span class="fc-who">${c.title}</span>${confBadge}<span class="fc-time">${c.time}</span>
+    </div>
+    <div class="fc-body">${c.body}</div>
+    ${reviewBtn}
+  </div>`;
+}
+
+function addFeedCard(c){
+  const body=document.getElementById('feed-body');
+  body.insertAdjacentHTML('afterbegin',buildFeedCard(c));
+}
+
+function switchFeedTab(tab,el){
+  document.querySelectorAll('.feed-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function toggleFeed(){
+  document.getElementById('activity-feed').classList.toggle('hidden');
+}
+
+function handleFeedInput(e){
+  if(e.key==='Enter'&&!e.shiftKey){
+    e.preventDefault();
+    const v=e.target.value.trim();if(!v)return;
+    addFeedCard({type:'question',time:'just now',title:'You',body:v});
+    e.target.value='';
+    // simulate response
+    setTimeout(()=>addFeedCard({type:'response',time:'just now',title:'Copilot',conf:'HIGH',body:'Processing your request against the current project context…'}),600);
+  }
+}
+
+// ─── CMD PALETTE ─────────────────────────────────────────────────────────────
+
+const PALETTE_ITEMS=[
+  ...Object.values(NODES).map(n=>({label:n.name,type:'module',icon:TYPE_ABBR[n.type],action:()=>{closePalette();selectNode(n.id);}})),
+  ...Object.keys(REQ_META).map(r=>({label:r+' — '+REQ_META[r].label,type:'requirement',icon:'⚖',action:()=>{closePalette();switchTab('compliance');renderComplianceGrid(cFilter);}})),
+  ...[...Array(15)].map((_,i)=>({label:`ADR-${String(i+1).padStart(3,'0')}`,type:'adr',icon:'📄',action:()=>{closePalette();showToast(`Opening ADR-${String(i+1).padStart(3,'0')}…`);}})),
+];
+
+function openPalette(){
+  document.getElementById('pal-backdrop').classList.add('open');
+  filterPalette('');
+  setTimeout(()=>document.getElementById('pal-input')?.focus(),50);
+}
+function closePalette(){document.getElementById('pal-backdrop').classList.remove('open');}
+function filterPalette(q){
+  const f=q.toLowerCase();
+  const matches=PALETTE_ITEMS.filter(i=>i.label.toLowerCase().includes(f)).slice(0,12);
+  const body=document.getElementById('pal-body');
+  if(!matches.length){body.innerHTML='<div style="padding:16px;text-align:center;font-size:12px;color:var(--text3)">No results</div>';return;}
+  const grouped={module:[],requirement:[],adr:[]};
+  matches.forEach(i=>grouped[i.type]?.push(i));
+  let html='';
+  if(grouped.module.length)html+=`<div class="pal-section"><div class="pal-label">Modules</div>${grouped.module.map(i=>`<div class="pal-item" onclick="i${i.label.replace(/\W/g,'')};(${i.action.toString().replace(/\n/g,'')})()"><div class="pal-item-icon">${i.icon}</div><span class="pal-item-label">${i.label}</span><span class="pal-item-type">module</span></div>`).join('')}</div>`;
+  if(grouped.requirement.length)html+=`<div class="pal-section"><div class="pal-label">Requirements</div>${grouped.requirement.map(i=>`<div class="pal-item" onclick="(${i.action.toString()})()"><div class="pal-item-icon">${i.icon}</div><span class="pal-item-label">${i.label}</span><span class="pal-item-type">req</span></div>`).join('')}</div>`;
+  if(grouped.adr.length)html+=`<div class="pal-section"><div class="pal-label">ADRs</div>${grouped.adr.slice(0,4).map(i=>`<div class="pal-item" onclick="(${i.action.toString()})()"><div class="pal-item-icon">${i.icon}</div><span class="pal-item-label">${i.label}</span><span class="pal-item-type">adr</span></div>`).join('')}</div>`;
+  body.innerHTML=html;
+}
+
+// ─── TAB + RAIL ───────────────────────────────────────────────────────────────
+
+function switchTab(tab){
+  const isMap=tab==='map';
+  document.getElementById('panel-map').style.display=isMap?'flex':'none';
+  document.getElementById('panel-compliance').style.display=isMap?'none':'flex';
+  document.getElementById('tab-map').classList.toggle('active',isMap);
+  document.getElementById('tab-compliance').classList.toggle('active',!isMap);
+  if(!isMap)renderComplianceGrid(cFilter);
+  else renderGraph();
+}
+
+function switchRail(btn,panel){
+  document.querySelectorAll('.rail-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(panel==='map')switchTab('map');
+  if(panel==='compliance')switchTab('compliance');
+}
+
+// ─── TOAST ────────────────────────────────────────────────────────────────────
+
+let toastT;
+function showToast(msg){
+  const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2800);
+}
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+
+function escH(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+
+window.addEventListener('DOMContentLoaded',()=>{
+  renderSidebar();renderGraph();renderFeed();
+});
+window.addEventListener('resize',()=>{if(document.getElementById('tab-map').classList.contains('active'))renderGraph();});
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openPalette();}
+  if(e.key==='Escape'){closePalette();closeBs();}
+});
+</script>
+</body>
+</html>

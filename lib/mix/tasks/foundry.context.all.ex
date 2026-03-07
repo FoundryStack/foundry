@@ -48,10 +48,14 @@ defmodule Mix.Tasks.Foundry.Context.All do
 
   @impl Mix.Task
   def run(_args) do
+    # Allow target project to skip DB (e.g. igaming_ref without Postgres)
+    app = Mix.Project.config()[:app]
+    Application.put_env(app, :foundry_tasks_only, true)
+
     Mix.Task.run("app.start")
 
     result = Introspector.build_all()
 
-    Mix.shell().info(Jason.encode!(result, pretty: true))
+    IO.puts(Jason.encode!(result, pretty: true))
   end
 end

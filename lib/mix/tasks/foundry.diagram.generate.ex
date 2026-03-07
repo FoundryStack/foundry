@@ -55,14 +55,17 @@ defmodule Mix.Tasks.Foundry.Diagram.Generate do
 
   @impl Mix.Task
   def run(args) do
+    app = Mix.Project.config()[:app]
+    Application.put_env(app, :foundry_tasks_only, true)
+
     Mix.Task.run("app.start")
 
     project_root = File.cwd!()
-    check_mode   = "--check" in args
-    stdout_only  = "--json" in args
+    check_mode = "--check" in args
+    stdout_only = "--json" in args
 
     all_context = Introspector.build_all(project_root: project_root)
-    system_map  = build_system_map(all_context)
+    system_map = build_system_map(all_context)
 
     json = Jason.encode!(system_map, pretty: true)
 
@@ -71,7 +74,7 @@ defmodule Mix.Tasks.Foundry.Diagram.Generate do
         run_check(json, project_root)
 
       stdout_only ->
-        Mix.shell().info(json)
+        IO.puts(json)
 
       true ->
         write_output(json, project_root)
@@ -86,28 +89,28 @@ defmodule Mix.Tasks.Foundry.Diagram.Generate do
   defp build_system_map(all_context) do
     flat_contexts = all_context |> Map.values() |> List.flatten()
 
-    nodes    = Enum.map(flat_contexts, &to_node/1)
-    edges    = flat_contexts |> Enum.flat_map(&to_edges/1) |> Enum.uniq()
+    nodes = Enum.map(flat_contexts, &to_node/1)
+    edges = flat_contexts |> Enum.flat_map(&to_edges/1) |> Enum.uniq()
     clusters = build_clusters(all_context)
 
     %SystemMap{
-      nodes:        nodes,
-      edges:        edges,
-      clusters:     clusters,
+      nodes: nodes,
+      edges: edges,
+      clusters: clusters,
       generated_at: DateTime.utc_now() |> DateTime.to_iso8601()
     }
   end
 
   defp to_node(ctx) do
     %Node{
-      id:                 ctx.module,
-      module:             ctx.module,
-      type:               ctx.type,
-      domain:             ctx.domain,
-      label:              ctx.module |> String.split(".") |> List.last(),
-      sensitive:          ctx.sensitive,
-      has_compliance:     ctx.compliance != [],
-      test_coverage:      derive_coverage(ctx.test_coverage),
+      id: ctx.module,
+      module: ctx.module,
+      type: ctx.type,
+      domain: ctx.domain,
+      label: ctx.module |> String.split(".") |> List.last(),
+      sensitive: ctx.sensitive,
+      has_compliance: ctx.compliance != [],
+      test_coverage: derive_coverage(ctx.test_coverage),
       pending_migrations: ctx.pending_migrations
     }
   end
@@ -115,11 +118,12 @@ defmodule Mix.Tasks.Foundry.Diagram.Generate do
   # Derive :none | :partial | :full from the three-boolean test_coverage map.
   defp derive_coverage(%{property_tests: pt, scenario_tests: st, e2e_tests: et}) do
     case {pt, st, et} do
-      {true, true, true}   -> :full
+      {true, true, true} -> :full
       {false, false, false} -> :none
-      _                    -> :partial
+      _ -> :partial
     end
   end
+
   defp derive_coverage(_), do: :none
 
   defp to_edges(ctx) do
@@ -152,9 +156,10 @@ defmodule Mix.Tasks.Foundry.Diagram.Generate do
     all_context
     |> Enum.map(fn {domain_name, contexts} ->
       node_ids = Enum.map(contexts, & &1.module)
+
       %Cluster{
-        id:       domain_name,
-        label:    domain_name,
+        id: domain_name,
+        label: domain_name,
         node_ids: node_ids
       }
     end)
@@ -175,7 +180,9 @@ defmodule Mix.Tasks.Foundry.Diagram.Generate do
 
     committed_json =
       case File.read(committed_path) do
-        {:ok, content} -> content
+        {:ok, content} ->
+          content
+
         {:error, :enoent} ->
           Mix.raise("""
           #{@output_path} does not exist.
@@ -183,7 +190,7 @@ defmodule Mix.Tasks.Foundry.Diagram.Generate do
           """)
       end
 
-    fresh_map     = Jason.decode!(fresh_json) |> Map.delete("generated_at")
+    fresh_map = Jason.decode!(fresh_json) |> Map.delete("generated_at")
     committed_map = Jason.decode!(committed_json) |> Map.delete("generated_at")
 
     if fresh_map == committed_map do
@@ -195,6 +202,7 @@ defmodule Mix.Tasks.Foundry.Diagram.Generate do
 
       Run `mix foundry.diagram.generate` and commit the result.
       """)
+
       exit({:shutdown, 1})
     end
   end

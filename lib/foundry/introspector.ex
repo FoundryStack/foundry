@@ -33,12 +33,11 @@ defmodule Foundry.Context.Introspector do
   """
 
   alias Foundry.Context.ModuleContext
-  alias Foundry.Manifest.Reader, as: ManifestReader
 
   @type opts :: [
-    manifest_path: String.t(),
-    project_root: String.t()
-  ]
+          manifest_path: String.t(),
+          project_root: String.t()
+        ]
 
   # ---------------------------------------------------------------------------
   # Public API
@@ -129,25 +128,16 @@ defmodule Foundry.Context.Introspector do
   # ---------------------------------------------------------------------------
 
   defp ash_resource?(mod) do
-    function_exported?(mod, :spark_dsl_config, 0) and
-      Spark.Dsl.Extension in (mod.spark_dsl_config()[:extensions] || []) |> IO.inspect() |> then(fn _ ->
-        Ash.Resource in spark_extensions(mod)
-      end)
-  rescue
-    _ ->
-      try do
-        Spark.implements_behaviour?(mod, Ash.Resource.Behaviour)
-      rescue
-        _ -> false
-      end
-  end
-
-  defp ash_resource?(mod) do
     try do
       extensions = spark_extensions(mod)
       Ash.Resource in extensions
     rescue
-      _ -> false
+      _ ->
+        try do
+          Spark.implements_behaviour?(mod, Ash.Resource.Behaviour)
+        rescue
+          _ -> false
+        end
     end
   end
 
@@ -201,39 +191,32 @@ defmodule Foundry.Context.Introspector do
     domain = detect_domain(mod)
 
     %ModuleContext{
-      module:      mod_str,
-      type:        type,
-      domain:      domain,
+      module: mod_str,
+      type: type,
+      domain: domain,
       description: module_description(mod),
-
-      steps:             transfer_steps(mod, type),
-      rules:             applied_rules(mod, type),
-      compliance:        compliance_links(mod),
-      runbook:           runbook_path(mod),
-      invariants:        spec_invariants(mod),
+      steps: transfer_steps(mod, type),
+      rules: applied_rules(mod, type),
+      compliance: compliance_links(mod),
+      runbook: runbook_path(mod),
+      invariants: spec_invariants(mod),
       related_resources: related_resources(mod, type),
-      adrs:              adr_references(mod),
-
-      last_modified:   last_modified(mod, project_root),
-      sensitive:       MapSet.member?(sensitive_set, mod_str) or auth_resource?(mod),
-
-      test_coverage:   test_coverage(mod, project_root),
-
-      data_layer:         data_layer(mod, type),
+      adrs: adr_references(mod),
+      last_modified: last_modified(mod, project_root),
+      sensitive: MapSet.member?(sensitive_set, mod_str) or auth_resource?(mod),
+      test_coverage: test_coverage(mod, project_root),
+      data_layer: data_layer(mod, type),
       pending_migrations: pending_migrations?(mod, type),
-
       paper_trail: has_extension?(mod, AshPaperTrail.Resource),
-      archival:    has_extension?(mod, AshArchival.Resource),
-
+      archival: has_extension?(mod, AshArchival.Resource),
       state_machine: state_machine_info(mod),
-
-      api_routes:           api_routes(mod),
-      telemetry_prefix:     telemetry_prefix(mod),
-      money_attributes:     money_attributes(mod, type),
+      api_routes: api_routes(mod),
+      telemetry_prefix: telemetry_prefix(mod),
+      money_attributes: money_attributes(mod, type),
       authentication_subject: auth_resource?(mod),
-      oban_queues:          oban_queues(mod, type),
-      rate_limited:         rate_limited?(mod),
-      feature_flags:        feature_flags(mod)
+      oban_queues: oban_queues(mod, type),
+      rate_limited: rate_limited?(mod),
+      feature_flags: feature_flags(mod)
     }
   end
 
@@ -243,15 +226,15 @@ defmodule Foundry.Context.Introspector do
 
   defp detect_type(mod) do
     cond do
-      auth_resource?(mod)    -> :resource
-      ash_resource?(mod)     -> :resource
-      transfer_module?(mod)  -> :transfer
-      oban_worker?(mod)      -> :oban_job
-      rule_module?(mod)      -> :rule
+      auth_resource?(mod) -> :resource
+      ash_resource?(mod) -> :resource
+      transfer_module?(mod) -> :transfer
+      oban_worker?(mod) -> :oban_job
+      rule_module?(mod) -> :rule
       blueprint_module?(mod) -> :blueprint
       live_page_module?(mod) -> :live_page
-      adapter_module?(mod)   -> :adapter
-      true                   -> :resource
+      adapter_module?(mod) -> :adapter
+      true -> :resource
     end
   end
 
@@ -270,6 +253,7 @@ defmodule Foundry.Context.Introspector do
   defp auth_resource?(mod) do
     try do
       extensions = spark_extensions(mod)
+
       AshAuthentication in extensions or
         AshAuthentication.TokenResource in extensions
     rescue
@@ -278,11 +262,13 @@ defmodule Foundry.Context.Introspector do
   end
 
   defp detect_domain(mod) do
-    # Domain = second-to-last namespace segment when module is namespaced,
-    # e.g. IgamingRef.Finance.Wallet → "Finance"
-    # IgamingRef.Finance.Rules.SufficientBalance → "Finance"
+    # Domain = Ash domain name (second segment after app root).
+    # Elixir.IgamingRef.Finance.Wallet → "Finance"
+    # Elixir.IgamingRef.Promotions.Rules.PlayerEligibleForCampaign → "Promotions"
     parts = mod |> to_string() |> String.split(".")
+
     case parts do
+      ["Elixir", _app, domain | _rest] -> domain
       [_app, domain | _rest] -> domain
       [_app] -> "Root"
       _ -> "Unknown"
@@ -296,6 +282,7 @@ defmodule Foundry.Context.Introspector do
         |> String.split("\n\n")
         |> List.first()
         |> String.trim()
+
       _ ->
         mod |> to_string() |> String.split(".") |> List.last()
     end
@@ -309,9 +296,10 @@ defmodule Foundry.Context.Introspector do
       _ ->
         # Fallback: read Reactor steps via Spark introspection
         Spark.Dsl.Extension.get_entities(mod, [:reactor, :steps])
-        |> Enum.map(& &1.name |> to_string())
+        |> Enum.map(&(&1.name |> to_string()))
     end
   end
+
   defp transfer_steps(_, _), do: []
 
   defp applied_rules(mod, :transfer) do
@@ -321,6 +309,7 @@ defmodule Foundry.Context.Introspector do
       _ -> []
     end
   end
+
   defp applied_rules(_, _), do: []
 
   defp compliance_links(mod) do
@@ -356,7 +345,8 @@ defmodule Foundry.Context.Introspector do
       case type do
         :resource ->
           Ash.Resource.Info.relationships(mod)
-          |> Enum.map(& &1.destination |> to_string())
+          |> Enum.map(&(&1.destination |> to_string()))
+
         :transfer ->
           # Extract from Reactor step inputs that reference Ash resources
           []
@@ -365,6 +355,7 @@ defmodule Foundry.Context.Introspector do
       _ -> []
     end
   end
+
   defp related_resources(_, _), do: []
 
   defp adr_references(mod) do
@@ -374,7 +365,9 @@ defmodule Foundry.Context.Introspector do
         Regex.scan(~r/ADR-\d{3}/, doc)
         |> List.flatten()
         |> Enum.uniq()
-      _ -> []
+
+      _ ->
+        []
     end
   end
 
@@ -382,17 +375,22 @@ defmodule Foundry.Context.Introspector do
     # Find the source file via __info__ and read its mtime
     try do
       case mod.__info__(:compile)[:source] do
-        nil -> nil
+        nil ->
+          nil
+
         source ->
           path = List.to_string(source)
           rel = Path.relative_to(path, project_root)
+
           case File.stat(Path.join(project_root, rel)) do
             {:ok, %{mtime: mtime}} ->
               mtime
               |> NaiveDateTime.from_erl!()
               |> NaiveDateTime.to_date()
               |> Date.to_iso8601()
-            _ -> nil
+
+            _ ->
+              nil
           end
       end
     rescue
@@ -406,15 +404,15 @@ defmodule Foundry.Context.Introspector do
 
     property_tests =
       file_contains_pattern?(test_dir, "#{mod_name}Test", "stream_data") or
-      file_contains_pattern?(test_dir, "#{mod_name}Test", "property test")
+        file_contains_pattern?(test_dir, "#{mod_name}Test", "property test")
 
     scenario_tests =
       file_contains_pattern?(test_dir, "#{mod_name}", "scenario") or
-      file_contains_pattern?(test_dir, "#{mod_name}", "@tag :scenario")
+        file_contains_pattern?(test_dir, "#{mod_name}", "@tag :scenario")
 
     e2e_tests =
       file_contains_pattern?(test_dir, "#{mod_name}", ":compliance") or
-      file_contains_pattern?(test_dir, "#{mod_name}", ":e2e")
+        file_contains_pattern?(test_dir, "#{mod_name}", ":e2e")
 
     %{property_tests: property_tests, scenario_tests: scenario_tests, e2e_tests: e2e_tests}
   end
@@ -426,12 +424,15 @@ defmodule Foundry.Context.Introspector do
         |> Enum.filter(&String.contains?(&1, String.downcase(module_name)))
         |> Enum.any?(fn file ->
           path = Path.join(test_dir, file)
+
           case File.read(path) do
             {:ok, content} -> String.contains?(content, pattern)
             _ -> false
           end
         end)
-      _ -> false
+
+      _ ->
+        false
     end
   end
 
@@ -441,9 +442,9 @@ defmodule Foundry.Context.Introspector do
       |> Spark.Dsl.Extension.get_persisted(:data_layer)
       |> case do
         Ash.DataLayer.Postgres -> "ash_postgres"
-        AshPostgres.DataLayer  -> "ash_postgres"
-        Ash.DataLayer.Ets      -> "ash_ets"
-        Ash.DataLayer.Simple   -> "simple"
+        AshPostgres.DataLayer -> "ash_postgres"
+        Ash.DataLayer.Ets -> "ash_ets"
+        Ash.DataLayer.Simple -> "simple"
         other when not is_nil(other) -> to_string(other)
         nil -> nil
       end
@@ -451,14 +452,16 @@ defmodule Foundry.Context.Introspector do
       _ -> nil
     end
   end
+
   defp data_layer(_, _), do: nil
 
-  defp pending_migrations?(mod, :resource) do
+  defp pending_migrations?(_mod, :resource) do
     # Delegate to `mix ash.codegen --check` exit code via subprocess.
     # Returns false here — the Mix task itself performs the check at aggregate level.
     # Individual resource pending-migration status is too expensive to check per-module.
     false
   end
+
   defp pending_migrations?(_, _), do: false
 
   defp has_extension?(mod, extension) do
@@ -475,14 +478,14 @@ defmodule Foundry.Context.Introspector do
 
       states =
         Spark.Dsl.Extension.get_entities(mod, [:state_machine, :states])
-        |> Enum.map(& &1.name |> to_string())
+        |> Enum.map(&(&1.name |> to_string()))
 
       transitions =
         Spark.Dsl.Extension.get_entities(mod, [:state_machine, :transitions])
         |> Enum.map(fn t ->
           %{
             from: t.from |> List.wrap() |> Enum.map(&to_string/1) |> Enum.join("|"),
-            to:   to_string(t.to),
+            to: to_string(t.to),
             action: to_string(t.action)
           }
         end)
@@ -491,10 +494,16 @@ defmodule Foundry.Context.Introspector do
         Spark.Dsl.Extension.get_opt(mod, [:state_machine], :state_attribute, :state)
         |> to_string()
 
-      %{base | present: true, states: states, transitions: transitions, state_attribute: state_attr}
-    catch
-      _ -> base
+      %{
+        base
+        | present: true,
+          states: states,
+          transitions: transitions,
+          state_attribute: state_attr
+      }
     rescue
+      _ -> base
+    catch
       _ -> base
     end
   end
@@ -547,6 +556,7 @@ defmodule Foundry.Context.Introspector do
       _ -> []
     end
   end
+
   defp money_attributes(_, _), do: []
 
   defp oban_queues(mod, :oban_job) do
@@ -557,11 +567,13 @@ defmodule Foundry.Context.Introspector do
       _ -> []
     end
   end
+
   defp oban_queues(_, _), do: []
 
   defp rate_limited?(mod) do
     try do
       plugs = mod.__info__(:attributes)[:plug] || []
+
       Enum.any?(plugs, fn
         {HammerPlug, _} -> true
         HammerPlug -> true
@@ -587,11 +599,14 @@ defmodule Foundry.Context.Introspector do
 
   defp load_manifest(project_root) do
     path = Path.join([project_root, ".foundry", "manifest.exs"])
+
     case File.read(path) do
       {:ok, content} ->
         {kw, _} = Code.eval_string(content)
         kw
-      _ -> []
+
+      _ ->
+        []
     end
   end
 

@@ -1,0 +1,1785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Foundry Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:        #0a0a0c;
+    --surface:   #111116;
+    --surface2:  #18181f;
+    --surface3:  #1e1e28;
+    --border:    #2a2a38;
+    --border2:   #353547;
+    --text:      #e8e8f0;
+    --text2:     #9090a8;
+    --text3:     #5a5a72;
+    --accent:    #7c6dfa;
+    --accent2:   #a08bff;
+    --accent-bg: rgba(124,109,250,0.10);
+    --green:     #3ecf8e;
+    --green-bg:  rgba(62,207,142,0.10);
+    --yellow:    #f5a623;
+    --yellow-bg: rgba(245,166,35,0.10);
+    --red:       #f16060;
+    --red-bg:    rgba(241,96,96,0.10);
+    --blue:      #4fa3ff;
+    --blue-bg:   rgba(79,163,255,0.10);
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'Geist', sans-serif;
+    --rail:      52px;
+    --sidebar:   240px;
+    --detail:    340px;
+    --radius:    6px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    height: 40px;
+    min-height: 40px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 10px;
+    z-index: 100;
+  }
+  .topbar-logo {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent2);
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+  .topbar-sep { width: 1px; height: 18px; background: var(--border); }
+  .topbar-project {
+    font-size: 12px;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .topbar-project span { color: var(--text); font-weight: 500; }
+  .topbar-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(62,207,142,0.2);
+  }
+  .topbar-spacer { flex: 1; }
+  .topbar-cmd {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 3px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .topbar-cmd:hover { border-color: var(--border2); color: var(--text2); }
+  .topbar-cmd kbd {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: var(--surface3);
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    padding: 0 4px;
+    color: var(--text3);
+  }
+  .notif-btn {
+    width: 28px; height: 28px;
+    border-radius: var(--radius);
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    transition: background 0.15s, border-color 0.15s;
+    font-size: 14px;
+  }
+  .notif-btn:hover { background: var(--surface2); border-color: var(--border2); }
+  .notif-dot {
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--red);
+    border: 1.5px solid var(--surface);
+  }
+
+  /* ── MAIN LAYOUT ── */
+  .workspace {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── LEFT RAIL ── */
+  .rail {
+    width: var(--rail);
+    min-width: var(--rail);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 0;
+    gap: 2px;
+    z-index: 50;
+  }
+  .rail-btn {
+    width: 36px; height: 36px;
+    border-radius: var(--radius);
+    border: none;
+    background: none;
+    color: var(--text3);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    transition: background 0.12s, color 0.12s;
+    position: relative;
+  }
+  .rail-btn:hover { background: var(--surface2); color: var(--text2); }
+  .rail-btn.active { background: var(--accent-bg); color: var(--accent2); }
+  .rail-btn .tooltip {
+    display: none;
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--surface3);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--text);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 200;
+  }
+  .rail-btn:hover .tooltip { display: block; }
+  .rail-spacer { flex: 1; }
+
+  /* ── DOMAIN SIDEBAR ── */
+  .sidebar {
+    width: var(--sidebar);
+    min-width: var(--sidebar);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-header {
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sidebar-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--text3);
+    text-transform: uppercase;
+  }
+  .sidebar-search {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 5px 8px;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--text);
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .sidebar-search:focus { border-color: var(--accent); }
+  .sidebar-search::placeholder { color: var(--text3); }
+  .sidebar-body { flex: 1; overflow-y: auto; padding: 6px 0; }
+  .sidebar-body::-webkit-scrollbar { width: 4px; }
+  .sidebar-body::-webkit-scrollbar-track { background: transparent; }
+  .sidebar-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  .domain-group { margin-bottom: 2px; }
+  .domain-label {
+    padding: 5px 14px 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--text3);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .domain-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .node-item {
+    padding: 5px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    border-radius: 0;
+    transition: background 0.1s;
+    border-left: 2px solid transparent;
+  }
+  .node-item:hover { background: var(--surface2); }
+  .node-item.active {
+    background: var(--accent-bg);
+    border-left-color: var(--accent);
+  }
+  .node-icon {
+    width: 18px; height: 18px;
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+    font-family: var(--mono);
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  .icon-resource { background: rgba(79,163,255,0.15); color: var(--blue); }
+  .icon-transfer { background: rgba(62,207,142,0.15); color: var(--green); }
+  .icon-rule     { background: rgba(245,166,35,0.15); color: var(--yellow); }
+  .icon-reactor  { background: rgba(124,109,250,0.15); color: var(--accent2); }
+  .node-name {
+    font-size: 12px;
+    color: var(--text);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .node-badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .badge-sensitive { background: var(--red-bg); color: var(--red); border: 1px solid rgba(241,96,96,0.2); }
+  .badge-gap       { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(245,166,35,0.2); }
+  .badge-ok        { background: var(--green-bg); color: var(--green); border: 1px solid rgba(62,207,142,0.2); }
+
+  /* ── MAIN PANEL ── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ── PANEL TABS ── */
+  .panel-tabs {
+    height: 38px;
+    min-height: 38px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    padding: 0 16px;
+    gap: 0;
+  }
+  .tab {
+    padding: 8px 14px 9px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text3);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s, border-color 0.12s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tab:hover { color: var(--text2); }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .tab-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: var(--yellow-bg);
+    color: var(--yellow);
+    border: 1px solid rgba(245,166,35,0.2);
+    border-radius: 3px;
+    padding: 0 4px;
+  }
+
+  /* ── SYSTEM MAP ── */
+  #panel-map, #panel-compliance { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  #panel-compliance { display: none; }
+
+  .map-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 20% 50%, rgba(124,109,250,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, rgba(79,163,255,0.03) 0%, transparent 50%),
+      var(--bg);
+  }
+  /* Subtle grid */
+  .map-container::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  svg#graph {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0; left: 0;
+  }
+
+  /* SVG node styles */
+  .g-node { cursor: pointer; }
+  .g-node rect {
+    rx: 6px;
+    fill: var(--surface2);
+    stroke: var(--border2);
+    stroke-width: 1;
+    transition: stroke 0.15s, filter 0.15s;
+  }
+  .g-node:hover rect, .g-node.selected rect {
+    stroke: var(--accent);
+    filter: drop-shadow(0 0 8px rgba(124,109,250,0.3));
+  }
+  .g-node.sensitive rect { stroke: rgba(241,96,96,0.4); }
+  .g-node.gap rect { stroke: rgba(245,166,35,0.4); }
+  .g-node.selected rect { stroke: var(--accent2); }
+
+  .map-legend {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text3);
+  }
+  .legend-item { display: flex; align-items: center; gap: 7px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+  .map-controls {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .map-ctrl-btn {
+    width: 28px; height: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text2);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    transition: background 0.12s;
+  }
+  .map-ctrl-btn:hover { background: var(--surface2); }
+
+  /* ── DETAIL PANEL ── */
+  .detail-panel {
+    width: 0;
+    min-width: 0;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.22s ease, min-width 0.22s ease;
+  }
+  .detail-panel.open {
+    width: var(--detail);
+    min-width: var(--detail);
+  }
+  .detail-header {
+    padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .detail-close {
+    margin-left: auto;
+    width: 22px; height: 22px;
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    transition: background 0.1s, color 0.1s;
+  }
+  .detail-close:hover { background: var(--surface2); color: var(--text); }
+  .detail-module {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+  }
+  .detail-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 2px;
+  }
+  .detail-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid;
+  }
+  .tag-type    { background: var(--blue-bg); color: var(--blue); border-color: rgba(79,163,255,0.2); }
+  .tag-domain  { background: var(--accent-bg); color: var(--accent2); border-color: rgba(124,109,250,0.2); }
+  .tag-s       { background: var(--red-bg); color: var(--red); border-color: rgba(241,96,96,0.2); }
+  .tag-ok      { background: var(--green-bg); color: var(--green); border-color: rgba(62,207,142,0.2); }
+  .tag-warn    { background: var(--yellow-bg); color: var(--yellow); border-color: rgba(245,166,35,0.2); }
+
+  .detail-body { flex: 1; overflow-y: auto; padding: 0 0 16px; }
+  .detail-body::-webkit-scrollbar { width: 3px; }
+  .detail-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .detail-section {
+    padding: 10px 14px 0;
+  }
+  .detail-section + .detail-section { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; }
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 8px;
+  }
+  .attr-list { display: flex; flex-direction: column; gap: 4px; }
+  .attr-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .attr-name { color: var(--text2); flex: 1; }
+  .attr-type { font-family: var(--mono); font-size: 10px; color: var(--text3); }
+  .attr-flag {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 2px;
+    background: var(--red-bg);
+    color: var(--red);
+  }
+
+  .compliance-reqs { display: flex; flex-direction: column; gap: 6px; }
+  .req-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--surface2);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+  .req-id {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent2);
+    white-space: nowrap;
+  }
+  .req-label { font-size: 11px; color: var(--text2); flex: 1; }
+  .req-status {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+  .req-covered { background: var(--green-bg); color: var(--green); }
+  .req-gap     { background: var(--yellow-bg); color: var(--yellow); }
+  .req-missing { background: var(--red-bg); color: var(--red); }
+
+  .coverage-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .coverage-bar-bg {
+    flex: 1;
+    height: 4px;
+    background: var(--surface3);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .coverage-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+  .cov-high   { background: var(--green); }
+  .cov-medium { background: var(--yellow); }
+  .cov-low    { background: var(--red); }
+  .coverage-pct { font-family: var(--mono); font-size: 11px; color: var(--text2); white-space: nowrap; }
+
+  .test-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+  .test-cell {
+    padding: 6px 6px;
+    background: var(--surface2);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    text-align: center;
+    font-size: 10px;
+    color: var(--text3);
+  }
+  .test-cell .tc-label { font-size: 9px; margin-top: 3px; }
+  .tc-pass { color: var(--green); font-size: 13px; }
+  .tc-fail { color: var(--red); font-size: 13px; }
+  .tc-warn { color: var(--yellow); font-size: 13px; }
+
+  /* ── CTA BUTTON ── */
+  .detail-cta {
+    margin: 10px 14px 0;
+  }
+  .btn-primary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 14px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-ghost {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 7px 14px;
+    background: none;
+    color: var(--text2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    font-family: var(--sans);
+    font-size: 12px;
+    cursor: pointer;
+    margin-top: 6px;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent2); }
+
+  /* ── COMPLIANCE PANEL ── */
+  .compliance-toolbar {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .filter-pill {
+    padding: 4px 10px;
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    color: var(--text3);
+    background: none;
+    transition: all 0.12s;
+  }
+  .filter-pill:hover { border-color: var(--border2); color: var(--text2); }
+  .filter-pill.active { background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); }
+  .filter-pill.pill-gap.active { background: var(--yellow-bg); border-color: var(--yellow); color: var(--yellow); }
+  .compliance-spacer { flex: 1; }
+  .compliance-stat {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .stat-num { font-size: 13px; font-weight: 600; }
+  .stat-red { color: var(--red); }
+  .stat-yellow { color: var(--yellow); }
+  .stat-green { color: var(--green); }
+
+  .compliance-grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+    align-content: start;
+  }
+  .compliance-grid::-webkit-scrollbar { width: 4px; }
+  .compliance-grid::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .c-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .c-card:hover { border-color: var(--border2); box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
+  .c-card.has-gap { border-color: rgba(245,166,35,0.3); }
+  .c-card.has-gap:hover { border-color: var(--yellow); box-shadow: 0 2px 12px rgba(245,166,35,0.1); }
+  .c-card.selected { border-color: var(--accent); box-shadow: 0 2px 12px rgba(124,109,250,0.2); }
+
+  .c-card-header { display: flex; align-items: flex-start; gap: 8px; }
+  .c-card-icon {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+  .icon-r { background: var(--blue-bg); }
+  .icon-t { background: var(--green-bg); }
+  .c-card-meta { flex: 1; min-width: 0; }
+  .c-card-name { font-size: 12px; font-weight: 600; color: var(--text); }
+  .c-card-domain { font-size: 11px; color: var(--text3); margin-top: 1px; }
+
+  .c-card-bar { display: flex; flex-direction: column; gap: 3px; }
+  .c-bar-row { display: flex; align-items: center; gap: 6px; }
+  .c-bar-bg { flex: 1; height: 3px; background: var(--surface3); border-radius: 2px; overflow: hidden; }
+  .c-bar-fill { height: 100%; border-radius: 2px; }
+  .c-bar-label { font-family: var(--mono); font-size: 10px; color: var(--text3); width: 30px; text-align: right; }
+
+  .c-card-reqs { display: flex; flex-wrap: wrap; gap: 4px; }
+  .c-req-chip {
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    border: 1px solid;
+    cursor: pointer;
+    transition: opacity 0.1s;
+  }
+  .c-req-chip:hover { opacity: 0.8; }
+  .chip-covered { background: var(--green-bg); color: var(--green); border-color: rgba(62,207,142,0.2); }
+  .chip-gap     { background: var(--yellow-bg); color: var(--yellow); border-color: rgba(245,166,35,0.25); }
+  .chip-missing { background: var(--red-bg); color: var(--red); border-color: rgba(241,96,96,0.2); }
+
+  /* ── SLIDE-OVER PROPOSAL PANEL ── */
+  .slide-over-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 150;
+    backdrop-filter: blur(2px);
+  }
+  .slide-over-backdrop.open { display: block; }
+  .slide-over {
+    position: fixed;
+    top: 0; right: -520px;
+    width: 520px;
+    height: 100%;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    z-index: 160;
+    display: flex;
+    flex-direction: column;
+    transition: right 0.28s cubic-bezier(0.22,1,0.36,1);
+    overflow: hidden;
+  }
+  .slide-over.open { right: 0; }
+  .so-header {
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .so-toprow { display: flex; align-items: center; gap: 8px; }
+  .so-title { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+  .so-close {
+    width: 24px; height: 24px;
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+  }
+  .so-close:hover { background: var(--surface2); color: var(--text); }
+  .so-meta { display: flex; align-items: center; gap: 6px; }
+  .so-class {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--accent-bg);
+    color: var(--accent2);
+    border: 1px solid rgba(124,109,250,0.2);
+  }
+  .so-class.cls-compliance { background: var(--yellow-bg); color: var(--yellow); border-color: rgba(245,166,35,0.2); }
+  .so-class.cls-sensitive { background: var(--red-bg); color: var(--red); border-color: rgba(241,96,96,0.2); }
+  .so-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+  .so-body::-webkit-scrollbar { width: 4px; }
+  .so-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  .so-desc {
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.6;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+
+  .so-section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 6px;
+  }
+
+  .diff-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .diff-file {
+    padding: 5px 10px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    color: var(--text3);
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .diff-file-path { color: var(--text2); }
+  .diff-lines { padding: 6px 0; }
+  .diff-line { padding: 0 10px; display: flex; gap: 10px; }
+  .diff-line:hover { background: var(--surface2); }
+  .diff-line.add { background: rgba(62,207,142,0.06); color: var(--green); }
+  .diff-line.add:hover { background: rgba(62,207,142,0.1); }
+  .diff-line.del { background: rgba(241,96,96,0.06); color: var(--red); }
+  .diff-line.ctx { color: var(--text3); }
+  .diff-gutter { width: 20px; text-align: right; color: var(--text3); opacity: 0.5; user-select: none; flex-shrink: 0; }
+
+  .adr-link-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .adr-input {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 7px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .adr-input:focus { border-color: var(--accent); }
+  .adr-input.adr-empty { border-color: var(--yellow); }
+  .adr-warning {
+    font-size: 11px;
+    color: var(--yellow);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .approval-slots { display: flex; flex-direction: column; gap: 6px; }
+  .slot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .slot-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--surface3);
+    border: 1px solid var(--border2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    color: var(--text3);
+    flex-shrink: 0;
+  }
+  .slot-avatar.filled { background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); font-weight: 600; }
+  .slot-info { flex: 1; }
+  .slot-role { font-size: 10px; color: var(--text3); }
+  .slot-name { font-size: 12px; color: var(--text2); margin-top: 1px; }
+  .slot-name.pending { color: var(--text3); font-style: italic; }
+  .slot-check { color: var(--green); font-size: 14px; }
+
+  .so-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+  }
+  .so-footer .btn-primary { flex: 1; }
+  .so-footer .btn-ghost { flex: 1; margin-top: 0; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--surface3);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 9px 16px;
+    font-size: 12px;
+    color: var(--text);
+    z-index: 300;
+    transition: transform 0.25s cubic-bezier(0.22,1,0.36,1), opacity 0.25s;
+    opacity: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  /* ── EMPTY STATE ── */
+  .empty-detail {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text3);
+    padding: 24px;
+    text-align: center;
+  }
+  .empty-icon { font-size: 32px; opacity: 0.4; }
+  .empty-label { font-size: 12px; line-height: 1.6; }
+
+  /* ── COMPLIANCE DETAIL PANE ── */
+  .compliance-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  .compliance-list-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .compliance-detail-pane {
+    width: 0;
+    min-width: 0;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.22s ease, min-width 0.22s ease;
+  }
+  .compliance-detail-pane.open {
+    width: 340px;
+    min-width: 340px;
+  }
+  .cd-header {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cd-req-id { font-family: var(--mono); font-size: 12px; color: var(--accent2); }
+  .cd-req-name { font-size: 14px; font-weight: 600; color: var(--text); margin-top: 3px; }
+  .cd-req-body { font-size: 12px; color: var(--text2); margin-top: 6px; line-height: 1.6; }
+  .cd-body { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+  .cd-body::-webkit-scrollbar { width: 3px; }
+  .cd-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  .cd-section-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
+
+  .covered-resource {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 12px;
+  }
+  .cr-name { flex: 1; color: var(--text); }
+  .cr-type { font-family: var(--mono); font-size: 10px; color: var(--text3); }
+
+  .gap-banner {
+    background: rgba(245,166,35,0.06);
+    border: 1px solid rgba(245,166,35,0.25);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .gap-banner-title { font-size: 12px; font-weight: 600; color: var(--yellow); display: flex; align-items: center; gap: 6px; }
+  .gap-banner-desc { font-size: 11px; color: var(--text2); line-height: 1.6; }
+
+  .cd-footer {
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* scrollbar global */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-logo">◆ FOUNDRY</div>
+  <div class="topbar-sep"></div>
+  <div class="topbar-project">
+    <span>igaming-platform</span>
+    <div class="topbar-badge">local</div>
+  </div>
+  <div class="topbar-sep"></div>
+  <div class="topbar-project" style="font-family:var(--mono);font-size:11px;">
+    Phase 2 · read-only
+  </div>
+  <div class="topbar-spacer"></div>
+  <div class="topbar-cmd">
+    <span>Search or jump to...</span>
+    <kbd>⌘K</kbd>
+  </div>
+  <button class="notif-btn" onclick="showToast('📬 2 pending approvals in your queue')">
+    🔔
+    <span class="notif-dot"></span>
+  </button>
+</div>
+
+<!-- WORKSPACE -->
+<div class="workspace">
+
+  <!-- ICON RAIL -->
+  <nav class="rail">
+    <button class="rail-btn active" onclick="switchRail(this,'map')" title="">
+      ⬡
+      <span class="tooltip">System Map</span>
+    </button>
+    <button class="rail-btn" onclick="switchRail(this,'compliance')" title="">
+      ⚖
+      <span class="tooltip">Compliance</span>
+    </button>
+    <button class="rail-btn" onclick="showToast('Operations board — Phase 4')" title="">
+      ⚡
+      <span class="tooltip">Operations</span>
+    </button>
+    <button class="rail-btn" onclick="showToast('Test coverage — Phase 4')" title="">
+      ✦
+      <span class="tooltip">Test Coverage</span>
+    </button>
+    <div class="rail-spacer"></div>
+    <button class="rail-btn" onclick="showToast('Settings')" title="">
+      ⚙
+      <span class="tooltip">Settings</span>
+    </button>
+  </nav>
+
+  <!-- DOMAIN SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title" id="sidebar-title">Domains & Resources</div>
+      <input class="sidebar-search" type="text" placeholder="Filter…" oninput="filterSidebar(this.value)" />
+    </div>
+    <div class="sidebar-body" id="sidebar-body">
+      <!-- Filled by JS -->
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <div class="main" id="main">
+
+    <!-- TABS -->
+    <div class="panel-tabs">
+      <div class="tab active" id="tab-map" onclick="switchTab('map')">System Map</div>
+      <div class="tab" id="tab-compliance" onclick="switchTab('compliance')">
+        Compliance
+        <span class="tab-count" id="gap-count">3</span>
+      </div>
+    </div>
+
+    <!-- SYSTEM MAP PANEL -->
+    <div id="panel-map" style="display:flex; flex:1; overflow:hidden;">
+      <div style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+        <div class="map-container" id="map-container">
+          <svg id="graph"></svg>
+          <div class="map-legend">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:3px;">Legend</div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--blue);"></div><span>Resource</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--green);"></div><span>Transfer</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--yellow);"></div><span>Rule</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--accent2);"></div><span>Reactor</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--red);border-radius:50%;width:6px;height:6px;margin-left:1px;"></div><span>Sensitive</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--yellow);border-radius:50%;width:6px;height:6px;margin-left:1px;"></div><span>Compliance gap</span></div>
+          </div>
+          <div class="map-controls">
+            <button class="map-ctrl-btn" title="Zoom in">+</button>
+            <button class="map-ctrl-btn" title="Zoom out">−</button>
+            <button class="map-ctrl-btn" title="Fit" onclick="renderGraph()">⊡</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- NODE DETAIL PANEL -->
+      <div class="detail-panel" id="detail-panel">
+        <div class="detail-header" id="detail-header">
+          <!-- filled by JS -->
+        </div>
+        <div class="detail-body" id="detail-body">
+          <!-- filled by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPLIANCE PANEL -->
+    <div id="panel-compliance" style="display:none; flex:1; overflow:hidden; flex-direction:column;">
+      <div class="compliance-toolbar">
+        <button class="filter-pill active" onclick="setComplianceFilter('all',this)">All</button>
+        <button class="filter-pill pill-gap" onclick="setComplianceFilter('gap',this)">Gaps only</button>
+        <button class="filter-pill" onclick="setComplianceFilter('covered',this)">Fully covered</button>
+        <div class="compliance-spacer"></div>
+        <div class="compliance-stat"><span class="stat-num stat-red">3</span> gaps</div>
+        <div class="compliance-stat" style="margin-left:10px;"><span class="stat-num stat-green">14</span> covered</div>
+      </div>
+      <div class="compliance-layout">
+        <div class="compliance-list-pane">
+          <div class="compliance-grid" id="compliance-grid">
+            <!-- filled by JS -->
+          </div>
+        </div>
+        <div class="compliance-detail-pane" id="compliance-detail-pane">
+          <!-- filled by JS -->
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /workspace -->
+
+<!-- SLIDE-OVER BACKDROP -->
+<div class="slide-over-backdrop" id="so-backdrop" onclick="closeSlideOver()"></div>
+
+<!-- SLIDE-OVER: PROPOSAL PANEL -->
+<div class="slide-over" id="slide-over">
+  <div class="so-header">
+    <div class="so-toprow">
+      <div class="so-title" id="so-title">Generate compliance test</div>
+      <button class="so-close" onclick="closeSlideOver()">✕</button>
+    </div>
+    <div class="so-meta" id="so-meta">
+      <!-- filled by JS -->
+    </div>
+  </div>
+  <div class="so-body" id="so-body">
+    <!-- filled by JS -->
+  </div>
+  <div class="so-footer">
+    <button class="btn-ghost" onclick="closeSlideOver()">Dismiss</button>
+    <button class="btn-primary" id="so-submit" onclick="handleProposalSubmit()">
+      Submit for review
+    </button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────────────────────────
+
+const DOMAINS = {
+  Finance: [
+    { id:'wallet',    name:'Wallet',              type:'resource', sensitive:true,  gap:false, module:'MyApp.Finance.Wallet',            coverage:100, reqs:['RG-UK-014','RG-MGA-007'],     tests:{prop:true,  scenario:true,  e2e:true},  description:'Holds player balance. Sensitive: all transactions paper-trailed.' },
+    { id:'ledger',    name:'LedgerEntry',          type:'resource', sensitive:true,  gap:false, module:'MyApp.Finance.LedgerEntry',       coverage:100, reqs:['RG-UK-014','AML-003'],        tests:{prop:true,  scenario:true,  e2e:true},  description:'Immutable ledger record. Soft-delete only via AshArchival.' },
+    { id:'withdraw',  name:'WithdrawalTransfer',   type:'transfer', sensitive:true,  gap:false, module:'MyApp.Finance.WithdrawalTransfer',coverage:100, reqs:['RG-UK-014','RG-MGA-007'],     tests:{prop:true,  scenario:true,  e2e:false}, description:'Executes player withdrawal. Dual-approval required for all sensitive changes.' },
+    { id:'deposit',   name:'DepositTransfer',      type:'transfer', sensitive:false, gap:false, module:'MyApp.Finance.DepositTransfer',   coverage:85,  reqs:['AML-003'],                    tests:{prop:true,  scenario:true,  e2e:false}, description:'Processes incoming deposits from payment gateway.' },
+  ],
+  Compliance: [
+    { id:'kyccheck',  name:'KycCheck',             type:'rule',     sensitive:false, gap:true,  module:'MyApp.Compliance.KycCheck',      coverage:40,  reqs:['RG-UK-019','RG-MGA-011'],     tests:{prop:false, scenario:false, e2e:false}, description:'Validates KYC status before high-value actions. E2E tests missing.' },
+    { id:'rgcheck',   name:'ResponsibleGamingCheck',type:'rule',    sensitive:false, gap:true,  module:'MyApp.Compliance.ResponsibleGamingCheck', coverage:55, reqs:['RG-UK-031','RG-MGA-022'], tests:{prop:true, scenario:false, e2e:false}, description:'Enforces responsible gaming limits. Scenario and E2E tests missing.' },
+    { id:'amlscreen', name:'AmlScreeningReactor',   type:'reactor',  sensitive:false, gap:false, module:'MyApp.Compliance.AmlScreeningReactor', coverage:90, reqs:['AML-003','AML-007'],      tests:{prop:true,  scenario:true,  e2e:false}, description:'Async AML screening via Oban. Triggered post-deposit.' },
+  ],
+  Identity: [
+    { id:'player',    name:'Player',               type:'resource', sensitive:true,  gap:false, module:'MyApp.Identity.Player',          coverage:100, reqs:['RG-UK-019','GDPR-001'],       tests:{prop:true,  scenario:true,  e2e:true},  description:'Core identity resource. PII-bearing; full paper trail.' },
+    { id:'session',   name:'PlayerSession',        type:'resource', sensitive:false, gap:false, module:'MyApp.Identity.PlayerSession',   coverage:80,  reqs:['GDPR-001'],                   tests:{prop:true,  scenario:false, e2e:false}, description:'Session tracking for auth. Rate-limited.' },
+    { id:'limit',     name:'SpendingLimit',        type:'resource', sensitive:false, gap:true,  module:'MyApp.Identity.SpendingLimit',   coverage:30,  reqs:['RG-UK-031','RG-MGA-022'],     tests:{prop:false, scenario:false, e2e:false}, description:'Configurable limits per player. Compliance gap: no scenario tests.' },
+  ],
+  Game: [
+    { id:'round',     name:'GameRound',            type:'resource', sensitive:false, gap:false, module:'MyApp.Game.GameRound',           coverage:75,  reqs:[],                             tests:{prop:true,  scenario:true,  e2e:false}, description:'Represents a single game round. Linked to LedgerEntry on settlement.' },
+    { id:'settle',    name:'SettlementTransfer',   type:'transfer', sensitive:false, gap:false, module:'MyApp.Game.SettlementTransfer',  coverage:70,  reqs:[],                             tests:{prop:true,  scenario:false, e2e:false}, description:'Settles game round outcome into ledger.' },
+  ],
+};
+
+const REQ_META = {
+  'RG-UK-014': { label: 'UK Responsible Gaming — Withdrawal controls', body: 'All withdrawal operations must enforce cooling-off periods and self-exclusion checks before funds are released.' },
+  'RG-UK-019': { label: 'UK KYC Verification Requirement',            body: 'Identity verification must be completed before players can deposit or withdraw above threshold limits.' },
+  'RG-UK-031': { label: 'UK Spending Limits Enforcement',             body: 'Daily, weekly and monthly spending limits must be enforced and auditable.' },
+  'RG-MGA-007':{ label: 'MGA — Wallet integrity checks',             body: 'All wallet operations must be idempotent and auditable. Balance must never go negative without an explicit overdraft allowance.' },
+  'RG-MGA-011':{ label: 'MGA — KYC for high-value play',             body: 'KYC must be re-validated when cumulative spend exceeds €2,000 in a 30-day rolling window.' },
+  'RG-MGA-022':{ label: 'MGA — Player protection limits',            body: 'Operators must provide real-time limit management and confirmation flows for players modifying limits downward.' },
+  'AML-003':   { label: 'AML — Transaction monitoring',              body: 'All transactions above €1,000 must be submitted to the AML screening pipeline within 60 seconds.' },
+  'AML-007':   { label: 'AML — Suspicious activity reporting',       body: 'Flagged transactions must generate a SAR record and notify the compliance officer queue within 4 hours.' },
+  'GDPR-001':  { label: 'GDPR — PII data minimisation',              body: 'PII fields must be encrypted at rest. Deletion requests must propagate through all linked resources within 72 hours.' },
+};
+
+// ── GRAPH LAYOUT ──────────────────────────────────────────────────────────────
+
+const GRAPH_NODES = [
+  // Finance
+  { id:'wallet',    x:150, y:120, label:'Wallet',          type:'resource', sensitive:true,  gap:false, domain:'Finance' },
+  { id:'ledger',    x:150, y:220, label:'LedgerEntry',     type:'resource', sensitive:true,  gap:false, domain:'Finance' },
+  { id:'withdraw',  x:300, y:120, label:'WithdrawalTransfer',type:'transfer',sensitive:true,  gap:false, domain:'Finance' },
+  { id:'deposit',   x:300, y:220, label:'DepositTransfer', type:'transfer', sensitive:false, gap:false, domain:'Finance' },
+  // Compliance
+  { id:'kyccheck',  x:520, y:80,  label:'KycCheck',        type:'rule',     sensitive:false, gap:true,  domain:'Compliance' },
+  { id:'rgcheck',   x:520, y:180, label:'RGCheck',         type:'rule',     sensitive:false, gap:true,  domain:'Compliance' },
+  { id:'amlscreen', x:520, y:280, label:'AmlScreening',    type:'reactor',  sensitive:false, gap:false, domain:'Compliance' },
+  // Identity
+  { id:'player',    x:150, y:360, label:'Player',          type:'resource', sensitive:true,  gap:false, domain:'Identity' },
+  { id:'session',   x:300, y:360, label:'PlayerSession',   type:'resource', sensitive:false, gap:false, domain:'Identity' },
+  { id:'limit',     x:150, y:460, label:'SpendingLimit',   type:'resource', sensitive:false, gap:true,  domain:'Identity' },
+  // Game
+  { id:'round',     x:700, y:180, label:'GameRound',       type:'resource', sensitive:false, gap:false, domain:'Game' },
+  { id:'settle',    x:700, y:280, label:'SettlementTransfer',type:'transfer',sensitive:false, gap:false, domain:'Game' },
+];
+
+const GRAPH_EDGES = [
+  { from:'wallet',   to:'withdraw' },
+  { from:'wallet',   to:'deposit'  },
+  { from:'ledger',   to:'withdraw' },
+  { from:'ledger',   to:'deposit'  },
+  { from:'player',   to:'wallet'   },
+  { from:'player',   to:'kyccheck' },
+  { from:'player',   to:'rgcheck'  },
+  { from:'player',   to:'limit'    },
+  { from:'deposit',  to:'amlscreen'},
+  { from:'round',    to:'settle'   },
+  { from:'settle',   to:'ledger'   },
+  { from:'kyccheck', to:'withdraw' },
+  { from:'rgcheck',  to:'limit'    },
+  { from:'session',  to:'player'   },
+];
+
+const TYPE_COLOR = { resource:'#4fa3ff', transfer:'#3ecf8e', rule:'#f5a623', reactor:'#a08bff' };
+const TYPE_ABBR  = { resource:'R', transfer:'T', rule:'Ru', reactor:'Re' };
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let selectedNode = null;
+let selectedComplianceReq = null;
+let adrValue = '';
+
+// ── RENDER SIDEBAR ────────────────────────────────────────────────────────────
+function renderSidebar(filter='') {
+  const body = document.getElementById('sidebar-body');
+  body.innerHTML = '';
+  const f = filter.toLowerCase();
+  for (const [domain, nodes] of Object.entries(DOMAINS)) {
+    const visible = nodes.filter(n =>
+      !f || n.name.toLowerCase().includes(f) || domain.toLowerCase().includes(f)
+    );
+    if (!visible.length) continue;
+    const group = document.createElement('div');
+    group.className = 'domain-group';
+    group.innerHTML = `<div class="domain-label">${domain}</div>`;
+    visible.forEach(n => {
+      const item = document.createElement('div');
+      item.className = 'node-item' + (selectedNode === n.id ? ' active' : '');
+      item.dataset.id = n.id;
+      const badge = n.gap
+        ? `<span class="node-badge badge-gap">gap</span>`
+        : n.sensitive
+          ? `<span class="node-badge badge-sensitive">⚠</span>`
+          : '';
+      item.innerHTML = `
+        <div class="node-icon icon-${n.type}">${TYPE_ABBR[n.type]}</div>
+        <span class="node-name">${n.name}</span>
+        ${badge}
+      `;
+      item.onclick = () => selectNode(n.id);
+      group.appendChild(item);
+    });
+    body.appendChild(group);
+  }
+}
+
+function filterSidebar(v) { renderSidebar(v); }
+
+// ── RENDER GRAPH ──────────────────────────────────────────────────────────────
+function renderGraph() {
+  const svg = document.getElementById('graph');
+  const ctr = document.getElementById('map-container');
+  const W = ctr.clientWidth;
+  const H = ctr.clientHeight;
+  svg.setAttribute('viewBox', `0 0 860 560`);
+
+  const defs = `<defs>
+    <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L6,3 z" fill="#353547"/>
+    </marker>
+  </defs>`;
+
+  // Edges
+  let edgesSVG = '';
+  GRAPH_EDGES.forEach(e => {
+    const from = GRAPH_NODES.find(n=>n.id===e.from);
+    const to   = GRAPH_NODES.find(n=>n.id===e.to);
+    if (!from||!to) return;
+    const x1=from.x+70, y1=from.y+18, x2=to.x, y2=to.y+18;
+    const mx=(x1+x2)/2;
+    edgesSVG += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" stroke="#2a2a38" stroke-width="1.5" fill="none" marker-end="url(#arrow)" opacity="0.7"/>`;
+  });
+
+  // Domain cluster backgrounds
+  const domainPositions = {};
+  GRAPH_NODES.forEach(n => {
+    if (!domainPositions[n.domain]) domainPositions[n.domain] = [];
+    domainPositions[n.domain].push({x:n.x, y:n.y});
+  });
+  let clustersSVG = '';
+  const clusterColors = { Finance:'rgba(79,163,255,0.03)', Compliance:'rgba(245,166,35,0.03)', Identity:'rgba(62,207,142,0.03)', Game:'rgba(160,139,255,0.03)' };
+  for (const [domain, pts] of Object.entries(domainPositions)) {
+    const xs = pts.map(p=>p.x), ys = pts.map(p=>p.y);
+    const minX=Math.min(...xs)-12, minY=Math.min(...ys)-24, maxX=Math.max(...xs)+152, maxY=Math.max(...ys)+52;
+    clustersSVG += `
+      <rect x="${minX}" y="${minY}" width="${maxX-minX}" height="${maxY-minY}" rx="8" fill="${clusterColors[domain]||'none'}" stroke="#2a2a38" stroke-width="1" stroke-dasharray="3,3"/>
+      <text x="${minX+8}" y="${minY+14}" font-family="IBM Plex Mono" font-size="9" fill="#5a5a72" letter-spacing="0.08em" text-transform="uppercase">${domain.toUpperCase()}</text>
+    `;
+  }
+
+  // Nodes
+  let nodesSVG = '';
+  GRAPH_NODES.forEach(n => {
+    const col = TYPE_COLOR[n.type];
+    const isSelected = selectedNode === n.id;
+    const strokeColor = isSelected ? '#a08bff' : n.gap ? '#f5a623' : n.sensitive ? 'rgba(241,96,96,0.5)' : '#353547';
+    const strokeWidth = isSelected ? 2 : 1.5;
+    const glow = isSelected ? `filter="url(#glow)"` : '';
+    nodesSVG += `
+      <g class="g-node" data-id="${n.id}" onclick="selectNode('${n.id}')" transform="translate(${n.x},${n.y})">
+        <rect x="0" y="0" width="140" height="36" rx="6" fill="#18181f" stroke="${strokeColor}" stroke-width="${strokeWidth}"/>
+        <rect x="0" y="0" width="4" height="36" rx="2" fill="${col}" opacity="0.8"/>
+        <text x="14" y="14" font-family="IBM Plex Mono" font-size="8" fill="${col}" font-weight="500">${TYPE_ABBR[n.type]}</text>
+        <text x="14" y="26" font-family="Geist,sans-serif" font-size="11" fill="#e8e8f0" font-weight="500">${n.label}</text>
+        ${n.sensitive ? `<circle cx="128" cy="9" r="4" fill="rgba(241,96,96,0.6)"/>` : ''}
+        ${n.gap ? `<circle cx="${n.sensitive?116:128}" cy="9" r="4" fill="rgba(245,166,35,0.7)"/>` : ''}
+      </g>
+    `;
+  });
+
+  svg.innerHTML = defs + clustersSVG + edgesSVG + nodesSVG;
+}
+
+// ── SELECT NODE ───────────────────────────────────────────────────────────────
+function selectNode(id) {
+  selectedNode = id;
+  renderSidebar();
+  renderGraph();
+  showDetail(id);
+}
+
+function showDetail(id) {
+  const panel = document.getElementById('detail-panel');
+  const header = document.getElementById('detail-header');
+  const body   = document.getElementById('detail-body');
+  panel.classList.add('open');
+
+  // Find node data
+  let node = null;
+  for (const nodes of Object.values(DOMAINS)) {
+    node = nodes.find(n => n.id === id);
+    if (node) break;
+  }
+  if (!node) return;
+
+  const typeLabel = {resource:'Resource',transfer:'Transfer',rule:'Rule',reactor:'Reactor'}[node.type];
+
+  // Header
+  header.innerHTML = `
+    <div style="flex:1;">
+      <div class="detail-module">${node.module}</div>
+      <div class="detail-name">${node.name}</div>
+      <div class="detail-tags" style="margin-top:6px;">
+        <span class="tag tag-type">${typeLabel}</span>
+        <span class="tag tag-domain">${getDomain(id)}</span>
+        ${node.sensitive ? `<span class="tag tag-s">sensitive</span>` : ''}
+        ${node.gap ? `<span class="tag tag-warn">compliance gap</span>` : `<span class="tag tag-ok">covered</span>`}
+      </div>
+    </div>
+    <button class="detail-close" onclick="closeDetail()">✕</button>
+  `;
+
+  // Body
+  const reqsHTML = node.reqs.map(r => {
+    const meta = REQ_META[r];
+    const isGap = node.gap && (r.includes('031')||r.includes('022')||r.includes('019')||r.includes('011'));
+    const statusClass = isGap ? 'req-gap' : 'req-covered';
+    const statusLabel = isGap ? 'GAP' : 'covered';
+    return `<div class="req-row">
+      <span class="req-id">${r}</span>
+      <span class="req-label">${meta?meta.label:'—'}</span>
+      <span class="req-status ${statusClass}">${statusLabel}</span>
+    </div>`;
+  }).join('');
+
+  const coverageClass = node.coverage >= 80 ? 'cov-high' : node.coverage >= 50 ? 'cov-medium' : 'cov-low';
+
+  const testsHTML = `
+    <div class="test-grid">
+      <div class="test-cell">
+        <div class="${node.tests.prop?'tc-pass':'tc-fail'}">${node.tests.prop?'✓':'✗'}</div>
+        <div class="tc-label">Property</div>
+      </div>
+      <div class="test-cell">
+        <div class="${node.tests.scenario?'tc-pass':'tc-warn'}">${node.tests.scenario?'✓':'–'}</div>
+        <div class="tc-label">Scenario</div>
+      </div>
+      <div class="test-cell">
+        <div class="${node.tests.e2e?'tc-pass':'tc-warn'}">${node.tests.e2e?'✓':'–'}</div>
+        <div class="tc-label">E2E</div>
+      </div>
+    </div>
+  `;
+
+  const gapCTA = node.gap ? `
+    <div class="detail-cta">
+      <button class="btn-primary" onclick="openProposal('${id}')">
+        ⚡ Generate compliance test
+      </button>
+      <button class="btn-ghost" onclick="switchTab('compliance')">
+        View compliance matrix
+      </button>
+    </div>
+  ` : '';
+
+  body.innerHTML = `
+    <div class="detail-section">
+      <div class="section-label">Description</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;">${node.description}</div>
+    </div>
+    <div class="detail-section">
+      <div class="section-label">Test Coverage</div>
+      <div class="coverage-bar-wrap">
+        <div class="coverage-bar-bg"><div class="coverage-bar-fill ${coverageClass}" style="width:${node.coverage}%"></div></div>
+        <span class="coverage-pct">${node.coverage}%</span>
+      </div>
+      ${testsHTML}
+    </div>
+    ${node.reqs.length ? `
+    <div class="detail-section">
+      <div class="section-label">Compliance Requirements</div>
+      <div class="compliance-reqs">${reqsHTML}</div>
+    </div>` : ''}
+    ${gapCTA}
+  `;
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+  selectedNode = null;
+  renderSidebar();
+  renderGraph();
+}
+
+function getDomain(id) {
+  for (const [d, nodes] of Object.entries(DOMAINS)) {
+    if (nodes.find(n => n.id === id)) return d;
+  }
+  return '';
+}
+
+// ── COMPLIANCE PANEL ──────────────────────────────────────────────────────────
+let complianceFilter = 'all';
+
+function renderComplianceGrid(filter='all') {
+  const grid = document.getElementById('compliance-grid');
+  grid.innerHTML = '';
+  for (const [domain, nodes] of Object.entries(DOMAINS)) {
+    nodes.forEach(node => {
+      if (filter === 'gap' && !node.gap) return;
+      if (filter === 'covered' && node.gap) return;
+      if (!node.reqs.length && filter === 'covered') return;
+
+      const card = document.createElement('div');
+      card.className = 'c-card' + (node.gap ? ' has-gap' : '');
+      card.dataset.id = node.id;
+
+      const iconClass = node.type === 'resource' ? 'icon-r' : node.type === 'transfer' ? 'icon-t' : '';
+      const icon = {resource:'📦',transfer:'⇄',rule:'⚖',reactor:'⚡'}[node.type];
+
+      const coverageClass = node.coverage >= 80 ? 'cov-high' : node.coverage >= 50 ? 'cov-medium' : 'cov-low';
+
+      const chipsHTML = node.reqs.map(r => {
+        const isGap = node.gap && (r.includes('031')||r.includes('022')||r.includes('019')||r.includes('011'));
+        return `<span class="c-req-chip ${isGap ? 'chip-gap' : 'chip-covered'}" onclick="selectReq('${r}','${node.id}',event)">${r}</span>`;
+      }).join('');
+
+      card.innerHTML = `
+        <div class="c-card-header">
+          <div class="c-card-icon ${iconClass}">${icon}</div>
+          <div class="c-card-meta">
+            <div class="c-card-name">${node.name}</div>
+            <div class="c-card-domain">${domain}</div>
+          </div>
+          ${node.gap ? `<span class="node-badge badge-gap">gap</span>` : `<span class="node-badge badge-ok">✓</span>`}
+        </div>
+        <div class="c-card-bar">
+          <div class="c-bar-row">
+            <div class="c-bar-bg"><div class="c-bar-fill ${coverageClass}" style="width:${node.coverage}%"></div></div>
+            <span class="c-bar-label">${node.coverage}%</span>
+          </div>
+        </div>
+        ${node.reqs.length ? `<div class="c-card-reqs">${chipsHTML}</div>` : '<div style="font-size:11px;color:var(--text3);">No compliance requirements</div>'}
+      `;
+      card.onclick = (e) => { if (!e.target.classList.contains('c-req-chip')) selectComplianceNode(node.id); };
+      grid.appendChild(card);
+    });
+  }
+}
+
+function setComplianceFilter(f, el) {
+  complianceFilter = f;
+  document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  renderComplianceGrid(f);
+}
+
+function selectComplianceNode(id) {
+  // Jump to system map and open detail
+  switchTab('map');
+  selectNode(id);
+}
+
+function selectReq(reqId, nodeId, evt) {
+  evt.stopPropagation();
+  selectedComplianceReq = reqId;
+
+  const pane = document.getElementById('compliance-detail-pane');
+  pane.classList.add('open');
+
+  const meta = REQ_META[reqId];
+  if (!meta) return;
+
+  // Find all resources that reference this req
+  const covered = [];
+  const gaps = [];
+  for (const [domain, nodes] of Object.entries(DOMAINS)) {
+    nodes.forEach(n => {
+      if (!n.reqs.includes(reqId)) return;
+      const isGap = n.gap && (reqId.includes('031')||reqId.includes('022')||reqId.includes('019')||reqId.includes('011'));
+      if (isGap) gaps.push({...n, domain});
+      else covered.push({...n, domain});
+    });
+  }
+
+  const covHTML = covered.map(n => `
+    <div class="covered-resource" style="cursor:pointer;" onclick="selectComplianceNode('${n.id}')">
+      <div class="node-icon icon-${n.type}" style="width:18px;height:18px;font-size:8px;">${TYPE_ABBR[n.type]}</div>
+      <span class="cr-name">${n.name}</span>
+      <span class="cr-type">${n.domain}</span>
+      <span style="color:var(--green);font-size:11px;">✓</span>
+    </div>
+  `).join('');
+
+  const gapHTML = gaps.map(n => `
+    <div class="gap-banner">
+      <div class="gap-banner-title">⚠ ${n.name}</div>
+      <div class="gap-banner-desc">Coverage: ${n.coverage}% — ${getMissingTests(n)} missing. This resource references ${reqId} but lacks adequate test coverage.</div>
+      <button class="btn-primary" style="margin-top:4px;" onclick="openProposal('${n.id}')">⚡ Generate test for ${n.name}</button>
+    </div>
+  `).join('');
+
+  pane.innerHTML = `
+    <div class="cd-header">
+      <div class="cd-req-id">${reqId}</div>
+      <div class="cd-req-name">${meta.label}</div>
+      <div class="cd-req-body">${meta.body}</div>
+    </div>
+    <div class="cd-body">
+      ${gaps.length ? `<div><div class="cd-section-label">⚠ Gaps (${gaps.length})</div>${gapHTML}</div>` : ''}
+      ${covered.length ? `<div><div class="cd-section-label">Covered by (${covered.length})</div>${covHTML}</div>` : ''}
+    </div>
+  `;
+}
+
+function getMissingTests(n) {
+  const missing = [];
+  if (!n.tests.prop) missing.push('property tests');
+  if (!n.tests.scenario) missing.push('scenario tests');
+  if (!n.tests.e2e) missing.push('E2E tests');
+  return missing.join(', ') || 'some tests';
+}
+
+// ── PROPOSAL SLIDE-OVER ───────────────────────────────────────────────────────
+function openProposal(nodeId) {
+  let node = null;
+  for (const nodes of Object.values(DOMAINS)) {
+    node = nodes.find(n => n.id === nodeId);
+    if (node) break;
+  }
+  if (!node) return;
+
+  adrValue = '';
+
+  document.getElementById('so-title').textContent = `Generate compliance test — ${node.name}`;
+
+  const meta = document.getElementById('so-meta');
+  meta.innerHTML = `
+    <span class="so-class cls-compliance">:compliance</span>
+    <span style="font-size:11px;color:var(--text3);">Approver: compliance-officer</span>
+  `;
+
+  const missing = getMissingTests(node);
+  const reqList = node.reqs.filter(r => r.includes('031')||r.includes('022')||r.includes('019')||r.includes('011'));
+
+  const diffLines = getDiffForNode(node);
+
+  document.getElementById('so-body').innerHTML = `
+    <div class="so-desc">
+      Proposes new ExUnit scenario tests for <strong style="color:var(--text);">${node.module}</strong> to cover ${reqList.join(', ') || node.reqs[0] || 'open compliance requirements'}.<br><br>
+      Missing: <strong style="color:var(--yellow);">${missing}</strong>. This proposal generates scenario test stubs with compliance annotations.
+    </div>
+
+    <div>
+      <div class="so-section-label">Proposed diff</div>
+      <div class="diff-block">
+        <div class="diff-file">
+          <span>📄</span>
+          <span class="diff-file-path">test/compliance/${node.id}_compliance_test.exs</span>
+          <span style="margin-left:auto;color:var(--green);">+${diffLines.filter(l=>l.type==='add').length}</span>
+          <span style="color:var(--red);margin-left:6px;">-0</span>
+        </div>
+        <div class="diff-lines">
+          ${diffLines.map((l,i) => `
+            <div class="diff-line ${l.type}">
+              <span class="diff-gutter">${l.type==='ctx'?i+1:l.type==='add'?'+':'-'}</span>
+              <span>${escHtml(l.text)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="so-section-label">Impact</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <span class="tag tag-ok">+${diffLines.filter(l=>l.type==='add').length} lines added</span>
+        <span class="tag tag-type">1 new test module</span>
+        <span class="tag tag-domain">no schema changes</span>
+        <span class="tag tag-domain">no migrations</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="so-section-label">ADR link <span style="color:var(--red);font-size:10px;">* required</span></div>
+      <div class="adr-link-field">
+        <input class="adr-input adr-empty" id="adr-input" placeholder="e.g. ADR-007" oninput="handleAdrInput(this.value)" />
+        <div class="adr-warning" id="adr-warning">⚠ ADR link required for :compliance proposals (INV-013)</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="so-section-label">Approval routing</div>
+      <div class="approval-slots">
+        <div class="slot">
+          <div class="slot-avatar">?</div>
+          <div class="slot-info">
+            <div class="slot-role">Compliance Officer</div>
+            <div class="slot-name pending">Awaiting submission</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('so-submit').disabled = true;
+  document.getElementById('so-submit').style.opacity = '0.5';
+
+  document.getElementById('so-backdrop').classList.add('open');
+  document.getElementById('slide-over').classList.add('open');
+}
+
+function handleAdrInput(val) {
+  adrValue = val.trim();
+  const inp = document.getElementById('adr-input');
+  const warn = document.getElementById('adr-warning');
+  const btn  = document.getElementById('so-submit');
+  const valid = /^ADR-\d{3}/.test(adrValue);
+  if (valid) {
+    inp.classList.remove('adr-empty');
+    inp.style.borderColor = 'var(--green)';
+    warn.style.display = 'none';
+    btn.disabled = false;
+    btn.style.opacity = '1';
+  } else {
+    inp.classList.add('adr-empty');
+    inp.style.borderColor = '';
+    warn.style.display = 'flex';
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+  }
+}
+
+function handleProposalSubmit() {
+  closeSlideOver();
+  showToast('✓ Proposal submitted · Compliance Officer notified');
+}
+
+function closeSlideOver() {
+  document.getElementById('so-backdrop').classList.remove('open');
+  document.getElementById('slide-over').classList.remove('open');
+}
+
+function getDiffForNode(node) {
+  const mod = node.module;
+  const name = node.name;
+  const req = node.reqs[0] || 'RG-UNKNOWN';
+  return [
+    {type:'add', text:`defmodule ${mod}ComplianceTest do`},
+    {type:'add', text:`  use ExUnit.Case, async: true`},
+    {type:'add', text:`  use Foundry.ComplianceCase`},
+    {type:'add', text:``},
+    {type:'add', text:`  @compliance_req "${req}"`},
+    {type:'add', text:`  @moduledoc "Compliance scenario tests for ${name}"`},
+    {type:'add', text:``},
+    {type:'add', text:`  describe "${req} — ${(REQ_META[req]||{label:'requirement'}).label.split('—')[0].trim()}" do`},
+    {type:'add', text:`    test "enforces restriction for qualifying player", %{player: player} do`},
+    {type:'add', text:`      # TODO: implement scenario`},
+    {type:'add', text:`      assert {:error, _} = run_action(${name}, :restricted_action, player)`},
+    {type:'add', text:`    end`},
+    {type:'add', text:`  end`},
+    {type:'add', text:`end`},
+  ];
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── TAB SWITCHING ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('panel-map').style.display        = tab==='map'        ? 'flex' : 'none';
+  document.getElementById('panel-compliance').style.display = tab==='compliance' ? 'flex' : 'none';
+  document.getElementById('tab-map').classList.toggle('active',        tab==='map');
+  document.getElementById('tab-compliance').classList.toggle('active', tab==='compliance');
+  if (tab==='compliance') {
+    renderComplianceGrid(complianceFilter);
+    document.getElementById('sidebar-title').textContent = 'Filter Resources';
+  } else {
+    document.getElementById('sidebar-title').textContent = 'Domains & Resources';
+    renderGraph();
+  }
+}
+
+function switchRail(btn, panel) {
+  document.querySelectorAll('.rail-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  if (panel === 'map') switchTab('map');
+  if (panel === 'compliance') switchTab('compliance');
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  renderSidebar();
+  renderGraph();
+});
+window.addEventListener('resize', () => { if (document.getElementById('tab-map').classList.contains('active')) renderGraph(); });
+</script>
+</body>
+</html>

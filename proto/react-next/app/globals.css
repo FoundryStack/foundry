@@ -1,0 +1,149 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─── Foundry Studio Design Tokens ─────────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --bg:  #06060e;
+  --s1:  #0d0d16;
+  --s2:  #12121e;
+  --s3:  #181826;
+  --s4:  #1d1d2e;
+  --s5:  #232336;
+
+  /* Borders */
+  --b1: rgba(40,40,64,.6);
+  --b2: rgba(50,50,76,.7);
+  --b3: rgba(70,70,100,.8);
+
+  /* Text */
+  --tx: #e8e8f0;
+  --t2: #9090b0;
+  --t3: #606080;
+  --t4: #404060;
+
+  /* Accent violet */
+  --ac:   #5b4cf0;
+  --ac2:  #7c6dfa;
+  --ac3:  #a99fff;
+  --acb:  rgba(91,76,240,.12);
+  --acbd: rgba(91,76,240,.28);
+
+  /* Blue */
+  --bl:   #60a5fa;
+  --blb:  rgba(96,165,250,.1);
+  --blbd: rgba(96,165,250,.25);
+
+  /* Teal / Green */
+  --gn:   #2dd4bf;
+  --gnb:  rgba(45,212,191,.1);
+  --gnbd: rgba(45,212,191,.25);
+
+  /* Amber / Yellow */
+  --yw:   #f59e0b;
+  --ywb:  rgba(245,158,11,.1);
+  --ywbd: rgba(245,158,11,.25);
+
+  /* Red */
+  --rd:   #f87171;
+  --rdb:  rgba(248,113,113,.1);
+  --rdbd: rgba(248,113,113,.25);
+
+  /* Purple */
+  --pu:   #a78bfa;
+  --pub:  rgba(167,139,250,.1);
+  --pubd: rgba(167,139,250,.25);
+
+  /* Radius */
+  --r: 4px;
+
+  /* shadcn compat tokens */
+  --background: #06060e;
+  --foreground: #e8e8f0;
+  --card: #0d0d16;
+  --card-foreground: #e8e8f0;
+  --popover: #12121e;
+  --popover-foreground: #e8e8f0;
+  --primary: #5b4cf0;
+  --primary-foreground: #ffffff;
+  --secondary: #181826;
+  --secondary-foreground: #9090b0;
+  --muted: #181826;
+  --muted-foreground: #606080;
+  --accent: #1d1d2e;
+  --accent-foreground: #7c6dfa;
+  --destructive: #f87171;
+  --destructive-foreground: #fff;
+  --border: rgba(40,40,64,.6);
+  --input: rgba(40,40,64,.6);
+  --ring: #5b4cf0;
+  --radius: 4px;
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback';
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--tx);
+    font-family: var(--font-sans, sans-serif);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--b3); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--t4); }
+
+  code {
+    font-family: var(--font-mono, monospace);
+    font-size: .9em;
+    background: var(--s3);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: var(--ac2);
+  }
+
+  strong {
+    color: var(--tx);
+  }
+}

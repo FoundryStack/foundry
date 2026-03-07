@@ -45,6 +45,9 @@ defmodule Mix.Tasks.Foundry.Lint.All do
 
   @impl Mix.Task
   def run(args) do
+    app = Mix.Project.config()[:app]
+    Application.put_env(app, :foundry_tasks_only, true)
+
     Mix.Task.run("app.start")
 
     format = parse_format(args)
@@ -52,17 +55,22 @@ defmodule Mix.Tasks.Foundry.Lint.All do
 
     report = Runner.run(project_root)
 
-    sorted_report = %{report |
-      violations: Enum.sort_by(report.violations, &{severity_order(&1.severity), &1.module, &1.rule_id})
+    sorted_report = %{
+      report
+      | violations:
+          Enum.sort_by(report.violations, &{severity_order(&1.severity), &1.module, &1.rule_id})
     }
 
     case format do
-      :json -> Mix.shell().info(Jason.encode!(sorted_report, pretty: true))
+      :json -> IO.puts(Jason.encode!(sorted_report, pretty: true))
       :text -> print_text_report(sorted_report)
     end
 
     unless report.passed do
-      Mix.shell().error("\n#{report.error_count} error(s), #{report.warning_count} warning(s). Lint failed.")
+      Mix.shell().error(
+        "\n#{report.error_count} error(s), #{report.warning_count} warning(s). Lint failed."
+      )
+
       exit({:shutdown, 1})
     end
 
@@ -92,21 +100,23 @@ defmodule Mix.Tasks.Foundry.Lint.All do
   defp print_text_report(report) do
     if report.violations == [] do
       Mix.shell().info("✓ No violations found.")
-      return()
+    else
+      report.violations
+      |> Enum.each(fn v ->
+        icon =
+          case v.severity do
+            :error -> "✗"
+            :warning -> "⚠"
+            :info -> "ℹ"
+          end
+
+        location = [v.module, v.file_path] |> Enum.reject(&is_nil/1) |> Enum.join(" — ")
+        Mix.shell().info("#{icon} [#{v.rule_id}] #{location}\n  #{v.message}\n")
+      end)
+
+      Mix.shell().info(
+        "#{report.error_count} error(s)  #{report.warning_count} warning(s)  #{report.info_count} info(s)"
+      )
     end
-
-    report.violations
-    |> Enum.each(fn v ->
-      icon = case v.severity do
-        :error   -> "✗"
-        :warning -> "⚠"
-        :info    -> "ℹ"
-      end
-
-      location = [v.module, v.file_path] |> Enum.reject(&is_nil/1) |> Enum.join(" — ")
-      Mix.shell().info("#{icon} [#{v.rule_id}] #{location}\n  #{v.message}\n")
-    end)
-
-    Mix.shell().info("#{report.error_count} error(s)  #{report.warning_count} warning(s)  #{report.info_count} info(s)")
   end
 end
