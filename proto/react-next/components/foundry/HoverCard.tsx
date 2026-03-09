@@ -1,6 +1,6 @@
 'use client';
 
-import { NODES, EDGES, TYPE_COLOR } from '@/lib/data';
+import { NODES, EDGES, TYPE_COLOR, getNodeForHover, getPrimaryNodeId } from '@/lib/data';
 import { covColor } from '@/lib/graph-utils';
 import type { Lens } from '@/lib/types';
 
@@ -11,7 +11,7 @@ type Props = {
 };
 
 export default function HoverCard({ nodeId, lens, pos }: Props) {
-  const n = NODES[nodeId];
+  const n = getNodeForHover(nodeId);
   if (!n) return null;
 
   const tc = TYPE_COLOR[n.type];
@@ -105,8 +105,9 @@ export default function HoverCard({ nodeId, lens, pos }: Props) {
       </>
     );
   } else if (lens === 'imp') {
-    const out = EDGES.filter((e) => e.f === n.id).map((e) => NODES[e.t]?.name ?? e.t);
-    const inp = EDGES.filter((e) => e.t === n.id).map((e) => NODES[e.f]?.name ?? e.f);
+    const primaryId = getPrimaryNodeId(n.id) ?? n.id;
+    const out = EDGES.filter((e) => e.f === primaryId).map((e) => getNodeForHover(e.t)?.name ?? NODES[e.t]?.name ?? e.t);
+    const inp = EDGES.filter((e) => e.t === primaryId).map((e) => getNodeForHover(e.f)?.name ?? NODES[e.f]?.name ?? e.f);
     if (out.length || inp.length) {
       extraRows = (
         <>

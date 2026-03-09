@@ -180,7 +180,7 @@ export default function DrawerDetails() {
             {sectionLabel('State Machine')}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
               {n.sm.states.map((s) => (
-                <span key={s} style={{ fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'var(--s3)', border: '1px solid var(--b2)', color: 'var(--t2)' }}>{s}</span>
+                <span key={s.id} style={{ fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'var(--s3)', border: '1px solid var(--b2)', color: 'var(--t2)' }}>{s.name}</span>
               ))}
             </div>
             {n.sm.tr.map((t) => (
