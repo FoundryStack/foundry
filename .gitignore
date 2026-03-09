@@ -3,3 +3,4 @@ deps
 .specstory
 .elixir_ls
 .DS_Store
+.specify
