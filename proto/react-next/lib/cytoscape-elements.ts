@@ -4,11 +4,25 @@
  */
 
 import type { GraphNode, GraphEdge, EdgeRelation } from './types';
-import { NODE_LAYOUT, DOMAIN_ORDER, TYPE_ICON } from './data';
+import { NODE_LAYOUT, DOMAIN_ORDER, TYPE_ICON, TYPE_COLOR, DOMAIN_COLOR } from './data';
+
+export type NodeIndicators = {
+  gap?: boolean;
+  sensitive?: boolean;
+  pt?: boolean;
+  arch?: boolean;
+  pm?: boolean;
+  sm?: boolean;
+  oban?: boolean;
+  rl?: boolean;
+  runbook?: boolean;
+  covered?: boolean;
+};
 
 export type CytoscapeNodeData = {
   id: string;
   label: string;
+  name?: string;
   type: string;
   domain: string;
   nodeKind: 'entity' | 'step' | 'state' | 'output' | 'cluster';
@@ -16,8 +30,38 @@ export type CytoscapeNodeData = {
   cov?: number;
   gap?: boolean;
   sensitive?: boolean;
+  desc?: string;
+  reqs?: string[];
+  typeColor?: string;
+  indicators?: NodeIndicators;
   [key: string]: unknown;
 };
+
+function buildIndicators(n: {
+  gap?: boolean;
+  sensitive?: boolean;
+  pt?: boolean;
+  arch?: boolean;
+  pm?: boolean;
+  sm?: { on: boolean };
+  oban?: string[];
+  rl?: boolean;
+  runbook?: string | null;
+  cov?: number;
+}): NodeIndicators {
+  return {
+    gap: n.gap,
+    sensitive: n.sensitive,
+    pt: n.pt,
+    arch: n.arch,
+    pm: n.pm,
+    sm: n.sm?.on,
+    oban: (n.oban?.length ?? 0) > 0,
+    rl: n.rl,
+    runbook: !!n.runbook,
+    covered: (n.cov ?? 0) >= 80 && !n.gap,
+  };
+}
 
 export type CytoscapeEdgeData = {
   id: string;
@@ -53,17 +97,23 @@ export function buildCytoscapeElementsFlat(
     const pos = layout[n.id];
     if (!pos) continue;
 
+    const icon = TYPE_ICON[n.type] ?? '';
     elements.push({
       group: 'nodes',
       data: {
         id: n.id,
-        label: n.name,
+        label: icon ? `${icon} ${n.name}` : n.name,
+        name: n.name,
         type: n.type,
         domain: n.domain,
         nodeKind: 'entity',
         cov: n.cov,
         gap: n.gap,
         sensitive: n.sensitive,
+        desc: n.desc,
+        reqs: n.reqs,
+        typeColor: TYPE_COLOR[n.type],
+        indicators: buildIndicators(n),
       },
       position: { x: pos.x, y: pos.y },
     });
@@ -126,9 +176,11 @@ export function buildCytoscapeElements(
       data: {
         id: clusterId,
         label: domain,
+        name: domain,
         type: 'cluster',
         domain,
         nodeKind: 'cluster',
+        typeColor: DOMAIN_COLOR[domain] ?? '#9090b0',
       },
       position: pos,
     });
@@ -152,6 +204,7 @@ export function buildCytoscapeElements(
         data: {
           id: n.id,
           label: icon ? `${icon} ${n.name}` : n.name,
+          name: n.name,
           type: n.type,
           domain: n.domain,
           nodeKind: 'entity',
@@ -159,6 +212,10 @@ export function buildCytoscapeElements(
           cov: n.cov,
           gap: n.gap,
           sensitive: n.sensitive,
+          desc: n.desc,
+          reqs: n.reqs,
+          typeColor: TYPE_COLOR[n.type],
+          indicators: buildIndicators(n),
         },
         position: { x: basePos.x - pos.x, y: basePos.y - pos.y },
         ...(classes ? { classes } : {}),
@@ -182,10 +239,14 @@ export function buildCytoscapeElements(
       data: {
         id: clusterTransferId,
         label: `${transferIcon} ${t.name}`,
+        name: t.name,
         type: t.type,
         domain: t.domain,
         nodeKind: 'cluster',
         parent: `cluster-${t.domain.toLowerCase()}`,
+        desc: t.desc,
+        typeColor: TYPE_COLOR[t.type],
+        indicators: buildIndicators(t),
       },
       position: { x: tPos.x - (domainPositions[t.domain]?.x ?? 0), y: tPos.y - (domainPositions[t.domain]?.y ?? 0) },
     });
@@ -198,13 +259,17 @@ export function buildCytoscapeElements(
         data: {
           id: step.id,
           label: `${stepIcon} ${step.name}`,
+          name: step.name,
           type: 'step',
           domain: t.domain,
           nodeKind: 'step',
           parent: clusterTransferId,
           transferId: tid,
+          reqs: step.reqs,
+          typeColor: TYPE_COLOR.step,
+          indicators: buildIndicators(t),
         },
-        position: { x: i * 100, y: 20 },
+          position: { x: i * 100, y: 40 },
       });
     });
 
@@ -223,12 +288,15 @@ export function buildCytoscapeElements(
           data: {
             id: oid,
             label: `${outIcon} ${outLabel}`,
+            name: outLabel,
             type: 'output',
             domain: t.domain,
             nodeKind: 'output',
             parent: clusterTransferId,
+            typeColor: TYPE_COLOR.output,
+            indicators: buildIndicators(t),
           },
-          position: { x: t.steps!.length * 100 + 50, y: 20 + (i % 2) * 30 },
+          position: { x: t.steps!.length * 100 + 50, y: 40 + (i % 2) * 30 },
         });
       });
     }
@@ -246,10 +314,13 @@ export function buildCytoscapeElements(
       data: {
         id: clusterPlayerId,
         label: `${playerIcon} ${player.name}`,
+        name: player.name,
         type: 'resource',
         domain: player.domain,
         nodeKind: 'cluster',
         parent: 'cluster-identity',
+        typeColor: TYPE_COLOR[player.type],
+        indicators: buildIndicators(player),
       },
       position: { x: pPos.x - domainPositions['Identity'].x, y: pPos.y - domainPositions['Identity'].y },
     });
@@ -262,6 +333,7 @@ export function buildCytoscapeElements(
       data: {
         id: 'player',
         label: `${playerLabelIcon} ${player.name}`,
+        name: player.name,
         type: player.type,
         domain: player.domain,
         nodeKind: 'entity',
@@ -269,8 +341,11 @@ export function buildCytoscapeElements(
         cov: player.cov,
         gap: player.gap,
         sensitive: player.sensitive,
+        desc: player.desc,
+        typeColor: TYPE_COLOR[player.type],
+        indicators: buildIndicators(player),
       },
-      position: { x: 0, y: 0 },
+      position: { x: 0, y: 40 },
       ...(playerClasses ? { classes: playerClasses } : {}),
     });
 
@@ -281,13 +356,16 @@ export function buildCytoscapeElements(
         data: {
           id: state.id,
           label: `${stateIcon} ${state.name}`,
+          name: state.name,
           type: 'state',
           domain: player.domain,
           nodeKind: 'state',
           parent: clusterPlayerId,
           marker: state.marker,
+          typeColor: TYPE_COLOR.state,
+          indicators: buildIndicators(player),
         },
-        position: { x: (i % 2) * 80, y: 30 + Math.floor(i / 2) * 50 },
+        position: { x: (i % 2) * 80, y: 50 + Math.floor(i / 2) * 50 },
       });
     });
   }

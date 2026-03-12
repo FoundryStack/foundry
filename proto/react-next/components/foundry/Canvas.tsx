@@ -4,12 +4,15 @@ import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import cytoscape from 'cytoscape';
 import coseBilkent from 'cytoscape-cose-bilkent';
+import nodeHtmlLabel from 'cytoscape-node-html-label';
 import { useStore } from '@/lib/store';
 
 cytoscape.use(coseBilkent);
+nodeHtmlLabel(cytoscape);
 import { NODES, EDGES, NODE_LAYOUT, DOMAIN_ORDER, DOMAIN_COLOR, getPrimaryNodeId, getGraphNodeId } from '@/lib/data';
-import { edgeStyle, toCytoscapeStylesheet, domainCoverage, covColor } from '@/lib/graph-utils';
+import { edgeStyle, toCytoscapeStylesheet, domainCoverage, covColor, escHtml } from '@/lib/graph-utils';
 import { buildCytoscapeElements } from '@/lib/cytoscape-elements';
+import { TYPE_ICON_SVG, INDICATOR_ICON_SVG } from '@/lib/icon-svg';
 import HoverCard from './HoverCard';
 
 const CytoscapeComponent = dynamic(
@@ -73,7 +76,9 @@ export default function Canvas() {
       name: 'cose-bilkent' as const,
       randomize: false,
       fit: true,
-      padding: 40,
+      padding: 55,
+      idealEdgeLength: 80,
+      nodeRepulsion: 6000,
       nodeDimensionsIncludeLabels: true,
     }),
     []
@@ -108,9 +113,15 @@ export default function Canvas() {
   const handleCyRef = useCallback((cy: cytoscape.Core | undefined) => {
     if (cy) {
       cyRef.current = cy;
+      type CyExt = cytoscape.Core & {
+        _foundryHandlers?: boolean;
+        _foundryLabelsSetup?: boolean;
+        nodeHtmlLabel?: (p: unknown[], o?: { enablePointerEvents?: boolean }) => cytoscape.Core;
+      };
+      const cyExt = cy as CyExt;
       // Register handlers once; cy() runs on every update, avoid re-registering
-      if (!(cy as cytoscape.Core & { _foundryHandlers?: boolean })._foundryHandlers) {
-        (cy as cytoscape.Core & { _foundryHandlers?: boolean })._foundryHandlers = true;
+      if (!cyExt._foundryHandlers) {
+        cyExt._foundryHandlers = true;
         cy.on('tap', 'node', (evt: cytoscape.EventObject) => {
           const id = evt.target.data('id');
           if (id) {
@@ -136,6 +147,79 @@ export default function Canvas() {
         cy.on('mouseout', 'node', () => {
           setHoveredId(null);
         });
+      }
+      // HTML labels for rich node content — setup once; re-calling nodeHtmlLabel
+      // causes removeChild errors when the extension tries to clean up stale DOM
+      if (!cyExt._foundryLabelsSetup && cyExt.nodeHtmlLabel) {
+        cyExt._foundryLabelsSetup = true;
+        const entityTpl = (data: Record<string, unknown>) => {
+          const name = (data.name ?? data.label ?? '') as string;
+          const type = (data.type ?? 'resource') as string;
+          const typeColor = (data.typeColor ?? '#9090b0') as string;
+          const reqs = (data.reqs as string[] | undefined) ?? [];
+          const nodeKind = (data.nodeKind ?? 'entity') as string;
+          const indicators = (data.indicators ?? {}) as Record<string, boolean | undefined>;
+          const isSm = nodeKind === 'step' || nodeKind === 'state' || nodeKind === 'output';
+          const typeIconSvg = TYPE_ICON_SVG[type] ?? TYPE_ICON_SVG.resource;
+          const indicatorMap: Record<string, string> = { pt: 'paper_trail', arch: 'archival', sm: 'fsm' };
+          const indicatorOrder = ['covered', 'gap', 'sensitive', 'pt', 'arch', 'pm', 'oban', 'sm', 'rl', 'runbook'] as const;
+          const activeIndicators = indicatorOrder.filter((k) => indicators[k]).slice(0, 5);
+          const indicatorSvgs = activeIndicators
+            .map((k) => {
+              const iconKey = indicatorMap[k] ?? k;
+              const svg = INDICATOR_ICON_SVG[iconKey];
+              return svg ? `<span data-indicator="${iconKey}" title="${escHtml(k)}">${svg}</span>` : '';
+            })
+            .filter(Boolean)
+            .join('');
+          const smClass = isSm ? ' cy-node-sm' : '';
+          const typeBadge = `<span class="req-badge type-badge" style="color:${escHtml(typeColor)};border-color:${escHtml(typeColor)}40">${escHtml(type)}</span>`;
+          const reqBadgeHtml = reqs.slice(0, 4).map((r) => `<span class="req-badge">${escHtml(r)}</span>`).join('');
+          const reqBadges = !isSm
+            ? `<div class="req-badges">${typeBadge}${reqBadgeHtml}</div>`
+            : '';
+          return `<div class="cy-node-html${smClass}">
+          <div class="status-icons">${indicatorSvgs}</div>
+          <div class="title-row">
+            <span class="type-icon" style="color:${escHtml(typeColor)}">${typeIconSvg}</span>
+            <span class="title" style="color:${escHtml(typeColor)}">${escHtml(name)}</span>
+          </div>
+          ${reqBadges}
+        </div>`;
+        };
+        const boundaryTpl = (data: Record<string, unknown>) => {
+          const name = (data.name ?? data.label ?? '') as string;
+          const type = (data.type ?? 'cluster') as string;
+          const typeColor = (data.typeColor ?? '#9090b0') as string;
+          const typeIconSvg = TYPE_ICON_SVG[type] ?? TYPE_ICON_SVG.cluster;
+          return `<div class="cy-node-html cy-node-boundary">
+          <div class="title-row">
+            <span class="type-icon" style="color:${escHtml(typeColor)}">${typeIconSvg}</span>
+            <span class="title" style="color:${escHtml(typeColor)}">${escHtml(name)}</span>
+          </div>
+        </div>`;
+        };
+        cyExt.nodeHtmlLabel(
+          [
+            {
+              query: 'node[nodeKind="entity"], node[nodeKind="step"], node[nodeKind="state"], node[nodeKind="output"]',
+              halign: 'center',
+              valign: 'center',
+              halignBox: 'center',
+              valignBox: 'center',
+              tpl: entityTpl,
+            },
+            {
+              query: 'node[nodeKind="cluster"]',
+              halign: 'left',
+              valign: 'top',
+              halignBox: 'right',
+              valignBox: 'bottom',
+              tpl: boundaryTpl,
+            },
+          ],
+          { enablePointerEvents: false }
+        );
       }
     } else {
       cyRef.current = null;

@@ -198,6 +198,11 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
         'label': 'data(label)',
       },
     },
+    // Hide native label for nodes that use HTML overlays (cytoscape-node-html-label)
+    {
+      selector: 'node[nodeKind="entity"], node[nodeKind="step"], node[nodeKind="state"], node[nodeKind="output"], node[nodeKind="cluster"]',
+      style: { 'label': '' },
+    },
     // Domain stripe via border-color (3px colored border; Cytoscape has no per-side border)
     {
       selector: 'node[domain="Identity"]',
@@ -225,14 +230,14 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
       selector: 'node.sensitive',
       style: { 'border-width': 2, 'border-color': '#f87171' },
     },
-    // Cluster/compound
+    // Cluster/compound (label hidden; HTML overlay used)
     {
       selector: 'node[nodeKind="cluster"]',
       style: {
         'shape': 'round-rectangle',
         'min-width': 120,
         'min-height': 60,
-        'padding': 20,
+        'padding': 32,
         'background-color': 'rgba(20,20,35,.6)',
         'border-width': 1,
         'border-color': 'rgba(80,80,110,.3)',
@@ -240,7 +245,6 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
         'font-family': 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif',
         'text-valign': 'center',
         'text-halign': 'center',
-        'label': 'data(label)',
       },
     },
     // Step/state nodes (smaller, centered labels)
@@ -248,7 +252,7 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
       selector: 'node[nodeKind="step"], node[nodeKind="state"]',
       style: {
         width: 80,
-        height: 28,
+        height: 36,
         'font-size': 9,
         'font-family': 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif',
         'text-valign': 'center',
@@ -260,7 +264,7 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
       selector: 'node[nodeKind="output"]',
       style: {
         width: 70,
-        height: 24,
+        height: 32,
         'font-size': 8,
         'font-family': 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif',
         'text-valign': 'center',

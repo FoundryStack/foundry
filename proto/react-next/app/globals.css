@@ -147,3 +147,144 @@
     color: var(--tx);
   }
 }
+
+/* ─── Cytoscape node HTML labels (cytoscape-node-html-label) ───────────────── */
+.cy-node-html {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 140px;
+  min-height: 56px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  pointer-events: none;
+  font-family: var(--font-sans), sans-serif;
+  font-size: 11px;
+  line-height: 1.3;
+  color: #c8c8e0;
+  text-align: center;
+}
+/* Boundary/group blocks (domain clusters, transfer clusters) — left align */
+.cy-node-html.cy-node-boundary {
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 4px 12px 8px 12px;
+}
+.cy-node-html .domain-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 8px;
+  font-weight: 500;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.cy-node-html .domain-row .domain-dot {
+  flex-shrink: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+}
+.cy-node-html .status-icons {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  max-width: calc(100% - 12px);
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 3px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.cy-node-html .status-icons span {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--t2);
+}
+.cy-node-html .status-icons span[data-indicator="covered"] { color: var(--gn); }
+.cy-node-html .status-icons span[data-indicator="gap"] { color: var(--yw); }
+.cy-node-html .status-icons span[data-indicator="sensitive"] { color: var(--rd); }
+.cy-node-html .status-icons span[data-indicator="paper_trail"],
+.cy-node-html .status-icons span[data-indicator="archival"] { color: var(--bl); }
+.cy-node-html .status-icons span[data-indicator="pm"] { color: var(--yw); }
+.cy-node-html .status-icons span[data-indicator="oban"],
+.cy-node-html .status-icons span[data-indicator="rl"] { color: var(--pu); }
+.cy-node-html .status-icons span[data-indicator="fsm"] { color: var(--bl); }
+.cy-node-html .status-icons span[data-indicator="runbook"] { color: var(--gn); }
+.cy-node-html .status-icons span svg { width: 8px; height: 8px; }
+.cy-node-html .title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  justify-content: center;
+}
+.cy-node-html.cy-node-boundary .title-row { justify-content: flex-start; }
+.cy-node-html .type-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cy-node-html .type-icon svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+}
+.cy-node-html .title {
+  font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.cy-node-html .req-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 6px;
+  justify-content: center;
+  max-width: 100%;
+}
+.cy-node-html .req-badge {
+  font-family: var(--font-mono);
+  font-size: 7px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: var(--s3);
+  border: 1px solid var(--b2);
+  color: var(--ac2);
+  white-space: nowrap;
+}
+.cy-node-html .req-badge.type-badge {
+  background: var(--s2);
+}
+/* Step/state/output nodes (smaller) */
+.cy-node-html.cy-node-sm {
+  min-width: 80px;
+  min-height: 36px;
+  padding: 8px 12px;
+}
+.cy-node-html.cy-node-sm .domain-row { display: none; }
+.cy-node-html.cy-node-sm .type-icon svg { width: 8px; height: 8px; }
+.cy-node-html.cy-node-sm .title { font-size: 9px; }
+.cy-node-html.cy-node-sm .title-row { order: 1; }
+.cy-node-html.cy-node-sm .status-icons {
+  position: static;
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+  order: 2;
+}
