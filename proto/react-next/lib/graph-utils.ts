@@ -182,7 +182,7 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
         'width': 140,
         'height': 56,
         'background-color': 'rgba(30,30,45,.95)',
-        'border-width': 3,
+        'border-width': 1,
         'border-color': 'rgba(70,70,100,.6)',
         'border-style': 'solid',
         'border-opacity': 1,
@@ -223,12 +223,12 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
     // Gap (compliance) - use .gap class
     {
       selector: 'node.gap',
-      style: { 'border-width': 2, 'border-style': 'dashed', 'border-color': '#fbbf24' },
+      style: { 'border-width': 1, 'border-style': 'dashed', 'border-color': '#fbbf24' },
     },
     // Sensitive - use .sensitive class
     {
       selector: 'node.sensitive',
-      style: { 'border-width': 2, 'border-color': '#f87171' },
+      style: { 'border-width': 1, 'border-color': '#f87171' },
     },
     // Cluster/compound (label hidden; HTML overlay used)
     {
@@ -275,15 +275,15 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
     // Selection
     {
       selector: 'node:selected',
-      style: { 'border-width': 2.5, 'border-color': '#9d93ff' },
+      style: { 'border-width': 1.5, 'border-color': '#c4b5fd' },
     },
     {
       selector: '.trace',
-      style: { 'border-width': 2, 'border-color': '#fbbf24' },
+      style: { 'border-width': 1, 'border-color': '#fbbf24' },
     },
     {
       selector: '.trace-gap',
-      style: { 'border-width': 2, 'border-color': '#f59e0b' },
+      style: { 'border-width': 1, 'border-color': '#f59e0b' },
     },
     // Edges by relation
     {

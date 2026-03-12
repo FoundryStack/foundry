@@ -3,12 +3,14 @@
 export type NodeType =
   | 'resource'      // ⬡ Ash.Resource
   | 'transfer'      // ⇄ Transfer / Saga
-  | 'rule'          // ◈ Rule / Policy
-  | 'reactor'       // ⚡ Reactor / ObanJob
-  | 'input'         // ▶ Input (trigger) — API route / Webhook / Scheduler
+  | 'rule'          // ◆ Rule / Policy (ADR-016)
+  | 'reactor'       // ◈ Reactor (ADR-016)
+  | 'job'           // ⚡ Oban job (ADR-016)
+  | 'liveview'      // ▣ Phoenix LiveView (ADR-016)
+  | 'trigger'       // ▶ Input (trigger) — API route / Webhook / Scheduler
   | 'output'        // ⟐ Output (terminal) — Success / Error / Compensation
   | 'blueprint'     // ◇ Campaign/bonus configuration template
-  | 'liveresource'  // ▣ Back-office UI page (ash_live_resource)
+  | 'liveresource'  // ⊞ Back-office UI page (ash_live_resource) (ADR-016)
   | 'provider';     // ⬚ Provider Adapter — external system boundary
 
 // ─── FSM state markers (per spec section 3) ───────────────────────────────────
@@ -109,17 +111,32 @@ export type FeatureFlag = {
   type?: 'compliance' | 'other';
 };
 
+// ─── Transfer output (terminal nodes: commit, error, compensate) ─────────────
+
+export type TransferOutput = {
+  id: string;
+  label: string;
+  relation: 'sequence' | 'error' | 'compensation';
+  fromStep?: string;      // step id, or 'last' for commit
+  fromGuard?: string;     // guard rule id for error path
+  fromCompensation?: boolean;
+};
+
 // ─── Transfer step (per spec section 11) ──────────────────────────────────────
 
 export type TransferStep = {
   id: string;
   name: string;
+  kind?: 'step' | 'agent';  // ADR-017: agent steps use ⊕ icon
   reads: string[];    // resource IDs this step reads
   writes: string[];   // resource IDs this step writes
   reqs: string[];     // compliance requirements satisfied
   changeClass: string;
   compensation?: string; // compensation logic description
   guardRules: string[]; // rule IDs that guard this step
+  agent_type?: string;   // ADR-017: e.g. 'scorer', 'decision'
+  model?: string;
+  confidence_threshold?: number;
 };
 
 // ─── Graph node ───────────────────────────────────────────────────────────────
@@ -155,6 +172,7 @@ export type GraphNode = {
   flags: FeatureFlag[];
   mod: string;        // last modified date
   steps?: TransferStep[]; // for transfers/reactors
+  outputs?: TransferOutput[]; // terminal nodes (commit, error, compensate)
 };
 
 // ─── Edge relation types (per spec section 8) ─────────────────────────────────
@@ -179,9 +197,9 @@ export type GraphEdge = {
   r: EdgeRelation;
 };
 
-// ─── Lens (removed — spec says no lenses required) ────────────────────────────
+// ─── Lens (ADR-016: 4 canvas modes) ────────────────────────────────────────────
 
-export type Lens = 'default' | 'trace';
+export type Lens = 'default' | 'trc' | 'auth' | 'cfg';
 
 // ─── Scenario trace ───────────────────────────────────────────────────────────
 
@@ -197,6 +215,25 @@ export type ScenarioStep = {
 export type Scenario = {
   label: string;
   steps: ScenarioStep[];
+};
+
+// ─── Document preview (ADR, regulation) ───────────────────────────────────────
+
+export type AdrDoc = {
+  id: string;
+  title: string;
+  slug: string;
+  date: string;
+  status: string;
+  summary: string;
+  decision: string;
+  constraints?: string;
+};
+
+export type ReqDoc = {
+  label: string;
+  description?: string;
+  source?: string;
 };
 
 // ─── Feed card ────────────────────────────────────────────────────────────────
@@ -220,16 +257,23 @@ export type AppState = {
   traceId: string | null;
   traceSet: Set<string>;
   traceGaps: Set<string>;
-  impNode: string | null;
-  impSet: Set<string>;
-  drawerTab: 'details' | 'flow' | 'shortcuts';
+  drawerTab: 'details' | 'flow' | 'shortcuts' | 'authorization';
   drawerOpen: boolean;
   feedOpen: boolean;
   feedTab: 'feed' | 'copilot';
   paletteOpen: boolean;
   bsOpen: boolean;
   bsNodeId: string | null;
-  bsTab: 'diff' | 'lint' | 'impact' | 'approval';
+  bsTab: 'diff' | 'migration' | 'lint' | 'impact';
   bsAdr: string;
   toastMessage: string | null;
+  feedIntent: string | null;
+  recentNavigations: string[];
+  activePanel: 'system-map' | 'compliance' | 'operations' | 'test-coverage';
+  systemMapView: 'graph' | 'table';
+  docPreview: {
+    open: boolean;
+    type: 'adr' | 'regulation' | null;
+    id: string | null;
+  };
 };

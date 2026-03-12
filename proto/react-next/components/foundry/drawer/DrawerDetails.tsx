@@ -38,7 +38,7 @@ function sectionLabel(label: string, count?: number) {
 export default function DrawerDetails() {
   const selectedId = useStore((s) => s.selectedId);
   const openBottomSheet = useStore((s) => s.openBottomSheet);
-  const showToast = useStore((s) => s.showToast);
+  const openDocPreview = useStore((s) => s.openDocPreview);
 
   const n = selectedId ? NODES[selectedId] : null;
   if (!n) return null;
@@ -159,8 +159,8 @@ export default function DrawerDetails() {
                   key={r}
                   role="button"
                   tabIndex={0}
-                  onClick={() => showToast(`${r}: ${meta.label}`)}
-                  onKeyDown={(e) => e.key === 'Enter' && showToast(`${r}: ${meta.label}`)}
+                  onClick={() => openDocPreview('regulation', r)}
+                  onKeyDown={(e) => e.key === 'Enter' && openDocPreview('regulation', r)}
                   style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 8px', background: 'var(--s2)', border: '1px solid var(--b1)', borderRadius: 5, marginBottom: 4, cursor: 'pointer', transition: '.1s' }}
                 >
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ac2)', width: 80, flexShrink: 0 }}>{r}</span>
@@ -273,8 +273,8 @@ export default function DrawerDetails() {
                   key={a}
                   role="button"
                   tabIndex={0}
-                  onClick={() => showToast(`Opening ${a}…`)}
-                  onKeyDown={(e) => e.key === 'Enter' && showToast(`Opening ${a}…`)}
+                  onClick={() => openDocPreview('adr', a)}
+                  onKeyDown={(e) => e.key === 'Enter' && openDocPreview('adr', a)}
                   style={{ fontFamily: 'var(--font-mono)', fontSize: 9, padding: '2px 6px', borderRadius: 3, background: 'var(--acb)', color: 'var(--ac2)', border: '1px solid var(--acbd)', cursor: 'pointer' }}
                 >
                   {a}

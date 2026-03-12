@@ -2,6 +2,32 @@
 
 import { useStore } from '@/lib/store';
 import { NODES, SCENARIOS } from '@/lib/data';
+import { inferChangeClass, getApprovalMessage } from '@/lib/change-class';
+import type { GraphNode } from '@/lib/types';
+
+const CHANGE_CLASS_COLOR: Record<string, string> = {
+  sensitive: 'var(--rd)',
+  compliance: 'var(--yw)',
+  behavioral: 'var(--gn)',
+  structural: 'var(--bl)',
+};
+
+function ApprovalFooter({ node }: { node: GraphNode }) {
+  const cls = inferChangeClass(node);
+  const msg = getApprovalMessage(node);
+  const color = CHANGE_CLASS_COLOR[cls] ?? 'var(--t2)';
+  return (
+    <div style={{
+      padding: '8px 16px', borderTop: '1px solid var(--b1)', background: 'var(--s2)',
+      fontSize: 10, color: 'var(--t3)', flexShrink: 0,
+    }}>
+      <span style={{ fontWeight: 500, color: 'var(--t2)' }}>Change class:</span>{' '}
+      <span style={{ color }}>:{cls}</span>
+      {' — '}
+      {msg}
+    </div>
+  );
+}
 
 const BTN_P: React.CSSProperties = {
   padding: '8px 18px', background: 'var(--ac)', border: 'none', borderRadius: 'var(--r)',
@@ -46,9 +72,10 @@ export default function BottomSheet() {
   if (!bsOpen || !n) return null;
 
   const TABS = [
-    { id: 'diff',    label: 'Diff'    },
-    { id: 'tests',   label: 'Tests'   },
-    { id: 'propose', label: 'Propose' },
+    { id: 'diff',      label: 'Code Changes' },
+    { id: 'migration', label: 'Migration'    },
+    { id: 'lint',      label: 'Lint'         },
+    { id: 'impact',    label: 'Impact'       },
   ] as const;
 
   return (
@@ -129,70 +156,44 @@ export default function BottomSheet() {
             </>
           )}
 
-          {bsTab === 'tests' && (
-            <>
-              {gaps.length === 0 ? (
-                <div style={{ fontSize: 11, color: 'var(--t3)' }}>No coverage gaps detected for this module.</div>
+          {bsTab === 'migration' && (
+            <div style={{ fontSize: 11, color: 'var(--t3)' }}>
+              {n.pm ? (
+                <div style={{ background: 'var(--s2)', border: '1px solid var(--b1)', borderRadius: 5, padding: '10px 12px', fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.6 }}>
+                  <div style={{ color: 'var(--yw)', marginBottom: 6 }}>Pending migration</div>
+                  <div>create table(:spending_limits) do</div>
+                  <div style={{ paddingLeft: 12 }}>add :confirmed_at, :utc_datetime_usec</div>
+                  <div>end</div>
+                </div>
               ) : (
-                gaps.map((g, i) => (
-                  <div key={i} style={{ marginBottom: 10, background: 'var(--s2)', border: '1px solid var(--b1)', borderRadius: 5, padding: '9px 11px' }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--yw)', marginBottom: 4 }}>
-                      Gap: {g.gapNote}
-                    </div>
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, lineHeight: 1.6, color: 'var(--t2)' }}>
-                      <span style={{ color: 'var(--pu)' }}>describe</span> &quot;{n.name}/{g.action}&quot; <span style={{ color: 'var(--t3)' }}>do</span><br />
-                      &nbsp;&nbsp;<span style={{ color: 'var(--bl)' }}>property</span> &quot;valid inputs&quot; <span style={{ color: 'var(--t3)' }}>do</span><br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;<span style={{ color: 'var(--gn)' }}>check</span> all(:valid_input), <span style={{ color: 'var(--yw)' }}>fn</span> input {'->'}<br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;assert :ok == {n.module}.{g.action}(input)<br />
-                      &nbsp;&nbsp;&nbsp;&nbsp;<span style={{ color: 'var(--t3)' }}>end</span><br />
-                      &nbsp;&nbsp;<span style={{ color: 'var(--t3)' }}>end</span><br />
-                      <span style={{ color: 'var(--t3)' }}>end</span>
-                    </div>
-                  </div>
-                ))
+                <div>No migration required for this proposal.</div>
               )}
-            </>
+            </div>
           )}
 
-          {bsTab === 'propose' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 520 }}>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--t3)', display: 'block', marginBottom: 4 }}>
-                  ADR Reference
-                </label>
-                <input
-                  value={bsAdr}
-                  onChange={(e) => setBsAdr(e.target.value)}
-                  placeholder="ADR-005"
-                  style={{
-                    width: '100%', background: 'var(--s2)', border: '1px solid var(--b2)',
-                    borderRadius: 'var(--r)', padding: '7px 10px',
-                    fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--tx)', outline: 'none',
-                  }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--ac)')}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--b2)')}
-                />
+          {bsTab === 'lint' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--gn)' }}>No lint violations.</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t4)' }}>
+                Credo · ElixirLS · Compiler
               </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--t3)', display: 'block', marginBottom: 4 }}>
-                  Description
-                </label>
-                <textarea
-                  rows={4}
-                  placeholder={`Describe the change to ${n.name}…`}
-                  style={{
-                    width: '100%', background: 'var(--s2)', border: '1px solid var(--b2)',
-                    borderRadius: 'var(--r)', padding: '7px 10px',
-                    fontFamily: 'var(--font-sans)', fontSize: 12, color: 'var(--tx)', outline: 'none',
-                    resize: 'none', lineHeight: 1.5,
-                  }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--ac)')}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--b2)')}
-                />
+            </div>
+          )}
+
+          {bsTab === 'impact' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--t2)' }}>
+                Affected: <span style={{ color: 'var(--ac)' }}>WithdrawalTransfer</span>, <span style={{ color: 'var(--ac)' }}>SpendingLimit</span>
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--t3)' }}>
+                Downstream: 2 transfers, 1 rule. No breaking API changes.
               </div>
             </div>
           )}
         </div>
+
+        {/* Approval footer (ADR-012) */}
+        <ApprovalFooter node={n} />
 
         {/* CTA row */}
         <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--b1)', display: 'flex', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>

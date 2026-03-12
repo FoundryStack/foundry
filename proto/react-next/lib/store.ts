@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import type { AppState, Lens, FeedCard } from './types';
-import { EDGES, NODES, SCENARIOS, INITIAL_FEED } from './data';
+import { NODES, SCENARIOS, INITIAL_FEED } from './data';
 
 type Actions = {
   selectNode: (id: string | null) => void;
@@ -24,6 +24,13 @@ type Actions = {
   showToast: (msg: string) => void;
   dismissToast: () => void;
   addFeedCard: (card: Omit<FeedCard, 'id'>) => void;
+  setFeedIntent: (intent: string) => void;
+  clearFeedIntent: () => void;
+  addRecentNavigation: (id: string) => void;
+  setActivePanel: (panel: AppState['activePanel']) => void;
+  setSystemMapView: (view: AppState['systemMapView']) => void;
+  openDocPreview: (type: 'adr' | 'regulation', id: string) => void;
+  closeDocPreview: () => void;
   feedCards: FeedCard[];
 };
 
@@ -35,24 +42,13 @@ function nextId() {
   return `fc-${_feedCounter++}`;
 }
 
-function computeImpactSet(nodeId: string): Set<string> {
-  const set = new Set<string>();
-  EDGES.forEach((e) => {
-    if (e.f === nodeId) set.add(e.t);
-    if (e.t === nodeId) set.add(e.f);
-  });
-  return set;
-}
-
 export const useStore = create<Store>((set, get) => ({
   // ── State ──────────────────────────────────────────────────────────────────
   selectedId: null,
-  lens: 'str',
+  lens: 'default',
   traceId: null,
   traceSet: new Set(),
   traceGaps: new Set(),
-  impNode: null,
-  impSet: new Set(),
   drawerTab: 'details',
   drawerOpen: false,
   feedOpen: true,
@@ -63,41 +59,46 @@ export const useStore = create<Store>((set, get) => ({
   bsTab: 'diff',
   bsAdr: '',
   toastMessage: null,
+  feedIntent: null,
+  recentNavigations: [],
+  activePanel: 'system-map',
+  systemMapView: 'graph',
+  docPreview: { open: false, type: null, id: null },
   feedCards: INITIAL_FEED,
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
   selectNode: (id) => {
-    const { lens } = get();
-    let impNode: string | null = null;
-    let impSet = new Set<string>();
-
-    if (id && lens === 'imp') {
-      impNode = id;
-      impSet = computeImpactSet(id);
-    }
-
-    set({ selectedId: id, impNode, impSet });
+    set({ selectedId: id });
 
     if (id) {
       get().openDrawer(id);
+      get().addRecentNavigation(id);
     } else {
       set({ drawerOpen: false });
     }
   },
 
+  addRecentNavigation: (id) =>
+    set((s) => {
+      const next = [id, ...s.recentNavigations.filter((x) => x !== id)].slice(0, 5);
+      return { recentNavigations: next };
+    }),
+
+  setActivePanel: (activePanel) => set({ activePanel }),
+
+  setSystemMapView: (systemMapView) => set({ systemMapView }),
+
+  openDocPreview: (type, id) =>
+    set({ docPreview: { open: true, type, id } }),
+
+  closeDocPreview: () =>
+    set({ docPreview: { open: false, type: null, id: null } }),
+
   setLens: (lens) => {
-    const { selectedId } = get();
-    let impNode: string | null = null;
-    let impSet = new Set<string>();
     let traceId: string | null = null;
     let traceSet = new Set<string>();
     let traceGaps = new Set<string>();
-
-    if (lens === 'imp' && selectedId) {
-      impNode = selectedId;
-      impSet = computeImpactSet(selectedId);
-    }
 
     if (lens !== 'trc') {
       traceId = null;
@@ -109,7 +110,7 @@ export const useStore = create<Store>((set, get) => ({
       traceGaps = get().traceGaps;
     }
 
-    set({ lens, impNode, impSet, traceId, traceSet, traceGaps });
+    set({ lens, traceId, traceSet, traceGaps });
   },
 
   pickScenario: (id) => {
@@ -136,9 +137,7 @@ export const useStore = create<Store>((set, get) => ({
       traceId: null,
       traceSet: new Set(),
       traceGaps: new Set(),
-      lens: 'str',
-      impNode: null,
-      impSet: new Set(),
+      lens: 'default',
     });
   },
 
@@ -194,4 +193,8 @@ export const useStore = create<Store>((set, get) => ({
     set((s) => ({
       feedCards: [{ ...card, id: nextId() }, ...s.feedCards],
     })),
+
+  setFeedIntent: (intent) => set({ feedIntent: intent, feedOpen: true }),
+
+  clearFeedIntent: () => set({ feedIntent: null }),
 }));

@@ -1,4 +1,5 @@
-import type { GraphNode, GraphEdge, Scenario, FeedCard } from './types';
+import type { GraphNode, GraphEdge, Scenario, FeedCard, AdrDoc, ReqDoc } from './types';
+import { getOutputParentId, getCompoundNodeIds } from './graph-config';
 
 // ─── Node resolution for HoverCard (includes step/state/output nodes) ─────────
 
@@ -112,26 +113,28 @@ export function getNodeForHover(nodeId: string): ResolvedNode | null {
     }
   }
 
-  // Output node
-  if (nodeId.startsWith('withdraw-')) {
-    const withdraw = NODES['withdraw'];
-    if (withdraw) {
-      const label = nodeId.includes('commit') ? 'Committed' : nodeId.includes('error') ? 'Error' : 'Compensated';
+  // Output node — resolve parent from graph structure
+  const outputParentId = getOutputParentId(nodeId, NODES);
+  if (outputParentId) {
+    const parent = NODES[outputParentId];
+    if (parent) {
+      const out = parent.outputs?.find((o) => o.id === nodeId);
+      const label = out?.label ?? (nodeId.includes('commit') ? 'Committed' : nodeId.includes('error') ? 'Error' : 'Compensated');
       return {
         id: nodeId,
-        name: label,
+        name: label.charAt(0).toUpperCase() + label.slice(1),
         type: 'output',
-        domain: withdraw.domain,
-        cov: withdraw.cov,
-        gap: withdraw.gap,
-        sensitive: withdraw.sensitive,
-        desc: `Terminal outcome of ${withdraw.name}`,
+        domain: parent.domain,
+        cov: parent.cov,
+        gap: parent.gap,
+        sensitive: parent.sensitive,
+        desc: `Terminal outcome of ${parent.name}`,
         attrs: [],
         actions: [],
         reqs: [],
         adrs: [],
         runbook: null,
-        tests: withdraw.tests,
+        tests: parent.tests,
         dl: null,
         pt: false,
         arch: false,
@@ -144,34 +147,21 @@ export function getNodeForHover(nodeId: string): ResolvedNode | null {
         oban: [],
         rl: false,
         flags: [],
-        mod: withdraw.mod,
+        mod: parent.mod,
       };
     }
   }
 
-  // Cluster node (cluster-identity, cluster-finance, cluster-withdraw, etc.)
+  // Cluster node — derive domain and name from NODES
   if (nodeId.startsWith('cluster-')) {
     const suffix = nodeId.replace('cluster-', '');
-    const domainMap: Record<string, string> = {
-      identity: 'Identity',
-      finance: 'Finance',
-      compliance: 'Compliance',
-      game: 'Game',
-      player: 'Identity',
-      withdraw: 'Finance',
-      deposit: 'Finance',
-      amlscreen: 'Compliance',
-    };
-    const domain = domainMap[suffix] ?? domainMap[suffix.split('-')[0]] ?? 'Identity';
-    const transferNames: Record<string, string> = {
-      withdraw: 'WithdrawalTransfer',
-      deposit: 'DepositTransfer',
-      amlscreen: 'AmlScreeningReactor',
-    };
-    const clusterName = transferNames[suffix] ?? NODES['player']?.name ?? domain;
+    const entity = NODES[suffix] ?? NODES[suffix.split('-')[0]];
+    const domain = entity?.domain ?? DOMAIN_ORDER.find((d) => d.toLowerCase() === suffix || d.toLowerCase() === suffix.split('-')[0]) ?? 'Identity';
+    const isDomainCluster = ['identity', 'finance', 'compliance', 'game'].includes(suffix);
+    const clusterName = isDomainCluster ? domain : (entity?.name ?? domain);
     return {
       id: nodeId,
-      name: ['identity', 'finance', 'compliance', 'game'].includes(suffix) ? domain : clusterName,
+      name: clusterName,
       type: 'resource' as const,
       domain,
       module: '',
@@ -206,7 +196,7 @@ export function getNodeForHover(nodeId: string): ResolvedNode | null {
 
 /** Maps entity id to graph node id (for compounds, entity is inside cluster). */
 export function getGraphNodeId(entityId: string): string {
-  if (['withdraw', 'deposit', 'amlscreen', 'player'].includes(entityId)) return `cluster-${entityId}`;
+  if (getCompoundNodeIds(NODES).includes(entityId)) return `cluster-${entityId}`;
   return entityId;
 }
 
@@ -215,7 +205,7 @@ export function getPrimaryNodeId(nodeId: string): string | null {
   if (NODES[nodeId]) return nodeId;
   if (nodeId.startsWith('cluster-')) {
     const suffix = nodeId.replace('cluster-', '');
-    if (['withdraw', 'deposit', 'amlscreen', 'player'].includes(suffix)) return suffix;
+    if (getCompoundNodeIds(NODES).includes(suffix)) return suffix;
     return null; // domain clusters have no single entity
   }
   // Step -> parent transfer
@@ -228,7 +218,8 @@ export function getPrimaryNodeId(nodeId: string): string | null {
     if (node.sm?.states?.some((s) => s.id === nodeId)) return node.id;
   }
   // Output -> parent transfer
-  if (nodeId.startsWith('withdraw-')) return 'withdraw';
+  const outputParent = getOutputParentId(nodeId, NODES);
+  if (outputParent) return outputParent;
   return null;
 }
 
@@ -260,12 +251,14 @@ export const DOMAIN_STROKE: Record<string, string> = {
 export const TYPE_ICON: Record<string, string> = {
   resource:     '⬡',
   transfer:     '⇄',
-  rule:         '◈',
-  reactor:      '⚡',
-  input:        '▶',
+  rule:         '◆',
+  reactor:      '◈',
+  job:          '⚡',
+  liveview:     '▣',
+  trigger:      '▶',
   output:       '⟐',
   blueprint:    '◇',
-  liveresource: '▣',
+  liveresource: '⊞',
   provider:     '⬚',
   step:         '⇄',
   state:        '○',
@@ -282,7 +275,9 @@ export const TYPE_COLOR: Record<string, string> = {
   transfer:     '#34d399',  // green
   rule:         '#fbbf24',  // amber
   reactor:      '#c084fc',  // purple
-  input:        '#38bdf8',  // light blue
+  job:          '#f59e0b',  // amber
+  liveview:     '#c084fc',  // purple
+  trigger:      '#38bdf8',  // light blue
   output:       '#94a3b8',  // slate
   blueprint:    '#a78bfa',  // violet
   liveresource: '#c084fc',  // purple
@@ -299,7 +294,7 @@ export const NODES: Record<string, GraphNode> = {
   // ══════════════════════════════════════════════════════════════════════════
 
   'input-register': {
-    id: 'input-register', name: '/api/register', type: 'input', domain: 'Identity',
+    id: 'input-register', name: '/api/register', type: 'trigger', domain: 'Identity',
     module: '', sensitive: false, gap: false, cov: 100,
     desc: 'Player registration endpoint',
     attrs: [], actions: [], reqs: [], adrs: [], runbook: null,
@@ -310,7 +305,7 @@ export const NODES: Record<string, GraphNode> = {
   },
 
   'input-sessions': {
-    id: 'input-sessions', name: '/api/sessions', type: 'input', domain: 'Identity',
+    id: 'input-sessions', name: '/api/sessions', type: 'trigger', domain: 'Identity',
     module: '', sensitive: false, gap: false, cov: 100,
     desc: 'Session management endpoint',
     attrs: [], actions: [], reqs: [], adrs: [], runbook: null,
@@ -420,7 +415,7 @@ export const NODES: Record<string, GraphNode> = {
   // ══════════════════════════════════════════════════════════════════════════
 
   'input-withdraw': {
-    id: 'input-withdraw', name: 'POST /withdraw', type: 'input', domain: 'Finance',
+    id: 'input-withdraw', name: 'POST /withdraw', type: 'trigger', domain: 'Finance',
     module: '', sensitive: false, gap: false, cov: 100,
     desc: 'Withdrawal request endpoint',
     attrs: [], actions: [], reqs: [], adrs: [], runbook: null,
@@ -431,7 +426,7 @@ export const NODES: Record<string, GraphNode> = {
   },
 
   'input-webhook-pg': {
-    id: 'input-webhook-pg', name: 'Webhook: payment_gateway', type: 'input', domain: 'Finance',
+    id: 'input-webhook-pg', name: 'Webhook: payment_gateway', type: 'trigger', domain: 'Finance',
     module: '', sensitive: false, gap: false, cov: 100,
     desc: 'Payment gateway webhook receiver',
     attrs: [], actions: [], reqs: [], adrs: [], runbook: null,
@@ -457,9 +452,15 @@ export const NODES: Record<string, GraphNode> = {
     auth: false, oban: [], rl: true, flags: [], mod: '2026-03-02',
     steps: [
       { id: 'w-validate', name: 'validate', reads: ['player'], writes: [], reqs: ['RG-UK-019'], changeClass: 'behavioral', guardRules: ['kyccheck'] },
-      { id: 'w-check-limits', name: 'check_limits', reads: ['limit'], writes: [], reqs: ['RG-UK-031', 'RG-MGA-022'], changeClass: 'behavioral', guardRules: ['rgcheck'] },
+      { id: 'w-check-limits', name: 'check_limits', kind: 'agent', agent_type: 'scorer', model: 'claude-sonnet', confidence_threshold: 0.7, reads: ['limit'], writes: [], reqs: ['RG-UK-031', 'RG-MGA-022'], changeClass: 'behavioral', guardRules: ['rgcheck'] },
       { id: 'w-debit', name: 'debit', reads: [], writes: ['wallet', 'ledger'], reqs: ['RG-UK-014', 'RG-MGA-007'], changeClass: 'sensitive', compensation: 'credit wallet back', guardRules: [] },
       { id: 'w-notify', name: 'notify', reads: [], writes: [], reqs: [], changeClass: 'behavioral', guardRules: [] },
+    ],
+    outputs: [
+      { id: 'withdraw-commit', label: 'committed', relation: 'sequence', fromStep: 'last' },
+      { id: 'withdraw-error-kyc', label: 'error', relation: 'error', fromGuard: 'kyccheck' },
+      { id: 'withdraw-error-limits', label: 'error', relation: 'error', fromGuard: 'rgcheck' },
+      { id: 'withdraw-compensate', label: 'compensated', relation: 'compensation', fromCompensation: true },
     ],
   },
 
@@ -548,7 +549,7 @@ export const NODES: Record<string, GraphNode> = {
   },
 
   'input-cron-aml': {
-    id: 'input-cron-aml', name: 'Scheduler: cron 0 * * * *', type: 'input', domain: 'Compliance',
+    id: 'input-cron-aml', name: 'Scheduler: cron 0 * * * *', type: 'trigger', domain: 'Compliance',
     module: '', sensitive: false, gap: false, cov: 100,
     desc: 'Hourly AML screening cron job',
     attrs: [], actions: [], reqs: [], adrs: [], runbook: null,
@@ -582,7 +583,7 @@ export const NODES: Record<string, GraphNode> = {
   // ══════════════════════════════════════════════════════════════════════════
 
   'input-rounds': {
-    id: 'input-rounds', name: 'POST /api/rounds', type: 'input', domain: 'Game',
+    id: 'input-rounds', name: 'POST /api/rounds', type: 'trigger', domain: 'Game',
     module: '', sensitive: false, gap: false, cov: 100,
     desc: 'Game round initiation endpoint',
     attrs: [], actions: [], reqs: [], adrs: [], runbook: null,
@@ -692,18 +693,115 @@ export const EDGES: GraphEdge[] = [
   { f: 'blueprint', t: 'rgcheck', r: 'eligibleIf' },
 ];
 
-// ─── Requirement metadata ─────────────────────────────────────────────────────
+// ─── ADR documents (mock content for preview overlay) ──────────────────────────
 
-export const REQ_META: Record<string, { label: string }> = {
-  'RG-UK-014': { label: 'UK — Withdrawal controls' },
-  'RG-UK-019': { label: 'UK — KYC verification' },
-  'RG-UK-031': { label: 'UK — Spending limits' },
-  'RG-MGA-007': { label: 'MGA — Wallet integrity' },
-  'RG-MGA-011': { label: 'MGA — KYC high-value' },
-  'RG-MGA-022': { label: 'MGA — Player protection' },
-  'AML-003': { label: 'AML — Transaction monitoring' },
-  'AML-007': { label: 'AML — SAR reporting' },
-  'GDPR-001': { label: 'GDPR — PII minimisation' },
+export const ADR_DOCS: Record<string, AdrDoc> = {
+  'ADR-001': {
+    id: 'ADR-001',
+    title: 'Stack Selection — Elixir/Ash 3.x/Phoenix',
+    slug: 'stack-selection',
+    date: '2026-03',
+    status: 'Accepted',
+    summary: 'Elixir + Ash Framework 3.x + Phoenix LiveView + Spark DSL. Full ecosystem including ash_postgres, money stack, auth, observability.',
+    decision: 'The target stack is Elixir with Ash Framework 3.x, Phoenix LiveView, and Spark DSL extensions. This includes ash_postgres, the money stack, authentication, and observability tooling. The stack is chosen for its governance-friendly DSL, compile-time guarantees, and suitability for regulated domains.',
+    constraints: 'All target platforms must use this stack. Foundry does not support other runtimes.',
+  },
+  'ADR-002': {
+    id: 'ADR-002',
+    title: 'Code Generation — Igniter for All Code, No String Interpolation',
+    slug: 'code-generation',
+    date: '2026-03',
+    status: 'Accepted',
+    summary: 'All code generation uses Igniter. String interpolation for Elixir source is forbidden. Catalogue operations preferred; raw Igniter API permitted when no catalogue operation fits.',
+    decision: 'The copilot must generate and modify Elixir source code. String interpolation is wrong — it produces structural invalidity, formatting instability, and incremental unsafety. All code generation uses Igniter. Catalogue operations (e.g. Op.AddRule, Op.AddTransfer) for common patterns; raw Igniter API (create_new_file, find_and_update_module) for novel cases. Both produce AST-valid, formatter-compliant output.',
+    constraints: 'Migrations are generated via mix ash.codegen. Code and migration diffs are shown together in the review panel. On approval: code applied first, then ash.codegen, then ash.migrate.',
+  },
+  'ADR-005': {
+    id: 'ADR-005',
+    title: 'Change Approval Model — Four-Class Classification',
+    slug: 'change-approval-model',
+    date: '2026-03',
+    status: 'Accepted',
+    summary: 'Four change classes: structural, behavioral, sensitive, compliance. Dual approval for :sensitive. ADR required for :compliance.',
+    decision: 'Four change classes with different approval requirements. :structural — any developer, configurable auto-apply. :behavioral — domain lead, never auto-apply, audit logged. :sensitive — sensitive lead + one other (dual approval), never auto-apply, mandatory audit. :compliance — compliance officer, never auto-apply, ADR required. When in doubt, classify upward. The :sensitive class is configured per project via manifest.sensitive_resources.',
+    constraints: 'Authentication resources (User, Token) are always :sensitive. Migrations are classified by the tables they touch. Feature flags on compliance controls are :compliance class changes.',
+  },
+  'ADR-013': {
+    id: 'ADR-013',
+    title: 'Copilot Agent Behaviour',
+    slug: 'copilot-agent-behavior',
+    date: '2026-03',
+    status: 'Accepted',
+    summary: 'Epistemic contract, confidence states, clarifying question UX, error recovery, phase-gated behaviour.',
+    decision: 'The copilot follows an epistemic contract: it states confidence levels, asks at most one clarifying question when intent is ambiguous, and never generates on unresolved ambiguity. Confidence states drive the proposal flow. Error recovery paths are defined for context build failure, Igniter failure, and compilation failure.',
+    constraints: 'Clarifying question UX uses binary-choice buttons. Confidence threshold and on_low_confidence handlers required for agent steps (ADR-017).',
+  },
+};
+
+// Fallback for ADRs not in ADR_DOCS (e.g. ADR-003, ADR-004, etc.)
+export function getAdrDoc(id: string): AdrDoc | null {
+  const doc = ADR_DOCS[id];
+  if (doc) return doc;
+  const num = id.replace(/^ADR-0*/, '');
+  return {
+    id,
+    title: `${id} — Architecture Decision Record`,
+    slug: `adr-${num}`,
+    date: '2026-03',
+    status: 'Accepted',
+    summary: `Architecture decision record ${id}. See docs/adrs/ for full content.`,
+    decision: 'Full document content would be loaded from docs/adrs/ in production. This prototype uses mock data.',
+  };
+}
+
+// ─── Requirement metadata (expanded for preview overlay) ───────────────────────
+
+export const REQ_META: Record<string, ReqDoc> = {
+  'RG-UK-014': {
+    label: 'UK — Withdrawal controls',
+    description: 'Withdrawals must be processed in a controlled manner. Limit decreases take effect immediately; limit increases require a minimum 24-hour cooling-off period. The system must not process withdrawals that would breach an active limit. Source of funds documentation may be required for high-value withdrawals.',
+    source: 'LCCP SR Code 3.4.3, UKGC Withdrawal Guidance',
+  },
+  'RG-UK-019': {
+    label: 'UK — KYC verification',
+    description: 'Players must be verified before being permitted to withdraw or before cumulative deposits exceed defined thresholds. Age verification (18+) must be completed before first deposit. Identity verification must be completed within 30 days of registration or before cumulative deposits exceed €2,000, whichever comes first. Source of funds documentation may be required for enhanced due diligence.',
+    source: 'LCCP SR Code, MGA Player Protection Directive Article 9',
+  },
+  'RG-UK-031': {
+    label: 'UK — Spending limits',
+    description: 'Players must be able to set daily, weekly, and monthly spending limits. Stake limits, loss limits, and deposit limits must be configurable. Limit decreases take effect immediately. Limit increases require a 24-hour cooling-off period before activation. The player must be able to reverse a requested increase during cooling-off.',
+    source: 'LCCP SR Code 3.4.3',
+  },
+  'RG-MGA-007': {
+    label: 'MGA — Wallet integrity',
+    description: 'Real money player funds must be held separately from operator funds. Wallet debits and credits must be atomic and auditable. The level of protection must be disclosed to players. All financial transactions must be traceable.',
+    source: 'MGA Gaming Authorisations Regulations, LCCP Ordinary Code 4.2.1',
+  },
+  'RG-MGA-011': {
+    label: 'MGA — KYC high-value',
+    description: 'Enhanced KYC and source of funds verification required when cumulative deposits exceed €2,000 in a rolling 30-day period or when high-value withdrawal is requested. Identity verification must be completed before high-value transactions. Operators must assess player affordability for signs of financial harm.',
+    source: 'MGA Player Protection Directive Article 9, MGA AML/CFT Requirements Article 8',
+  },
+  'RG-MGA-022': {
+    label: 'MGA — Player protection',
+    description: 'Operators must provide deposit limits, loss limits, session limits, reality checks, self-exclusion, and cooling-off periods. All tools must be easily accessible from within the gaming interface. Spend limits must be enforced before game rounds and withdrawals.',
+    source: 'MGA Player Protection Directive Article 12',
+  },
+  'AML-003': {
+    label: 'AML — Transaction monitoring',
+    description: 'All financial transactions must be monitored for suspicious activity. Transaction records must include type, amount, currency, player ID, timestamp, and game reference where applicable. Reports must be available for regulatory submission.',
+    source: 'MGA AML/CFT Requirements, LCCP',
+  },
+  'AML-007': {
+    label: 'AML — SAR reporting',
+    description: 'Suspicious activity reports (SARs) must be filed with the relevant authority when required. The platform must support SAR workflow and audit trail. Enhanced due diligence triggers must be documented.',
+    source: 'MGA AML/CFT Requirements',
+  },
+  'GDPR-001': {
+    label: 'GDPR — PII minimisation',
+    description: 'Personal data must be collected only when necessary. PII-bearing attributes must be identified and protected. Data retention policies must be enforced. Player data and transaction records must be retained per regulatory requirements.',
+    source: 'GDPR Articles 5, 6; MGA Data Retention Policy',
+  },
 };
 
 // ─── Scenarios ────────────────────────────────────────────────────────────────

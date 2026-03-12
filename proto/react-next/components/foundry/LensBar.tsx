@@ -10,23 +10,19 @@ type LensConfig = {
   dot?: string;
 };
 
+// ADR-016: 4 canvas modes — Default, Scenario trace, Authorization, Config view
 const LENSES: LensConfig[] = [
-  { id: 'str',  label: 'Structure',     dot: 'var(--ac2)' },
-  { id: 'cmp',  label: 'Compliance',    dot: 'var(--yw)' },
-  { id: 'sen',  label: 'Sensitive Data',dot: 'var(--rd)' },
-  { id: 'hlth', label: 'Test Topology', dot: 'var(--gn)' },
-  { id: 'imp',  label: 'Impact',        dot: 'var(--bl)' },
-  { id: 'erd',  label: 'Schema / ERD',  dot: 'var(--pu)' },
+  { id: 'default', label: 'Default',        dot: 'var(--ac2)' },
+  { id: 'trc',     label: 'Scenario trace', dot: 'var(--yw)' },
+  { id: 'auth',    label: 'Authorization',  dot: 'var(--rd)' },
+  { id: 'cfg',     label: 'Config view',    dot: 'var(--pu)' },
 ];
 
 const ACTIVE: Partial<Record<Lens, { color: string; border: string; bg?: string }>> = {
-  str:  { color: 'var(--ac2)', border: 'var(--acbd)' },
-  cmp:  { color: 'var(--yw)',  border: 'var(--ywbd)' },
-  sen:  { color: 'var(--rd)',  border: 'var(--rdbd)' },
-  hlth: { color: 'var(--gn)',  border: 'var(--gnbd)' },
-  trc:  { color: 'var(--yw)',  border: 'var(--ywbd)', bg: 'rgba(245,158,11,.06)' },
-  imp:  { color: 'var(--bl)',  border: 'var(--blbd)' },
-  erd:  { color: 'var(--pu)',  border: 'var(--pubd)' },
+  default: { color: 'var(--ac2)', border: 'var(--acbd)' },
+  trc:     { color: 'var(--yw)',  border: 'var(--ywbd)', bg: 'rgba(245,158,11,.06)' },
+  auth:    { color: 'var(--rd)',  border: 'var(--rdbd)' },
+  cfg:     { color: 'var(--pu)',  border: 'var(--pubd)' },
 };
 
 export default function LensBar() {
@@ -36,16 +32,16 @@ export default function LensBar() {
   const traceGaps = useStore((s) => s.traceGaps);
   const pickScenario = useStore((s) => s.pickScenario);
   const clearTrace = useStore((s) => s.clearTrace);
-  const impNode = useStore((s) => s.impNode);
-  const impSet = useStore((s) => s.impSet);
+  const systemMapView = useStore((s) => s.systemMapView);
+  const setSystemMapView = useStore((s) => s.setSystemMapView);
 
   const sc = traceId ? SCENARIOS[traceId] : null;
   const gaps = sc ? sc.steps.filter((s) => s.gap).length : 0;
-  const showBar = lens === 'trc' || lens === 'imp' || lens === 'erd';
+  const showBar = lens === 'trc' || lens === 'auth' || lens === 'cfg';
 
   return (
     <div style={{ flexShrink: 0 }}>
-      {/* Lens buttons row */}
+      {/* Lens buttons row — ADR-016: 4 canvas modes */}
       <div style={{
         height: 38, background: 'var(--s1)', borderBottom: '1px solid var(--b1)',
         display: 'flex', alignItems: 'center', padding: '0 14px', gap: 4,
@@ -74,16 +70,16 @@ export default function LensBar() {
         <div style={{ width: 1, height: 18, background: 'var(--b2)', margin: '0 4px' }} />
 
         <button
-          onClick={() => setLens('trc')}
+          onClick={() => setSystemMapView(systemMapView === 'graph' ? 'table' : 'graph')}
           style={{
             padding: '4px 10px', borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: 'pointer',
-            border: `1px solid ${lens === 'trc' ? 'var(--ywbd)' : 'transparent'}`,
-            background: lens === 'trc' ? 'rgba(245,158,11,.06)' : 'none',
-            color: lens === 'trc' ? 'var(--yw)' : 'var(--t3)',
+            border: `1px solid ${systemMapView === 'table' ? 'var(--acbd)' : 'transparent'}`,
+            background: systemMapView === 'table' ? 'var(--acb)' : 'none',
+            color: systemMapView === 'table' ? 'var(--ac2)' : 'var(--t3)',
             transition: '.1s', whiteSpace: 'nowrap',
           }}
         >
-          {'▶'} Scenario Trace
+          {systemMapView === 'graph' ? 'Table view' : 'Graph view'}
         </button>
 
         <div style={{ flex: 1 }} />
@@ -132,23 +128,20 @@ export default function LensBar() {
             </>
           )}
 
-          {lens === 'imp' && (
+          {lens === 'auth' && (
             <>
-              <span style={{ fontSize: 11, color: 'var(--bl)', fontWeight: 600 }}>Impact / Dependency</span>
+              <span style={{ fontSize: 11, color: 'var(--rd)', fontWeight: 600 }}>Authorization</span>
               <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--t2)' }}>
-                {impNode
-                  ? <span>Impact of <strong style={{ color: 'var(--bl)' }}>{impNode}</strong> — {impSet.size} connected module{impSet.size !== 1 ? 's' : ''}. Click any module to pivot.</span>
-                  : <span style={{ color: 'var(--bl)' }}>Click any module on the canvas to see its impact</span>
-                }
+                Actor / action policy matrix. Click a resource to view authorization details.
               </span>
             </>
           )}
 
-          {lens === 'erd' && (
+          {lens === 'cfg' && (
             <>
-              <span style={{ fontSize: 11, color: 'var(--pu)', fontWeight: 600 }}>Schema / ERD</span>
+              <span style={{ fontSize: 11, color: 'var(--pu)', fontWeight: 600 }}>Config view</span>
               <span style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--t2)' }}>
-                Click any resource to view field schema.
+                Schema / ERD. Click any resource to view field schema.
               </span>
             </>
           )}

@@ -5,6 +5,7 @@
 
 import type { GraphNode, GraphEdge, EdgeRelation } from './types';
 import { NODE_LAYOUT, DOMAIN_ORDER, TYPE_ICON, TYPE_COLOR, DOMAIN_COLOR } from './data';
+import { getTransferNodeIds, getCompoundNodeIds, getFsmResourceIds } from './graph-config';
 
 export type NodeIndicators = {
   gap?: boolean;
@@ -17,6 +18,9 @@ export type NodeIndicators = {
   rl?: boolean;
   runbook?: boolean;
   covered?: boolean;
+  adrLinked?: boolean;
+  policyPresent?: boolean;
+  pse?: string; // "PSE" | "PS·" | "P·E" etc — only when sensitive
 };
 
 export type CytoscapeNodeData = {
@@ -48,7 +52,15 @@ function buildIndicators(n: {
   rl?: boolean;
   runbook?: string | null;
   cov?: number;
+  attrs?: unknown[];
+  actions?: unknown[];
+  adrs?: string[];
+  dl?: string | null;
 }): NodeIndicators {
+  const covered = (n.cov ?? 0) >= 80 && !n.gap;
+  const pse = n.sensitive
+    ? [n.pt && 'P', n.arch && 'S', (n.dl === 'ash_postgres' || n.dl === 'ecto') && 'E'].filter(Boolean).join('') || undefined
+    : undefined;
   return {
     gap: n.gap,
     sensitive: n.sensitive,
@@ -59,7 +71,10 @@ function buildIndicators(n: {
     oban: (n.oban?.length ?? 0) > 0,
     rl: n.rl,
     runbook: !!n.runbook,
-    covered: (n.cov ?? 0) >= 80 && !n.gap,
+    covered,
+    adrLinked: (n.adrs?.length ?? 0) > 0,
+    policyPresent: (n.actions?.length ?? 0) > 0,
+    pse: pse || undefined,
   };
 }
 
@@ -186,13 +201,9 @@ export function buildCytoscapeElements(
     });
 
     // Add entity nodes in this domain as children
-    // Exclude: player (-> cluster-player), withdraw/deposit/amlscreen (-> cluster-transfer)
-    const excludeIds = new Set([
-      ...(domain === 'Identity' ? ['player'] : []),
-      ...(domain === 'Finance' ? ['withdraw', 'deposit'] : []),
-      ...(domain === 'Compliance' ? ['amlscreen'] : []),
-    ]);
-    const domainNodes = Object.values(nodes).filter((n) => n.domain === domain && !excludeIds.has(n.id));
+    // Exclude compound nodes (rendered as cluster children elsewhere)
+    const compoundIds = new Set(getCompoundNodeIds(nodes));
+    const domainNodes = Object.values(nodes).filter((n) => n.domain === domain && !compoundIds.has(n.id));
     for (let i = 0; i < domainNodes.length; i++) {
       const n = domainNodes[i];
       const basePos = layout[n.id] ?? { x: pos.x + (i % 3) * 120, y: pos.y + Math.floor(i / 3) * 80 };
@@ -224,7 +235,7 @@ export function buildCytoscapeElements(
   }
 
   // Add step nodes for transfers (inside transfer compound)
-  const transferIds = ['withdraw', 'deposit', 'amlscreen'];
+  const transferIds = getTransferNodeIds(nodes);
   for (const tid of transferIds) {
     const t = nodes[tid];
     if (!t?.steps?.length) continue;
@@ -251,62 +262,61 @@ export function buildCytoscapeElements(
       position: { x: tPos.x - (domainPositions[t.domain]?.x ?? 0), y: tPos.y - (domainPositions[t.domain]?.y ?? 0) },
     });
 
-    // Step nodes inside transfer
+    // Step nodes inside transfer (ADR-017: agent steps use ⊕ icon)
     t.steps.forEach((step, i) => {
-      const stepIcon = TYPE_ICON.step ?? '⇄';
+      const isAgent = step.kind === 'agent';
+      const stepIcon = isAgent ? '⊕' : (TYPE_ICON.step ?? '⇄');
+      const stepLabel = isAgent && step.agent_type
+        ? `${step.name} · ${step.agent_type}`
+        : step.name;
       elements.push({
         group: 'nodes',
         data: {
           id: step.id,
-          label: `${stepIcon} ${step.name}`,
-          name: step.name,
-          type: 'step',
+          label: `${stepIcon} ${stepLabel}`,
+          name: stepLabel,
+          type: isAgent ? 'agent' : 'step',
           domain: t.domain,
           nodeKind: 'step',
           parent: clusterTransferId,
           transferId: tid,
           reqs: step.reqs,
-          typeColor: TYPE_COLOR.step,
+          typeColor: isAgent ? 'var(--pu)' : TYPE_COLOR.step,
           indicators: buildIndicators(t),
         },
-          position: { x: i * 100, y: 40 },
+        position: { x: i * 100, y: 40 },
       });
     });
 
-    // Output nodes for withdraw
-    if (tid === 'withdraw') {
-      const outputCommit = 'withdraw-commit';
-      const outputKyc = 'withdraw-error-kyc';
-      const outputLimits = 'withdraw-error-limits';
-      const outputCompensate = 'withdraw-compensate';
-
-      const outIcon = TYPE_ICON.output ?? '⟐';
-      [outputCommit, outputKyc, outputLimits, outputCompensate].forEach((oid, i) => {
-        const outLabel = oid.includes('commit') ? 'committed' : oid.includes('error') ? 'error' : 'compensated';
-        elements.push({
-          group: 'nodes',
-          data: {
-            id: oid,
-            label: `${outIcon} ${outLabel}`,
-            name: outLabel,
-            type: 'output',
-            domain: t.domain,
-            nodeKind: 'output',
-            parent: clusterTransferId,
-            typeColor: TYPE_COLOR.output,
-            indicators: buildIndicators(t),
-          },
-          position: { x: t.steps!.length * 100 + 50, y: 40 + (i % 2) * 30 },
-        });
+    // Output nodes — from transfer.outputs metadata
+    const outputs = t.outputs ?? [];
+    const outIcon = TYPE_ICON.output ?? '⟐';
+    outputs.forEach((out, i) => {
+      elements.push({
+        group: 'nodes',
+        data: {
+          id: out.id,
+          label: `${outIcon} ${out.label}`,
+          name: out.label,
+          type: 'output',
+          domain: t.domain,
+          nodeKind: 'output',
+          parent: clusterTransferId,
+          typeColor: TYPE_COLOR.output,
+          indicators: buildIndicators(t),
+        },
+        position: { x: t.steps!.length * 100 + 50, y: 40 + (i % 2) * 30 },
       });
-    }
+    });
   }
 
-  // Add FSM state nodes for Player (inside player compound)
-  const player = nodes['player'];
-  if (player?.sm?.on && player.sm.states.length) {
-    const clusterPlayerId = 'cluster-player';
-    const pPos = layout['player'] ?? domainPositions['Identity'] ?? { x: 0, y: 0 };
+  // Add FSM state nodes for resources with state machines
+  const fsmResourceIds = getFsmResourceIds(nodes);
+  for (const rid of fsmResourceIds) {
+    const player = nodes[rid];
+    if (!player?.sm?.on || !player.sm.states.length) continue;
+    const clusterPlayerId = `cluster-${rid}`;
+    const pPos = layout[rid] ?? domainPositions[player.domain] ?? { x: 0, y: 0 };
 
     const playerIcon = TYPE_ICON[player.type] ?? '⬡';
     elements.push({
@@ -318,11 +328,11 @@ export function buildCytoscapeElements(
         type: 'resource',
         domain: player.domain,
         nodeKind: 'cluster',
-        parent: 'cluster-identity',
+        parent: `cluster-${player.domain.toLowerCase()}`,
         typeColor: TYPE_COLOR[player.type],
         indicators: buildIndicators(player),
       },
-      position: { x: pPos.x - domainPositions['Identity'].x, y: pPos.y - domainPositions['Identity'].y },
+      position: { x: pPos.x - (domainPositions[player.domain]?.x ?? 0), y: pPos.y - (domainPositions[player.domain]?.y ?? 0) },
     });
 
     // Add player entity inside cluster-player
@@ -331,7 +341,7 @@ export function buildCytoscapeElements(
     elements.push({
       group: 'nodes',
       data: {
-        id: 'player',
+        id: rid,
         label: `${playerLabelIcon} ${player.name}`,
         name: player.name,
         type: player.type,
@@ -370,12 +380,11 @@ export function buildCytoscapeElements(
     });
   }
 
-  // Map transfer IDs to cluster IDs for edges (we use clusters, not entity nodes)
-  const transferToCluster: Record<string, string> = {
-    withdraw: 'cluster-withdraw',
-    deposit: 'cluster-deposit',
-    amlscreen: 'cluster-amlscreen',
-  };
+  // Map transfer/compound IDs to cluster IDs for edges
+  const compoundIds = getCompoundNodeIds(nodes);
+  const transferToCluster: Record<string, string> = Object.fromEntries(
+    compoundIds.map((id) => [id, `cluster-${id}`])
+  );
 
   // Add edges (map transfer refs to cluster refs)
   for (const e of edges) {
@@ -413,24 +422,54 @@ export function buildCytoscapeElements(
       });
     }
 
-    // Last step to commit (for withdraw)
-    if (tid === 'withdraw' && t.steps.length) {
-      elements.push({
-        group: 'edges',
-        data: {
-          id: `e${edgeIdx++}`,
-          source: t.steps[t.steps.length - 1].id,
-          target: 'withdraw-commit',
-          relation: 'sequence',
-        },
-      });
+    // Edges from steps to outputs (from outputs metadata)
+    const outputs = t.outputs ?? [];
+    for (const out of outputs) {
+      if (out.relation === 'sequence' && out.fromStep === 'last' && t.steps.length) {
+        elements.push({
+          group: 'edges',
+          data: {
+            id: `e${edgeIdx++}`,
+            source: t.steps[t.steps.length - 1].id,
+            target: out.id,
+            relation: 'sequence',
+          },
+        });
+      } else if (out.relation === 'error' && out.fromGuard) {
+        const step = t.steps.find((s) => s.guardRules.includes(out.fromGuard!));
+        if (step) {
+          elements.push({
+            group: 'edges',
+            data: {
+              id: `e${edgeIdx++}`,
+              source: step.id,
+              target: out.id,
+              relation: 'error',
+            },
+          });
+        }
+      } else if (out.relation === 'compensation' && out.fromCompensation) {
+        const step = t.steps.find((s) => s.compensation);
+        if (step) {
+          elements.push({
+            group: 'edges',
+            data: {
+              id: `e${edgeIdx++}`,
+              source: step.id,
+              target: out.id,
+              relation: 'compensation',
+            },
+          });
+        }
+      }
     }
   }
 
-  // Add guard edges (Rule -> step)
-  const withdraw = nodes['withdraw'];
-  if (withdraw?.steps) {
-    for (const step of withdraw.steps) {
+  // Add guard edges (Rule -> step) for all transfers with steps
+  for (const tid of transferIds) {
+    const t = nodes[tid];
+    if (!t?.steps) continue;
+    for (const step of t.steps) {
       for (const ruleId of step.guardRules) {
         elements.push({
           group: 'edges',
@@ -445,51 +484,12 @@ export function buildCytoscapeElements(
     }
   }
 
-  // Add error and compensation edges for withdraw
-  if (withdraw?.steps) {
-    const validateStep = withdraw.steps.find((s) => s.guardRules.includes('kyccheck'));
-    const limitsStep = withdraw.steps.find((s) => s.guardRules.includes('rgcheck'));
-    const debitStep = withdraw.steps.find((s) => s.compensation);
-
-    if (validateStep) {
-      elements.push({
-        group: 'edges',
-        data: {
-          id: `e${edgeIdx++}`,
-          source: validateStep.id,
-          target: 'withdraw-error-kyc',
-          relation: 'error',
-        },
-      });
-    }
-    if (limitsStep) {
-      elements.push({
-        group: 'edges',
-        data: {
-          id: `e${edgeIdx++}`,
-          source: limitsStep.id,
-          target: 'withdraw-error-limits',
-          relation: 'error',
-        },
-      });
-    }
-    if (debitStep) {
-      elements.push({
-        group: 'edges',
-        data: {
-          id: `e${edgeIdx++}`,
-          source: debitStep.id,
-          target: 'withdraw-compensate',
-          relation: 'compensation',
-        },
-      });
-    }
-  }
-
-  // Add FSM transition edges
-  if (player?.sm?.on && player.sm.tr.length) {
-    const stateId = (name: string) => player.sm.states.find((s) => s.name === name)?.id;
-    for (const tr of player.sm.tr) {
+  // Add FSM transition edges for all FSM resources
+  for (const rid of fsmResourceIds) {
+    const fsmNode = nodes[rid];
+    if (!fsmNode?.sm?.on || !fsmNode.sm.tr.length) continue;
+    const stateId = (name: string) => fsmNode.sm.states.find((s) => s.name === name)?.id;
+    for (const tr of fsmNode.sm.tr) {
       const fromId = tr.f === 'any' ? undefined : stateId(tr.f);
       const toId = stateId(tr.t);
       if (fromId && toId) {

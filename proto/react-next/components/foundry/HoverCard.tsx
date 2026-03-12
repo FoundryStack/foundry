@@ -1,7 +1,8 @@
 'use client';
 
-import { NODES, EDGES, TYPE_COLOR, getNodeForHover, getPrimaryNodeId } from '@/lib/data';
+import { TYPE_COLOR, getNodeForHover } from '@/lib/data';
 import { covColor } from '@/lib/graph-utils';
+import { getHoverExtraRows } from '@/lib/hover-renderers';
 import type { Lens } from '@/lib/types';
 
 type Props = {
@@ -35,132 +36,13 @@ export default function HoverCard({ nodeId, lens, pos }: Props) {
   const infraFlags = [
     n.pt && 'paper_trail',
     n.arch && 'archival',
-    n.oban.length && `oban:${n.oban[0]}`,
-    n.sm.on && `fsm(${n.sm.states.length})`,
+    (n.oban?.length ?? 0) > 0 && `oban:${n.oban![0]}`,
+    n.sm?.on && `fsm(${n.sm.states?.length ?? 0})`,
     n.rl && 'rate-limited',
     n.pm && 'migr!',
   ].filter(Boolean) as string[];
 
-  // Lens-specific extra rows
-  let extraRows: React.ReactNode = null;
-
-  if (lens === 'sen') {
-    const pii = n.attrs.filter((a) => a.pii || a.sen);
-    const mon = n.money && n.money.length;
-    extraRows = (
-      <>
-        <div style={{ height: 1, background: 'var(--b2)', margin: '5px 0' }} />
-        {n.attrs.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>PII fields</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--rd)' }}>{pii.length}/{n.attrs.length}</span>
-          </div>
-        )}
-        {pii.map((a) => (
-          <div key={a.n} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66, paddingLeft: 8 }}>{a.n}</span>
-            <span style={{ fontSize: 8, color: 'var(--rd)' }}>PII</span>
-          </div>
-        ))}
-        {mon ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>monetary</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--yw)' }}>{n.money.length} field{n.money.length !== 1 ? 's' : ''}</span>
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>paper_trail</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: n.pt ? 'var(--gn)' : 'var(--yw)' }}>{n.pt ? '✓ yes' : '✗ no'}</span>
-        </div>
-      </>
-    );
-  } else if (lens === 'hlth') {
-    const mk = (v: boolean, l: string) => (
-      <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>{l}</span>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: v ? 'var(--gn)' : 'var(--yw)' }}>{v ? '✓' : '✗'}</span>
-      </div>
-    );
-    extraRows = (
-      <>
-        <div style={{ height: 1, background: 'var(--b2)', margin: '5px 0' }} />
-        {mk(n.tests.p, 'property')}
-        {mk(n.tests.s, 'scenario')}
-        {mk(n.tests.e, 'e2e')}
-      </>
-    );
-  } else if (lens === 'erd' && n.attrs.length) {
-    extraRows = (
-      <>
-        <div style={{ height: 1, background: 'var(--b2)', margin: '5px 0' }} />
-        {n.attrs.slice(0, 5).map((a) => (
-          <div key={a.n} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>{a.n}</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--pu)' }}>{a.t}</span>
-            {a.pii && <span style={{ fontSize: 7, color: 'var(--rd)', marginLeft: 2 }}>PII</span>}
-            {a.mon && <span style={{ fontSize: 7, color: 'var(--yw)', marginLeft: 2 }}>$</span>}
-          </div>
-        ))}
-        {n.attrs.length > 5 && <div style={{ fontSize: 9, color: 'var(--t3)', padding: '2px 0' }}>+{n.attrs.length - 5} more…</div>}
-      </>
-    );
-  } else if (lens === 'imp') {
-    const primaryId = getPrimaryNodeId(n.id) ?? n.id;
-    const out = EDGES.filter((e) => e.f === primaryId).map((e) => getNodeForHover(e.t)?.name ?? NODES[e.t]?.name ?? e.t);
-    const inp = EDGES.filter((e) => e.t === primaryId).map((e) => getNodeForHover(e.f)?.name ?? NODES[e.f]?.name ?? e.f);
-    if (out.length || inp.length) {
-      extraRows = (
-        <>
-          <div style={{ height: 1, background: 'var(--b2)', margin: '5px 0' }} />
-          {inp.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>receives from</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--bl)', flex: 1, textAlign: 'right' }}>{inp.join(', ')}</span>
-            </div>
-          )}
-          {out.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>sends to</span>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--gn)', flex: 1, textAlign: 'right' }}>{out.join(', ')}</span>
-            </div>
-          )}
-        </>
-      );
-    }
-  } else if (n.type === 'resource' && n.attrs.length) {
-    extraRows = (
-      <>
-        <div style={{ height: 1, background: 'var(--b2)', margin: '5px 0' }} />
-        {n.attrs.slice(0, 3).map((a) => (
-          <div key={a.n} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>{a.n}</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--bl)' }}>{a.t}</span>
-            {a.sen && <span style={{ fontSize: 7, color: 'var(--rd)', marginLeft: 4 }}>PII</span>}
-          </div>
-        ))}
-      </>
-    );
-  } else if (n.type === 'transfer' || n.type === 'reactor') {
-    extraRows = (
-      <>
-        <div style={{ height: 1, background: 'var(--b2)', margin: '5px 0' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>steps</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--ac2)' }}>{n.actions.length} actions</span>
-        </div>
-      </>
-    );
-  } else if (n.type === 'rule') {
-    extraRows = (
-      <>
-        <div style={{ height: 1, background: 'var(--b2)', margin: '5px 0' }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t3)', width: 66 }}>enforces</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--yw)' }}>{n.reqs.length} req{n.reqs.length !== 1 ? 's' : ''}</span>
-        </div>
-      </>
-    );
-  }
+  const extraRows = getHoverExtraRows(lens, n);
 
   return (
     <div

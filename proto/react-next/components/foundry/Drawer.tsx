@@ -1,21 +1,37 @@
 'use client';
 
+import React, { useEffect } from 'react';
 import { useStore } from '@/lib/store';
+import { NODES } from '@/lib/data';
+import { getDrawerTabsForNode, hasCapability } from '@/lib/node-capabilities';
 import DrawerDetails from './drawer/DrawerDetails';
 import DrawerFlow from './drawer/DrawerFlow';
 import DrawerActions from './drawer/DrawerActions';
+import DrawerAuthorization from './drawer/DrawerAuthorization';
 
-const TABS = [
-  { id: 'details',   label: 'Details'  },
-  { id: 'flow',      label: 'Flow'     },
-  { id: 'shortcuts', label: 'Actions'  },
-] as const;
+const TAB_CONTENT: Record<string, React.ComponentType> = {
+  details: DrawerDetails,
+  flow: DrawerFlow,
+  shortcuts: DrawerActions,
+  authorization: DrawerAuthorization,
+};
 
 export default function Drawer() {
   const drawerOpen = useStore((s) => s.drawerOpen);
   const drawerTab  = useStore((s) => s.drawerTab);
+  const selectedId = useStore((s) => s.selectedId);
   const setDrawerTab = useStore((s) => s.setDrawerTab);
   const closeDrawer  = useStore((s) => s.closeDrawer);
+
+  const n = selectedId ? NODES[selectedId] : null;
+  const TABS = n ? getDrawerTabsForNode(n) : [];
+  const hasAuth = n ? hasCapability(n, 'authorization') : false;
+
+  useEffect(() => {
+    if (!hasAuth && drawerTab === 'authorization') {
+      setDrawerTab('details');
+    }
+  }, [hasAuth, drawerTab, setDrawerTab]);
 
   return (
     <div
@@ -23,7 +39,7 @@ export default function Drawer() {
         width: drawerOpen ? 360 : 0,
         minWidth: drawerOpen ? 360 : 0,
         background: 'var(--s1)',
-        borderRight: '1px solid var(--b1)',
+        borderLeft: '1px solid var(--b1)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -75,9 +91,10 @@ export default function Drawer() {
 
       {/* Content — flex column fills remaining height */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {drawerTab === 'details'   && <DrawerDetails />}
-        {drawerTab === 'flow'      && <DrawerFlow />}
-        {drawerTab === 'shortcuts' && <DrawerActions />}
+        {(() => {
+          const Tab = TAB_CONTENT[drawerTab];
+          return Tab ? <Tab /> : null;
+        })()}
       </div>
     </div>
   );

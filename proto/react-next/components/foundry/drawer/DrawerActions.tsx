@@ -2,15 +2,56 @@
 
 import { useStore } from '@/lib/store';
 import { NODES } from '@/lib/data';
+import type { NodeType } from '@/lib/types';
 
-const QUICK_ACTIONS = [
-  { label: 'Propose attribute addition', sub: 'Add a new attribute to this resource' },
-  { label: 'Generate property tests',    sub: 'Scaffold StreamData property tests'   },
-  { label: 'Generate scenario tests',    sub: 'Scaffold compliance scenario tests'   },
-  { label: 'Add compliance requirement', sub: 'Link a regulatory requirement'        },
-  { label: 'Create runbook',             sub: 'Generate a runbook template'          },
-  { label: 'View impact analysis',       sub: 'What changes if this module is modified' },
-] as const;
+type Shortcut = { label: string; intent: string };
+
+const SHORTCUTS_BY_TYPE: Partial<Record<NodeType, Shortcut[]>> = {
+  resource: [
+    { label: 'Add attribute', intent: `Add a new attribute to this resource` },
+    { label: 'Add action', intent: `Add a new action to this resource` },
+    { label: 'Add policy', intent: `Add a policy to this resource` },
+    { label: 'Generate tests', intent: `Generate property and scenario tests for this resource` },
+    { label: 'Link compliance requirement', intent: `Link a compliance requirement to this resource` },
+  ],
+  transfer: [
+    { label: 'Add rule', intent: `Add a rule to guard steps in this transfer` },
+    { label: 'Add step', intent: `Add a step to this transfer` },
+    { label: 'Generate tests', intent: `Generate scenario tests for this transfer` },
+    { label: 'View runbook', intent: `Show runbook for this transfer` },
+  ],
+  reactor: [
+    { label: 'Add rule', intent: `Add a rule to guard steps in this reactor` },
+    { label: 'Add step', intent: `Add a step to this reactor` },
+    { label: 'Generate tests', intent: `Generate scenario tests for this reactor` },
+    { label: 'View runbook', intent: `Show runbook for this reactor` },
+  ],
+  rule: [
+    { label: 'Add jurisdiction clause', intent: `Add a jurisdiction clause to this rule` },
+    { label: 'Generate tests', intent: `Generate tests for this rule` },
+    { label: 'Link compliance requirement', intent: `Link a compliance requirement to this rule` },
+  ],
+  blueprint: [
+    { label: 'Add eligibility clause', intent: `Add an eligibility clause to this blueprint` },
+    { label: 'Generate tests', intent: `Generate tests for this blueprint` },
+  ],
+};
+
+// Oban worker: reactor with oban queue
+const OBAN_SHORTCUTS: Shortcut[] = [
+  { label: 'Generate tests', intent: `Generate tests for this Oban worker` },
+  { label: 'View runbook', intent: `Show runbook for this worker` },
+];
+
+const DEFAULT_SHORTCUTS: Shortcut[] = [
+  { label: 'Generate tests', intent: `Generate tests for this module` },
+  { label: 'View runbook', intent: `Show runbook` },
+];
+
+function getShortcuts(nodeType: NodeType, oban: string[]): Shortcut[] {
+  if (oban.length > 0) return OBAN_SHORTCUTS;
+  return SHORTCUTS_BY_TYPE[nodeType] ?? DEFAULT_SHORTCUTS;
+}
 
 const BTN_P: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
@@ -20,11 +61,18 @@ const BTN_P: React.CSSProperties = {
 };
 
 export default function DrawerActions() {
-  const selectedId       = useStore((s) => s.selectedId);
-  const openBottomSheet  = useStore((s) => s.openBottomSheet);
+  const selectedId     = useStore((s) => s.selectedId);
+  const openBottomSheet = useStore((s) => s.openBottomSheet);
+  const setFeedIntent  = useStore((s) => s.setFeedIntent);
 
   const n = selectedId ? NODES[selectedId] : null;
   if (!n) return null;
+
+  const shortcuts = getShortcuts(n.type, n.oban ?? []);
+
+  function handleShortcut(intent: string) {
+    setFeedIntent(intent);
+  }
 
   return (
     <>
@@ -34,16 +82,16 @@ export default function DrawerActions() {
             fontSize: 9, fontWeight: 600, letterSpacing: '.12em',
             textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 9,
           }}>
-            Quick Actions
+            Contextual Intent Shortcuts
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-            {QUICK_ACTIONS.map((a) => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {shortcuts.map((s) => (
               <button
-                key={a.label}
-                onClick={() => openBottomSheet(n.id)}
+                key={s.label}
+                onClick={() => handleShortcut(s.intent)}
                 style={{
                   background: 'var(--s2)', border: '1px solid var(--b2)', borderRadius: 5,
-                  padding: '6px 8px', fontSize: 10, color: 'var(--t2)',
+                  padding: '8px 10px', fontSize: 11, color: 'var(--t2)',
                   cursor: 'pointer', textAlign: 'left', transition: '.1s', lineHeight: 1.4,
                 }}
                 onMouseEnter={(e) => {
@@ -55,8 +103,7 @@ export default function DrawerActions() {
                   (e.currentTarget as HTMLButtonElement).style.color = 'var(--t2)';
                 }}
               >
-                <strong style={{ color: 'var(--tx)', display: 'block', marginBottom: 1 }}>{a.label}</strong>
-                {a.sub}
+                {s.label}
               </button>
             ))}
           </div>

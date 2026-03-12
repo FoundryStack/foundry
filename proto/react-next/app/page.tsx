@@ -1,22 +1,38 @@
 'use client';
 
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useStore } from '@/lib/store';
 
-import TopBar         from '@/components/foundry/TopBar';
-import Rail           from '@/components/foundry/Rail';
-import Sidebar        from '@/components/foundry/Sidebar';
-import LensBar        from '@/components/foundry/LensBar';
-import Canvas         from '@/components/foundry/Canvas';
-import Drawer         from '@/components/foundry/Drawer';
-import Feed           from '@/components/foundry/Feed';
-import CommandPalette from '@/components/foundry/CommandPalette';
-import BottomSheet    from '@/components/foundry/BottomSheet';
+import TopBar            from '@/components/foundry/TopBar';
+import Rail              from '@/components/foundry/Rail';
+import Sidebar           from '@/components/foundry/Sidebar';
+import LensBar           from '@/components/foundry/LensBar';
+import Canvas            from '@/components/foundry/Canvas';
+import Drawer            from '@/components/foundry/Drawer';
+import Feed              from '@/components/foundry/Feed';
+import CommandPalette    from '@/components/foundry/CommandPalette';
+import BottomSheet       from '@/components/foundry/BottomSheet';
+import DocPreviewOverlay from '@/components/foundry/DocPreviewOverlay';
+import CompliancePanel   from '@/components/foundry/panels/CompliancePanel';
+import OperationsPanel   from '@/components/foundry/panels/OperationsPanel';
+import TestCoveragePanel from '@/components/foundry/panels/TestCoveragePanel';
+import SystemMapTable    from '@/components/foundry/SystemMapTable';
+
+const PANEL_COMPONENTS: Record<'compliance' | 'operations' | 'test-coverage', React.ComponentType> = {
+  compliance: CompliancePanel,
+  operations: OperationsPanel,
+  'test-coverage': TestCoveragePanel,
+};
 
 export default function FoundryPage() {
-  const openPalette  = useStore((s) => s.openPalette);
-  const toastMessage = useStore((s) => s.toastMessage);
-  const dismissToast = useStore((s) => s.dismissToast);
+  const activePanel     = useStore((s) => s.activePanel);
+  const systemMapView  = useStore((s) => s.systemMapView);
+  const setSystemMapView = useStore((s) => s.setSystemMapView);
+  const openPalette    = useStore((s) => s.openPalette);
+  const toggleFeed     = useStore((s) => s.toggleFeed);
+  const toastMessage   = useStore((s) => s.toastMessage);
+  const dismissToast   = useStore((s) => s.dismissToast);
+  const isSystemMap    = activePanel === 'system-map';
 
   // Global ⌘K shortcut
   useEffect(() => {
@@ -29,6 +45,18 @@ export default function FoundryPage() {
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [openPalette]);
+
+  // Global ⌘\ shortcut for feed toggle (ADR-012)
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        e.preventDefault();
+        toggleFeed();
+      }
+    }
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [toggleFeed]);
 
   return (
     <div
@@ -50,18 +78,30 @@ export default function FoundryPage() {
         {/* Sidebar: domain / module list */}
         <Sidebar />
 
-        {/* Central column: lens bar + canvas + drawer */}
+        {/* Central column: lens bar + canvas/drawer or panel */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-          {/* Lens bar + trace context bar */}
-          <LensBar />
+          {isSystemMap && <LensBar />}
 
-          {/* Canvas row */}
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-            {/* Graph canvas */}
-            <Canvas />
-
-            {/* Detail drawer (left-panel style, slides in from right of canvas) */}
-            <Drawer />
+            {isSystemMap ? (
+              <>
+                <Drawer />
+                {systemMapView === 'graph' ? (
+                  <Canvas />
+                ) : (
+                  <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                    <SystemMapTable />
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ flex: 1, overflow: 'auto', background: 'var(--s1)' }}>
+                {(() => {
+                  const Panel = PANEL_COMPONENTS[activePanel];
+                  return Panel ? <Panel /> : null;
+                })()}
+              </div>
+            )}
           </div>
         </div>
 
@@ -72,6 +112,7 @@ export default function FoundryPage() {
       {/* ── Overlays ──────────────────────────────────────────────────────── */}
       <CommandPalette />
       <BottomSheet />
+      <DocPreviewOverlay />
 
       {/* ── Toast ─────────────────────────────────────────────────────────── */}
       {toastMessage && (

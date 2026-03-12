@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, KeyboardEvent } from 'react';
+import { useRef, useEffect, KeyboardEvent } from 'react';
 import { useStore } from '@/lib/store';
 import type { FeedCard } from '@/lib/types';
 
@@ -84,14 +84,24 @@ function FeedCardItem({ card, onReview }: { card: FeedCard; onReview: () => void
 // ─── Feed panel ───────────────────────────────────────────────────────────────
 
 export default function Feed() {
-  const feedOpen   = useStore((s) => s.feedOpen);
-  const feedTab    = useStore((s) => s.feedTab);
-  const feedCards  = useStore((s) => s.feedCards);
-  const toggleFeed = useStore((s) => s.toggleFeed);
-  const setFeedTab = useStore((s) => s.setFeedTab);
-  const addFeedCard = useStore((s) => s.addFeedCard);
-  const showToast   = useStore((s) => s.showToast);
-  const inputRef   = useRef<HTMLTextAreaElement>(null);
+  const feedOpen     = useStore((s) => s.feedOpen);
+  const feedTab      = useStore((s) => s.feedTab);
+  const feedCards    = useStore((s) => s.feedCards);
+  const feedIntent   = useStore((s) => s.feedIntent);
+  const clearFeedIntent = useStore((s) => s.clearFeedIntent);
+  const toggleFeed  = useStore((s) => s.toggleFeed);
+  const setFeedTab   = useStore((s) => s.setFeedTab);
+  const addFeedCard  = useStore((s) => s.addFeedCard);
+  const showToast    = useStore((s) => s.showToast);
+  const inputRef     = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (feedIntent && inputRef.current) {
+      inputRef.current.value = feedIntent;
+      inputRef.current.focus();
+      clearFeedIntent();
+    }
+  }, [feedIntent, clearFeedIntent]);
 
   function handleChat(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {

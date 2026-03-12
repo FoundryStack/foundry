@@ -160,9 +160,11 @@ export default function Canvas() {
           const nodeKind = (data.nodeKind ?? 'entity') as string;
           const indicators = (data.indicators ?? {}) as Record<string, boolean | undefined>;
           const isSm = nodeKind === 'step' || nodeKind === 'state' || nodeKind === 'output';
-          const typeIconSvg = TYPE_ICON_SVG[type] ?? TYPE_ICON_SVG.resource;
-          const indicatorMap: Record<string, string> = { pt: 'paper_trail', arch: 'archival', sm: 'fsm' };
-          const indicatorOrder = ['covered', 'gap', 'sensitive', 'pt', 'arch', 'pm', 'oban', 'sm', 'rl', 'runbook'] as const;
+          const typeIconSvg = type === 'agent' ? '' : (TYPE_ICON_SVG[type] ?? TYPE_ICON_SVG.resource);
+          const agentIcon = type === 'agent' ? '<span style="font-size:14px;font-weight:600;color:var(--pu)">⊕</span>' : '';
+          const indicatorMap: Record<string, string> = { pt: 'paper_trail', arch: 'archival', sm: 'fsm', adrLinked: 'adrLinked', policyPresent: 'policyPresent' };
+          const indicatorOrder = ['covered', 'gap', 'policyPresent', 'sensitive', 'pt', 'arch', 'runbook', 'adrLinked', 'pm', 'oban', 'sm', 'rl'] as const;
+          const pse = (indicators.pse as string | undefined);
           const activeIndicators = indicatorOrder.filter((k) => indicators[k]).slice(0, 5);
           const indicatorSvgs = activeIndicators
             .map((k) => {
@@ -175,13 +177,14 @@ export default function Canvas() {
           const smClass = isSm ? ' cy-node-sm' : '';
           const typeBadge = `<span class="req-badge type-badge" style="color:${escHtml(typeColor)};border-color:${escHtml(typeColor)}40">${escHtml(type)}</span>`;
           const reqBadgeHtml = reqs.slice(0, 4).map((r) => `<span class="req-badge">${escHtml(r)}</span>`).join('');
+          const pseSpan = pse ? `<span class="status-pse" title="paper_trail/soft_delete/ecto">${escHtml(pse)}</span>` : '';
           const reqBadges = !isSm
             ? `<div class="req-badges">${typeBadge}${reqBadgeHtml}</div>`
             : '';
           return `<div class="cy-node-html${smClass}">
-          <div class="status-icons">${indicatorSvgs}</div>
+          <div class="status-icons">${indicatorSvgs}${pseSpan}</div>
           <div class="title-row">
-            <span class="type-icon" style="color:${escHtml(typeColor)}">${typeIconSvg}</span>
+            ${agentIcon || `<span class="type-icon" style="color:${escHtml(typeColor)}">${typeIconSvg}</span>`}
             <span class="title" style="color:${escHtml(typeColor)}">${escHtml(name)}</span>
           </div>
           ${reqBadges}
