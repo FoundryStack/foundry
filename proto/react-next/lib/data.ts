@@ -223,6 +223,13 @@ export function getPrimaryNodeId(nodeId: string): string | null {
   return null;
 }
 
+/** Parent GraphNode for step/state/output nodes; null for entities and clusters. */
+export function getParentNodeForHover(nodeId: string): GraphNode | null {
+  const primaryId = getPrimaryNodeId(nodeId);
+  if (!primaryId || primaryId === nodeId) return null;
+  return NODES[primaryId] ?? null;
+}
+
 // ─── Domain colors (per spec section 7) ───────────────────────────────────────
 
 export const DOMAIN_COLOR: Record<string, string> = {
