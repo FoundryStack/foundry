@@ -199,16 +199,73 @@ new regulatory requirement to its implementing module without developer assistan
 
 ---
 
+## Phase 8: Agent Injection Support
+
+**Goal:** First-class governance and observability for AshAI agent steps in target platform
+Reactors. Makes the human-in-the-loop gate a managed system feature, not ad-hoc code.
+
+**Why here:** Agent steps are `:behavioral` changes — they require Phases 4 and 5 (copilot
+proposals and auto-apply) to already work. The Agent Health panel requires the Operations
+Board (Phase 6) as its home. Phase 7 is not a prerequisite; Phase 8 can begin in parallel
+with Phase 7 if resource permits.
+
+**Opt-in only:** Phase 8 features activate only for target projects that declare
+`extensions: [AshAi]` in a domain module. Projects without AshAI are unaffected and receive
+no lint errors related to agent governance.
+
+**Deliverables:**
+- Foundry Spark DSL extension for `Ash.Reactor` step — adds `agent_type`, `model`,
+  `confidence_threshold`, `on_low_confidence`, `human_gate`, `tools`, `telemetry_prefix`
+  declarations to step syntax
+- `Foundry.Lint.AgentStepChecker` — enforces INV-014 through INV-017 and the lint rules
+  in ADR-017 §Lint Rules
+- `agent_steps` field in `mix foundry.context` output — non-breaking addition; `[]` for
+  non-AshAI projects
+- `HumanGateTask` Ash resource — scaffolded into the *target platform* on first use by
+  `Op.AddAgentStep`; always `:sensitive`; requires paper trail and soft delete; scaffold
+  proposal is shown alongside the agent step proposal in the review panel with its own
+  dual-approval requirement
+- `Foundry.Operations.HumanGateReactor` — manages gate lifecycle: create task, wait for
+  human decision, resume Reactor, write override audit record
+- Agent step rendering in System Map — inline `⊕` step nodes in Transfer/Reactor
+  swimlanes; type-specific detail drawer templates (ADR-016, ADR-017)
+- Agent Health panel in Operations Board — per-agent-step: p95 latency, error rate,
+  cost/call, confidence distribution, override rate
+- Override rate lint warning — fires when override rate exceeds the project-configured
+  threshold (manifest key: `agent_governance.override_rate_warn_threshold`, default 0.20)
+  over a 7-day window; recommends prompt review; threshold deviation from default requires
+  ADR documentation (ADR-017)
+- `Op.AddAgentStep` catalogue operation — adds an agent step to an existing Reactor;
+  classified `:behavioral`; prompts for `agent_type`, `model`, `confidence_threshold`,
+  `tools`; includes lint check on generated step
+- AshAI version check in `mix foundry.versions.check` — warns if AshAI < 2.x when agent
+  steps are present
+
+**Governance specification:** ADR-017 governs all Phase 8 implementation decisions.
+
+**Done when:** A target project can add an agent step via `Op.AddAgentStep` and see two
+proposals in the review panel — the `HumanGateTask` scaffold (`:sensitive`, dual approval)
+and the agent step itself (`:behavioral`, domain lead approval). Both proposals apply
+cleanly. The agent step renders in the System Map as an inline `⊕` step with correct
+metadata. Telemetry is surfaced in the Agent Health panel. A human gate triggers correctly
+on low-confidence output, resumes the Reactor on human approval, and writes the override
+audit record with correct paper trail entries. The override rate lint warning fires in the
+test environment when the threshold is exceeded.
+
+---
+
 ## Phase Dependencies
 
 ```
 Phase 1 (JSON tasks)
-  └── Phase 2 (System Map) ─────────────────────────┐
-        └── Phase 3 (Copilot: questions)             │
-              └── Phase 4 (Copilot: proposals) ──────┤
-                    └── Phase 5 (Auto-apply)          │
-                          └── Phase 6 (Ops + Tests) ──┤
-                                └── Phase 7 (Builder) ─┘
+  └── Phase 2 (System Map)
+        └── Phase 3 (Copilot: questions)
+              └── Phase 4 (Copilot: proposals)
+                    └── Phase 5 (Auto-apply)
+                          └── Phase 6 (Ops + Tests) ──┐
+                                └── Phase 7 (Builder)  │
+                                Phase 8 (Agents) ──────┘
+                                  (parallel with 7, requires 6)
 ```
 
 Each phase is a strict prerequisite for the next. Do not start Phase N+1 until Phase N
@@ -224,5 +281,11 @@ These are explicitly deferred. They may become ADRs when the time comes.
 - **Multi-tenant cloud hosting** — v1 is local mode + single-tenant cloud. Multi-tenant requires the manifest isolation and billing infrastructure to be designed separately.
 - **Support for non-Ash Elixir projects** — raw Ecto, Absinthe-first, etc. The automation leverage is insufficient to justify the generalization cost.
 - **Visual diff of the system map** — showing what the diagram looked like before vs after a change. Valuable, complex. Phase 2 ships diagram generation; the diff view is a later enhancement.
-- **Agent-to-agent orchestration** — multiple Foundry agents coordinating on a large change. Requires the proposal / approval model to handle compound proposals. Future work.
+- **Multi-Foundry-copilot coordination** — multiple Foundry *copilot* agents coordinating
+  on a large change proposal. This is distinct from AshAI agent steps in target platforms
+  (which ARE supported via Phase 8). Coordinating multiple copilot instances requires the
+  proposal model to handle compound proposals spanning multiple copilots. Deferred.
+- **Agent step auto-tuning** — automatic adjustment of confidence thresholds or model
+  selection based on observed override rates. Phase 8 surfaces the signal (override rate);
+  acting on it automatically is a future capability requiring a separate governance model.
 - **Ash 2.x compatibility** — not supported. ADR-001.

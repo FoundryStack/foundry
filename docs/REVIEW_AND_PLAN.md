@@ -66,9 +66,19 @@
 | 49 | Cmd+P shortcut incorrect (should be Cmd+K) | Closed | ADR-012 §Command Palette; AGENTS.md updated |
 | 50 | Foundry incorrectly implied Postgres dependency for its own state | Closed | ADR-015: git-backed files + ETS; ADR-001 core stack table split; ADR-012 retention table updated; ADR-014 storage section updated |
 | 51 | ADR-001 core stack table conflated Foundry and target platform dependencies | Closed | ADR-001 split into Foundry dependencies and target platform dependencies |
-| 52 | INV-008 and INV-010 missing from AGENTS.md Hard Invariants summary | Closed | AGENTS.md updated: INV-008, INV-009, INV-010 added to invariants summary with cross-references |
-| 53 | decorator library creates silent governance hole on Transfer steps | Closed | `docs/lint-catalogue.md` — `:decorated_transfer_step` lint rule defined (status: planned). Warning surfaced in review panel and CLI. Gap #32 also closed. |
-| 54 | iGaming reference project undeclared — Phase acceptance criteria have no verifiable target | Closed | `docs/reference-project-fixture.md` — 3 domains, 9 resources, 2 transfers, 5 rules, 11 RG-* requirements, manifest config, expected lint/context output counts. |
+| 52 | AshAI stance changed: v1 ignore-and-warn superseded by ADR-017 opt-in model | Closed | ADR-017; ADR-001 Out of Scope table updated; Gap #16 superseded |
+| 53 | Visualization paradigm finalized: C4 levels, node/edge taxonomy, agent node type | Closed | ADR-016 |
+| 54 | Agent taxonomy absent — no canonical type list (classifier, scorer, decision, etc.) | Closed | ADR-017 §Agent Taxonomy |
+| 55 | Human-in-the-loop gate unspecified for compliance-gated decision agents | Closed | INV-015; ADR-017 §Human Gate Specification |
+| 56 | Agent step telemetry requirement absent | Closed | INV-017; ADR-017 §Lint Rules |
+| 57 | Authorization matrix view absent from visualization spec | Closed | ADR-016 §Authorization Layer |
+| 58 | mix foundry.context schema missing agent_steps field | Closed | AGENTS.md updated; ADR-017 §AshAI Version Requirement |
+| 59 | Phase 8 (Agent Health panel, agent injection UI) absent from BUILD_SEQUENCE | Closed | BUILD_SEQUENCE.md Phase 8 added |
+| 60 | BUILD_SEQUENCE out-of-scope list did not reflect agent-to-agent deferral accurately | Closed | BUILD_SEQUENCE.md updated |
+| 61 | HumanGateTask resource ownership and scaffold cascade unspecified | Closed | ADR-017 §Human Gate Specification; BUILD_SEQUENCE Phase 8 Done When |
+| 62 | Override rate lint warning threshold was hardcoded with no rationale | Closed | ADR-017 §Human Gate Specification; manifest key agent_governance.override_rate_warn_threshold |
+| 63 | human_gate permitted on passive agent types (observer, summarizer, etc.) — semantically wrong | Closed | ADR-017 lint rule: human_gate_only_on_gatable_types |
+| 64 | manifest-schema-draft.md missing agent_governance section | **Open** | Needs agent_governance.override_rate_warn_threshold field added when ADR-011 is written |
 
 ---
 
@@ -97,22 +107,32 @@ The following are intentionally absent from spec-kit. They live as `@moduledoc` 
 | Confidence classification | `Foundry.Copilot.ConfidenceClassifier` |
 | Intent classification | `Foundry.Copilot.IntentClassifier` |
 | Prompt construction | `Foundry.Copilot.PromptBuilder` |
+| Agent type renderer registry | `Foundry.Studio.AgentRenderers` |
+| Agent telemetry aggregation | `Foundry.Telemetry.AgentAggregator` |
+| Human gate task creation | `Foundry.Operations.HumanGateReactor` |
+| Agent confidence threshold lint | `Foundry.Lint.AgentStepChecker` |
 
 ---
 
 ## Deferred ADRs (write when the corresponding code exists)
 
-- **ADR-011**: Project Manifest contract — `Foundry.Manifest` Ash resource is now designed (`lib/foundry/manifest.ex`). Write ADR-011 after the resource is stable in production (Phase 1 complete). Pre-ADR schema: `docs/manifest-schema-draft.md`.
-- **ADR-016**: Bootstrap spec-kit generation — when `mix foundry.spec_kit.init` is built (previously ADR-012, then ADR-015 — renumbered now that ADR-015 is the storage model)
+- **ADR-011**: Project Manifest contract — when `Foundry.Manifest` Ash resource is defined
+- **ADR-016**: Visualization paradigm v2 — **written**, see `ADR-016-visualization-paradigm-v2.md`
+  (supersedes ADR-008; ADR-008 remains for historical record)
+- **ADR-017**: Agent injection governance — **written**, see `ADR-017-agent-injection-governance.md`
+  (activated when a target project declares `use AshAi` in a domain module)
+- **ADR-018**: Bootstrap spec-kit generation — when `mix foundry.spec_kit.init` is built
+  (previously listed as ADR-016 in the deferred list; renumbered)
 
-Do not write these speculatively. A spec-kit document without corresponding code is
-pre-emptive documentation — the very thing the discipline exists to prevent.
+Do not write new ADRs speculatively. The above are written because the design decisions
+they capture are final; the corresponding code is the next step, not a prerequisite
+for writing the ADR in this case.
 
 ---
 
 ## Open Items Requiring Future ADRs
 
-None outstanding. All gaps closed. See gap tracker above.
+- **Gap #64**: manifest-schema-draft.md missing `agent_governance.override_rate_warn_threshold` field — add when ADR-011 is written.
 
 ---
 
@@ -141,6 +161,8 @@ docs/
     ADR-013-copilot-agent-behavior.md  ← new
     ADR-014-proposal-lifecycle.md      ← new
     ADR-015-storage-model.md           ← new: git + ETS, no Postgres for Foundry
+    ADR-016-visualization-paradigm-v2.md
+    ADR-017-agent-injection-governance.md
   regulations/
     platform_invariants.md             ← INV-001 through INV-013
   runbooks/

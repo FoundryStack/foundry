@@ -139,6 +139,33 @@ All `:sensitive` resources must use `AshArchival`. Hard deletion prohibited with
 Any `fun_with_flags` flag gating a compliance control must declare an ADR link.
 Adding or toggling a compliance-gated flag is a `:compliance` class change.
 
+**INV-014: Agent steps require declared confidence thresholds**
+Any Reactor step implemented by a module using `Foundry.AgentStep` with `agent_type`
+of `decision` or `scorer` must declare an explicit `confidence_threshold` and an
+`on_low_confidence` handler. The only permitted handler in v1 is `escalate_human`, which
+creates a review task and halts the step pending human resolution. A `decision` or `scorer`
+agent step without a confidence threshold is a lint error. Adding or changing the threshold
+value is a `:behavioral` class change.
+
+**INV-015: Human-in-the-loop gates on compliance-gated flows**
+Any Transfer or Reactor that contains an `agent` step of type `decision` which gates a
+compliance-controlled action (spending limit change, withdrawal approval, KYC override) must
+declare an explicit `human_gate` in the Reactor DSL. The gate defines the review queue,
+SLA, and escalation path. Removing a `human_gate` from a compliance-gated decision step
+is a `:compliance` class change requiring ADR linkage.
+
+**INV-016: Agent steps must declare tool access explicitly**
+An `agent` step must declare the complete set of Ash actions it may invoke as tools via
+the `tools` declaration in the AshAI domain DSL. An agent step that reads resources not
+declared in its `tools` list is a lint error. Expanding an agent's tool access on a
+compliance-gated resource is a `:compliance` change.
+
+**INV-017: Agent steps must emit telemetry**
+All `agent` steps must emit telemetry spans with the `agent_type`, `model`, `confidence`,
+and `latency_ms` fields. The telemetry prefix follows the same convention as other steps:
+`[app_name, domain_name, reactor_name, step_name]`. Missing telemetry on an agent step
+is a lint error. These spans are the source of data for the Agent Health panel in Phase 8.
+
 ---
 
 ## Change Classification
@@ -198,6 +225,8 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 | ADR-013 | copilot-agent-behavior | Epistemic contract, confidence states, clarifying question UX, error recovery, phase-gated behaviour |
 | ADR-014 | proposal-lifecycle | Proposal state machine, dual approval mechanics, ADR linking for :compliance, apply step, compilation failure path |
 | ADR-015 | storage-model | Git-backed files + ETS only — no Postgres dependency for Foundry itself |
+| ADR-016 | visualization-paradigm-v2 | Four C4 levels, 11 node types, 8 edge types, authorization matrix view, agent node type (⊕) |
+| ADR-017 | agent-injection-governance | AshAI integration model, 10 agent types, human-in-the-loop gate spec, change classification for agent constructs |
 
 ---
 
@@ -271,11 +300,35 @@ They are not a server. They are idempotent commands.
   "authentication_subject": false,
   "oban_queues": [],
   "rate_limited": false,
-  "feature_flags": []
+  "feature_flags": [],
+  "agent_steps": [
+    {
+      "step_id": "risk_score",
+      "agent_type": "scorer",
+      "model": "claude-sonnet",
+      "input_schema": "RiskInput",
+      "output_schema": "RiskScore",
+      "tools": ["read_player_history", "check_velocity"],
+      "confidence_threshold": 0.7,
+      "on_low_confidence": "escalate_human",
+      "human_gate": {
+        "queue": "compliance_review",
+        "sla_hours": 4,
+        "escalation_path": "compliance_officer"
+      },
+      "telemetry_prefix": ["my_app", "risk", "withdrawal", "risk_score"]
+    }
+  ]
 }
 ```
 
 Use this schema exactly. Do not invent fields. The full schema is defined in ADR-003.
+
+`agent_steps` is an empty list `[]` when the module has no AshAI agent step declarations.
+A non-empty list requires AshAI v2 or later (see ADR-017). The `mix foundry.context` task
+will warn (not fail) if AshAI is present but the version cannot be determined — this
+follows the same pattern as the v1 ignore-and-warn stance in ADR-001, which is superseded
+by ADR-017 for projects that opt in to agent support.
 
 ---
 
@@ -329,8 +382,10 @@ docs/
     ADR-013-copilot-agent-behavior.md
     ADR-014-proposal-lifecycle.md
     ADR-015-storage-model.md
+    ADR-016-visualization-paradigm-v2.md
+    ADR-017-agent-injection-governance.md
   regulations/
-    platform_invariants.md                   ← INV-001 through INV-013
+    platform_invariants.md
   runbooks/
     studio_copilot_failure.md
     igniter_operation_failure.md
