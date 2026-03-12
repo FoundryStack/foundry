@@ -80,7 +80,7 @@ export default function CommandPalette() {
       type: 'runbook' as const,
       iconText: '📖',
       iconColor: 'var(--bl)',
-      action: () => { closePalette(); selectNode(n.id); showToast(`Opening runbook: ${n.runbook}`); },
+      action: () => { closePalette(); openDocPreview('runbook', n.runbook!); },
     }));
 
   // Build full item list (excluding recent — shown separately)

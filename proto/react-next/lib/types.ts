@@ -137,6 +137,10 @@ export type TransferStep = {
   agent_type?: string;   // ADR-017: e.g. 'scorer', 'decision'
   model?: string;
   confidence_threshold?: number;
+  on_low_confidence?: string;   // e.g. 'escalate_human'
+  human_gate?: { queue: string; sla_hours: number; escalation_path?: string };
+  tools?: string[];
+  telemetry_prefix?: string[];
 };
 
 // ─── Graph node ───────────────────────────────────────────────────────────────
@@ -236,6 +240,17 @@ export type ReqDoc = {
   source?: string;
 };
 
+export type RunbookDoc = {
+  id: string;
+  title: string;
+  path: string;
+  whenApplies?: string;
+  recoverySteps?: string;
+  escalation?: string;
+  lastTested?: string;
+  complianceNote?: string;
+};
+
 // ─── Feed card ────────────────────────────────────────────────────────────────
 
 export type FeedCardType = 'question' | 'response' | 'proposal' | 'error' | 'ci';
@@ -273,7 +288,7 @@ export type AppState = {
   systemMapView: 'graph' | 'table';
   docPreview: {
     open: boolean;
-    type: 'adr' | 'regulation' | null;
+    type: 'adr' | 'regulation' | 'runbook' | null;
     id: string | null;
   };
 };

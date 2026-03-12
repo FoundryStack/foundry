@@ -1,7 +1,7 @@
 'use client';
 
 import { useStore } from '@/lib/store';
-import { NODES, REQ_META, TYPE_COLOR } from '@/lib/data';
+import { NODES, REQ_META, TYPE_COLOR, TYPE_ICON } from '@/lib/data';
 import { covColor } from '@/lib/graph-utils';
 
 const BTN_P: React.CSSProperties = {
@@ -104,6 +104,55 @@ export default function DrawerDetails() {
             </div>
           </div>
         </div>
+
+        {/* Steps (transfers/reactors) */}
+        {n.steps && n.steps.length > 0 && (
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--b1)' }}>
+            {sectionLabel('Steps', n.steps.length)}
+            {n.steps.map((step, i) => {
+              const isAgent = step.kind === 'agent';
+              const icon = isAgent ? (TYPE_ICON.agent ?? '⊕') : (TYPE_ICON.step ?? '⇄');
+              const stepColor = isAgent ? TYPE_COLOR.agent : TYPE_COLOR.step;
+              return (
+                <div
+                  key={step.id}
+                  style={{
+                    background: 'var(--s2)',
+                    border: '1px solid var(--b1)',
+                    borderRadius: 5,
+                    padding: '8px 10px',
+                    marginBottom: 4,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: stepColor }}>{icon}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)' }}>{step.name}</span>
+                    {isAgent && step.agent_type && (
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, padding: '1px 4px', borderRadius: 2, background: 'var(--pub)', color: 'var(--pu)' }}>
+                        {step.agent_type}
+                      </span>
+                    )}
+                  </div>
+                  {isAgent && (
+                    <div style={{ fontSize: 10, color: 'var(--t3)', lineHeight: 1.5, marginTop: 4 }}>
+                      {step.model && <div>model: {step.model}</div>}
+                      {step.confidence_threshold != null && <div>confidence_threshold: {step.confidence_threshold}</div>}
+                      {step.human_gate && (
+                        <div>human_gate: {step.human_gate.queue} (SLA {step.human_gate.sla_hours}h)</div>
+                      )}
+                      {step.tools && step.tools.length > 0 && (
+                        <div>tools: {step.tools.join(', ')}</div>
+                      )}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 9, color: 'var(--t4)', marginTop: 4 }}>
+                    reads: {step.reads.join(', ') || '—'} · writes: {step.writes.join(', ') || '—'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Attributes */}
         {n.attrs && n.attrs.length > 0 && (
@@ -291,11 +340,17 @@ export default function DrawerDetails() {
             <div
               role="button"
               tabIndex={0}
-              onClick={() => showToast('Opening runbook…')}
-              onKeyDown={(e) => e.key === 'Enter' && showToast('Opening runbook…')}
-              style={{ fontSize: 11, color: 'var(--bl)', cursor: 'pointer' }}
+              onClick={() => openDocPreview('runbook', n.runbook!)}
+              onKeyDown={(e) => e.key === 'Enter' && openDocPreview('runbook', n.runbook!)}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 8px', background: 'var(--s2)', border: '1px solid var(--b1)', borderRadius: 5, cursor: 'pointer', transition: '.1s' }}
             >
-              {'📖'} {n.runbook}
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--bl)', flexShrink: 0 }}>📖</span>
+              <span style={{ fontSize: 10, color: 'var(--t2)', flex: 1, lineHeight: 1.3 }}>{n.runbook}</span>
+              {n.runbookStale && (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, padding: '2px 5px', borderRadius: 3, background: 'var(--ywb)', color: 'var(--yw)' }}>
+                  stale
+                </span>
+              )}
             </div>
           </div>
         )}

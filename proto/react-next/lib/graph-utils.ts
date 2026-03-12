@@ -179,8 +179,8 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
       selector: 'node',
       style: {
         'shape': 'round-rectangle',
-        'width': 140,
-        'height': 56,
+        'width': 170,
+        'height': 64,
         'background-color': 'rgba(30,30,45,.95)',
         'border-width': 1,
         'border-color': 'rgba(70,70,100,.6)',
@@ -251,8 +251,8 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
     {
       selector: 'node[nodeKind="step"], node[nodeKind="state"]',
       style: {
-        width: 80,
-        height: 36,
+        width: 88,
+        height: 40,
         'font-size': 9,
         'font-family': 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif',
         'text-valign': 'center',
@@ -263,8 +263,8 @@ export function toCytoscapeStylesheet(domainColors: Record<string, string>): Cyt
     {
       selector: 'node[nodeKind="output"]',
       style: {
-        width: 70,
-        height: 32,
+        width: 76,
+        height: 36,
         'font-size': 8,
         'font-family': 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif',
         'text-valign': 'center',

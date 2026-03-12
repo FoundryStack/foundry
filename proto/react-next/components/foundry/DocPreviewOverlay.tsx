@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { getAdrDoc, REQ_META } from '@/lib/data';
+import { getAdrDoc, getRunbookDoc, REQ_META } from '@/lib/data';
 import { cn } from '@/lib/utils';
 
 export default function DocPreviewOverlay() {
@@ -22,9 +22,11 @@ export default function DocPreviewOverlay() {
 
   const isAdr = docPreview.type === 'adr';
   const isReg = docPreview.type === 'regulation';
+  const isRunbook = docPreview.type === 'runbook';
 
   const adrDoc = isAdr ? getAdrDoc(docPreview.id) : null;
   const reqDoc = isReg ? REQ_META[docPreview.id] ?? null : null;
+  const runbookDoc = isRunbook ? getRunbookDoc(docPreview.id) : null;
 
   return (
     <div
@@ -57,13 +59,14 @@ export default function DocPreviewOverlay() {
             className={cn(
               'font-mono text-[10px] px-1.5 py-0.5 rounded',
               isAdr && 'badge badge-primary badge-sm',
-              isReg && 'badge badge-warning badge-sm'
+              isReg && 'badge badge-warning badge-sm',
+              isRunbook && 'badge badge-info badge-sm'
             )}
           >
             {docPreview.id}
           </span>
           <span id="doc-preview-title" className="text-sm font-semibold text-base-content flex-1">
-            {adrDoc?.title ?? reqDoc?.label ?? docPreview.id}
+            {adrDoc?.title ?? reqDoc?.label ?? runbookDoc?.title ?? docPreview.id}
           </span>
           <button
             type="button"
@@ -135,7 +138,52 @@ export default function DocPreviewOverlay() {
             </>
           )}
 
-          {((isAdr && !adrDoc) || (isReg && !reqDoc)) && (
+          {isRunbook && runbookDoc && (
+            <>
+              {runbookDoc.whenApplies && (
+                <div className="mb-3">
+                  <div className="text-[10px] font-semibold tracking-wider uppercase text-base-content/50 mb-1.5">
+                    When this runbook applies
+                  </div>
+                  <p className="m-0">{runbookDoc.whenApplies}</p>
+                </div>
+              )}
+              {runbookDoc.recoverySteps && (
+                <div className="mb-3">
+                  <div className="text-[10px] font-semibold tracking-wider uppercase text-base-content/50 mb-1.5">
+                    Recovery steps
+                  </div>
+                  <p className="m-0 whitespace-pre-line">{runbookDoc.recoverySteps}</p>
+                </div>
+              )}
+              {runbookDoc.escalation && (
+                <div className="mb-3">
+                  <div className="text-[10px] font-semibold tracking-wider uppercase text-base-content/50 mb-1.5">
+                    Escalation
+                  </div>
+                  <p className="m-0">{runbookDoc.escalation}</p>
+                </div>
+              )}
+              {runbookDoc.lastTested && (
+                <div className="mb-3">
+                  <div className="text-[10px] font-semibold tracking-wider uppercase text-base-content/50 mb-1.5">
+                    Last tested
+                  </div>
+                  <p className="m-0">{runbookDoc.lastTested}</p>
+                </div>
+              )}
+              {runbookDoc.complianceNote && (
+                <div>
+                  <div className="text-[10px] font-semibold tracking-wider uppercase text-base-content/50 mb-1.5">
+                    Compliance note
+                  </div>
+                  <p className="m-0">{runbookDoc.complianceNote}</p>
+                </div>
+              )}
+            </>
+          )}
+
+          {((isAdr && !adrDoc) || (isReg && !reqDoc) || (isRunbook && !runbookDoc)) && (
             <p className="text-base-content/50 m-0">Document not found.</p>
           )}
         </div>

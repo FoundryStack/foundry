@@ -1,4 +1,4 @@
-import type { GraphNode, GraphEdge, Scenario, FeedCard, AdrDoc, ReqDoc } from './types';
+import type { GraphNode, GraphEdge, Scenario, FeedCard, AdrDoc, ReqDoc, RunbookDoc } from './types';
 import { getOutputParentId, getCompoundNodeIds } from './graph-config';
 
 // ─── Node resolution for HoverCard (includes step/state/output nodes) ─────────
@@ -262,6 +262,7 @@ export const TYPE_ICON: Record<string, string> = {
   provider:     '⬚',
   step:         '⇄',
   state:        '○',
+  agent:        '⊕',  // ADR-017: agent steps
 };
 
 // ─── Type abbreviations (single-char / icon for badges) ─────────────────────────
@@ -284,6 +285,7 @@ export const TYPE_COLOR: Record<string, string> = {
   provider:     '#f59e0b',  // amber
   step:         '#34d399',  // green (transfer step)
   state:        '#60a5fa',  // blue (FSM state)
+  agent:        '#a78bfa',  // violet (ADR-017: agent steps)
 };
 
 // ─── Node registry ────────────────────────────────────────────────────────────
@@ -452,7 +454,8 @@ export const NODES: Record<string, GraphNode> = {
     auth: false, oban: [], rl: true, flags: [], mod: '2026-03-02',
     steps: [
       { id: 'w-validate', name: 'validate', reads: ['player'], writes: [], reqs: ['RG-UK-019'], changeClass: 'behavioral', guardRules: ['kyccheck'] },
-      { id: 'w-check-limits', name: 'check_limits', kind: 'agent', agent_type: 'scorer', model: 'claude-sonnet', confidence_threshold: 0.7, reads: ['limit'], writes: [], reqs: ['RG-UK-031', 'RG-MGA-022'], changeClass: 'behavioral', guardRules: ['rgcheck'] },
+      { id: 'w-check-limits', name: 'check_limits', kind: 'agent', agent_type: 'scorer', model: 'claude-sonnet', confidence_threshold: 0.7, on_low_confidence: 'escalate_human', human_gate: { queue: 'compliance_review', sla_hours: 4 }, tools: ['read_player_history', 'check_velocity', 'read_spending_limit'], telemetry_prefix: ['my_app', 'risk', 'withdrawal', 'risk_score'], reads: ['limit'], writes: [], reqs: ['RG-UK-031', 'RG-MGA-022'], changeClass: 'behavioral', guardRules: ['rgcheck'] },
+      { id: 'w-approve', name: 'approve_withdrawal', kind: 'agent', agent_type: 'decision', model: 'claude-sonnet', confidence_threshold: 0.8, on_low_confidence: 'escalate_human', human_gate: { queue: 'compliance_review', sla_hours: 4, escalation_path: 'compliance_officer' }, tools: ['read_player_history', 'check_velocity'], reads: ['player', 'limit'], writes: [], reqs: ['RG-UK-014', 'RG-MGA-007'], changeClass: 'behavioral', guardRules: [] },
       { id: 'w-debit', name: 'debit', reads: [], writes: ['wallet', 'ledger'], reqs: ['RG-UK-014', 'RG-MGA-007'], changeClass: 'sensitive', compensation: 'credit wallet back', guardRules: [] },
       { id: 'w-notify', name: 'notify', reads: [], writes: [], reqs: [], changeClass: 'behavioral', guardRules: [] },
     ],
@@ -479,6 +482,7 @@ export const NODES: Record<string, GraphNode> = {
     money: [], auth: false, oban: [], rl: false, flags: [], mod: '2026-02-25',
     steps: [
       { id: 'd-validate', name: 'validate', reads: ['player'], writes: [], reqs: [], changeClass: 'behavioral', guardRules: [] },
+      { id: 'd-enrich', name: 'enrich_transaction', kind: 'agent', agent_type: 'enricher', model: 'claude-sonnet', tools: ['read_player', 'read_ledger'], reads: ['player'], writes: [], reqs: ['AML-003'], changeClass: 'behavioral', guardRules: [] },
       { id: 'd-credit', name: 'credit', reads: [], writes: ['wallet', 'ledger'], reqs: ['AML-003'], changeClass: 'sensitive', guardRules: [] },
       { id: 'd-enqueue-aml', name: 'enqueue_aml', reads: [], writes: [], reqs: ['AML-003'], changeClass: 'behavioral', guardRules: [] },
     ],
@@ -573,6 +577,7 @@ export const NODES: Record<string, GraphNode> = {
     money: [], auth: false, oban: ['aml_screening'], rl: false, flags: [], mod: '2026-03-01',
     steps: [
       { id: 'aml-fetch', name: 'fetch', reads: ['ledger'], writes: [], reqs: ['AML-003'], changeClass: 'behavioral', guardRules: [] },
+      { id: 'aml-classify', name: 'classify_transaction', kind: 'agent', agent_type: 'classifier', model: 'claude-sonnet', tools: ['read_ledger', 'read_player'], reads: ['ledger', 'player'], writes: [], reqs: ['AML-003'], changeClass: 'behavioral', guardRules: [] },
       { id: 'aml-submit', name: 'submit', reads: [], writes: [], reqs: ['AML-007'], changeClass: 'behavioral', guardRules: [] },
       { id: 'aml-record', name: 'record_sar', reads: [], writes: [], reqs: ['AML-007'], changeClass: 'sensitive', guardRules: [] },
     ],
@@ -803,6 +808,64 @@ export const REQ_META: Record<string, ReqDoc> = {
     source: 'GDPR Articles 5, 6; MGA Data Retention Policy',
   },
 };
+
+// ─── Runbook metadata (expanded for preview overlay) ───────────────────────────
+
+export const RUNBOOK_META: Record<string, RunbookDoc> = {
+  'docs/runbooks/player.md': {
+    id: 'docs/runbooks/player.md',
+    title: 'Player Resource Runbook',
+    path: 'docs/runbooks/player.md',
+    whenApplies: 'Operational procedures for the Player identity resource. Covers KYC state transitions, self-exclusion, PII handling, and authentication subject management.',
+    recoverySteps: '1. Check KYC status and pending documents. 2. Verify self-exclusion state. 3. For PII issues, consult GDPR-001 and data retention policy. 4. Escalate to identity-lead for state overrides.',
+    escalation: 'Identity team lead for KYC/compliance holds. Platform lead for data inconsistencies.',
+    lastTested: '2026-03-03',
+    complianceNote: 'Player is a sensitive resource. All manual interventions require Foundry proposal with appropriate change class.',
+  },
+  'docs/runbooks/wallet.md': {
+    id: 'docs/runbooks/wallet.md',
+    title: 'Wallet Resource Runbook',
+    path: 'docs/runbooks/wallet.md',
+    whenApplies: 'Operational procedures for the Wallet resource. Covers balance integrity, lock states, debit/credit flows, and double-entry ledger consistency.',
+    recoverySteps: '1. Verify wallet balance matches ledger sum. 2. Check locked_at for stuck withdrawals. 3. For ledger mismatch, trace Transfer execution and compensation paths. 4. Never modify wallet directly — use Transfer operations.',
+    escalation: 'Finance team lead for balance discrepancies. Platform lead for ledger integrity issues.',
+    lastTested: '2026-03-01',
+    complianceNote: 'Wallet is sensitive. All changes go through Transfer operations. Soft-delete only.',
+  },
+  'docs/runbooks/withdrawal_transfer.md': {
+    id: 'docs/runbooks/withdrawal_transfer.md',
+    title: 'Runbook: WithdrawalTransfer',
+    path: 'docs/runbooks/withdrawal_transfer.md',
+    whenApplies: 'Operational failure scenarios for the WithdrawalTransfer Reactor: reactor step fails mid-flight (wallet debited but ledger entry not created), provider submission fails after ledger entry written, duplicate withdrawal requests from retry storms, withdrawal stuck in :processing state.',
+    recoverySteps: '1. Identify stuck withdrawal: query WithdrawalRequest in :processing > 2 hours. 2. Check ledger entry — if none exists, Reactor compensated; re-trigger. If ledger exists but no provider reference, check provider logs. 3. Check provider status by provider_reference. 4. Resolution: mark_completed if provider confirms; re-trigger if idempotent; reject and re-credit if provider rejected.',
+    escalation: 'platform-lead for compensation failures or emergency override.',
+    lastTested: 'Not yet tested — set after first drill',
+    complianceNote: 'All manual interventions on sensitive resources require a Foundry proposal with :compliance classification. Do not modify WithdrawalRequest or LedgerEntry records directly — route all changes through Foundry.',
+  },
+  'docs/runbooks/aml_screening.md': {
+    id: 'docs/runbooks/aml_screening.md',
+    title: 'AML Screening Reactor Runbook',
+    path: 'docs/runbooks/aml_screening.md',
+    whenApplies: 'Operational procedures for the AmlScreeningReactor. Covers Oban job failures, SAR submission workflow, flagged transaction handling, and classifier agent step recovery.',
+    recoverySteps: '1. Check Oban aml_screening queue for failed jobs. 2. Inspect ledger entries for flagged transactions. 3. For SAR workflow: verify submission status, retry if transient. 4. For agent step failures: check confidence threshold, escalate to compliance_review if low confidence.',
+    escalation: 'Compliance officer for SAR decisions. Platform lead for Oban queue issues.',
+    lastTested: '2026-03-01',
+    complianceNote: 'AML-003 and AML-007 apply. SAR records are sensitive. All changes require audit trail.',
+  },
+};
+
+export function getRunbookDoc(path: string): RunbookDoc | null {
+  const doc = RUNBOOK_META[path];
+  if (doc) return doc;
+  const base = path.replace(/^.*\//, '').replace(/\.md$/, '');
+  const title = base.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return {
+    id: path,
+    title: `${title} — Runbook`,
+    path,
+    whenApplies: `Operational procedure for ${title}. See docs/runbooks/ for full content. Full document would be loaded in production.`,
+  };
+}
 
 // ─── Scenarios ────────────────────────────────────────────────────────────────
 

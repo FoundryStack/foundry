@@ -29,7 +29,7 @@ type Actions = {
   addRecentNavigation: (id: string) => void;
   setActivePanel: (panel: AppState['activePanel']) => void;
   setSystemMapView: (view: AppState['systemMapView']) => void;
-  openDocPreview: (type: 'adr' | 'regulation', id: string) => void;
+  openDocPreview: (type: 'adr' | 'regulation' | 'runbook', id: string) => void;
   closeDocPreview: () => void;
   feedCards: FeedCard[];
 };

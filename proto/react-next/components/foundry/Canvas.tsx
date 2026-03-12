@@ -12,7 +12,7 @@ nodeHtmlLabel(cytoscape);
 import { NODES, EDGES, NODE_LAYOUT, DOMAIN_ORDER, DOMAIN_COLOR, getPrimaryNodeId, getGraphNodeId } from '@/lib/data';
 import { edgeStyle, toCytoscapeStylesheet, domainCoverage, covColor, escHtml } from '@/lib/graph-utils';
 import { buildCytoscapeElements } from '@/lib/cytoscape-elements';
-import { TYPE_ICON_SVG, INDICATOR_ICON_SVG } from '@/lib/icon-svg';
+import { TYPE_ICON_SVG, INDICATOR_ICON_SVG, INDICATOR_TITLES, PSE_ICON_SVG, PSE_TITLES } from '@/lib/icon-svg';
 import HoverCard from './HoverCard';
 
 const CytoscapeComponent = dynamic(
@@ -170,14 +170,19 @@ export default function Canvas() {
             .map((k) => {
               const iconKey = indicatorMap[k] ?? k;
               const svg = INDICATOR_ICON_SVG[iconKey];
-              return svg ? `<span data-indicator="${iconKey}" title="${escHtml(k)}">${svg}</span>` : '';
+              const title = INDICATOR_TITLES[iconKey] ?? k;
+              return svg ? `<span data-indicator="${iconKey}" title="${escHtml(title)}">${svg}</span>` : '';
             })
             .filter(Boolean)
             .join('');
           const smClass = isSm ? ' cy-node-sm' : '';
           const typeBadge = `<span class="req-badge type-badge" style="color:${escHtml(typeColor)};border-color:${escHtml(typeColor)}40">${escHtml(type)}</span>`;
           const reqBadgeHtml = reqs.slice(0, 4).map((r) => `<span class="req-badge">${escHtml(r)}</span>`).join('');
-          const pseSpan = pse ? `<span class="status-pse" title="paper_trail/soft_delete/ecto">${escHtml(pse)}</span>` : '';
+          const pseSpan = pse ? pse.split('').map((ch) => {
+            const icon = PSE_ICON_SVG[ch];
+            const title = PSE_TITLES[ch];
+            return icon && title ? `<span data-indicator="pse-${ch}" title="${escHtml(title)}">${icon}</span>` : '';
+          }).filter(Boolean).join('') : '';
           const reqBadges = !isSm
             ? `<div class="req-badges">${typeBadge}${reqBadgeHtml}</div>`
             : '';
