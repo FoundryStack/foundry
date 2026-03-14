@@ -79,6 +79,9 @@
 | 62 | Override rate lint warning threshold was hardcoded with no rationale | Closed | ADR-017 §Human Gate Specification; manifest key agent_governance.override_rate_warn_threshold |
 | 63 | human_gate permitted on passive agent types (observer, summarizer, etc.) — semantically wrong | Closed | ADR-017 lint rule: human_gate_only_on_gatable_types |
 | 64 | manifest-schema-draft.md missing agent_governance section | **Open** | Needs agent_governance.override_rate_warn_threshold field added when ADR-011 is written |
+| 65 | Package layer undocumented — which parts of Foundry are extractable standalone libraries | Closed | AGENTS.md §Package Layer; ADR-001 updated with spark_meta, spark_lint, reactor_human_gate, reactor_agent_step, Sourceror, MDEx deps; ADR-019 reserved |
+| 66 | DSL annotation extension for sensitive resources (ash_governed) — needed for v1? | Closed | Not needed for v1. manifest.sensitive_resources list is the declaration. No DSL annotation. Future enhancement only. |
+| 67 | Telemetry design — custom spans vs reusing Ash/Reactor built-ins | Closed | Three custom spans only: llm_call, context_subprocess, proposal_transition. Constants in Foundry.Telemetry. See AGENTS.md §Package Layer. |
 
 ---
 
@@ -89,9 +92,9 @@ The following are intentionally absent from spec-kit. They live as `@moduledoc` 
 
 | Topic | Module |
 |---|---|
-| Change classification logic | `Foundry.Copilot.Classifier` |
+| Change classification logic | `Foundry.Diff` (uses Sourceror — AST parse of git diff against ADR-005 ruleset) |
 | Scaffold operation contracts | `Foundry.Operations.*` |
-| Lint rule implementations | `Foundry.Lint.*` |
+| Lint rule implementations | `Foundry.LintRules.*` (rule modules plugged into `spark_lint` engine) |
 | Manifest schema and validation | `Foundry.Manifest` Ash resource |
 | Context assembly pipeline | `Foundry.Copilot.ContextBuilder` |
 | Test generation rules | `Foundry.Testing.Generator` |
@@ -111,6 +114,8 @@ The following are intentionally absent from spec-kit. They live as `@moduledoc` 
 | Agent telemetry aggregation | `Foundry.Telemetry.AgentAggregator` |
 | Human gate task creation | `Foundry.Operations.HumanGateReactor` |
 | Agent confidence threshold lint | `Foundry.Lint.AgentStepChecker` |
+| Telemetry event name catalogue | `Foundry.Telemetry` (constants only — no macros, no behaviour) |
+| Spec-kit document parser | `Foundry.SpecKit` (uses MDEx + NimbleOptions) |
 
 ---
 
@@ -123,6 +128,9 @@ The following are intentionally absent from spec-kit. They live as `@moduledoc` 
   (activated when a target project declares `use AshAi` in a domain module)
 - **ADR-018**: Bootstrap spec-kit generation — when `mix foundry.spec_kit.init` is built
   (previously listed as ADR-016 in the deferred list; renumbered)
+- **ADR-019**: Package extraction — spark_meta, spark_lint, reactor_human_gate, reactor_agent_step,
+  rejected candidates (ash_governed, spec_kit, igniter_typed, ash_diff), and what stays internal.
+  **Write when the first package is published to Hex.**
 
 Do not write new ADRs speculatively. The above are written because the design decisions
 they capture are final; the corresponding code is the next step, not a prerequisite
@@ -133,6 +141,7 @@ for writing the ADR in this case.
 ## Open Items Requiring Future ADRs
 
 - **Gap #64**: manifest-schema-draft.md missing `agent_governance.override_rate_warn_threshold` field — add when ADR-011 is written.
+- **Gap #69 (pre-open)**: ADR-019 must document rejected extraction candidates with full reasoning. Confirm `reactor_agent_step` and `reactor_human_gate` scope at Phase 8 start.
 
 ---
 

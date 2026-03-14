@@ -21,7 +21,8 @@ If the JSON schema is unstable, everything built on top breaks. Stabilize it bef
 - `mix foundry.context.all --json` — all modules in the project, indexed by domain
 - `mix foundry.diagram.generate --json` — system map as graph (nodes, edges, clusters)
 - `mix foundry.compliance.check --json` — requirement coverage status
-- `mix foundry.lint.all --json` — lint results with structured violations (includes INV-011, INV-012, INV-013 rules)
+- `mix foundry.lint.all --json` — lint results with structured violations (includes INV-011, INV-012, INV-013 rules).
+  Rule engine: `spark_lint` package. Rule modules: `Foundry.LintRules.*` (internal). See ADR-019.
 - `mix foundry.versions.check --json` — current stack versions from mix.exs (full ecosystem per ADR-001)
 
 **Schema design review before freeze:** Before the Phase 1 schema is frozen, conduct a

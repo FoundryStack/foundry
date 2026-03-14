@@ -41,6 +41,43 @@ Foundry has two modes:
 
 ---
 
+## Package Layer
+
+Foundry is partially composed of independently-published Elixir packages.
+These packages have no Foundry-specific assumptions — they are reusable primitives
+that Foundry depends on. Rationale for each extraction decision is in ADR-019.
+
+| Package | Role | Used by Foundry via |
+|---|---|---|
+| `spark_meta` | Generic Spark DSL walker → struct tree. Opt-in `SparkMeta.Extension` hook for richer output; unknown extensions get a raw key-value fallback. | `Foundry.Context.*` Mix tasks — powers `mix foundry.context` |
+| `spark_lint` | Rule runner engine only: `SparkLint.Rule` behaviour, `SparkLint.Violation` struct, `mix spark_lint.check` task. Ships zero rules. | `Foundry.LintRules.*` plugs Foundry's INV-011..017 rule modules into it |
+| `reactor_human_gate` | Human-in-the-loop gate primitive for any Ash Reactor. Ships `HumanGateTask` resource scaffold and `WaitForHumanStep`. Usable independently of agents. | `Op.AddAgentStep` scaffolds it into target platforms (Phase 8) |
+| `reactor_agent_step` | Spark DSL extension for Reactor steps: declares `agent_type`, `model`, `confidence_threshold`, `on_low_confidence`, `tools`, `telemetry_prefix`. Depends on `reactor_human_gate`. | Phase 8 agent injection; extraction confirmed alongside `reactor_human_gate` |
+
+**What is NOT a separate package and why:**
+- `Foundry.Diff` — ADR-005 change classifier using `Sourceror`. Logic is tightly coupled to the
+  manifest sensitive-resources list and Foundry's classification ruleset. Too specific to extract.
+- `Foundry.SpecKit` — spec-kit document parser using `MDEx` + `NimbleOptions`. "Spec-kit" is
+  Foundry vocabulary; no external audience for the format yet.
+- `Foundry.Operations` — the 20-operation catalogue. The describe/validate/run protocol lives
+  here. Extract only if a second tool needs the same protocol.
+- `Foundry.Proposals` — proposal state machine (ADR-014). Coupled to git-backed storage
+  (ADR-015) and blob-hash stale detection (ADR-009). Extract when a second use case appears.
+- A DSL annotation extension for sensitive resources (`ash_governed`) — not needed for v1.
+  `manifest.sensitive_resources` list is sufficient. Future enhancement only.
+
+**Telemetry:**
+Ash and Reactor already emit telemetry for all actions and steps. Foundry adds exactly three
+custom spans via `:telemetry.span/3`, no macros, no mandatory behaviour:
+- `[:foundry, :llm, :call]` — each LLM API call (model, task_type, prompt_tokens, latency_ms)
+- `[:foundry, :context, :subprocess]` — each `mix foundry.context` invocation (module, cached, latency_ms)
+- `[:foundry, :proposal, :transition]` — each proposal state transition (proposal_id, from, to, change_class)
+
+Event name constants live in `Foundry.Telemetry`. Call sites use `:telemetry.span/3` directly
+with those constants. Grep for `Foundry.Telemetry` to find every instrumented site.
+
+---
+
 ## The Three Layers (do not conflate them)
 
 ```

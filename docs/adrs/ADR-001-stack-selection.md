@@ -54,6 +54,10 @@ its own process.
 | Telemetry | current stable | Instrumentation events |
 | telemetry_metrics | current stable | Metrics aggregation |
 | telemetry_poller | current stable | VM and process metrics |
+| spark_meta | current stable | Generic Spark DSL introspection → struct tree. Powers `mix foundry.context` via `Foundry.Context.*`. See ADR-019. |
+| spark_lint | current stable | Lint rule runner engine. `Foundry.LintRules.*` provides the actual INV-011..017 rule modules. See ADR-019. |
+| Sourceror | current stable | Elixir AST parsing for diff classification (`Foundry.Diff`). Used by `mix foundry.lint.all` and the change classifier. |
+| MDEx | current stable | Markdown parsing for spec-kit documents (`Foundry.SpecKit`). Used by `mix foundry.context` spec-kit reader. |
 
 **Foundry does not depend on `ash_postgres`, `ecto_sql`, or `postgrex`.** Foundry's own
 persistent state uses git-backed files under `.foundry/` (ADR-015). There is no Foundry
@@ -78,6 +82,8 @@ database to provision. `mix foundry.studio` requires only Elixir and git.
 | Telemetry | current stable | Instrumentation events |
 | telemetry_metrics | current stable | Metrics aggregation |
 | telemetry_poller | current stable | VM and process metrics |
+| reactor_human_gate | current stable | Human-in-the-loop gate for Reactor agent steps. Scaffolded into target platforms by `Op.AddAgentStep` (Phase 8, opt-in). See ADR-019. |
+| reactor_agent_step | current stable | Spark DSL extension for Reactor agent step declarations. Depends on `reactor_human_gate`. Phase 8 opt-in. See ADR-019. |
 
 ---
 
@@ -185,9 +191,12 @@ telemetry_metrics           — metric aggregations
 telemetry_poller           — VM metrics
 ```
 
-Foundry's copilot engine emits telemetry spans for each `Foundry.Operations.run/2` call,
-each LLM API call, and each `mix foundry.context` invocation. These are the primary
-diagnostic signals for the runbooks.
+Ash and Reactor already emit telemetry for all actions and steps — Foundry does not
+re-instrument those. Foundry adds three custom spans (defined as constants in
+`Foundry.Telemetry`, applied point-wise via `:telemetry.span/3`):
+`[:foundry, :llm, :call]`, `[:foundry, :context, :subprocess]`, and
+`[:foundry, :proposal, :transition]`. These are the primary diagnostic signals for the runbooks.
+See AGENTS.md §Package Layer for field definitions.
 
 **Target platform requirement:** The `Op.AddTransfer` and `Op.AddObanJob` operations
 automatically include telemetry span wrappers in generated code. This is not optional —
