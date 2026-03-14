@@ -79,11 +79,10 @@ defmodule SparkMeta.Walker do
   defp get_persisted_map(module) do
     try do
       # Fetch :extensions and :data_layer eagerly
-      extensions = Spark.Dsl.Extension.get_persisted(module, :extensions) || []
+      extensions = get_extensions_list(module)
       data_layer = Spark.Dsl.Extension.get_persisted(module, :data_layer)
 
-      persisted = %{}
-      persisted = Map.put(persisted, :extensions, extensions)
+      persisted = %{extensions: extensions}
 
       if data_layer do
         Map.put(persisted, :data_layer, data_layer)
@@ -104,7 +103,8 @@ defmodule SparkMeta.Walker do
 
         handler ->
           try do
-            # Create a temporary DslState for the handler to work with
+            # Create a temporary DslState for the handler to work with.
+            # Handlers can query module metadata via SparkMeta.Walker functions if needed.
             temp_state = %SparkMeta.DslState{module: module}
             result = handler.extract(ext, temp_state)
             Map.put(acc, ext, result)
