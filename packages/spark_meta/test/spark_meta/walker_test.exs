@@ -127,4 +127,133 @@ defmodule SparkMeta.WalkerTest do
       assert result == []
     end
   end
+
+  describe "walk/1 rich fields" do
+    test "populates moduledoc when @moduledoc is present" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+      assert state.moduledoc == "A mock resource with rich documentation for testing."
+    end
+
+    test "moduledoc is nil for modules without full docs" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResource)
+      assert is_nil(state.moduledoc) or is_binary(state.moduledoc)
+    end
+
+    test "compliance is empty list by default (tested in integration tests)" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResource)
+      assert is_list(state.compliance)
+    end
+
+    test "telemetry_prefix is empty list by default (tested in integration tests)" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResource)
+      assert is_list(state.telemetry_prefix)
+    end
+
+    test "attributes is a list of maps" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+      assert is_list(state.attributes)
+      assert Enum.all?(state.attributes, &is_map/1)
+    end
+
+    test "each attribute map has required keys" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+
+      assert Enum.all?(state.attributes, fn attr ->
+               Map.has_key?(attr, :name) and Map.has_key?(attr, :type) and
+                 Map.has_key?(attr, :description) and Map.has_key?(attr, :allow_nil?) and
+                 Map.has_key?(attr, :default)
+             end)
+    end
+
+    test "attribute descriptions are captured" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+      name_attr = Enum.find(state.attributes, &(&1.name == :name))
+      assert name_attr != nil
+      assert name_attr.description == "The name of the resource."
+      assert name_attr.allow_nil? == false
+    end
+
+    test "attribute maps contain no raw Spark structs" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+
+      Enum.each(state.attributes, fn attr ->
+        refute is_struct(attr)
+      end)
+    end
+
+    test "relationships is a list of maps" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+      assert is_list(state.relationships)
+    end
+
+    test "relationship maps have required fields" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+      owner_rel = Enum.find(state.relationships, &(&1.name == :owner))
+      assert owner_rel != nil
+      assert owner_rel.type == :belongs_to
+      assert owner_rel.destination == MockResource
+      assert owner_rel.description == "The owning resource."
+    end
+
+    test "relationship maps contain no raw Spark structs" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+
+      Enum.each(state.relationships, fn rel ->
+        refute is_struct(rel)
+      end)
+    end
+
+    test "actions is a list of maps" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+      assert is_list(state.actions)
+    end
+
+    test "action maps have required fields" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+      create_action = Enum.find(state.actions, &(&1.name == :create))
+      assert create_action != nil
+      assert create_action.type == :create
+      assert create_action.description == "Create a new mock."
+      assert :name in create_action.accept
+    end
+
+    test "read actions have empty accept list" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+      read_action = Enum.find(state.actions, &(&1.name == :read))
+      assert read_action != nil
+      assert read_action.type == :read
+      assert read_action.accept == []
+    end
+
+    test "action maps contain no raw Spark structs" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+
+      Enum.each(state.actions, fn action ->
+        refute is_struct(action)
+      end)
+    end
+
+    test "policies is a list of maps" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+      assert is_list(state.policies)
+    end
+
+    test "policy maps have description and condition fields" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResourceWithDocs)
+
+      assert Enum.all?(state.policies, fn p ->
+               Map.has_key?(p, :description) and Map.has_key?(p, :condition)
+             end)
+    end
+
+    test "existing DslState fields still present after expansion" do
+      {:ok, state} = SparkMeta.Walker.walk(MockResource)
+      assert Map.has_key?(state, :module)
+      assert Map.has_key?(state, :extensions)
+      assert Map.has_key?(state, :sections)
+      assert Map.has_key?(state, :options)
+      assert Map.has_key?(state, :persisted)
+      assert Map.has_key?(state, :extension_data)
+    end
+  end
 end

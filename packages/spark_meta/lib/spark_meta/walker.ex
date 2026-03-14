@@ -53,14 +53,19 @@ defmodule SparkMeta.Walker do
     persisted = get_persisted_map(module)
 
     # Build initial state with eager-loaded extensions and persisted
-    state = %SparkMeta.DslState{
+    %SparkMeta.DslState{
       module: module,
       extensions: extensions,
       persisted: persisted,
-      extension_data: invoke_extension_handlers(module, extensions)
+      extension_data: invoke_extension_handlers(module, extensions),
+      moduledoc: get_moduledoc(module),
+      compliance: get_compliance(module),
+      telemetry_prefix: get_telemetry_prefix(module),
+      attributes: get_attributes(module),
+      relationships: get_relationships(module),
+      actions: get_actions(module),
+      policies: get_policies(module)
     }
-
-    state
   end
 
   defp get_extensions_list(module) do
@@ -110,6 +115,121 @@ defmodule SparkMeta.Walker do
           end
       end
     end)
+  end
+
+  defp get_moduledoc(module) do
+    try do
+      case Code.fetch_docs(module) do
+        {:docs_v1, _, _, _, %{"en" => doc}, _, _} when is_binary(doc) -> String.trim(doc)
+        _ -> nil
+      end
+    rescue
+      _ -> nil
+    end
+  end
+
+  defp get_module_attribute(module, attribute) do
+    try do
+      case module.__info__(:attributes)[attribute] do
+        nil -> []
+        [[_ | _] = value] -> value
+        [value] when is_list(value) -> value
+        [value] -> [value]
+        _ -> []
+      end
+    rescue
+      _ -> []
+    end
+  end
+
+  defp get_compliance(module), do: get_module_attribute(module, :compliance)
+  defp get_telemetry_prefix(module), do: get_module_attribute(module, :telemetry_prefix)
+
+  defp get_attributes(module) do
+    try do
+      module
+      |> Spark.Dsl.Extension.get_entities([:attributes])
+      |> Enum.map(&map_attribute/1)
+    rescue
+      _ -> []
+    end
+  end
+
+  defp map_attribute(e) do
+    %{
+      name: e.name,
+      type: e.type,
+      description: Map.get(e, :description),
+      allow_nil?: Map.get(e, :allow_nil?, true),
+      default: Map.get(e, :default)
+    }
+  end
+
+  defp get_relationships(module) do
+    try do
+      module
+      |> Spark.Dsl.Extension.get_entities([:relationships])
+      |> Enum.map(&map_relationship/1)
+    rescue
+      _ -> []
+    end
+  end
+
+  defp map_relationship(e) do
+    %{
+      name: e.name,
+      type: relationship_type(e.__struct__),
+      destination: e.destination,
+      description: Map.get(e, :description),
+      source_attribute: Map.get(e, :source_attribute),
+      destination_attribute: Map.get(e, :destination_attribute)
+    }
+  end
+
+  defp relationship_type(struct_module) do
+    case struct_module do
+      Ash.Resource.Relationships.BelongsTo -> :belongs_to
+      Ash.Resource.Relationships.HasMany -> :has_many
+      Ash.Resource.Relationships.HasOne -> :has_one
+      Ash.Resource.Relationships.ManyToMany -> :many_to_many
+      _ -> :unknown
+    end
+  end
+
+  defp get_actions(module) do
+    try do
+      module
+      |> Spark.Dsl.Extension.get_entities([:actions])
+      |> Enum.map(&map_action/1)
+    rescue
+      _ -> []
+    end
+  end
+
+  defp map_action(e) do
+    %{
+      name: e.name,
+      type: e.type,
+      description: Map.get(e, :description),
+      accept: Map.get(e, :accept, [])
+    }
+  end
+
+  defp get_policies(module) do
+    try do
+      module
+      |> Spark.Dsl.Extension.get_entities([:policies])
+      |> Enum.map(&map_policy/1)
+    rescue
+      _ -> []
+    end
+  end
+
+  defp map_policy(e) do
+    %{
+      description: Map.get(e, :description),
+      condition: Map.get(e, :condition)
+    }
   end
 
   @doc """

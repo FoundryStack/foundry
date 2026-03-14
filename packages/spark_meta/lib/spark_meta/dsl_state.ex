@@ -12,13 +12,49 @@ defmodule SparkMeta.DslState do
     * `:extension_data` - Map of extension module to extracted data from `SparkMeta.Extension` handlers
   """
 
+  @type attribute_map :: %{
+          name: atom(),
+          type: term(),
+          description: String.t() | nil,
+          allow_nil?: boolean(),
+          default: term()
+        }
+
+  @type relationship_map :: %{
+          name: atom(),
+          type: atom(),
+          destination: atom(),
+          description: String.t() | nil,
+          source_attribute: atom() | nil,
+          destination_attribute: atom() | nil
+        }
+
+  @type action_map :: %{
+          name: atom(),
+          type: atom(),
+          description: String.t() | nil,
+          accept: [atom()]
+        }
+
+  @type policy_map :: %{
+          description: String.t() | nil,
+          condition: term()
+        }
+
   @enforce_keys [:module]
   defstruct module: nil,
             extensions: [],
             sections: %{},
             options: %{},
             persisted: %{},
-            extension_data: %{}
+            extension_data: %{},
+            moduledoc: nil,
+            compliance: [],
+            telemetry_prefix: [],
+            attributes: [],
+            relationships: [],
+            actions: [],
+            policies: []
 
   @type t :: %__MODULE__{
           module: atom(),
@@ -26,6 +62,13 @@ defmodule SparkMeta.DslState do
           sections: %{[atom()] => [struct()]},
           options: %{[atom()] => %{atom() => term()}},
           persisted: %{atom() => term()},
-          extension_data: %{atom() => term()}
+          extension_data: %{atom() => term()},
+          moduledoc: String.t() | nil,
+          compliance: [atom()],
+          telemetry_prefix: [atom()],
+          attributes: [attribute_map()],
+          relationships: [relationship_map()],
+          actions: [action_map()],
+          policies: [policy_map()]
         }
 end
