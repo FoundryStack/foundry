@@ -66,7 +66,13 @@ defmodule SparkMeta.IgamingTest do
     assert length(transitions) >= 3
   end
 
-  describe "rich fields extraction" do
+  describe "rich fields extraction via handler" do
+    setup do
+      :ets.delete_all_objects(:spark_meta_registry)
+      SparkMeta.Registry.register(Ash.Resource.Dsl, SparkMeta.Handlers.AshResource)
+      :ok
+    end
+
     test "wallet moduledoc is a non-empty string" do
       {:ok, state} = SparkMeta.Walker.walk(IgamingRef.Finance.Wallet)
       assert is_binary(state.moduledoc)
@@ -75,7 +81,8 @@ defmodule SparkMeta.IgamingTest do
 
     test "wallet attributes include :player_id, :currency, :balance, :status" do
       {:ok, state} = SparkMeta.Walker.walk(IgamingRef.Finance.Wallet)
-      names = Enum.map(state.attributes, & &1.name)
+      ash_data = state.extension_data[Ash.Resource.Dsl]
+      names = Enum.map(ash_data.attributes, & &1.name)
       assert :player_id in names
       assert :currency in names
       assert :balance in names
@@ -84,7 +91,8 @@ defmodule SparkMeta.IgamingTest do
 
     test "wallet :balance attribute has correct description and allow_nil? false" do
       {:ok, state} = SparkMeta.Walker.walk(IgamingRef.Finance.Wallet)
-      balance = Enum.find(state.attributes, &(&1.name == :balance))
+      ash_data = state.extension_data[Ash.Resource.Dsl]
+      balance = Enum.find(ash_data.attributes, &(&1.name == :balance))
       assert balance != nil
       assert String.contains?(balance.description, "RG-MGA-001")
       assert balance.allow_nil? == false
@@ -92,36 +100,40 @@ defmodule SparkMeta.IgamingTest do
 
     test "wallet relationships include :player (belongs_to) and :ledger_entries (has_many)" do
       {:ok, state} = SparkMeta.Walker.walk(IgamingRef.Finance.Wallet)
-      names = Enum.map(state.relationships, & &1.name)
+      ash_data = state.extension_data[Ash.Resource.Dsl]
+      names = Enum.map(ash_data.relationships, & &1.name)
       assert :player in names
       assert :ledger_entries in names
-      player_rel = Enum.find(state.relationships, &(&1.name == :player))
+      player_rel = Enum.find(ash_data.relationships, &(&1.name == :player))
       assert player_rel.type == :belongs_to
       assert player_rel.destination == IgamingRef.Players.Player
     end
 
     test "wallet actions include :create, :credit, :debit with descriptions" do
       {:ok, state} = SparkMeta.Walker.walk(IgamingRef.Finance.Wallet)
-      names = Enum.map(state.actions, & &1.name)
+      ash_data = state.extension_data[Ash.Resource.Dsl]
+      names = Enum.map(ash_data.actions, & &1.name)
       assert :create in names
       assert :credit in names
       assert :debit in names
-      credit = Enum.find(state.actions, &(&1.name == :credit))
+      credit = Enum.find(ash_data.actions, &(&1.name == :credit))
       assert String.contains?(credit.description, "LedgerEntry")
     end
 
     test "wallet attributes, relationships, and actions are plain maps (no raw structs)" do
       {:ok, state} = SparkMeta.Walker.walk(IgamingRef.Finance.Wallet)
-      Enum.each(state.attributes, &refute(is_struct(&1)))
-      Enum.each(state.relationships, &refute(is_struct(&1)))
-      Enum.each(state.actions, &refute(is_struct(&1)))
+      ash_data = state.extension_data[Ash.Resource.Dsl]
+      Enum.each(ash_data.attributes, &refute(is_struct(&1)))
+      Enum.each(ash_data.relationships, &refute(is_struct(&1)))
+      Enum.each(ash_data.actions, &refute(is_struct(&1)))
     end
 
     test "all fields return appropriate defaults for empty structures" do
       {:ok, state} = SparkMeta.Walker.walk(IgamingRef.Finance.Wallet)
-      assert is_list(state.compliance)
-      assert is_list(state.telemetry_prefix)
-      assert is_list(state.policies)
+      ash_data = state.extension_data[Ash.Resource.Dsl]
+      assert is_list(ash_data.compliance)
+      assert is_list(ash_data.telemetry_prefix)
+      assert is_list(ash_data.policies)
     end
   end
 end

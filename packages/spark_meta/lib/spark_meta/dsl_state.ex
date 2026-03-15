@@ -10,36 +10,14 @@ defmodule SparkMeta.DslState do
     * `:options` - Map of option paths to option dicts (lazy, filled by `get_opt/4`)
     * `:persisted` - Map of persisted values `:extensions` and `:data_layer` eager, rest on-demand
     * `:extension_data` - Map of extension module to extracted data from `SparkMeta.Extension` handlers
+    * `:moduledoc` - Module documentation string (generic to all BEAM modules)
+
+  ## Extension-Specific Data
+
+  Ash.Resource-specific metadata (attributes, relationships, actions, policies, compliance,
+  telemetry_prefix) is extracted by `SparkMeta.Handlers.AshResource` and stored at
+  `extension_data[Ash.Resource.Dsl]` when the handler is registered.
   """
-
-  @type attribute_map :: %{
-          name: atom(),
-          type: term(),
-          description: String.t() | nil,
-          allow_nil?: boolean(),
-          default: term()
-        }
-
-  @type relationship_map :: %{
-          name: atom(),
-          type: atom(),
-          destination: atom(),
-          description: String.t() | nil,
-          source_attribute: atom() | nil,
-          destination_attribute: atom() | nil
-        }
-
-  @type action_map :: %{
-          name: atom(),
-          type: atom(),
-          description: String.t() | nil,
-          accept: [atom()]
-        }
-
-  @type policy_map :: %{
-          description: String.t() | nil,
-          condition: term()
-        }
 
   @enforce_keys [:module]
   defstruct module: nil,
@@ -48,13 +26,7 @@ defmodule SparkMeta.DslState do
             options: %{},
             persisted: %{},
             extension_data: %{},
-            moduledoc: nil,
-            compliance: [],
-            telemetry_prefix: [],
-            attributes: [],
-            relationships: [],
-            actions: [],
-            policies: []
+            moduledoc: nil
 
   @type t :: %__MODULE__{
           module: atom(),
@@ -63,12 +35,6 @@ defmodule SparkMeta.DslState do
           options: %{[atom()] => %{atom() => term()}},
           persisted: %{atom() => term()},
           extension_data: %{atom() => term()},
-          moduledoc: String.t() | nil,
-          compliance: [atom()],
-          telemetry_prefix: [atom()],
-          attributes: [attribute_map()],
-          relationships: [relationship_map()],
-          actions: [action_map()],
-          policies: [policy_map()]
+          moduledoc: String.t() | nil
         }
 end
