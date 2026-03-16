@@ -73,43 +73,34 @@ Confidence below 0.7 on any classification → treat as `ambiguous`.
 
 ---
 
-## Decision: Confidence States
+## Decision: Confidence
 
-Four states govern how the copilot proceeds after context assembly:
+Two behavioral paths govern how the copilot proceeds after context assembly.
+Confidence is a float emitted in the `[:foundry, :llm, :call]` telemetry span.
+No named state is exposed to the user or branched on in code — only the two paths below.
 
-### `HIGH_CONFIDENCE`
-**Conditions:** Structured retrieval returned the requested module, ExDoc confirms the DSL
-construct, a close pattern example exists in the codebase.
+### Proceed
+**Conditions:** Context assembly completed — module context retrieved, DSL version
+confirmed, intent unambiguous.
 
-**Behaviour:** Proceed directly. For `question`: answer with source citations. For `change`:
-run ADR contradiction check, then generate proposal parameters.
+**Behaviour:** Proceed directly to the generation pass. If no close pattern example
+exists for the specific construct, include a note in the review panel Impact tab:
+"No existing example of this pattern in the project. Generated from ExDoc specification
+only. Review the generated code carefully before applying."
 
-No note to the user about confidence level. High confidence is the normal operating state.
-
----
-
-### `MEDIUM_CONFIDENCE`
-**Conditions:** Module context was retrieved but no close pattern example exists for the
-specific DSL construct being generated.
-
-**Behaviour:** Generate and flag. For `change`: generate the proposal, include a note in
-the review panel Impact tab: "No existing example of this pattern in the project. Generated
-from ExDoc specification only. Human review of the generated code is recommended before apply."
-
-Do not ask a clarifying question for medium confidence. The uncertainty is about *pattern
-familiarity*, not about *intent* — the user's intent is clear, the copilot is just less
-certain about the idiomatic form.
+No note to the user about confidence level in normal cases. The Impact tab note is
+the only signal, and only when warranted.
 
 ---
 
-### `LOW_CONFIDENCE`
+### Ask / Surface gap
 **Conditions:** One or more of:
 - The requested module does not exist in `mix foundry.context` output
-- The DSL version in the fetched ExDoc does not match the project's version in mix.exs
-- The spec-kit is silent on this case and no pattern example exists
+- The DSL version in fetched ExDoc does not match the project's pinned version
+- Intent is ambiguous (confidence float below 0.7 on classification)
 
-**Behaviour:** Surface the specific gap. Use the one permitted clarifying question (INV-005).
-Do not generate on low confidence.
+**Behaviour:** Surface the specific gap. Use the one permitted clarifying question
+(INV-005). Do not generate.
 
 Example responses:
 - "I can't find a module named `BonusPool` — did you mean `BonusAward`? (The closest match in the Finance domain is `BonusAward`.)"
@@ -138,7 +129,7 @@ To proceed: [one sentence on what must happen].
 
 ## Decision: Clarifying Question UX (INV-005 Implementation)
 
-When a clarifying question is required (`LOW_CONFIDENCE` or `ambiguous` classification):
+When a clarifying question is required (gap surfaced or ambiguous classification):
 
 **Step 1 — State what was understood:**
 A brief sentence: "I understand you want to [paraphrase of the request]."
@@ -245,53 +236,36 @@ Not an error — the clarifying question UX described above is the response.
 
 ## Decision: Phase-Gated Copilot Behaviour
 
-**Phase 3 (`change_generation_enabled: false`):** `change` intent routes to the
-`CHANGE_PREVIEW` handler. The full classification, spec-kit check, context assembly,
-and ADR contradiction check still run. No git branch is created. The handler produces:
+**Phase 3 (`change_generation_enabled: false`):** `change` intent routes to a
+plain prose description. The full classification, pre-generation checklist, context
+assembly, and contradiction check still run. No git branch is created. The response
+describes in plain prose what operation would be generated, what files would be
+touched, and what change class it would carry. No structured field requirements —
+the goal is validating classification quality, not format compliance.
 
-```
-I would propose the following change (code generation is not yet enabled):
+**Phase 4 (`change_generation_enabled: true`):** The agent proceeds directly to
+the generation pass. The review panel bottom sheet is the preview — it shows the
+actual diff and the system map enters preview mode (phantom nodes, amber rings).
 
-Operation: new rule module
-Module: MyApp.Finance.WithdrawalLimitRule
-Change class: :behavioral (requires domain lead approval)
-Files that would be touched:
-  - lib/my_app/finance/withdrawal_limit_rule.ex (new)
-  - test/my_app/finance/withdrawal_limit_rule_test.exs (new)
-
-The rule would check [summary of what the rule would enforce based on intent].
-
-No diff has been generated. When code generation is enabled, this operation
-will produce a full diff for review.
-```
-
-The copilot does not explain why generation is disabled — that is visible in the Studio
-status bar. The response shows only what it understood.
-
-**Phase 4 (`change_generation_enabled: true`):** `CHANGE_PREVIEW` is not used. The agent
-proceeds directly to DRAFT creation. No intermediate preview step. The review panel bottom
-sheet is the preview — it shows the actual diff and the system map enters preview mode
-(amber rings on affected nodes, phantom outlines on new nodes, dimmed removed nodes).
-
-`CHANGE_PREVIEW` is a Phase 3-only response format. It does not appear in Phase 4+.
+The plain prose description is Phase 3 only. It does not appear in Phase 4+.
 
 ---
 
 ## Decision: Response Format Contract
 
-Every copilot response must be structured as follows. The structure is enforced by the
-system prompt — the model is instructed to follow these patterns, not to produce free-form prose.
-
 **For `question` responses:**
-1. Direct answer (1–3 sentences)
-2. Source citation: "Source: `mix foundry.context MyApp.Finance.Wallet` → `archival: true`" or "Source: ADR-005 §Migration Classification"
-3. Optional follow-up suggestion (one, not a question): "You might also want to check the compliance links on this resource — the Compliance Matrix has the current status."
+Answer with the depth the question requires. Always cite the specific ADR, INV rule,
+module context field, or ExDoc fragment that grounds the answer:
+"Source: `mix foundry.context MyApp.Finance.Wallet` → `archival: true`" or
+"Source: ADR-005 §Migration Classification".
+Optional follow-up suggestion (one, not a question).
 
-**For `speckit` responses:**
-A plain-text draft of the requested spec-kit document (ADR, runbook, or regulation stub)
-rendered as a copyable card in the Activity Feed. Header shows the proposed file path.
-No diff, no git branch, no Igniter call. The human reviews, edits as needed, and commits
-the file manually via `git add docs/adrs/ADR-XXX... && git commit`.
+**For `speckit` responses (standalone only):**
+A plain-text draft rendered as a copyable card in the Activity Feed. Header shows
+the proposed file path. No diff, no git branch, no Igniter call. Used only when
+the human asks to document an already-made decision with no associated code change.
+For governed changes (`:behavioral`, `:compliance`), spec-kit documents are drafted
+as the first files in the proposal branch alongside the code — not as Activity Feed cards.
 
 **For `change` responses (Phase 4+):**
 The diff is sent to the review panel out-of-band. The inline copilot message is:
@@ -302,11 +276,8 @@ Awaiting: domain lead approval
 ```
 Never paste the diff inline in the conversation. The diff belongs in the review panel.
 
-**For `CHANGE_PREVIEW` responses (Phase 3):**
-Structured description as shown above. No diff, no code.
-
 **For `BLOCKED` responses:**
-As specified under §Confidence States → BLOCKED. No code, no diff, no workarounds.
+As specified under §Confidence → BLOCKED. No code, no diff, no workarounds.
 
 **For clarifying question responses:**
 The question structure as specified under §Clarifying Question UX. Nothing else — do not
@@ -316,8 +287,8 @@ pre-answer your own question or add context after the buttons.
 
 ## Consequences
 
-- The system prompt enforces the response format contract — a model response that deviates is a test failure, not an acceptable variation
 - All five error codes are logged with structured metadata (not the full prompt) to the telemetry pipeline — this is the diagnostic signal for `studio_copilot_failure.md`
 - The clarifying question button UI is a LiveView component that sends a structured message on click, bypassing the text input — the engine receives the option label, not the button's click event
 - Phase 3 done criteria must include verifying that each of the five error codes is exercised in the test environment, not just happy-path question answering
 - The `BLOCKED` response format is deliberately terse. If users find it too abrupt, that is feedback that an ADR may be too restrictive — it is not feedback to soften the copilot's response
+- Spec-kit documents for governed changes are reviewed in the diff panel alongside code, not as Activity Feed prose cards. The Activity Feed card path is reserved for standalone documentation requests only.

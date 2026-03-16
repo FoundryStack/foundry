@@ -117,8 +117,13 @@ All code changes go through Igniter operations executed by the Foundry backend.
 The mechanism: the copilot engine calls `Foundry.Operations.run/2` which uses Igniter
 internally and streams the resulting diff back over WebSocket. The agent never calls
 `File.write!/2`, `File.stream!/2`, or any direct IO on source files.
-For `docs/` (ADRs, runbooks, regulations), the agent proposes plain-text content;
-a human commits it. The compiler cannot validate prose — humans must.
+For `:behavioral` and `:compliance` changes, the agent drafts required spec-kit documents
+(ADRs, runbooks, regulation entries) as the first files in the proposal branch, alongside
+the code they govern. Spec-kit files and Elixir source files are reviewed and committed
+together in one proposal. The human never touches git manually for governed changes.
+The one exception is standalone `speckit` intent requests (documenting an already-made
+decision with no associated code change) — those produce an Activity Feed card for human
+review and manual commit, as no proposal branch is warranted.
 
 **INV-003: All writes go through Igniter. The agent generates Elixir source for everything.**
 There is no catalogue of pre-built operation modules. The agent uses raw Igniter API
@@ -256,103 +261,13 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 
 ## Spec-Kit Tasks
 
-All spec-kit tasks are enabled by default. No manifest configuration required.
-`copilot.max_tool_calls` in the manifest controls the circuit breaker (default 8).
+`copilot.max_tool_calls` in the manifest controls the circuit breaker (default 20).
 
-The five postures below govern how the agent interacts with the spec-kit. They are
-not separate modes — they are the agent's default reasoning obligations before writing
-any code. The agent runs them internally and surfaces results in the reasoning trace
-and the session plan.
+The pre-generation checklist below governs how the agent interacts with the spec-kit
+before writing any code. It is not a separate mode — it is the agent's default
+reasoning obligation. The agent runs it internally before constructing the session plan.
 
----
-
-### `speckit.analyze` — Default pre-generation posture
-
-Before generating any proposal, the agent identifies which spec-kit documents cover
-the requested change and whether any are missing. This analysis is emitted in every
-reasoning trace under `speckit_analysis`:
-
-```json
-"speckit_analysis": {
-  "covering_adrs": ["ADR-005", "ADR-002"],
-  "covering_invs": ["INV-001", "INV-011"],
-  "covering_regulations": ["RG-UK-014"],
-  "missing_adr": false,
-  "missing_runbook": false,
-  "missing_regulation": false,
-  "gaps": []
-}
-```
-
-If `missing_adr: true` or `gaps` is non-empty, the agent includes spec-kit drafts
-as the first step(s) of the session plan — before any code proposals.
-
-**ADR required when:** a design decision is being made that the code does not explain
-(why this approach vs alternatives); a new compliance requirement is introduced; a
-dependency is added (ADR-004); an existing ADR is being contradicted or extended;
-any `:compliance` class change (ADR link is required before approval).
-
-**ADR not required when:** adding an attribute with a clear `description:` (Ash is
-the spec for structural facts); bug fixes to existing behaviour; test additions;
-`:structural` description improvements.
-
-**Runbook required when:** any Reactor with more than 3 steps (INV-005, lint-enforced);
-a new external integration is introduced; a background job is added.
-
-**Regulation file required when:** a regulatory requirement is tracked for the first time
-or an existing requirement is superseded.
-
----
-
-### `speckit.plan` — Ordered plan for multi-step changes
-
-For any change involving more than one file or more than one concern, the agent
-produces an explicit ordered plan before generating anything:
-
-```
-Plan for: Add withdrawal limit rule with compliance link
-
-Step 1 [spec-kit]  Draft ADR-020: WithdrawalLimitRule design
-  → Why: new jurisdiction clause pattern not covered by existing ADRs
-  → Proposal type: plain text, human commits
-  → Change class: :structural (spec-kit doc update)
-
-Step 2 [code]      Add IgamingRef.Finance.Rules.WithdrawalLimitRule
-  → Igniter: new rule module + test stub on git branch
-  → Change class: :behavioral — domain lead approval
-
-Step 3 [code]      Wire rule into WithdrawalTransfer
-  → Change class: :behavioral — batch with Step 2
-
-Step 4 [tests]     Property test: amounts above limit always block
-  → Change class: :structural — instant
-
-Step 5 [compliance] Add compliance link RG-UK-014
-  → Change class: :compliance — compliance officer + ADR-020 link
-```
-
-Human confirms the plan before execution. The agent does not proceed to Step 2
-until Step 1's ADR draft has been reviewed in the Activity Feed.
-
----
-
-### `speckit.clarify` — Naming the gap before asking
-
-When the spec-kit is silent on a case, the agent names the specific gap before
-consuming the one permitted clarifying question (INV-005):
-
-> "I'm about to [describe action]. I couldn't find an ADR covering [specific decision].
-> My interpretation is [X] because [reasoning from nearest ADR]. Before I proceed:
-> is this interpretation correct, or should I draft an ADR for this case first?"
-
-This is grounded in a specific spec-kit gap — not a general disambiguation question.
-
----
-
-### `speckit.checklist` — Pre-generation invariant check
-
-Internal checklist run before emitting any code proposal. A failed item becomes
-a plan step that precedes the code step:
+### Pre-generation checklist
 
 ```
 □ ADR covers this design decision, or it is a :structural change
@@ -369,44 +284,68 @@ The final item is critical: the agent treats existing `@description` fields as
 invariant declarations. A proposed change that contradicts a description is
 surfaced in the contradiction check, the same as an ADR conflict.
 
----
+**ADR required when:** a design decision is being made that the code does not explain
+(why this approach vs alternatives); a new compliance requirement is introduced; a
+dependency is added (ADR-004); an existing ADR is being contradicted or extended;
+any `:compliance` class change (ADR link is required before approval).
 
-### `speckit.constitution` — Bootstrap posture for uncovered territory
+**ADR not required when:** adding an attribute with a clear `description:` (Ash is
+the spec for structural facts); bug fixes to existing behaviour; test additions;
+`:structural` description improvements.
 
-When a feature has no spec-kit coverage and is not a simple structural change:
+**Runbook required when:** any Reactor with more than 3 steps (INV-005, lint-enforced);
+a new external integration is introduced; a background job is added.
 
-> "This is new territory for this project's spec-kit. I'll include spec-kit
-> initialization in the plan:
-> - ADR stub (context + decision + rationale skeleton — you complete the rationale)
-> - Regulation stub if this touches a compliance area
-> - Runbook stub if this introduces a Reactor with external effects
->
-> These are plain text files proposed first. You review them, then I generate code
-> that references them. The code is never written without its spec-kit anchor."
+**Regulation file required when:** a regulatory requirement is tracked for the first time
+or an existing requirement is superseded.
+
+When the spec-kit is silent on a case, the agent names the specific gap before
+consuming the one permitted clarifying question (INV-005):
+
+> "I'm about to [describe action]. I couldn't find an ADR covering [specific decision].
+> My interpretation is [X] because [reasoning from nearest ADR]. Before I proceed:
+> is this interpretation correct, or should I draft an ADR for this case first?"
 
 ---
 
 ### Agent reasoning sequence for `change` intents
 
-The complete sequence the agent follows before emitting any code proposal:
+The complete sequence the agent follows before emitting any proposal:
 
 ```
-1. Read spec-kit index (Tier 1) — identify relevant ADRs/INVs/regulations by tag
-2. Read those documents via bash — follow cross-references
-3. Run speckit.checklist — identify any missing spec-kit items
-4. If gaps: include spec-kit steps first in the session plan
-5. Read module context: mix foundry.context <Module> --json
-6. Fetch closest pattern example: mix foundry.pattern.find <type> --domain <D>
-7. Check @description fields on all touched attributes against proposed change
-8. Run contradiction check — BLOCKED if violated, else proceed
-9. Construct ordered session plan (spec-kit first, code second, tests third)
+1.  Read spec-kit index (Tier 1) — identify relevant ADRs/INVs/regulations by tag
+2.  Read those documents via bash — follow cross-references
+3.  Run pre-generation checklist — identify missing spec-kit items
+4.  Read module context: mix foundry.context <Module> --json
+5.  Fetch closest pattern example: mix foundry.pattern.find <type> --domain <D>
+6.  Check @description fields on all touched attributes against proposed change
+7.  Run contradiction check — BLOCKED if violated, else proceed
+8.  Classify whether spec-kit drafting is required:
+      :behavioral or :compliance → ADR draft required, included as first file
+                                    in the proposal branch
+      :structural with new concept → ADR draft offered, not required
+      :structural modification → no spec-kit step
+9.  Construct ordered session plan:
+      [spec]  ADR / runbook stub (if required by step 8)
+      [tests] Test skeletons from DSL declarations + ADR boundary conditions
+      [code]  Implementation constrained by test structure
+      [migration] mix ash.codegen if schema changes
 10. Present plan for human confirmation
-11. On confirmation: execute in order, writing to git branch foundry/prop_<id>
+      Human refines via conversation until satisfied — plan only, not code
+11. On confirmation: single generation pass on foundry/prop_<id> branch
+      → Write spec-kit files first (Markdown, direct branch write)
+      → Generate test skeletons
+      → Generate implementation
+      → Run mix ash.codegen (if migration needed)
+      → Run mix compile (must pass)
+      → Run mix test <new-test-file> — pre-surface quality gate;
+        max 3 self-corrections at compile level; never iterates on assertion values
+      → Compute graph_delta from operation parameters
+12. Surface diff to review panel — human reviews, approves, or requests changes
 ```
 
-This sequence applies to all `change` intents. Steps 3–5 distinguish it from the
-Phase 3 CHANGE_PREVIEW path, where generation is disabled and the plan describes
-without producing a diff.
+This sequence applies to all `change` intents. When `change_generation_enabled: false`
+(Phase 3), step 11 is replaced by a plain prose description of what would be generated.
 
 ---
 

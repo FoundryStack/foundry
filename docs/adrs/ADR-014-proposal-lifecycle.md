@@ -33,9 +33,12 @@ DISMISSED                                ├──► REJECTED
 ```
 
 **DRAFT**
-Proposal has been generated (Igniter dry-run complete, diff captured, blob hashes recorded
-per ADR-009). Not yet submitted. The requester may view it in the review panel and either
-submit or dismiss.
+All generated files are on the `foundry/prop_<id>` branch: spec-kit documents first
+(ADR stub, runbook stub — if required by change class), then test skeletons, then
+implementation, then migration (if schema changes). The diff is captured. The requester
+views the complete unified diff in the review panel and either submits or dismisses.
+No file type is treated differently from another — ADR markdown and Elixir source are
+reviewed and approved together.
 
 A DRAFT is not visible to other users. Only the requester sees it.
 
@@ -234,10 +237,12 @@ surfaced to the user and requires manual resolution.
    ```
    [FOUNDRY] :behavioral: Add WithdrawalLimitRule
 
+   ADR: docs/adrs/ADR-020-withdrawal-limit-rule.md
    Approved by: domain-lead@company.com (2026-03-04T14:22:00Z)
    Proposal ID: prop_abc123
    Change class: :behavioral
    ```
+   The `ADR:` line is omitted for `:structural` changes where no ADR was drafted.
 
 5. Trigger CI.
 
@@ -276,17 +281,26 @@ are bugs to be filed against the lint rule coverage.
 
 ---
 
-## Decision: Proposal Lifecycle for `:structural` Auto-Apply
+## Decision: Proposal Lifecycle for Auto-Apply
 
-When the project manifest has auto-apply configured for `:structural` changes and the
-proposal passes all Phase A checks, Phase B executes immediately on approval without a
-separate "Apply" button press.
+The `auto_apply_classes` manifest key (default: `[]`) lists which change classes bypass
+the manual "Apply" button press. When a proposal's change class is in this list and all
+Phase A checks pass, Phase B executes immediately on the final approval action.
 
-**The approval action IS the apply trigger for `:structural` auto-apply.**
+**The approval action IS the apply trigger for classes in `auto_apply_classes`.**
 
-This is the only class where approval and apply are a single action. For all other classes,
-the "Apply" button is a deliberate separate step after approval — it forces a human to
-actively initiate the code change, not just approve it.
+`:behavioral`, `:sensitive`, and `:compliance` are hard-blocked from `auto_apply_classes`
+regardless of configuration. Only `:structural` is a valid entry. Specifying other classes
+is a manifest validation error.
+
+For all other classes, the "Apply" button is a deliberate separate step after approval —
+it forces a human to actively initiate the code change, not just approve it.
+
+**Spec-kit → code ordering within a proposal:** When a session plan includes a spec-kit
+file (ADR, runbook) before code files, all files are generated in one pass and land in
+the same proposal branch. There is no separate "wait for ADR commit" gate — the ADR draft
+is part of the diff the approver reviews. The approver's approval confirms both the spec
+and the implementation simultaneously.
 
 ---
 
@@ -312,6 +326,12 @@ specified in ADR-015. The schema below is the file's content.
   "lint_result": { ... },
   "impact_analysis": { ... },
   "adr_link": "ADR-005" | null,
+  "graph_delta": {
+    "base_diagram_hash": "sha256:...",
+    "nodes_added": [],
+    "nodes_modified": [],
+    "edges_added": []
+  },
   "requester": "dev@company.com",
   "created_at": "2026-03-04T14:00:00Z",
   "submitted_at": "2026-03-04T14:05:00Z",
@@ -335,8 +355,10 @@ listed here from outside that module — the schema is an internal implementatio
 
 - The DRAFT → PENDING_REVIEW transition is the point at which other users gain visibility — not proposal generation
 - Compilation failure after apply is a recoverable exceptional state, not a rollback path. Lint coverage is the primary defence against it
-- For `:structural` auto-apply: approval and apply are a single action. For all other classes, they are two separate deliberate steps.
+- For classes in `auto_apply_classes` (default only `:structural`): approval and apply are a single action. For all other classes, they are two separate deliberate steps.
 - The `mix foundry.proposals.mark-applied` command is a safety valve — it should rarely be needed and its use should be logged as a platform issue to investigate
 - `approval_slot_2` for `:sensitive` proposals can be filled by `domain_lead`, `platform_lead`, or `compliance_officer` — the manifest determines who qualifies. This means a project with no `domain_lead` declared still has a valid second approver path via `platform_lead`.
 - Proposal files and the audit log are stored in `.foundry/` as git-committed files — there is no database. Storage implementation and commit conventions are in ADR-015.
 - The audit log is `.foundry/audit.jsonl` — each approval event appends one JSONL line and commits it. `git log -p .foundry/audit.jsonl` is the authoritative inspection tool.
+- A proposal diff may contain ADR markdown, runbook markdown, test files, implementation files, and migration files — all reviewed and approved together. The approver sees the complete picture in one diff, not a sequence of separate proposals.
+- `graph_delta` in the proposal JSON drives the system map preview mode. It is derived from operation parameters at plan confirmation time — no branch read or subprocess required to render phantom nodes on the canvas.

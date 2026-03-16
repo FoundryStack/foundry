@@ -219,12 +219,16 @@ generation quality is poor, the cost is a rejected diff, not a broken codebase.
 - Approval tracking UI and notification inbox (ADR-012 §Approval Tracking UI, §Notification Inbox)
 - Audit log for `:sensitive` and `:compliance` proposals
 - `change_generation_enabled: true` set in Phase 4 deployment config
+- `auto_apply_classes` manifest key (default: `[]`) — when a proposal's change class is
+  in this list and all approval slots are filled, the `APPROVED → APPLIED` transition fires
+  automatically without a manual "Apply" button press. `:behavioral`, `:sensitive`, and
+  `:compliance` are hard-blocked from this list regardless of config.
 
 **Proposal lifecycle specification:** ADR-014. State machine, apply step, and failure paths
 in that document govern Phase 4 implementation.
 
-**The diff is shown. The human presses "Apply" in the review panel.**
-No auto-apply in Phase 4. This is intentional — it validates diff quality before auto-apply is trusted.
+**The diff is shown. The human presses "Apply" in the review panel** (unless the change
+class is in `auto_apply_classes`, in which case approval IS the apply trigger).
 
 **Done when:** The copilot generates correct, lint-passing diffs for representative
 operation types against the iGaming reference project (at minimum: new resource with
@@ -234,32 +238,13 @@ correct including `APPLY_FAILED` → retry path. Dual approval blocks applicatio
 both slots are filled. ADR link field blocks `:compliance` submission when empty. Audit
 log records all `:sensitive` and `:compliance` approvals with timestamp, approver, and
 base commit SHA. Stale detection correctly identifies proposals whose base commit has
-been superseded by changes to affected files.
+been superseded by changes to affected files. 20 consecutive `:structural` auto-applies
+(with `auto_apply_classes: [:structural]` in manifest) produce lint-passing, CI-green
+results with no regressions.
 
 ---
 
-## Phase 5: Copilot — Auto-Apply (`:structural` only)
-
-**Goal:** Approved `:structural` proposals are applied automatically.
-
-**Why fifth:** By now the diff quality is validated (Phase 4). Auto-apply for `:structural`
-changes (descriptions, new attributes, new read-only resources, test skeletons) is low-risk
-and high-frequency. Starting here builds confidence before enabling auto-apply for higher classes.
-
-**Deliverables:**
-- `Foundry.Operations.run/2` with `dry_run: false` — executes Igniter
-- Git commit creation with structured message format
-- CI trigger on apply
-- Stale proposal detection and UX (ADR-009)
-- Auto-apply enabled only for `:structural` class (configurable per project in manifest)
-- `:behavioral`, `:sensitive`, `:compliance` proposals still require manual apply
-
-**Done when:** 20 consecutive `:structural` auto-applies in the iGaming reference project
-produce lint-passing, CI-green results with no regressions.
-
----
-
-## Phase 6: Operations Board + Test Coverage Map
+## Phase 5: Operations Board + Test Coverage Map
 
 **Goal:** Complete the four visualization panels. Make staleness visible and actionable.
 
@@ -276,7 +261,7 @@ fires to the configured Slack channel.
 
 ---
 
-## Phase 7: Domain Builder (Layer 3)
+## Phase 6: Domain Builder (Layer 3)
 
 **Goal:** Form-driven scaffold for non-developer users (compliance managers, domain experts).
 
@@ -294,7 +279,7 @@ new regulatory requirement to its implementing module without developer assistan
 
 ---
 
-## Phase 8: Agent Injection Support
+## Phase 7: Agent Injection Support
 
 **Goal:** First-class governance and observability for AshAI agent steps in target platform
 Reactors. Makes the human-in-the-loop gate a managed system feature, not ad-hoc code.
@@ -355,12 +340,11 @@ test environment when the threshold is exceeded.
 Phase 1 (JSON tasks)
   └── Phase 2 (System Map)
         └── Phase 3 (Copilot: questions)
-              └── Phase 4 (Copilot: proposals)
-                    └── Phase 5 (Auto-apply)
-                          └── Phase 6 (Ops + Tests) ──┐
-                                └── Phase 7 (Builder)  │
-                                Phase 8 (Agents) ──────┘
-                                  (parallel with 7, requires 6)
+              └── Phase 4 (Copilot: proposals + auto-apply config)
+                    └── Phase 5 (Ops + Tests) ──┐
+                          └── Phase 6 (Builder)  │
+                          Phase 7 (Agents) ───────┘
+                            (parallel with 6, requires 5)
 ```
 
 Each phase is a strict prerequisite for the next. Do not start Phase N+1 until Phase N

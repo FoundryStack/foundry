@@ -165,9 +165,10 @@ Both are Mix tasks called via bash — not separate tool schemas. The agent call
 like any other Mix task. The distinction from arbitrary bash is that their output
 format is specced and stable.
 
-**Circuit breaker:** `max_tool_calls` per request (default 8, manifest key
+**Circuit breaker:** `max_tool_calls` per request (default 20, manifest key
 `copilot.max_tool_calls`). If reached without resolution: `:context_budget_exceeded`.
-Safety valve against runaway loops — normal operations never approach this limit.
+Safety valve against runaway loops — normal operations use 8–15 calls; the higher
+default ensures cross-domain changes with multiple context reads are never silently truncated.
 
 ---
 
@@ -177,7 +178,7 @@ Safety valve against runaway loops — normal operations never approach this lim
 |---|---|
 | Tier 1 (system prompt) | ~1400 tokens |
 | Tier 2 (session snapshot) | ≤ 400 tokens |
-| Tier 3 (shell / tools, accumulated) | Grows during loop; circuit breaker at 8 calls |
+| Tier 3 (shell / tools, accumulated) | Grows during loop; circuit breaker at 20 calls |
 | User message + 3-turn history | ~300 tokens |
 | **Static total (Tier 1 + 2)** | **~1800 tokens** |
 
@@ -227,9 +228,8 @@ Enforced via system prompt instruction, not a separate API call.
 4. Read a pattern example if creating a new construct: `bash("mix foundry.pattern.find <type>")`
 5. Read the operation schema if using a catalogue operation: `bash("mix foundry.operation.schema <Op>")`
 6. Reason about change classification and contradictions
-7. Emit structured contradiction check block in reasoning trace (see §Reasoning Trace)
-8. If contradiction: BLOCKED — cite ADR/INV, do not proceed
-9. If no contradiction: CHANGE_PREVIEW (Phase 3) or proposal parameters (Phase 4+)
+7. If contradiction: BLOCKED — cite ADR/INV, do not proceed
+8. If no contradiction: plain prose description (Phase 3) or full generation pass (Phase 4+)
 
 **The agent follows references, it does not preload.** The index in Tier 1 ensures all
 ADR summaries are visible. References encountered during reading (e.g. "see ADR-005
@@ -340,47 +340,30 @@ ADR update.
 
 ## Reasoning Trace
 
-Every CHANGE_PREVIEW and proposal response must include a structured reasoning trace.
-This is the structured output of the agent's decision steps — not LLM prompt content
-(privacy, per ADR-012 §Data Retention).
+The tool call log is the trace. Every bash command the agent executes is recorded
+by the adapter layer as part of the `[:foundry, :llm, :call]` telemetry span.
+This is the authoritative record of what the agent actually read — not a JSON block
+the model is asked to produce, which teaches the model to fill in the block rather
+than to actually reason.
 
-```json
-"reasoning_trace": {
-  "intent_classification": {
-    "task": "change",
-    "operation": "Op.AddRule",
-    "confidence": 0.91
-  },
-  "shell_calls": [
-    "cat docs/adrs/ADR-005-change-approval-model.md",
-    "mix foundry.context MyApp.Finance.Wallet --json",
-    "mix foundry.pattern.find rule --domain Finance"
-  ],
-  "contradiction_check": {
-    "contradiction": false,
-    "checked_adrs": ["ADR-005", "ADR-002"],
-    "checked_invs": ["INV-001", "INV-011"],
-    "summary": null
-  },
-  "change_class": ":behavioral",
-  "confidence_state": "HIGH_CONFIDENCE",
-  "session_snapshot": {
-    "pending_migrations": 0,
-    "open_proposals": 1,
-    "lint_errors": 0
-  }
-}
+The telemetry span emits these fields per agent loop invocation:
+
+```
+model:          "claude-sonnet-4-6"
+task_type:      "change" | "question" | "speckit" | "ambiguous"
+confidence:     0.91          # float, from first reasoning step
+change_class:   ":behavioral" # nil for question intents
+tool_calls:     12            # count of bash calls made
+prompt_tokens:  ~2400
+latency_ms:     3200
 ```
 
-`contradiction_check.checked_adrs` and `checked_invs` must be non-empty arrays.
-An empty list means the check was skipped — test failure, not acceptable response.
+`confidence` is a float emitted from the agent's first reasoning step — not a named
+state. The calling code uses it for monitoring; no behavior branches on the state name.
 
-For question responses (no proposal file): equivalent fields emitted as attributes
-on the `[:foundry, :llm, :call]` telemetry span. Not persisted to disk.
-
-**Dev-mode trace log:** `config :foundry_studio, copilot_trace_log: true` writes all
-traces to `.foundry/logs/copilot_trace.jsonl` (gitignored). Local debugging only.
-Set in `config/dev.exs` during Phase 3 development.
+For dev-mode debugging, `config :foundry_studio, copilot_trace_log: true` writes
+the full tool call list with outputs to `.foundry/logs/copilot_trace.jsonl`
+(gitignored). This is the debugging surface — not the production telemetry span.
 
 ---
 

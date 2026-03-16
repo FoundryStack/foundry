@@ -134,6 +134,69 @@ The canvas supports four modes, selectable from the toolbar:
 | Authorization | Shows auth edges between actor-identity resources and the resources they can access |
 | Config view | Highlights Blueprint nodes and their `configured-by` edges — shows what is adjustable without a code change |
 
+---
+
+### Proposal Preview Mode — `ProposalGraphDelta`
+
+When a DRAFT or PENDING_REVIEW proposal is active, the canvas enters preview mode.
+The preview is driven by a `graph_delta` field stored in the proposal JSON (ADR-014),
+not by reading the proposal git branch. No subprocess is required — the delta is
+derived from operation parameters at plan confirmation time and is available immediately
+when the proposal enters DRAFT.
+
+**Struct definition** (`Foundry.Proposals.GraphDelta`):
+
+```elixir
+defstruct [
+  :proposal_id,
+  :base_diagram_hash,   # sha256 of diagram.generate output at base_commit
+  nodes_added: [],      # phantom nodes — new modules being created
+  nodes_modified: [],   # existing nodes touched by the proposal
+  nodes_removed: [],    # rare — modules being deleted
+  edges_added: [],      # new relationships / calls introduced
+  edges_removed: []     # rare
+]
+```
+
+Each entry in `nodes_added` is a minimal node descriptor matching the diagram JSON
+node shape, with `"state": "phantom"` added:
+
+```json
+{
+  "id": "MyApp.Finance.WithdrawalLimitRule",
+  "type": "rule",
+  "name": "WithdrawalLimitRule",
+  "domain": "finance",
+  "sensitive": false,
+  "state": "phantom"
+}
+```
+
+`nodes_modified` carries node ID and a list of changed field names. The canvas renders
+the existing node with an amber ring and a dot indicator in the detail drawer.
+
+**Canvas rendering rules:**
+
+| Delta entry | Canvas rendering |
+|---|---|
+| `nodes_added` | Dashed border, 50% opacity, amber ring, label suffixed `[proposed]` |
+| `nodes_modified` | Amber ring on existing node, dot indicator in detail drawer |
+| `edges_added` | Dashed amber edge line |
+| `nodes_removed` | Dimmed node, strikethrough label |
+| `edges_removed` | Dimmed dashed edge |
+
+**Lifecycle:**
+- Populated at plan confirmation time (before the generation pass starts)
+- Available on canvas from the moment the proposal enters DRAFT
+- Reverted to committed state on REJECTED or STALE
+- Solidifies into real nodes on COMMITTED via the inotify watcher triggering
+  `mix foundry.diagram.generate` reload — phantom nodes become live nodes
+
+**What this is not:** The `graph_delta` shows structural intent — which modules are
+added or touched. It does not show implementation detail. Implementation detail is
+in the diff panel. The two surfaces are complementary: canvas for spatial orientation,
+diff panel for code review.
+
 ### What the Diagram JSON Contract Contains
 
 Produced by `mix foundry.diagram.generate --json`. Schema is frozen — breaking changes
