@@ -44,8 +44,9 @@ behavioural requirements that the system prompt and test suite enforce.
 
 ## Decision: Intent Classification
 
-Intent classification is the pre-LLM routing step described in ADR-010 §Task 1.
-This section defines the classification rules the Task 1 prompt enforces.
+Intent classification is the **first reasoning step of the agent loop** — not a separate
+pre-LLM call. The agent classifies the user's message before making any tool calls.
+See ADR-010 §Intent Classification for the full specification.
 
 **`question`** — the user is asking about the current state of the system.
 Indicators: interrogative syntax ("what does", "why does", "show me", "explain", "where is",
@@ -56,12 +57,17 @@ Indicators: imperative verbs ("add", "create", "update", "remove", "rename", "ge
 "link", "implement"), description of a desired future state ("I want", "we need",
 "the resource should", "it should also").
 
+**`speckit`** — the user asks to draft or update a spec-kit document.
+Indicators: "write an ADR", "draft a runbook", "add a regulation entry", "update the ADR for",
+"document this decision". Produces a plain-text proposal (no Igniter call, no git branch).
+The human reviews the draft in the Activity Feed and commits it manually.
+
 **`ambiguous`** — the message contains both question and change indicators, or neither.
 Examples: "Can we add a rule for X?" (question form, change intent), "What about a Transfer
 for Y?" (question form, but clearly describing an addition).
 
-When `ambiguous`, the classifier returns `confidence < 0.7` and the engine invokes the
-clarifying question path (see §Clarifying Questions).
+When `ambiguous`, the engine invokes the clarifying question path (INV-005).
+Confidence below 0.7 on any classification → treat as `ambiguous`.
 
 **Not overridable from the UI.** Unresolved ambiguity always goes to clarifying question path (INV-005).
 
@@ -239,14 +245,14 @@ Not an error — the clarifying question UX described above is the response.
 
 ## Decision: Phase-Gated Copilot Behaviour
 
-In Phase 3 (`change_generation_enabled: false`), `change` intent routes to the `CHANGE_PREVIEW`
-handler. The full classification, context assembly, and ADR contradiction check still run.
-The handler then produces:
+**Phase 3 (`change_generation_enabled: false`):** `change` intent routes to the
+`CHANGE_PREVIEW` handler. The full classification, spec-kit check, context assembly,
+and ADR contradiction check still run. No git branch is created. The handler produces:
 
 ```
 I would propose the following change (code generation is not yet enabled):
 
-Operation: Op.AddRule
+Operation: new rule module
 Module: MyApp.Finance.WithdrawalLimitRule
 Change class: :behavioral (requires domain lead approval)
 Files that would be touched:
@@ -259,7 +265,15 @@ No diff has been generated. When code generation is enabled, this operation
 will produce a full diff for review.
 ```
 
-The copilot does not explain to the user why generation is disabled — that is visible in the Studio status bar. The response shows only what it understood.
+The copilot does not explain why generation is disabled — that is visible in the Studio
+status bar. The response shows only what it understood.
+
+**Phase 4 (`change_generation_enabled: true`):** `CHANGE_PREVIEW` is not used. The agent
+proceeds directly to DRAFT creation. No intermediate preview step. The review panel bottom
+sheet is the preview — it shows the actual diff and the system map enters preview mode
+(amber rings on affected nodes, phantom outlines on new nodes, dimmed removed nodes).
+
+`CHANGE_PREVIEW` is a Phase 3-only response format. It does not appear in Phase 4+.
 
 ---
 
@@ -272,6 +286,12 @@ system prompt — the model is instructed to follow these patterns, not to produ
 1. Direct answer (1–3 sentences)
 2. Source citation: "Source: `mix foundry.context MyApp.Finance.Wallet` → `archival: true`" or "Source: ADR-005 §Migration Classification"
 3. Optional follow-up suggestion (one, not a question): "You might also want to check the compliance links on this resource — the Compliance Matrix has the current status."
+
+**For `speckit` responses:**
+A plain-text draft of the requested spec-kit document (ADR, runbook, or regulation stub)
+rendered as a copyable card in the Activity Feed. Header shows the proposed file path.
+No diff, no git branch, no Igniter call. The human reviews, edits as needed, and commits
+the file manually via `git add docs/adrs/ADR-XXX... && git commit`.
 
 **For `change` responses (Phase 4+):**
 The diff is sent to the review panel out-of-band. The inline copilot message is:

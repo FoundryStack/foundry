@@ -89,8 +89,8 @@ Mis-answers to questions are recoverable. Mis-generated code changes are not.
 - `mix foundry.usage_rules.fetch` — copies `USAGE.md` / `AGENTS.md` from each
   dependency into `.foundry/usage_rules/<lib>.md` at `mix deps.get` time.
   Foundry maintains usage rules for core stack: Ash 3.x, Reactor, Phoenix LiveView,
-  Ecto, Oban. Generates `.foundry/usage_rules/foundry_operations.md` — all 20
-  catalogue operations with parameter schemas and examples.
+  Ecto, Oban. Generates `.foundry/usage_rules/foundry_conventions.md` — Foundry-specific
+  conventions every generated module must follow (see ADR-002 §Foundry Conventions File).
 
 **Context assembly:**
 - `mix foundry.project.snapshot` — single JSON object (≤ 400 tokens, 60s TTL)
@@ -124,21 +124,24 @@ Mis-answers to questions are recoverable. Mis-generated code changes are not.
 - `Foundry.Copilot.LMStudioAdapter` — test/CI/demo adapter, OpenAI-compatible
   tool calling. Validates tool calling support at startup; degrades gracefully
   (visualization panels functional, copilot degraded-mode banner)
-- `Foundry.Copilot.IntentClassifier` — Task 1: small structured prompt (~1000
-  tokens), JSON-only response `{task, operation, confidence}` (ADR-010 §Task 1)
 
 **Agent behaviour:**
-- `Foundry.Copilot.ConfidenceClassifier` — four states: HIGH, MEDIUM, LOW, BLOCKED
-  (ADR-013 §Confidence States)
-- Change intent reasoning posture — system prompt instruction: read index → bash
-  for relevant ADRs + module context + pattern → emit contradiction check →
-  BLOCKED or proceed (ADR-010 §Change Intent Reasoning Posture)
+- Intent classification and confidence are first-step outputs of the agent loop —
+  no separate pre-LLM call. The reasoning trace emits `intent_classification`
+  (task, confidence) and `confidence_state` (HIGH/MEDIUM/LOW/BLOCKED) as structured
+  fields from the loop's first reasoning step.
+- Four confidence states: HIGH, MEDIUM, LOW, BLOCKED (ADR-013 §Confidence States)
+- Change intent reasoning posture — system prompt instruction: run speckit.checklist
+  → read ADRs + module context + pattern → check @description fields → emit
+  contradiction check → BLOCKED or proceed (ADR-010 §Change Intent Reasoning Posture)
 - `CHANGE_PREVIEW` handler — describes operation, change class, affected files
   without generating diff or code. Controlled by `change_generation_enabled: false`.
+  This handler is Phase 3 only — in Phase 4 the agent goes directly to DRAFT.
 - All five error recovery responses with exact format per ADR-013 §Error Recovery
   Responses format
 - Reasoning trace in all CHANGE_PREVIEW responses — `shell_calls`, `contradiction_check`
-  with non-empty `checked_adrs` and `checked_invs`, `session_snapshot`
+  with non-empty `checked_adrs` and `checked_invs`, `session_snapshot`,
+  `speckit_analysis` (see AGENTS.md §Spec-Kit Tasks)
 
 **Spec-kit tasks (Phase 3 subset — all on by default):**
 - `speckit.analyze`, `speckit.plan`, `speckit.clarify`, `speckit.checklist`,
@@ -171,7 +174,7 @@ Mis-answers to questions are recoverable. Mis-generated code changes are not.
   File.write!) are rejected with structured errors
 - `LMStudioAdapter` startup validation detects and warns on non-tool-calling models
 - `mix foundry.usage_rules.fetch` populates `.foundry/usage_rules/` including
-  `foundry_operations.md` with all 20 operations documented
+  `foundry_conventions.md` with Foundry generation conventions documented
 
 **Gap #70 (new):** `docs/phase3-acceptance-questions.md` — 10+ representative
 questions about the iGaming reference project with expected citation format and
@@ -188,18 +191,29 @@ minimum acceptable response criteria. Author alongside `docs/reference-project-f
 generation quality is poor, the cost is a rejected diff, not a broken codebase.
 
 **Deliverables:**
-- `Foundry.Operations` catalogue — all 20 operations (ADR-002)
-- `Foundry.Operations.run/2` with `dry_run: true` support
-- Migration proposal generation — `Op.AddResource`, `Op.AddAttribute`, `Op.AddRelationship` include migration diffs
-- Diff renderer in the review panel — code diff + migration diff + lint tab + impact tab (ADR-012 §Review Panel Rendering)
-- `Foundry.Copilot.ImpactAnalyzer` — deterministic impact analysis (ADR-012 §Impact Tab)
-- Pre-approval validation: lint result + semantic checks + impact analysis
+- Pattern-driven raw Igniter generation — agent fetches closest project example, reads
+  `foundry_conventions.md`, generates via raw Igniter API (ADR-002). No pre-built
+  operation catalogue.
+- Git branch isolation — all generation writes to `foundry/prop_<id>` branch; working
+  tree never touched during generation (ADR-009)
+- Migration generation via `mix ash.codegen` on the proposal branch (ADR-002 §Migration Generation)
+- Diff renderer in the review panel — code diff + migration diff + lint tab + impact tab
+  (ADR-012 §Review Panel Rendering)
+- System map preview mode — affected nodes highlighted, phantom new nodes, dimmed
+  removed nodes while proposal is in DRAFT/PENDING_REVIEW state (ADR-012)
+- Impact analysis via bash traversal of the system map graph — agent runs targeted
+  `mix foundry.context.all` queries; no separate ImpactAnalyzer module
+- Pre-approval validation: lint result + impact summary
 - Change classifier (ADR-005) — tags every proposal with its class, including migration classification
 - Approval routing to correct approver per manifest (ADR-005)
-- Proposal state machine — DRAFT → PENDING_REVIEW → APPROVED → APPLIED → COMMITTED, plus REJECTED / STALE / SUPERSEDED (ADR-014 §Proposal State Machine)
+- Proposal state machine — DRAFT → PENDING_REVIEW → APPROVED → APPLIED → COMMITTED,
+  plus REJECTED / STALE / SUPERSEDED / **APPLY_FAILED** (ADR-014 §Proposal State Machine)
+- `APPLY_FAILED` state: on compile failure after branch write, branch is discarded
+  cleanly; agent retries up to 3 times, each iteration requires re-approval of new diff
 - Dual approval mechanics — two-slot tracking, revocation, audit records (ADR-014 §Dual Approval Mechanics)
 - ADR link field for `:compliance` proposals — validation and warning states (ADR-014 §ADR Linking)
-- Proposal storage with blob hash (ADR-009 — stale detection), including migration file hashes
+- Base-commit stale detection (ADR-009) — `git diff <base_commit>..HEAD -- <files>`
+  at apply time; replaces blob hash map
 - Stale proposal banner in review panel (ADR-012 §Stale Proposal Banner)
 - Proposal visibility — PENDING_REVIEW and later visible to all project users; DRAFT private to requester (ADR-014 §Proposal Visibility)
 - Approval tracking UI and notification inbox (ADR-012 §Approval Tracking UI, §Notification Inbox)
@@ -212,11 +226,15 @@ in that document govern Phase 4 implementation.
 **The diff is shown. The human presses "Apply" in the review panel.**
 No auto-apply in Phase 4. This is intentional — it validates diff quality before auto-apply is trusted.
 
-**Done when:** The copilot generates correct, lint-passing diffs for all 20 operation types
-against the iGaming reference project, including migrations for structural changes. Proposal
-state machine transitions are correct. Dual approval blocks application until both slots are
-filled. ADR link field blocks `:compliance` submission when empty. Audit log records all
-`:sensitive` and `:compliance` approvals with timestamp, approver, and diff hash.
+**Done when:** The copilot generates correct, lint-passing diffs for representative
+operation types against the iGaming reference project (at minimum: new resource with
+migration, new Reactor rule, new compliance link, new attribute on sensitive resource),
+using raw Igniter guided by project examples. Proposal state machine transitions are
+correct including `APPLY_FAILED` → retry path. Dual approval blocks application until
+both slots are filled. ADR link field blocks `:compliance` submission when empty. Audit
+log records all `:sensitive` and `:compliance` approvals with timestamp, approver, and
+base commit SHA. Stale detection correctly identifies proposals whose base commit has
+been superseded by changes to affected files.
 
 ---
 

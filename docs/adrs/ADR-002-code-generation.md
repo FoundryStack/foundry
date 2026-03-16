@@ -11,27 +11,40 @@
 The copilot must generate and modify Elixir source code. There are three approaches:
 
 1. **String interpolation**: build Elixir code as strings, write to disk
-2. **Catalogue-only scaffold**: every generation must use a pre-built Igniter operation module
-3. **Igniter operations (structured or raw)**: catalogue operations for common cases, raw Igniter API for novel cases
+2. **Catalogue of pre-built operation modules**: every generation goes through a named Op.* module
+3. **Pattern-driven raw Igniter**: agent reads an existing project example, then uses Igniter API directly
 
 String interpolation is simpler to implement. It is wrong for this use case.
-Catalogue-only is too rigid — it blocks legitimate work on genuinely novel module types.
+A pre-built catalogue requires maintaining 20+ modules that must track every Ash DSL version
+change — and it encodes domain-specific assumptions (iGaming blueprints, money attributes)
+at the platform level where they don't belong.
 
 ## Decision
 
-**All code generation uses Igniter. String interpolation for Elixir source is forbidden.
-Catalogue operations are preferred; raw Igniter API is permitted when no catalogue operation fits.**
+**All code generation uses raw Igniter, guided by project examples and Foundry conventions.
+String interpolation for Elixir source is forbidden. There is no pre-built operation catalogue.**
 
-For common patterns: use the catalogue operation (e.g., `Op.AddRule`, `Op.AddTransfer`).  
-For novel patterns: use `Igniter.create_new_file/3` or `Igniter.Project.Module.create_module/3` directly.  
-For modifying existing files: `Igniter.Project.Module.find_and_update_module/3` with `Sourceror.Zipper`.  
-For multi-file operations: composed Igniter pipelines (dry-run first, apply on approval).
+For every new construct, the agent:
+1. Fetches the closest existing project example: `mix foundry.pattern.find <type> --domain <D>`
+2. Reads Foundry conventions: `cat .foundry/usage_rules/foundry_conventions.md`
+3. Reads exact DSL API if needed: `mix foundry.exdoc <Module>`
+4. Generates via raw Igniter API, copying the pattern and applying conventions
 
-The distinction between "catalogue" and "raw Igniter" is about convenience and consistency,
-not about safety. Both produce AST-valid, formatter-compliant output. Both stream a diff
-for human review before application. The catalogue operations simply encode the Foundry-specific
-conventions (adding `@description`, wiring into domain, creating test stub) that raw Igniter
-does not know about.
+For new files: `Igniter.create_new_file/3` or `Igniter.Project.Module.create_module/3`.
+For modifying existing files: `Igniter.Project.Module.find_and_update_module/3` with `Sourceror.Zipper`.
+For multi-file operations: composed Igniter pipelines, all writing to `foundry/prop_<id>` branch.
+
+**Why examples beat a pre-built catalogue:** An example from the actual codebase encodes
+every Foundry convention already — `@moduledoc`, domain wiring, telemetry prefix, test stub
+co-location — at the exact current Ash version, without any maintenance overhead. One working
+example is worth more than a catalogue module that may drift from the current DSL.
+
+**Two named thin wrappers are retained** for cases where the logic is Foundry-specific
+metadata with no Igniter equivalent:
+- `Op.AddComplianceLink` — updates the compliance registry (not an AST change)
+- `Op.AddAgentStep` (Phase 8) — governance scaffold with dual-proposal cascade
+
+All other generation uses raw Igniter directly.
 
 ## Rationale
 
@@ -51,56 +64,59 @@ Scaffold operations that add or modify resources, attributes, or relationships m
 generate the corresponding `ash_postgres` migration. The mechanism:
 
 ```
-Op.AddResource / Op.AddAttribute / Op.AddRelationship
-  → Igniter pipeline for the code change (dry_run: true)
-  → subprocess: mix ash.codegen <auto_name> --dry-run
-  → migration file captured as part of the diff
-  → both code diff + migration diff shown in review panel
-  → on approval: code applied first, then mix ash.codegen (generates migration), then mix ash.migrate
+Agent generates resource/attribute/relationship change:
+  → git checkout -b foundry/prop_<id>
+  → Igniter apply to branch              (code change only)
+  → mix ash.codegen <auto_name>          (on branch — full project context present)
+  → read generated migration file
+  → git diff main..foundry/prop_<id>     (captures code diff + migration diff together)
+  → both shown in review panel
+  → git checkout main                    (working tree untouched)
+
+On approval:
+  → git merge --ff-only foundry/prop_<id>
+  → mix ash.migrate
+  → git branch -D foundry/prop_<id>
 ```
 
-The migration is shown alongside the code change in the review panel. Approvers see both.
-The migration is part of the proposal's blob hash check (ADR-009).
+The branch contains the full project state, so `mix ash.codegen` runs correctly with
+all dependencies and config. The migration is part of the branch diff and therefore
+part of the stale detection mechanism (ADR-009): if `main` has diverged on affected
+files since the branch was cut, the proposal is STALE.
 
 For `:sensitive` resources: the migration is classified at the same level as the code change.
 A migration touching a sensitive resource's table requires dual approval (ADR-005, INV-001).
 
 ## Authentication Scaffold
 
-`Op.AddAuthenticationResource` wraps the `ash_authentication` Igniter generators. This
-operation is not a raw Igniter call — it composes `ash_authentication`'s own published
-Igniter operations, which means it stays current with `ash_authentication`'s own upgrade
-path. The copilot does not generate authentication code from scratch.
+`Op.AddAuthenticationResource` is not used — authentication scaffolding uses
+`ash_authentication`'s own published Igniter generators directly, the same way
+the agent uses any other raw Igniter call. The agent fetches the `ash_authentication`
+usage rules (`cat .foundry/usage_rules/ash_authentication.md`) and the closest
+existing auth resource pattern before generating. The copilot does not synthesise
+authentication code from training memory.
+
+## Foundry Conventions File
+
+`.foundry/usage_rules/foundry_conventions.md` is the replacement for the catalogue.
+It documents what every new construct must include:
+
+- Every new module: `@moduledoc` with purpose, sensitivity classification, compliance links
+- Every new attribute: `description:` field stating the invariant it protects
+- Every new Reactor: idempotency declaration, `@runbook` link, telemetry prefix
+- Every new sensitive resource: `use AshPaperTrail.Resource`, `use AshArchival.Resource`
+- Every new Transfer: steps list with types, rules list, compliance links
+
+The agent reads this file as part of `speckit.checklist` before generating any new
+construct. It is committed to the project repository and versioned alongside the code.
 
 ## Consequences
 
-- The 20 catalogue operations cover the common cases; raw Igniter covers the rest
-- Agents must never use `File.write!/2` or `EEx.eval_string/2` on Elixir source files — this is the hard line
-- When using raw Igniter for a novel pattern, the operation should be promoted to the catalogue if it will be needed again
-- The diff produced by raw Igniter is indistinguishable from catalogue operation output in the review panel — both require the same human approval before apply
+- All generation uses raw Igniter — no catalogue module to maintain or version
+- The agent's pattern lookup (`mix foundry.pattern.find`) is the primary quality mechanism:
+  idiomatic output comes from copying working project code, not from pre-built templates
+- Agents must never use `File.write!/2` or `EEx.eval_string/2` on Elixir source files
+- All generation writes to a `foundry/prop_<id>` git branch; the working tree is never
+  touched until the proposal is approved and merged
+- The diff for review is `git diff main..foundry/prop_<id>` — code and migration together
 - Migration diffs are always included in proposals that touch resource structure
-
-## The 20 Primary Operations
-
-| Operation | Module | What it does |
-|---|---|---|
-| `add_resource` | `Op.AddResource` | New Ash resource with full declaration skeleton + migration |
-| `add_transfer` | `Op.AddTransfer` | New Reactor + Transfer DSL, idempotency wired, telemetry spans included |
-| `add_rule` | `Op.AddRule` | New Rule module with jurisdiction stubs + spec_invariants |
-| `add_blueprint` | `Op.AddBlueprint` | New Blueprint with config_schema + forfeiture rules |
-| `add_adapter` | `Op.AddAdapter` | New Provider Adapter with auth + contract test stubs |
-| `add_action` | `Op.AddAction` | New action on existing resource |
-| `add_attribute` | `Op.AddAttribute` | New attribute on existing resource with @description + migration |
-| `add_relationship` | `Op.AddRelationship` | New relationship, bidirectional wiring + migration |
-| `add_policy` | `Op.AddPolicy` | New Ash policy on existing resource |
-| `add_compliance_link` | `Op.AddComplianceLink` | Link RG-* ID to implementing module |
-| `update_rule_jurisdiction` | `Op.UpdateRuleJurisdiction` | Add jurisdiction clause to existing Rule |
-| `add_livepage` | `Op.AddLivePage` | New LiveResource page for Back Office (with data-* attributes) |
-| `add_oban_job` | `Op.AddObanJob` | New Oban worker with AshOban integration + telemetry spans |
-| `add_notification` | `Op.AddNotification` | New notification event with channel routing |
-| `add_test_module` | `Op.AddTestModule` | Test skeleton from DSL introspection (stream_data + bypass) |
-| `add_state_transition` | `Op.AddStateTransition` | New AshStateMachine transition with guard + test stub |
-| `add_authentication_resource` | `Op.AddAuthenticationResource` | User + Token resources via ash_authentication Igniter generators |
-| `add_feature_flag` | `Op.AddFeatureFlag` | New fun_with_flags flag declaration with governance metadata |
-| `add_money_attribute` | `Op.AddMoneyAttribute` | Monetary attribute using Ash.Type.Money; validates CLDR backend |
-| `add_api_route` | `Op.AddApiRoute` | New ash_json_api route with auth + validation test stubs |

@@ -22,37 +22,46 @@ and fetches what it needs rather than receiving a pre-assembled fixed window.
 
 ## Decision
 
-**Primary model: Claude Sonnet (latest stable) for all three task types.**
-**The agent operates in an agentic loop with a bash tool and two structured tools.**
+**Primary model: Claude Sonnet (latest stable) for all task types.**
+**The agent operates in a single agentic loop with a bash tool.**
 **Context is assembled in three tiers: system prompt, session snapshot, retrieved via shell.**
 
 ---
 
-## Task 1: Intent Classification
+## Intent Classification
 
-Small, fast prompt. Structured output only. Runs before the agent loop.
+Classification is the **first reasoning step of the main agent loop** — not a separate
+pre-LLM API call. The agent classifies the user's message as its opening reasoning step
+before any tool calls.
 
+**Four intent types:**
+
+- `question` — user asks about current system state. Indicators: interrogative syntax,
+  question marks, no imperative change verb.
+- `change` — user wants to modify the system. Indicators: imperative verbs (add, create,
+  update, remove, generate, link), description of desired future state.
+- `speckit` — user asks to draft or update an ADR, runbook, or regulation. Indicators:
+  "write an ADR", "update the runbook", "add a regulation entry". Produces a plain-text
+  proposal; no Igniter call.
+- `ambiguous` — message contains both question and change indicators, or neither.
+  Routes to the one-clarifying-question path (INV-005).
+
+**Confidence threshold:** When the agent's confidence in its classification is below 0.7,
+it treats the intent as `ambiguous` regardless of which type it leans toward.
+
+**Phase gate:** After classification, the agent checks `change_generation_enabled`.
+If `false` and intent is `change`: produce a `CHANGE_PREVIEW` response describing the
+operation without generating a diff (Phase 3 only — see §Phase-Gated Behaviour).
+
+Classification and confidence are emitted in the reasoning trace:
+```json
+"intent_classification": {
+  "task": "change",
+  "confidence": 0.91
+}
 ```
-System: You are a classifier. Respond only with valid JSON matching this schema:
-  {
-    "task": "question" | "change" | "ambiguous",
-    "operation": <operation_name> | null,
-    "confidence": 0.0–1.0
-  }
 
-Context: [stack versions — always, ~200 tokens]
-         [3 most relevant module DSL summaries — ~600 tokens]
-
-User: [user's message]
-
-Max total context: ~1000 tokens
-```
-
-**Confidence threshold:** `confidence < 0.7` → treat as `"ambiguous"` regardless of
-`task` field. Ask one clarifying question (INV-005).
-
-**Phase gate:** After classification, check `change_generation_enabled` config flag.
-If `false` and `task == "change"`: route to `CHANGE_PREVIEW` handler, not agent loop.
+No separate API call. No `IntentClassifier` module.
 
 ---
 

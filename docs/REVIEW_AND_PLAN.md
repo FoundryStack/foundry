@@ -100,15 +100,13 @@ The following are intentionally absent from spec-kit. They live as `@moduledoc` 
 | Test generation rules | `Foundry.Testing.Generator` |
 | ExDoc cache implementation | `Foundry.Context.DocCache` |
 | Domain coverage calculation | `Foundry.Testing.CoverageCalculator` |
-| Stale proposal detection | `Foundry.Operations.ProposalStore` |
+| Stale proposal detection | `Foundry.Operations.ProposalStore` (git base-commit diff, not blob hashes) |
 | Notification dispatch | `Foundry.Notifications.Dispatcher` |
-| Migration proposal generation | `Foundry.Operations.MigrationProposer` |
-| Authentication scaffold composition | `Foundry.Operations.Op.AddAuthenticationResource` |
+| Migration generation | via `mix ash.codegen` on proposal branch — no separate module |
 | Feature flag governance metadata | `Foundry.FeatureFlags.GovernanceRegistry` |
 | Proposal state machine | `Foundry.Proposals.StateMachine` |
-| Impact analysis computation | `Foundry.Copilot.ImpactAnalyzer` |
-| Confidence classification | `Foundry.Copilot.ConfidenceClassifier` |
-| Intent classification | `Foundry.Copilot.IntentClassifier` |
+| Impact analysis | bash traversal of `mix foundry.context.all` graph — no separate ImpactAnalyzer module |
+| Intent classification and confidence | first reasoning step of `Foundry.Copilot.Engine` loop — no separate module |
 | Prompt construction | `Foundry.Copilot.PromptBuilder` |
 | Agent type renderer registry | `Foundry.Studio.AgentRenderers` |
 | Agent telemetry aggregation | `Foundry.Telemetry.AgentAggregator` |

@@ -1,7 +1,7 @@
-# ADR-009: Concurrent Proposals — Optimistic Locking on File Hash
+# ADR-009: Concurrent Proposals — Git Branch Isolation and Base-Commit Stale Detection
 
-**Status:** Accepted  
-**Date:** 2026-03  
+**Status:** Accepted
+**Date:** 2026-03
 **Deciders:** Platform team
 
 ---
@@ -19,44 +19,63 @@ Three approaches were considered:
 
 ## Decision
 
-**Optimistic locking at the file level using git blob hashes.**
+**Git branch isolation with base-commit stale detection.**
 
-When a proposal is generated, Foundry records the current git blob hash for each file
-the proposal would modify. At apply time, before executing the Igniter operation,
-Foundry re-reads the current blob hash for each file.
+Every proposal writes to an isolated `foundry/prop_<id>` branch, never to the working
+tree directly. The proposal stores the `base_commit` SHA at the time of generation.
 
-- If hashes match: proceed with apply
-- If any hash has changed: invalidate the proposal, notify the user with a clear message:
-  "This proposal is stale — `lib/my_app/finance/bet_transfer.ex` was modified since the
-   proposal was generated. Please review the current file and regenerate."
+**At apply time**, before merging:
+```bash
+# Check if affected files changed on main since the branch was cut
+git diff <base_commit>..HEAD -- <affected_files>
+```
+- Empty output → fast-forward merge is safe → proceed
+- Non-empty output → files changed on main since generation → **STALE**
+
+Stale proposals are surfaced to the requester with the specific files that changed.
+One-click regenerate re-cuts the branch from current HEAD and re-runs generation.
 
 ## Rationale
 
-**Why not pessimistic locking:** It creates serialized bottlenecks for a team working on
-different parts of the same module. A developer generating a proposal for a resource blocks
-all others from generating proposals for that same resource for the duration of their review.
-For proposals that take hours to route through approval queues, this is unacceptable.
+**Why git branches, not file hash maps:** The branch approach uses git's own ancestry
+and diff machinery instead of reimplementing it. It provides complete isolation during
+generation (the working tree is never touched), makes the diff artifact (`git diff
+main..foundry/prop_<id>`) the natural review surface, and gives the compilation step
+a valid full-project context. A hash map of individual files is a manual reimplementation
+of what `git diff` already does correctly.
 
-**Why not CRDT/OT:** The merge problem for Elixir AST is complex and has failure modes
-that are hard to explain to users. "Your change was automatically merged with another developer's
-change" is difficult to audit. In a regulated system, every change needs a clear human
-decision chain.
+**Why not pessimistic locking:** Serialised bottlenecks for teams working on different
+domains. Proposals that spend hours in approval queues would block all other generation
+in the interim.
 
-**Why optimistic locking works here:** Foundry proposals are typically reviewed and applied
-within minutes to hours, not days. Conflicts are rare in practice because different developers
-work on different domains. When they do occur, the correct resolution is clear: regenerate
-against the current state. The cost of a regeneration is low; the cost of a silently wrong
-merge is high.
+**Why not CRDT/OT:** AST merge is complex and produces changes that are hard to audit.
+In a regulated system, every change needs a clear human decision chain.
+
+**Branch cleanup:** Branches are deleted on proposal COMMITTED, REJECTED, or SUPERSEDED.
+`mix foundry.proposals.gc` removes orphaned branches from crashed or abandoned proposals.
 
 ## The Stale Proposal UX
 
 Stale banner rendering and regenerate interaction: ADR-012 §Stale Proposal Banner.
-The mechanism: re-run the original operation; if diff is identical the conflict was in an unrelated part of the file and it proceeds; if different, a new diff is shown.
+
+On detecting STALE: re-cut the branch from HEAD, re-run Igniter and `mix ash.codegen`,
+re-compile. If the resulting diff is identical to the stale one, the conflict was in an
+unrelated part of the codebase — the banner clears and the proposal proceeds. If the
+diff differs, the new diff is shown for review.
+
+## Proposal ID Generation
+
+`"prop_" <> Base.encode16(:crypto.strong_rand_bytes(4), case: :lower)` — e.g. `prop_3a7f1b2c`.
+8 hex chars provide 4 billion combinations, sufficient for git-backed local storage.
+The git branch is `foundry/prop_3a7f1b2c`.
 
 ## Consequences
 
-- Proposals store the blob hash of every file they would touch at generation time
-- The apply step is a two-phase operation: check hashes, then execute Igniter
-- Stale proposals are never silently applied — always surfaced to the user
-- The approval record stores the blob hash state at the time of approval, providing a complete audit trail of what state the approver saw
-- This does not require any distributed locking infrastructure — git hashes are the coordination mechanism
+- Proposals store `base_commit: "sha256..."` (one field) instead of a map of file hashes
+- The apply step checks `git diff <base_commit>..HEAD -- <affected_files>` before merging
+- Stale proposals are never silently applied — always surfaced to the requester
+- The approval record stores the `base_commit` at the time of approval — providing a
+  complete audit trail of what codebase state the approver reviewed
+- No distributed locking infrastructure needed — git branches are the isolation mechanism
+- The working tree is never modified during proposal generation; `mix foundry.studio`
+  operates cleanly alongside active development

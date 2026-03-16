@@ -64,10 +64,11 @@ that Foundry depends on. Rationale for each extraction decision is in ADR-019.
   manifest sensitive-resources list and Foundry's classification ruleset. Too specific to extract.
 - `Foundry.SpecKit` — spec-kit document parser using `MDEx` + `NimbleOptions`. "Spec-kit" is
   Foundry vocabulary; no external audience for the format yet.
-- `Foundry.Operations` — the 20-operation catalogue. The describe/validate/run protocol lives
-  here. Extract only if a second tool needs the same protocol.
+- `Foundry.Operations` — the two thin named wrappers (`Op.AddComplianceLink`,
+  `Op.AddAgentStep`). All other generation uses raw Igniter directly. Extract only if a
+  second tool needs the same wrapper protocol.
 - `Foundry.Proposals` — proposal state machine (ADR-014). Coupled to git-backed storage
-  (ADR-015) and blob-hash stale detection (ADR-009). Extract when a second use case appears.
+  (ADR-015) and git-branch stale detection (ADR-009). Extract when a second use case appears.
 - A DSL annotation extension for sensitive resources (`ash_governed`) — not needed for v1.
   `manifest.sensitive_resources` list is sufficient. Future enhancement only.
 
@@ -119,26 +120,29 @@ internally and streams the resulting diff back over WebSocket. The agent never c
 For `docs/` (ADRs, runbooks, regulations), the agent proposes plain-text content;
 a human commits it. The compiler cannot validate prose — humans must.
 
-**INV-003: All writes go through Igniter. The agent generates Elixir source for everything outside the catalogue.**
-The scaffold operations catalogue covers common DSL operations. For everything outside
-the catalogue — GenServers, Broadway pipelines, integration adapters, Oban workers,
-Phoenix controllers, Plug pipelines, protocols, behaviours, Mix tasks, config files,
-infrastructure — the agent generates Elixir source content and passes it to raw Igniter
-operations (`Igniter.create_new_file/3`, `Igniter.Project.Module.create_module/3`).
-This is correct and expected, not a special case.
+**INV-003: All writes go through Igniter. The agent generates Elixir source for everything.**
+There is no catalogue of pre-built operation modules. The agent uses raw Igniter API
+(`Igniter.create_new_file/3`, `Igniter.Project.Module.create_module/3`,
+`Igniter.Project.Module.find_and_update_module/3`) guided by:
+- The closest existing project example (`mix foundry.pattern.find <type>`)
+- Foundry conventions (`cat .foundry/usage_rules/foundry_conventions.md`)
+- Exact DSL API (`mix foundry.exdoc <Module>`)
+
+Two thin named wrappers exist where the logic is Foundry-specific metadata, not just
+Igniter calls: `Op.AddComplianceLink` (pure compliance registry update, no Igniter
+equivalent) and `Op.AddAgentStep` (Phase 8 governance scaffold with dual-proposal
+cascade). All other generation uses raw Igniter directly.
 
 **The prohibition is on the mechanism, not the capability:**
 - Never: `File.write!/2`, `File.stream!/2`, or any direct IO on source files
 - Never: string interpolation assembled into source and written to disk directly
-- Always: content → Igniter pipeline → formatted, AST-valid output → diff → review
+- Always: content → Igniter pipeline → formatted, AST-valid output → git branch → diff → review
 
-Igniter ensures formatting and AST correctness regardless of whether the content
-came from a catalogue operation or was generated directly by the agent. The compiler
-and linter are the verification layer — not the catalogue boundary.
+All generation writes to a `foundry/prop_<id>` git branch, not the working tree.
+The branch is merged on approval and discarded on rejection or failure.
 
-The operations catalogue is a quality accelerator: common DSL operations done
-idiomatically, fast, with battle-tested parameter schemas. Use catalogue operations
-when they apply. Generate directly when they do not.
+Igniter ensures formatting and AST correctness. The compiler and linter are the
+verification layer — not any catalogue boundary.
 
 **INV-004: Infrastructure is proposal-only**
 Kubernetes, Postgres config, GitHub Actions base pipelines — agents produce structured
@@ -255,6 +259,155 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 All spec-kit tasks are enabled by default. No manifest configuration required.
 `copilot.max_tool_calls` in the manifest controls the circuit breaker (default 8).
 
+The five postures below govern how the agent interacts with the spec-kit. They are
+not separate modes — they are the agent's default reasoning obligations before writing
+any code. The agent runs them internally and surfaces results in the reasoning trace
+and the session plan.
+
+---
+
+### `speckit.analyze` — Default pre-generation posture
+
+Before generating any proposal, the agent identifies which spec-kit documents cover
+the requested change and whether any are missing. This analysis is emitted in every
+reasoning trace under `speckit_analysis`:
+
+```json
+"speckit_analysis": {
+  "covering_adrs": ["ADR-005", "ADR-002"],
+  "covering_invs": ["INV-001", "INV-011"],
+  "covering_regulations": ["RG-UK-014"],
+  "missing_adr": false,
+  "missing_runbook": false,
+  "missing_regulation": false,
+  "gaps": []
+}
+```
+
+If `missing_adr: true` or `gaps` is non-empty, the agent includes spec-kit drafts
+as the first step(s) of the session plan — before any code proposals.
+
+**ADR required when:** a design decision is being made that the code does not explain
+(why this approach vs alternatives); a new compliance requirement is introduced; a
+dependency is added (ADR-004); an existing ADR is being contradicted or extended;
+any `:compliance` class change (ADR link is required before approval).
+
+**ADR not required when:** adding an attribute with a clear `description:` (Ash is
+the spec for structural facts); bug fixes to existing behaviour; test additions;
+`:structural` description improvements.
+
+**Runbook required when:** any Reactor with more than 3 steps (INV-005, lint-enforced);
+a new external integration is introduced; a background job is added.
+
+**Regulation file required when:** a regulatory requirement is tracked for the first time
+or an existing requirement is superseded.
+
+---
+
+### `speckit.plan` — Ordered plan for multi-step changes
+
+For any change involving more than one file or more than one concern, the agent
+produces an explicit ordered plan before generating anything:
+
+```
+Plan for: Add withdrawal limit rule with compliance link
+
+Step 1 [spec-kit]  Draft ADR-020: WithdrawalLimitRule design
+  → Why: new jurisdiction clause pattern not covered by existing ADRs
+  → Proposal type: plain text, human commits
+  → Change class: :structural (spec-kit doc update)
+
+Step 2 [code]      Add IgamingRef.Finance.Rules.WithdrawalLimitRule
+  → Igniter: new rule module + test stub on git branch
+  → Change class: :behavioral — domain lead approval
+
+Step 3 [code]      Wire rule into WithdrawalTransfer
+  → Change class: :behavioral — batch with Step 2
+
+Step 4 [tests]     Property test: amounts above limit always block
+  → Change class: :structural — instant
+
+Step 5 [compliance] Add compliance link RG-UK-014
+  → Change class: :compliance — compliance officer + ADR-020 link
+```
+
+Human confirms the plan before execution. The agent does not proceed to Step 2
+until Step 1's ADR draft has been reviewed in the Activity Feed.
+
+---
+
+### `speckit.clarify` — Naming the gap before asking
+
+When the spec-kit is silent on a case, the agent names the specific gap before
+consuming the one permitted clarifying question (INV-005):
+
+> "I'm about to [describe action]. I couldn't find an ADR covering [specific decision].
+> My interpretation is [X] because [reasoning from nearest ADR]. Before I proceed:
+> is this interpretation correct, or should I draft an ADR for this case first?"
+
+This is grounded in a specific spec-kit gap — not a general disambiguation question.
+
+---
+
+### `speckit.checklist` — Pre-generation invariant check
+
+Internal checklist run before emitting any code proposal. A failed item becomes
+a plan step that precedes the code step:
+
+```
+□ ADR covers this design decision, or it is a :structural change
+□ All touched Reactors with >3 steps have @runbook declarations
+□ All new compliance links reference existing regulation entries
+□ New sensitive resources will have paper_trail + archival
+□ New Reactors with external side effects declare idempotency keys
+□ @description drafted for all new attributes
+□ @moduledoc drafted for the new module
+□ @description fields on touched attributes are consistent with proposed change
+```
+
+The final item is critical: the agent treats existing `@description` fields as
+invariant declarations. A proposed change that contradicts a description is
+surfaced in the contradiction check, the same as an ADR conflict.
+
+---
+
+### `speckit.constitution` — Bootstrap posture for uncovered territory
+
+When a feature has no spec-kit coverage and is not a simple structural change:
+
+> "This is new territory for this project's spec-kit. I'll include spec-kit
+> initialization in the plan:
+> - ADR stub (context + decision + rationale skeleton — you complete the rationale)
+> - Regulation stub if this touches a compliance area
+> - Runbook stub if this introduces a Reactor with external effects
+>
+> These are plain text files proposed first. You review them, then I generate code
+> that references them. The code is never written without its spec-kit anchor."
+
+---
+
+### Agent reasoning sequence for `change` intents
+
+The complete sequence the agent follows before emitting any code proposal:
+
+```
+1. Read spec-kit index (Tier 1) — identify relevant ADRs/INVs/regulations by tag
+2. Read those documents via bash — follow cross-references
+3. Run speckit.checklist — identify any missing spec-kit items
+4. If gaps: include spec-kit steps first in the session plan
+5. Read module context: mix foundry.context <Module> --json
+6. Fetch closest pattern example: mix foundry.pattern.find <type> --domain <D>
+7. Check @description fields on all touched attributes against proposed change
+8. Run contradiction check — BLOCKED if violated, else proceed
+9. Construct ordered session plan (spec-kit first, code second, tests third)
+10. Present plan for human confirmation
+11. On confirmation: execute in order, writing to git branch foundry/prop_<id>
+```
+
+This sequence applies to all `change` intents. Steps 3–5 distinguish it from the
+Phase 3 CHANGE_PREVIEW path, where generation is disabled and the plan describes
+without producing a diff.
+
 ---
 
 ## Where to Find Authoritative Information
@@ -304,23 +457,35 @@ No intermediate HTTP service.
 
 ```
 Copilot intent → Foundry.Copilot.Engine
-  → classify intent (IntentClassifier, Task 1)
   → assemble Tier 1 + Tier 2 context (ContextBuilder)
-  → agent loop begins:
-      → bash tool calls: read spec-kit, read source, run Mix tasks
-      → contradiction check via reasoning (not separate API call)
-      → if change intent + phase gate off: CHANGE_PREVIEW response
-      → if change intent + phase gate on: emit operation parameters
-  → if operation parameters emitted:
-      → Foundry.Operations.run(op, params, dry_run: true)  [DSL catalogue ops]
-      OR
-      → Igniter.create_new_file / update_file               [raw Elixir]
-      → diff captured
-      → mix compile + mix foundry.lint.all run by agent — errors feed back into loop
-      → clean diff + lint result + impact analysis streamed to review panel
+  → agent loop begins (first step classifies intent inline):
+      → classify intent: question | change | speckit | ambiguous
+      → if question: answer with source citations, done
+      → if speckit: produce plain-text spec-kit draft proposal, done
+      → if ambiguous: clarifying question (INV-005), done
+      → if change:
+          → run speckit.checklist (§Spec-Kit Tasks)
+          → bash tool calls: read ADRs, read module context, fetch pattern example
+          → check @description fields on touched attributes
+          → contradiction check via reasoning
+          → if BLOCKED: cite ADR/INV, done
+          → construct ordered session plan
+          → present plan for human confirmation
+  → on plan confirmation:
+      → git checkout -b foundry/prop_<id>          [isolate writes]
+      → Igniter apply to branch                    [raw Igniter + pattern example]
+      → mix ash.codegen on branch                  [migration, if needed]
+      → mix compile on branch
+          → fail: git branch -D foundry/prop_<id>  [clean discard]
+                  → APPLY_FAILED state, agent retry (max 3)
+          → pass: capture diff with git diff main..foundry/prop_<id>
+      → git checkout main                          [working tree untouched]
+      → diff + lint result + session plan streamed to review panel
+      → system map enters preview mode
   → user approves
-  → Foundry.Operations.run(op, params, dry_run: false) OR Igniter apply
-  → change applied, git commit created, CI triggered
+      → git merge --ff-only foundry/prop_<id>
+      → git branch -D foundry/prop_<id>
+      → git commit created, CI triggered
 ```
 
 The Mix tasks (`mix foundry.context`, `mix foundry.diagram.generate`, etc.) are the
