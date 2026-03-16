@@ -82,7 +82,7 @@ The `:auto_approve` testing tools are used as follows in generated test modules 
 | `ex_machina` | Fixture factories in `<AppName>Test.Generators` module |
 | `faker` | Realistic data in fixtures (names, emails, amounts) |
 
-Generated test skeletons from `Op.AddTestModule` use these libraries by convention name.
+Generated test skeletons use these libraries by convention when the agent generates test modules.
 The copilot reads the project's generator module to confirm what is available before referencing
 a generator in a skeleton. It never references a generator that doesn't exist in the project.
 

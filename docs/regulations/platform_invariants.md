@@ -177,7 +177,7 @@ operation, or a regulatory feature must declare an ADR link in its Foundry gover
 A compliance-gated flag without an ADR link is a lint error.
 
 **Scope:** Feature flags declared with `governance: :compliance` or `governance: :sensitive`
-in their Foundry metadata (set via `Op.AddFeatureFlag`).
+in their Foundry governance metadata (declared when the flag is created).
 
 **Enforcement:** `mix foundry.lint.all` — `:missing_flag_adr` lint rule. Reads flags from
 the project's `fun_with_flags` configuration and checks for governance metadata.

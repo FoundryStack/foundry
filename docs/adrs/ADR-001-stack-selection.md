@@ -101,7 +101,7 @@ database to provision. `mix foundry.studio` requires only Elixir and git.
 | `ash_paper_trail` | Change history / audit trail | Required on all `:sensitive` resources — see INV-011 |
 | `ash_archival` | Soft delete | Required on all `:sensitive` resources — see INV-012 |
 | `ash_authentication` | Authentication strategies | User credential resources are always `:sensitive` |
-| `ash_authentication_phoenix` | Authentication LiveView routes/components | Generates routes outside `Op.AddLivePage` — see scaffold note below |
+| `ash_authentication_phoenix` | Authentication LiveView routes/components | Generates routes via its own Igniter operations — not part of Foundry's LiveView generation |
 
 ### Conditionally present (project declares in manifest)
 
@@ -130,7 +130,7 @@ ash_double_entry  — ledger resource DSL
 **Bootstrap requirement:** `ex_money_sql` requires the `money_with_currency` Postgres composite
 type to exist before migrations run. This is a one-time setup step (`mix money.gen.migration`)
 that must run before `mix ash.migrate` on a new database. The scaffold operations that create
-monetary attributes (`Op.AddAttribute` with type `Ash.Type.Money`) must include this check.
+monetary attributes (type `Ash.Type.Money`) must include this check.
 
 **Type authority:** Use `Ash.Type.Money` (from `ash_money`) as the attribute type, not
 `Money.t()` directly. The Foundry linter checks for this.
@@ -150,10 +150,9 @@ mix ash.codegen <migration_name>   — generates migration from DSL diff
 mix ash.migrate                    — applies migrations to the database
 ```
 
-**This lifecycle is in scope for Foundry.** Scaffold operations that add resources or attributes
-(`Op.AddResource`, `Op.AddAttribute`, `Op.AddRelationship`) must include a corresponding
-migration proposal in their diff output. The review panel shows both the code change and
-the generated migration side by side.
+**This lifecycle is in scope for Foundry.** Generated code that adds resources or attributes
+must include a corresponding migration proposal in its diff output. The review panel shows
+both the code change and the generated migration side by side.
 
 **Migration governance:** Schema mutations on `:sensitive` resources carry the same approval
 class as code mutations on those resources. A migration that adds a column to `LedgerEntry`
@@ -168,14 +167,15 @@ for each resource, sourced from whether `mix ash.codegen --check` exits non-zero
 ## Authentication Scaffold
 
 `ash_authentication_phoenix` generates LiveView routes and components via its own Igniter
-operations. These are outside the `Op.AddLivePage` catalogue operation's scope.
+operations. Foundry's agent uses these Igniter generators directly — no wrapper module.
 
 Foundry's stance:
-- Authentication resource creation (User, Token resources) is handled via a dedicated
-  `Op.AddAuthenticationResource` operation that wraps the `ash_authentication` Igniter generators.
+- Authentication resource creation (User, Token resources) uses `ash_authentication`'s
+  own published Igniter generators. The agent reads `.foundry/usage_rules/ash_authentication.md`
+  and the closest existing auth resource pattern before generating.
 - Auth strategy configuration (password, OAuth2, magic link) is a `:behavioral` change.
 - Token resource and session resource are always classified as `:sensitive`.
-- `ash_authentication_phoenix` route generation is called internally by `Op.AddAuthenticationResource`.
+- `ash_authentication_phoenix` route generation is invoked via its own published Igniter task.
 
 ---
 
@@ -198,8 +198,8 @@ re-instrument those. Foundry adds three custom spans (defined as constants in
 `[:foundry, :proposal, :transition]`. These are the primary diagnostic signals for the runbooks.
 See AGENTS.md §Package Layer for field definitions.
 
-**Target platform requirement:** The `Op.AddTransfer` and `Op.AddObanJob` operations
-automatically include telemetry span wrappers in generated code. This is not optional —
+**Target platform requirement:** Generated Transfer and Oban job code must
+automatically include telemetry span wrappers. This is not optional —
 trace correlation across Reactors and Oban jobs is required for the audit chain in
 regulated platforms.
 
@@ -328,7 +328,7 @@ The following are explicitly excluded. Exclusion is a decision, not an oversight
 - Foundry itself has no `ash_postgres` dependency — it is a target platform dependency. `mix foundry.studio` requires only Elixir and git (ADR-015).
 - `ash_postgres` migration lifecycle is in scope for all scaffold operations that add resources or attributes
 - Monetary attributes use `Ash.Type.Money` exclusively; the linter rejects raw `Money.t()` declarations
-- Authentication resources are always `:sensitive`; `ash_authentication_phoenix` scaffold is via `Op.AddAuthenticationResource`
+- Authentication resources are always `:sensitive`; authentication scaffolding uses `ash_authentication`'s own Igniter generators directly
 - `ash_paper_trail` and `ash_archival` are required on `:sensitive` resources (INV-011, INV-012)
 - The forbidden dependency list in ADR-004 applies to direct application dependencies; `ecto_sql` and `postgrex` as transitive dependencies of `ash_postgres` are permitted
 - Admin dashboards (`oban_web`, `phoenix_live_dashboard`, `fun_with_flags_ui`) require authentication — the linter checks route configuration

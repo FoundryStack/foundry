@@ -323,8 +323,8 @@ A green "All checks passed" state when no errors or warnings.
 ### Impact Tab — "Impact Analysis" Defined
 
 **Impact analysis** is the computed set of side-effects a proposal has beyond the immediate
-diff. It is deterministic — computed by `Foundry.Copilot.ImpactAnalyzer` using Mix task
-output, not LLM inference.
+diff. It is deterministic — produced by the agent via targeted bash queries against the
+system map graph (`mix foundry.context.all`), not LLM inference and not a separate module.
 
 Impact analysis includes:
 - **Recompile scope:** modules that import or alias the changed module (will recompile on next `mix compile`)
@@ -574,7 +574,7 @@ node detail visible left, diff being reviewed below, feed showing context right.
 - The Activity Feed sidebar uses `localStorage` for hide/show persistence — this is UI preference state, not application data. This is the one permitted exception to the no-localStorage rule in artifacts; it applies only to this single boolean preference.
 - The left detail drawer and bottom review panel can be open simultaneously — they occupy non-colliding regions
 - The Activity Feed is the single surface for all in-Studio notifications — there is no separate bell dropdown or notification inbox
-- The impact analysis computation is the responsibility of `Foundry.Copilot.ImpactAnalyzer` — it is deterministic, not LLM-generated
+- The impact analysis is produced by the agent via bash traversal of `mix foundry.context.all` output — deterministic, not LLM-generated, no separate module
 - The system map table view alternative is required for WCAG compliance — the D3 SVG graph alone is insufficient
 - Data retention periods assume a financial/regulated platform target. Projects in other domains may override the defaults in `manifest.exs` under `data_retention:`
 - The 7-year audit log retention is enforced at the application layer — infrastructure teams must ensure the underlying storage is not purged

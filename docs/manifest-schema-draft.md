@@ -180,10 +180,10 @@ The schema is identical regardless of whether the project is Foundry itself or a
   # Foundry uses this list to enable/disable lint rules and scaffold operations
   # that are only valid when the library is present.
   conditional_libraries: [
-    :ash_money,          # enables Op.AddMoneyAttribute, validates CLDR backend
-    :ash_state_machine,  # enables Op.AddStateTransition lint rules
+    :ash_money,          # enables Ash.Type.Money generation, validates CLDR backend
+    :ash_state_machine,  # enables state transition generation and lint rules
     # :ash_pyro,         # enables AshPyro component lint rules
-    # :fun_with_flags,   # enables Op.AddFeatureFlag and INV-013 lint rule
+    # :fun_with_flags,   # enables feature flag generation and INV-013 lint rule
   ]
 ]
 ```

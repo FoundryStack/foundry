@@ -89,7 +89,7 @@ A migration touching a sensitive resource's table requires dual approval (ADR-00
 
 ## Authentication Scaffold
 
-`Op.AddAuthenticationResource` is not used — authentication scaffolding uses
+There is no `Op.AddAuthenticationResource` wrapper — authentication scaffolding uses
 `ash_authentication`'s own published Igniter generators directly, the same way
 the agent uses any other raw Igniter call. The agent fetches the `ash_authentication`
 usage rules (`cat .foundry/usage_rules/ash_authentication.md`) and the closest
