@@ -80,27 +80,103 @@ The team learns what it knows, where it's uncertain, what its limits are.
 Mis-answers to questions are recoverable. Mis-generated code changes are not.
 
 **Deliverables:**
-- Copilot panel in the Studio UI (conversation interface)
-- `Foundry.Copilot.ContextBuilder` — assembles context per ADR-010 §Context Window Budget Allocation
-- `Foundry.Context.SpecKitReader` — reads all spec-kit docs from disk, mtime-cached (ADR-003, ADR-010 §Nebulex Cache Strategy)
-- `Foundry.Copilot.IntentClassifier` — Task 1 structured classification prompt (ADR-010 §Task 1, ADR-013 §Intent Classification)
-- `Foundry.Copilot.ConfidenceClassifier` — four confidence states: HIGH, MEDIUM, LOW, BLOCKED (ADR-013 §Confidence States)
-- Clarifying question UX — binary-choice button presentation, not free-text (ADR-013 §Clarifying Question UX)
-- `CHANGE_PREVIEW` handler — describes what would be proposed without generating a diff (ADR-010 §Phase-Gated Behaviour, ADR-013 §Phase-Gated Copilot Behaviour); controlled by `change_generation_enabled: false` in config
-- ADR contradiction check (ADR-010 §ADR Contradiction Check)
-- All five error recovery responses — `:context_build_failed`, `:llm_api_error`, `:version_mismatch`, `:adr_contradiction`, `:context_budget_exceeded` (ADR-013 §Error Recovery Responses)
+
+**Spec-kit indexing and usage rules:**
+- `mix foundry.spec_kit.index` — generates `.foundry/spec_kit_index.json`.
+  Schema: `docs/spec_kit_index_schema.md`. Warns at 380 tokens. Run in CI.
+- `mix foundry.spec_kit.index --check` — CI staleness check, exits 1 if stale.
+  Same enforcement pattern as `mix foundry.diagram.generate` + INV-008.
+- `mix foundry.usage_rules.fetch` — copies `USAGE.md` / `AGENTS.md` from each
+  dependency into `.foundry/usage_rules/<lib>.md` at `mix deps.get` time.
+  Foundry maintains usage rules for core stack: Ash 3.x, Reactor, Phoenix LiveView,
+  Ecto, Oban. Generates `.foundry/usage_rules/foundry_operations.md` — all 20
+  catalogue operations with parameter schemas and examples.
+
+**Context assembly:**
+- `mix foundry.project.snapshot` — single JSON object (≤ 400 tokens, 60s TTL)
+  combining: domain list, sensitive modules, project structure shape, health signals
+  (lint errors, open proposals, compliance gaps, pending migrations), key file digest.
+  Schema: `docs/mix_task_summary_schemas.md`.
+- `Foundry.Copilot.ContextBuilder` — assembles three-tier context:
+  - Tier 1 (system prompt, per session): AGENTS.md + stack versions + spec-kit index,
+    pre-warmed at startup, Nebulex mtime-cached
+  - Tier 2 (session snapshot, per request): `mix foundry.project.snapshot`, 60s TTL
+  - Tier 3 (shell): assembled dynamically by the agent during the loop
+
+**Agent loop and tool interface:**
+- `Foundry.Copilot.Engine` — agentic loop: assembles Tier 1 + 2 context, runs
+  tool loop, dispatches bash calls, accumulates context, produces streaming response.
+  Circuit breaker: `max_tool_calls` (default 8, manifest: `copilot.max_tool_calls`).
+- `Foundry.Copilot.Tools` — declares the bash tool with shell constraint enforcement
+  (permitted/blocked command list per ADR-010 §Shell Constraints). Enforces the
+  permitted list at the adapter layer before execution.
+- `mix foundry.pattern.find <type> [--domain D]` — deterministic DSL pattern finder,
+  ranking criteria per ADR-010 §Pattern Selection. Called via bash.
+- `mix foundry.exdoc <Module> [--function name]` — versioned ExDoc output at exact
+  pinned version from mix.exs. Nebulex cached 24h. Called via bash.
+- `mix foundry.operation.schema <Op>` — structured JSON parameter contract for a
+  catalogue operation. Called via bash.
+
+**Adapters and classification:**
+- `Foundry.Copilot.LLMAdapter` behaviour — `run/3` callback, tool dispatch,
+  streaming, response parsing
+- `Foundry.Copilot.AnthropicAdapter` — production adapter
+- `Foundry.Copilot.LMStudioAdapter` — test/CI/demo adapter, OpenAI-compatible
+  tool calling. Validates tool calling support at startup; degrades gracefully
+  (visualization panels functional, copilot degraded-mode banner)
+- `Foundry.Copilot.IntentClassifier` — Task 1: small structured prompt (~1000
+  tokens), JSON-only response `{task, operation, confidence}` (ADR-010 §Task 1)
+
+**Agent behaviour:**
+- `Foundry.Copilot.ConfidenceClassifier` — four states: HIGH, MEDIUM, LOW, BLOCKED
+  (ADR-013 §Confidence States)
+- Change intent reasoning posture — system prompt instruction: read index → bash
+  for relevant ADRs + module context + pattern → emit contradiction check →
+  BLOCKED or proceed (ADR-010 §Change Intent Reasoning Posture)
+- `CHANGE_PREVIEW` handler — describes operation, change class, affected files
+  without generating diff or code. Controlled by `change_generation_enabled: false`.
+- All five error recovery responses with exact format per ADR-013 §Error Recovery
+  Responses format
+- Reasoning trace in all CHANGE_PREVIEW responses — `shell_calls`, `contradiction_check`
+  with non-empty `checked_adrs` and `checked_invs`, `session_snapshot`
+
+**Spec-kit tasks (Phase 3 subset — all on by default):**
+- `speckit.analyze`, `speckit.plan`, `speckit.clarify`, `speckit.checklist`,
+  `speckit.constitution` — system prompt posture injections (AGENTS.md §Spec-Kit Tasks)
+
+**UI and configuration:**
+- Activity Feed panel — event stream, chat input, clarifying question button
+  component (buttons primary, input always visible as escape hatch per ADR-013),
+  CHANGE_PREVIEW card, error cards (ADR-012, ADR-013)
+- `config :foundry_studio, change_generation_enabled: false` — Phase 3 config
+- `config :foundry_studio, copilot_trace_log: true` — dev-mode trace log (ADR-015)
 - LLM API key configuration
 
-**Agent behaviour specification:** ADR-013. Response format contract, confidence handling,
-and error recovery in that document govern Phase 3 copilot implementation.
+**Done when:**
+- Copilot correctly answers all questions in `docs/phase3-acceptance-questions.md`
+  (Gap #70, authored alongside `docs/reference-project-fixture.md` Gap #54),
+  citing specific modules and ADRs, with no Ash 2.x syntax in any response
+- All five error codes exercised in test environment with correct structured
+  responses matching ADR-013 §Error Recovery Responses format
+- Clarifying question UX renders option buttons as primary path with Activity
+  Feed input visible below; free-text re-entry re-classifies correctly
+- `CHANGE_PREVIEW` responses describe operation, change class, and affected files
+  without generating any diff or code
+- Reasoning trace present and correctly structured in all CHANGE_PREVIEW responses:
+  non-empty `checked_adrs` and `checked_invs`, `shell_calls` reflecting actual reads
+- `mix foundry.spec_kit.index --check` passes in CI
+- `mix foundry.project.snapshot` produces output within 400-token bound for the
+  iGaming reference project
+- Shell constraint enforcement: blocked commands (git commit, mix deps.get,
+  File.write!) are rejected with structured errors
+- `LMStudioAdapter` startup validation detects and warns on non-tool-calling models
+- `mix foundry.usage_rules.fetch` populates `.foundry/usage_rules/` including
+  `foundry_operations.md` with all 20 operations documented
 
-**No Igniter. No diffs. No apply.**
-
-**Done when:** The copilot correctly answers 10 representative questions about the iGaming
-reference project, citing specific modules and ADRs, with no Ash 2.x syntax in responses;
-AND all five error codes are exercised in the test environment with correct responses;
-AND clarifying question UX renders as binary-choice buttons (not free-text prompts);
-AND `CHANGE_PREVIEW` responses correctly describe operation scope without generating code.
+**Gap #70 (new):** `docs/phase3-acceptance-questions.md` — 10+ representative
+questions about the iGaming reference project with expected citation format and
+minimum acceptable response criteria. Author alongside `docs/reference-project-fixture.md`
+(Gap #54). Both are prerequisites for Phase 3 done criteria. Estimated: ~2 hours each.
 
 ---
 

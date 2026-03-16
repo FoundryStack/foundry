@@ -53,6 +53,11 @@ that Foundry depends on. Rationale for each extraction decision is in ADR-019.
 | `spark_lint` | Rule runner engine only: `SparkLint.Rule` behaviour, `SparkLint.Violation` struct, `mix spark_lint.check` task. Ships zero rules. | `Foundry.LintRules.*` plugs Foundry's INV-011..017 rule modules into it |
 | `reactor_human_gate` | Human-in-the-loop gate primitive for any Ash Reactor. Ships `HumanGateTask` resource scaffold and `WaitForHumanStep`. Usable independently of agents. | `Op.AddAgentStep` scaffolds it into target platforms (Phase 8) |
 | `reactor_agent_step` | Spark DSL extension for Reactor steps: declares `agent_type`, `model`, `confidence_threshold`, `on_low_confidence`, `tools`, `telemetry_prefix`. Depends on `reactor_human_gate`. | Phase 8 agent injection; extraction confirmed alongside `reactor_human_gate` |
+| `Foundry.Copilot.Tools` | Declares the bash tool with shell constraint enforcement
+  (permitted/blocked command list per ADR-010 §Shell Constraints). No other tool
+  schemas — the agent uses Mix tasks directly via bash for all retrieval. Internal
+  module, not a Hex package. | `Foundry.Copilot.Engine` dispatches all tool calls
+  through this module |
 
 **What is NOT a separate package and why:**
 - `Foundry.Diff` — ADR-005 change classifier using `Sourceror`. Logic is tightly coupled to the
@@ -114,13 +119,26 @@ internally and streams the resulting diff back over WebSocket. The agent never c
 For `docs/` (ADRs, runbooks, regulations), the agent proposes plain-text content;
 a human commits it. The compiler cannot validate prose — humans must.
 
-**INV-003: Prefer structured scaffold operations; raw Igniter for genuinely novel patterns**
-The scaffold operations catalogue covers the common 90%. For the remaining 10% — a custom
-migration, a novel module type, a one-off script — agents may use raw Igniter operations
-(e.g., `Igniter.create_new_file/3`, `Igniter.Project.Module.create_module/3`).
-What is never acceptable: string interpolation to build Elixir source, then writing that
-string to disk. Igniter generates valid, formatted, AST-correct code. String interpolation
-does not. The prohibition is on the *mechanism*, not on whether an operation exists in the catalogue.
+**INV-003: All writes go through Igniter. The agent generates Elixir source for everything outside the catalogue.**
+The scaffold operations catalogue covers common DSL operations. For everything outside
+the catalogue — GenServers, Broadway pipelines, integration adapters, Oban workers,
+Phoenix controllers, Plug pipelines, protocols, behaviours, Mix tasks, config files,
+infrastructure — the agent generates Elixir source content and passes it to raw Igniter
+operations (`Igniter.create_new_file/3`, `Igniter.Project.Module.create_module/3`).
+This is correct and expected, not a special case.
+
+**The prohibition is on the mechanism, not the capability:**
+- Never: `File.write!/2`, `File.stream!/2`, or any direct IO on source files
+- Never: string interpolation assembled into source and written to disk directly
+- Always: content → Igniter pipeline → formatted, AST-valid output → diff → review
+
+Igniter ensures formatting and AST correctness regardless of whether the content
+came from a catalogue operation or was generated directly by the agent. The compiler
+and linter are the verification layer — not the catalogue boundary.
+
+The operations catalogue is a quality accelerator: common DSL operations done
+idiomatically, fast, with battle-tested parameter schemas. Use catalogue operations
+when they apply. Generate directly when they do not.
 
 **INV-004: Infrastructure is proposal-only**
 Kubernetes, Postgres config, GitHub Actions base pipelines — agents produce structured
@@ -138,10 +156,14 @@ If the answer is still ambiguous: state the two interpretations explicitly and a
 to choose. Never ask a third question. Never generate on unresolved ambiguity.
 The clarifying question UX (binary-choice buttons, not free-text) is specified in ADR-013.
 
-**INV-006: Stack versions always in every LLM prompt**
-Every LLM call includes the current `mix.exs` dependency versions as the first item.
-This prevents Ash 2.x vs 3.x confusion — the most common and most damaging hallucination class.
-When in doubt about a DSL option, retrieve the ExDoc JSON for that specific element.
+**INV-006: Stack versions always in system prompt**
+Every agent session includes the current `mix.exs` dependency versions in the Tier 1
+system prompt — injected by `Foundry.Copilot.ContextBuilder` before the agent loop
+starts. Structurally impossible to start the agent loop without them. This prevents
+Ash 2.x vs 3.x confusion — the most common and most damaging hallucination class.
+When in doubt about a DSL option: `bash("mix foundry.exdoc <Module> --function <fn>")`.
+When in doubt about a pattern: `bash("mix foundry.pattern.find <type>")`.
+When in doubt about an operation: `bash("cat .foundry/usage_rules/foundry_operations.md")`.
 Never generate code from training memory alone when the current API surface is retrievable.
 
 **INV-007: Approved dependency policy governs additions**
@@ -228,6 +250,13 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 
 ---
 
+## Spec-Kit Tasks
+
+All spec-kit tasks are enabled by default. No manifest configuration required.
+`copilot.max_tool_calls` in the manifest controls the circuit breaker (default 8).
+
+---
+
 ## Where to Find Authoritative Information
 
 | Question | Where to look |
@@ -235,11 +264,11 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 | What does resource X do? | `mix foundry.context MyApp.Domain.Resource` |
 | What compliance requirements affect feature Y? | `mix foundry.compliance.check --filter=Y` |
 | What changed in the system recently? | `git log` + `mix foundry.diagram.diff` |
-| Correct DSL syntax for X? | ExDoc JSON for the exact library version in mix.exs |
-| Pattern for a new Rule/Transfer/Blueprint? | Closest existing example in lib/ — via Foundry.Context.PatternFinder |
-| Which ADR covers this decision? | ADR index below |
-| Copilot behaviour in edge cases? | ADR-013 |
-| Manifest field schema? | `docs/manifest-schema-draft.md` (pre-ADR-011) |
+| Which spec-kit document covers a concept? | Spec-kit index in Tier 1 context — agent reads summaries and tags, then `bash("cat <path>")` |
+| Correct DSL syntax for X? | `bash("mix foundry.exdoc <Module>")` or `bash("cat .foundry/usage_rules/<lib>.md")` |
+| Pattern for a new construct type? | `bash("mix foundry.pattern.find <type> --domain <D>")` |
+| Operation parameter schema? | `bash("cat .foundry/usage_rules/foundry_operations.md")` or `bash("mix foundry.operation.schema <Op>")` |
+| Spec-kit task postures? | §Spec-Kit Tasks above |
 
 ---
 
@@ -275,17 +304,22 @@ No intermediate HTTP service.
 
 ```
 Copilot intent → Foundry.Copilot.Engine
-  → classify intent
-  → fetch context via Mix tasks (subprocess, always current)
-  → select Operation module
-  → Foundry.Operations.run(op, params, dry_run: true)
-      → Igniter pipeline executes (structured or raw, never string interpolation)
+  → classify intent (IntentClassifier, Task 1)
+  → assemble Tier 1 + Tier 2 context (ContextBuilder)
+  → agent loop begins:
+      → bash tool calls: read spec-kit, read source, run Mix tasks
+      → contradiction check via reasoning (not separate API call)
+      → if change intent + phase gate off: CHANGE_PREVIEW response
+      → if change intent + phase gate on: emit operation parameters
+  → if operation parameters emitted:
+      → Foundry.Operations.run(op, params, dry_run: true)  [DSL catalogue ops]
+      OR
+      → Igniter.create_new_file / update_file               [raw Elixir]
       → diff captured
-      → lint runs against diff
-      → semantic validation runs
-  → diff + lint result + impact analysis streamed to UI review panel
+      → mix compile + mix foundry.lint.all run by agent — errors feed back into loop
+      → clean diff + lint result + impact analysis streamed to review panel
   → user approves
-  → Foundry.Operations.run(op, params, dry_run: false)
+  → Foundry.Operations.run(op, params, dry_run: false) OR Igniter apply
   → change applied, git commit created, CI triggered
 ```
 
@@ -404,6 +438,9 @@ docs/
   BUILD_SEQUENCE.md                          ← implementation phases and acceptance criteria
   REVIEW_AND_PLAN.md                         ← gap tracking and what belongs in code
   manifest-schema-draft.md                   ← pre-ADR-011 manifest field schema (consolidated)
+  spec_kit_index_schema.md                   ← index format contract
+  mix_task_summary_schemas.md                ← project snapshot schema
+  phase3-acceptance-questions.md             ← Gap #70 (to be written)
   adrs/
     ADR-001-stack-selection.md
     ADR-002-code-generation.md
@@ -430,6 +467,16 @@ docs/
     compliance_test_failure.md
     approval_queue_blocked.md
     studio_ux_degradation.md
+.foundry/
+  spec_kit_index.json                        ← generated by mix foundry.spec_kit.index
+  usage_rules/                               ← generated by mix foundry.usage_rules.fetch
+    ash.md
+    reactor.md
+    phoenix_live_view.md
+    foundry_operations.md                    ← all 20 operations with parameter schemas
+    (one file per dependency with usage guidance)
+  logs/
+    copilot_trace.jsonl                      ← gitignored, dev-mode only
 ```
 
 The Ash resources and Reactor code are the specification for everything else.

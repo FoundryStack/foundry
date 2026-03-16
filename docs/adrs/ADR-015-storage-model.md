@@ -76,6 +76,61 @@ Nothing in Tier 2 is irreplaceable. Restart recovery is automatic and cheap.
 Each proposal is a single JSON file at `.foundry/proposals/prop_<id>.json`.
 The schema matches ADR-014 §Proposal Storage exactly — the file is the record.
 
+**Reasoning trace field** — added at DRAFT creation, committed with the proposal.
+Contains structured metadata of the engine's decision steps. Not LLM prompt content
+(never stored — ADR-012 §Data Retention).
+
+```json
+"reasoning_trace": {
+  "intent_classification": {
+    "task": "change",
+    "operation": "Op.AddRule",
+    "confidence": 0.91
+  },
+  "shell_calls": [
+    "cat docs/adrs/ADR-005-change-approval-model.md",
+    "mix foundry.context MyApp.Finance.Wallet --json",
+    "mix foundry.pattern.find rule --domain Finance"
+  ],
+  "contradiction_check": {
+    "contradiction": false,
+    "checked_adrs": ["ADR-005", "ADR-002"],
+    "checked_invs": ["INV-001", "INV-011"],
+    "summary": null
+  },
+  "change_class": ":behavioral",
+  "confidence_state": "HIGH_CONFIDENCE",
+  "session_snapshot": {
+    "pending_migrations": 0,
+    "open_proposals": 1,
+    "lint_errors": 0
+  }
+}
+```
+
+`checked_adrs` and `checked_invs` must be non-empty. An empty list means the
+contradiction check was skipped — test failure, not acceptable.
+
+`shell_calls` records the actual bash commands the agent called during the loop.
+Used for debugging misclassifications and auditing agent behaviour.
+
+`session_snapshot` captures the Tier 2 state at proposal creation — whether the
+agent was aware of pending migrations or conflicting open proposals.
+
+For **question responses** (no proposal file): equivalent fields emitted as attributes
+on the `[:foundry, :llm, :call]` telemetry span. Not persisted to disk.
+
+**Dev-mode trace log:** `config :foundry_studio, copilot_trace_log: true` writes
+all reasoning traces (including question responses) to
+`.foundry/logs/copilot_trace.jsonl` (gitignored, never committed).
+
+Format: one JSON object per line, same schema as proposal `reasoning_trace` plus
+`"response_type": "question" | "change_preview" | "blocked" | "clarification"`.
+
+Primary debugging surface during Phase 3 development before the Operations Board
+(Phase 6) surfaces telemetry. Set `true` in `config/dev.exs` during active Phase 3
+development. Not rotated automatically — clear manually.
+
 State transitions write to the file and commit it:
 
 ```

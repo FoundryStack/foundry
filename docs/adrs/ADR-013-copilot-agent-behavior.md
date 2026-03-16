@@ -141,47 +141,36 @@ A brief sentence: "I understand you want to [paraphrase of the request]."
 One sentence identifying the gap: "I'm not certain whether [X] or [Y]."
 
 **Step 3 — Present as a binary or small-choice selection:**
-Rendered as clickable option buttons — not a text input. Two or three options maximum.
+Rendered as clickable option buttons — two or three options maximum.
+The Activity Feed input box remains visible and active below the buttons.
 
 ```
 I understand you want to add a rule for withdrawal limits.
-I'm not certain whether this should be a new Rule module or an additional clause
-in the existing StakeLimitRule.
+I'm not certain whether this should be a new Rule module or an additional
+clause in the existing StakeLimitRule.
 
 [New Rule module]   [Add clause to StakeLimitRule]
+
+Or describe what you have in mind:
+[_________________________________________________]
 ```
 
-**Why buttons, not text:** A free-text answer can introduce new ambiguity. Buttons constrain
-the answer space and guarantee the engine receives a resolvable input.
+**Buttons are the primary path** — structured, unambiguous, guaranteed resolvable.
+Clicking a button sends the option label as a structured message; the engine
+does not re-classify it, it proceeds directly.
 
-**If the user types a free-text response anyway** (ignoring the buttons): the engine treats it
-as a new message, re-classifies, and re-evaluates confidence. If the free-text answer resolves
-the ambiguity, proceed. If it introduces new ambiguity, present the two explicit interpretations
-(see below).
+**The input box is always present** — never hidden or disabled when clarifying
+buttons are shown. Free-text via the input re-enters the classification cycle:
+- Resolves ambiguity → proceed
+- Introduces new ambiguity → present two explicit interpretations (second question)
 
-**The second question (maximum):**
-If the clarifying answer is still ambiguous, present two explicit interpretations:
-
-```
-I can proceed in one of two ways:
-
-Interpretation A: Create a new StakeLimitRule2 module with jurisdiction EU, applying
-to the Wallet resource. This is a separate rule evaluated independently.
-
-Interpretation B: Add an EU jurisdiction clause to the existing StakeLimitRule module,
-so the same rule evaluates differently based on the player's jurisdiction.
-
-Which is correct?
-
-[Interpretation A]   [Interpretation B]   [Neither — I'll rephrase]
-```
-
-"Neither" resets the conversation. The engine does not attempt a third clarifying question.
-The user rephrases and a new classification cycle begins.
+The engine never asks a third question regardless of path taken.
 
 **What the copilot never does:**
-- Asks three questions in sequence
-- Asks an open-ended question ("Can you tell me more about what you have in mind?")
+- Asks three questions in sequence (two is the hard maximum across all paths)
+- Asks an open-ended question without options — if asking, always present concrete
+  choices alongside
+- Hides or disables the Activity Feed input while clarifying buttons are shown
 - Guesses and generates on unresolved ambiguity
 - Embeds the clarifying question inside a longer prose paragraph where it might be missed
 

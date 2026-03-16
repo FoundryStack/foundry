@@ -113,6 +113,17 @@ The schema is identical regardless of whether the project is Foundry itself or a
   # primary mechanism; this manifest field enables per-project override.
   change_generation_enabled: true,
 
+  # ── Copilot Agentic Loop ──────────────────────────────────────────────────
+  # Source: ADR-010 §Agentic Loop Specification
+
+  copilot: [
+    # Maximum bash tool calls per copilot request before :context_budget_exceeded.
+    # Circuit breaker — not a quality knob. Normal operations never hit this.
+    # Increase if complex multi-module operations routinely hit the limit.
+    # Decrease to 4–5 for faster average response at the cost of depth.
+    max_tool_calls: 8
+  ],
+
   # ── Notifications ─────────────────────────────────────────────────────────
   # Source: INV-010, ADR-001 (swoosh, Slack webhook)
 

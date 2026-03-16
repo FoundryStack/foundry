@@ -1,32 +1,36 @@
-# ADR-010: LLM Selection — Claude Sonnet, Structured Context, Bounded Prompts
+# ADR-010: LLM Selection — Claude Sonnet, Agentic Context Model
 
-**Status:** Accepted  
-**Date:** 2026-03  
+**Status:** Accepted
+**Date:** 2026-03
 **Deciders:** Platform team
+**Supersedes:** ADR-010 v1 (fixed-slot budget model)
 
 ---
 
 ## Context
 
 The copilot engine requires an LLM for three distinct tasks:
-1. **Intent classification** — is this a question, a change request, or ambiguous? Which operation?
-2. **Proposal generation** — generate the structured content for an Igniter operation
+1. **Intent classification** — question, change, or ambiguous?
+2. **Proposal generation** — structured parameters for an Igniter operation (Phase 4+)
 3. **Question answering** — answer domain questions from context
 
-These tasks have different cost, latency, and capability requirements.
-The choice of model and context assembly strategy has direct consequences on cost,
-hallucination rate, and the quality of proposals.
+The original ADR-010 specified a fixed 6-slot context assembly model. This has been
+superseded by an agentic loop model: the agent has a shell, uses Mix tasks directly,
+and fetches what it needs rather than receiving a pre-assembled fixed window.
+
+---
 
 ## Decision
 
-**Primary model: Claude Sonnet (latest stable) for all three task types.**  
-**Classification uses a structured output prompt with constrained response format.**  
-**Context is assembled from structured retrieval — never by dumping full files.**  
-**Prompt size is bounded per task type.**
+**Primary model: Claude Sonnet (latest stable) for all three task types.**
+**The agent operates in an agentic loop with a bash tool and two structured tools.**
+**Context is assembled in three tiers: system prompt, session snapshot, retrieved via shell.**
 
-### Task 1: Intent Classification
+---
 
-Small, fast prompt. Structured output only.
+## Task 1: Intent Classification
+
+Small, fast prompt. Structured output only. Runs before the agent loop.
 
 ```
 System: You are a classifier. Respond only with valid JSON matching this schema:
@@ -44,219 +48,396 @@ User: [user's message]
 Max total context: ~1000 tokens
 ```
 
-**Confidence threshold:** If `confidence < 0.7`, treat as `"ambiguous"` regardless of the
-`task` field value. Ask one clarifying question (INV-005).
+**Confidence threshold:** `confidence < 0.7` → treat as `"ambiguous"` regardless of
+`task` field. Ask one clarifying question (INV-005).
 
-**`task == "ambiguous"`**: Ask one clarifying question before proceeding to Tasks 2 or 3.
-
-**Phase gate:** After classification, check the `foundry_change_generation_enabled` config
-flag (see §Phase-Gated Behaviour below). If false and `task == "change"`, route to the
-`CHANGE_PREVIEW` path instead of Task 2 — describe what would be proposed without executing.
-
-This call is cheap (small context, structured output) and runs before any generation call.
+**Phase gate:** After classification, check `change_generation_enabled` config flag.
+If `false` and `task == "change"`: route to `CHANGE_PREVIEW` handler, not agent loop.
 
 ---
 
-### Task 2: Proposal Generation
+## Context Model — Three Tiers
 
-Full context prompt. Structured output for the operation parameters.
-
-```
-System: [AGENTS.md invariants section — always included, ~500 tokens]
-        [Stack versions — always included, ~200 tokens]
-        [Full spec-kit: all ADRs + runbooks + regulations — always included, ~1500 tokens]
-        [ExDoc for the specific DSL elements involved — on-demand, ~400 tokens]
-        [Closest existing pattern from codebase — on-demand, ~400 tokens]
-        [Module context from mix foundry.context — for affected modules, ~600 tokens]
-
-User: [original intent + any clarification from Task 1]
-
-Max total context: ~3900 tokens system + user message
-```
-
-**Note on AGENTS.md:** AGENTS.md is part of the full spec-kit included above. It does not
-need to be included separately. The "AGENTS.md invariants" slot is satisfied by the full
-spec-kit inclusion.
-
-The operation parameters are extracted from the response as structured JSON.
-The Igniter operation module receives parameters, not generated code.
-**The LLM generates *what to do*, not the Elixir source.**
-
-After parameter extraction, the ADR contradiction check runs (see §ADR Contradiction Check).
+The copilot operates with a three-tier context model. Each tier has different
+assembly timing, caching behaviour, and token characteristics.
 
 ---
 
-### Task 3: Question Answering
+### Tier 1 — System Prompt (assembled once per Studio session)
 
-Context assembled identically to Task 2 — full spec-kit inclusion, no RAG.
+Loaded by `Foundry.Copilot.ContextBuilder` at Studio startup. Reloaded only on
+Studio restart or stack version change detection.
 
-```
-System: [Stack versions — always]
-        [Full spec-kit: all ADRs + runbooks + regulations — always, ~1500 tokens]
-        [Relevant module context from mix foundry.context — for named modules]
+| Component | Token bound | Source | Cache key |
+|---|---|---|---|
+| AGENTS.md | ~800 | File read | `{:spec_kit, path, mtime}` |
+| Stack versions | ~200 | `mix foundry.versions.check` | `{:versions, mix_exs_mtime}` |
+| Spec-kit index | ~400 | `.foundry/spec_kit_index.json` | `{:spec_kit_index, index_mtime}` |
+| **Tier 1 total** | **~1400** | | |
 
-User: [question]
+AGENTS.md is the agent's constitution — invariants, orientation, spec-kit task postures,
+shell constraints, key Mix task reference. It is never dropped or summarised.
 
-Max total context: ~3000 tokens
-```
+The spec-kit index gives the agent a map of all spec-kit documents (ADRs, runbooks,
+regulations, usage rules) with summaries and tags. The agent reads this directly from
+context to decide which documents to read via bash. No search tool needed.
 
-**No RAG for question answering.** The entire spec-kit fits comfortably in context (ADR-003).
-RAG would add infrastructure and retrieval failures to a problem that full inclusion solves
-trivially. The model sees all constraints on every question — not a similarity-ranked subset
-that might miss the relevant ADR. See ADR-003 for full rationale.
-
-Response is prose. No structured output required.
-
----
-
-## Why Claude Sonnet Specifically
-
-- Structured output / tool use is reliable for the classification and parameter-extraction patterns above
-- Context window is sufficient for the bounded prompts above — we never approach the limit
-- Cost is acceptable: classification calls are cheap; generation calls are bounded at ~$0.01–0.02
-- The ADR contradiction check is a structured classification step, not a separate retrieval pipeline
-
-**No GPT-4, no local models for the initial version.** The copilot's value depends on
-consistent quality. Switching models requires re-validating all 20 scaffold operations
-against the iGaming reference project — it is a breaking change and requires an ADR update.
+INV-006 is enforced at ContextBuilder initialisation — structurally impossible to start
+the agent loop without stack versions in the system prompt.
 
 ---
 
-## The ADR Contradiction Check
+### Tier 2 — Session Snapshot (refreshed per copilot request)
 
-Before finalising a Task 2 response, the engine runs one additional structured classification
-step. The full spec-kit is already in context. The system prompt asks the model:
+A single compact JSON object assembled by `Foundry.Copilot.ContextBuilder` at the
+start of each request. 60-second TTL. Reflects current project state.
+
+**Source:** `mix foundry.project.snapshot`
+**Token bound:** ≤ 400 tokens
+**Schema:** `docs/mix_task_summary_schemas.md`
+
+Contains: domain list, sensitive module names, project structure shape (workers,
+integrations, web layer), health signals (lint errors, open proposals, compliance gaps,
+pending migrations), key file digest (core deps from mix.exs, approver from manifest).
+
+**Why a snapshot replaces eight separate components:** Earlier drafts assembled domain
+map, compliance summary, lint status, open proposals, pending migrations, project
+structure, mix.exs, and manifest.exs separately (≤ 900 tokens total). The snapshot
+gives the same orientation signal in ≤ 400 tokens with one assembly call and one
+cache entry. When the agent needs depth on any component, it uses bash.
+
+---
+
+### Tier 3 — Shell and Tools (fetched on demand during the agent loop)
+
+The agent has access to two interfaces for retrieving context during the loop:
+
+**bash(command)** — a shell with a permitted command list (see §Shell Constraints).
+This is the primary retrieval interface. The agent uses standard Unix tools and Mix
+tasks to read files, search source, run the compiler, check lint, and fetch API docs.
+
+```bash
+# Read any file
+cat docs/adrs/ADR-005-change-approval-model.md
+cat lib/my_app/workers/payment_processor.ex
+cat .foundry/usage_rules/ash.md
+
+# Search across source
+grep -rn "def handle_payment" lib/ --include="*.ex"
+grep -B3 -A50 "defmodule.*Wallet" lib/my_app/finance/wallet.ex
+
+# Navigate structure
+ls lib/my_app/integrations/
+find lib/ -name "*.ex" -path "*/workers/*"
+
+# Semantic module introspection
+mix foundry.context MyApp.Finance.Wallet --json
+
+# API reference at pinned version
+mix foundry.exdoc Ash.Resource.Attribute --function allow_nil?
+
+# Pattern finding
+mix foundry.pattern.find rule --domain Finance
+
+# Verify writes
+mix compile 2>&1
+mix foundry.lint.all --json
+mix test test/my_app/finance/wallet_test.exs 2>&1
+```
+
+**Two structured tools** for operations the shell cannot replicate with equivalent quality:
+
+| Tool | Returns | Token bound | Rationale |
+|---|---|---|---|
+| `mix foundry.pattern.find <type> [--domain D]` (via bash) | Top-ranked existing DSL example — see §Pattern Selection | 400 | Ranking algorithm encodes domain logic: same type, same domain, most attributes, has tests, not sensitive. Deterministic and unit-testable. |
+| `mix foundry.operation.schema <Op>` (via bash) | Parameter contract for a catalogue operation | 300 | Operations are documented in `.foundry/usage_rules/foundry_operations.md` but the Mix task provides structured JSON for programmatic use. |
+
+Both are Mix tasks called via bash — not separate tool schemas. The agent calls them
+like any other Mix task. The distinction from arbitrary bash is that their output
+format is specced and stable.
+
+**Circuit breaker:** `max_tool_calls` per request (default 8, manifest key
+`copilot.max_tool_calls`). If reached without resolution: `:context_budget_exceeded`.
+Safety valve against runaway loops — normal operations never approach this limit.
+
+---
+
+### Total context characteristics
+
+| Tier | Bound |
+|---|---|
+| Tier 1 (system prompt) | ~1400 tokens |
+| Tier 2 (session snapshot) | ≤ 400 tokens |
+| Tier 3 (shell / tools, accumulated) | Grows during loop; circuit breaker at 8 calls |
+| User message + 3-turn history | ~300 tokens |
+| **Static total (Tier 1 + 2)** | **~1800 tokens** |
+
+Well within any current model's context window. When static total approaches 3000
+tokens, revisit this ADR.
+
+---
+
+## Shell Constraints
+
+The bash tool operates with a permitted command list. This is enforced at the adapter
+layer — blocked commands are rejected before execution with a structured error.
+
+**Permitted:**
 
 ```
-Given the full spec-kit context already provided, does the proposed action contradict
-any ADR or platform invariant? Respond only with valid JSON:
-{
-  "contradiction": true | false,
-  "adr_id": "<id>" | null,
-  "summary": "<one sentence explaining the conflict>" | null
+Read:      cat, ls, find, grep, head, tail, sed, wc, awk (read-only patterns)
+Mix tasks: mix compile, mix foundry.*, mix test <specific-file>
+Git read:  git log, git diff, git status, git show, git blame
+```
+
+**Blocked:**
+
+```
+Direct writes:   File.write!, cp/mv targeting lib/ or config/ — use Igniter
+Git writes:      git commit, git push, git merge — Foundry manages commits
+Deps:            mix deps.get, mix deps.compile — :compliance class, proposal-only
+DB ops:          mix ecto.migrate, mix ash.migrate — proposal-only, never from agent
+Network:         curl, wget, npm, pip, mix hex.* — no network from agent shell
+Process:         kill, pkill, systemctl — no process management
+```
+
+The blocked list maps directly to INV-001 (no autonomous sensitive changes), INV-002
+(no direct filesystem writes), INV-004 (infrastructure proposal-only), and the
+principle that dependency and schema changes are governed changes, not agent actions.
+
+---
+
+## Change Intent Reasoning Posture
+
+For `change` intents, the agent follows this posture before producing any output.
+Enforced via system prompt instruction, not a separate API call.
+
+1. Read the spec-kit index (already in Tier 1) — identify relevant ADRs and INVs by tag
+2. Read those documents via `bash("cat <path>")` — follow cross-references with further reads
+3. Read module context: `bash("mix foundry.context <Module> --json")`
+4. Read a pattern example if creating a new construct: `bash("mix foundry.pattern.find <type>")`
+5. Read the operation schema if using a catalogue operation: `bash("mix foundry.operation.schema <Op>")`
+6. Reason about change classification and contradictions
+7. Emit structured contradiction check block in reasoning trace (see §Reasoning Trace)
+8. If contradiction: BLOCKED — cite ADR/INV, do not proceed
+9. If no contradiction: CHANGE_PREVIEW (Phase 3) or proposal parameters (Phase 4+)
+
+**The agent follows references, it does not preload.** The index in Tier 1 ensures all
+ADR summaries are visible. References encountered during reading (e.g. "see ADR-005
+§Migration Classification") trigger additional `cat` calls. Fetch on reference, not
+on anticipation.
+
+---
+
+## Pattern Selection Criteria
+
+`mix foundry.pattern.find <type> [--domain D]` returns the module whose Spark DSL
+declarations most closely match what the agent is trying to generate.
+
+**`type`** — required. One of: `rule`, `transfer`, `reactor`, `blueprint`, `resource`,
+`oban_worker`.
+
+**`domain`** — optional Ash domain module name. Scopes search; falls back to
+cross-domain if no match found within the domain.
+
+**Ranking (applied in order):**
+1. Same construct type (required filter, not a tie-breaker)
+2. Same domain as target (preferred)
+3. Highest DSL attribute declaration count (richer example is more useful)
+4. Has associated property tests (agent uses as model for test generation)
+5. Not `:sensitive` in manifest (avoids leaking sensitive field names as scaffolding suggestions)
+
+Output: full `mix foundry.context` struct for the top-ranked module, truncated at
+400 tokens if necessary (truncation preserves module header and first 5–8 attributes).
+
+Backed by `Foundry.Context.PatternFinder`. Deterministic and unit-testable — no fuzzy
+matching.
+
+---
+
+## Usage Rules
+
+`.foundry/usage_rules/` contains one Markdown file per dependency with agent-oriented
+guidance: patterns, anti-patterns, idiomatic usage, version-specific gotchas. More
+useful than ExDoc for agent consumption — written at the pattern level, not type level.
+
+**Sources:**
+- Packages that ship `USAGE.md` or `AGENTS.md` at package root — copied at `mix deps.get`
+- Foundry-maintained rules for the core stack: Ash 3.x, Reactor, Phoenix LiveView, Ecto
+- `foundry_operations.md` — all 20 catalogue operations with parameter schemas and examples
+
+Generated by `mix foundry.usage_rules.fetch`. Output committed to `.foundry/usage_rules/`.
+Indexed in the spec-kit index with type `usage_rules`. Agent reads via bash.
+
+```bash
+cat .foundry/usage_rules/ash.md
+cat .foundry/usage_rules/foundry_operations.md
+grep -A20 "Op.AddAttribute" .foundry/usage_rules/foundry_operations.md
+```
+
+`mix foundry.exdoc <Module> [--function name]` provides structured ExDoc output for
+a specific module or function at the exact pinned version from `mix.exs`. Use when
+usage rules are insufficient and precise API detail is needed. Cached by
+`{:exdoc, library, version}` with 24h TTL.
+
+---
+
+## LLM Adapter
+
+`Foundry.Copilot.Engine` is adapter-agnostic. Adapters implement the
+`Foundry.Copilot.LLMAdapter` behaviour:
+
+```elixir
+defmodule Foundry.Copilot.LLMAdapter do
+  @callback run(messages :: [map()], tools :: [map()], opts :: keyword()) ::
+    {:ok, stream :: Enumerable.t()} | {:error, term()}
+end
+```
+
+| Adapter | Use | Config |
+|---|---|---|
+| `Foundry.Copilot.AnthropicAdapter` | Production | `config/runtime.exs` |
+| `Foundry.Copilot.LMStudioAdapter` | Local dev, CI, demos | `config/test.exs` |
+
+```elixir
+# config/runtime.exs
+config :foundry_studio,
+  llm_adapter: Foundry.Copilot.AnthropicAdapter,
+  llm_model: "claude-sonnet-4-6"  # never hardcoded in source
+
+# config/test.exs
+config :foundry_studio,
+  llm_adapter: Foundry.Copilot.LMStudioAdapter,
+  llm_base_url: "http://localhost:1234/v1",
+  llm_model: "local-model"
+```
+
+LM Studio uses the OpenAI-compatible tool calling API. `LMStudioAdapter` validates
+tool calling support at startup with a minimal probe request:
+- Tool calls present in response → confirmed, proceed normally
+- Tool calls absent → log warning, Studio starts in degraded mode (visualization panels
+  functional, copilot shows banner), do not crash
+
+**Streaming is mandatory.** Both adapters stream token-by-token. Activity Feed LiveView
+receives tokens via Phoenix PubSub. Performance budget: first streamed token ≤ 5 seconds
+from message send (ADR-012 §Performance Budgets).
+
+Model name from config (`:llm_model`), never hardcoded. Changing models requires
+re-validating all catalogue operations against the iGaming reference project and an
+ADR update.
+
+---
+
+## Reasoning Trace
+
+Every CHANGE_PREVIEW and proposal response must include a structured reasoning trace.
+This is the structured output of the agent's decision steps — not LLM prompt content
+(privacy, per ADR-012 §Data Retention).
+
+```json
+"reasoning_trace": {
+  "intent_classification": {
+    "task": "change",
+    "operation": "Op.AddRule",
+    "confidence": 0.91
+  },
+  "shell_calls": [
+    "cat docs/adrs/ADR-005-change-approval-model.md",
+    "mix foundry.context MyApp.Finance.Wallet --json",
+    "mix foundry.pattern.find rule --domain Finance"
+  ],
+  "contradiction_check": {
+    "contradiction": false,
+    "checked_adrs": ["ADR-005", "ADR-002"],
+    "checked_invs": ["INV-001", "INV-011"],
+    "summary": null
+  },
+  "change_class": ":behavioral",
+  "confidence_state": "HIGH_CONFIDENCE",
+  "session_snapshot": {
+    "pending_migrations": 0,
+    "open_proposals": 1,
+    "lint_errors": 0
+  }
 }
 ```
 
-**If `contradiction: true`:**
-Block the proposal. Return to the user:
-`"This proposal conflicts with [ADR-XXX §Section]: [summary]. Review the ADR before
-proceeding. If the ADR is outdated, a human must update it — the constraint cannot be
-bypassed from the copilot."`
+`contradiction_check.checked_adrs` and `checked_invs` must be non-empty arrays.
+An empty list means the check was skipped — test failure, not acceptable response.
 
-**If `contradiction: false`:** proceed to Igniter parameter extraction.
+For question responses (no proposal file): equivalent fields emitted as attributes
+on the `[:foundry, :llm, :call]` telemetry span. Not persisted to disk.
 
-This is not a separate API call — it reuses the context already assembled for Task 2.
-It is a structured output step that adds negligible latency (~1s) and no token cost beyond
-the generation call itself.
-
----
-
-## Context Window Budget Allocation
-
-Total budget per generation call: **~4000 tokens**.
-This is well within any current model's context limit and provides headroom for spec-kit
-growth without architectural changes. When the full spec-kit approaches 2000 tokens,
-this ADR should be revisited.
-
-| Component | Budget | Slot | Droppable? |
-|---|---|---|---|
-| Stack versions (mix foundry.versions.check) | ~200 | 1 | Never — INV-006 |
-| Full spec-kit (AGENTS.md + ADRs + runbooks + regulations) | ~1500 | 2 | Never |
-| Module context (mix foundry.context, up to 5 modules) | ~600 | 3 | Reduce to 2 modules if over budget |
-| ExDoc fragments (on-demand, Task 2 only) | ~400 | 4 | First to drop if over budget |
-| Codebase pattern example (on-demand, Task 2 only) | ~400 | 5 | Second to drop if over budget |
-| User message + turn history (last 3 turns) | ~300 | 6 | Reduce history if needed |
-| **Total** | **~3900** | | |
-
-**Drop order when budget is exceeded:**
-1. Drop ExDoc fragment (Slot 4)
-2. Drop pattern example (Slot 5)
-3. Reduce module context from 5 modules to 2 (Slot 3)
-4. Reduce turn history from 3 turns to 1 (Slot 6)
-5. If still over budget after all drops: return `:context_budget_exceeded` error to the
-   user — "This request requires more context than fits in one operation. Try narrowing
-   the scope to a single module or domain."
-
-Slots 1 and 2 are never dropped. A request that cannot fit within budget after drops
-is rejected, not silently truncated.
+**Dev-mode trace log:** `config :foundry_studio, copilot_trace_log: true` writes all
+traces to `.foundry/logs/copilot_trace.jsonl` (gitignored). Local debugging only.
+Set in `config/dev.exs` during Phase 3 development.
 
 ---
 
 ## Nebulex Cache Strategy
 
-Cache keys, TTLs, and eviction rules are fully specified in ADR-003 §Three-tier library documentation.
-Summary: spec-kit documents cached by `{:spec_kit, file_path, mtime}`, ExDoc by `{:exdoc, library, version}` (24h TTL), version manifest by `{:versions, mix_exs_mtime}`.
-On budget overflow: spec-kit evicted first, then ExDoc, then version manifest — all via Nebulex L1 (ETS).
+All caching via Nebulex L1 (ETS):
+
+| Cache key | TTL | Invalidation trigger |
+|---|---|---|
+| `{:spec_kit, file_path, mtime}` | Mtime-based | inotify file watcher |
+| `{:spec_kit_index, index_mtime}` | Mtime-based | `mix foundry.spec_kit.index` re-run |
+| `{:project_snapshot, hash}` | 60 seconds | TTL expiry |
+| `{:exdoc, library, version}` | 24 hours | TTL expiry |
+| `{:versions, mix_exs_mtime}` | Mtime-based | mix.exs change |
+
+**Pre-warming on startup:** `Foundry.Context.SpecKitReader` pre-warms the spec-kit index
+and all indexed documents during application start (20–40 files typically — acceptable
+for a local dev tool). First user request sees no cold-start delay.
+
+**Cloud mode:** Pre-warming runs after git clone/pull, before WebSocket accepts connections.
+
+**Session snapshot (Tier 2) uses TTL caching**, not mtime. The 60-second window means
+the agent sees state that is at most 60 seconds old — acceptable for a human-in-the-loop
+tool. A shorter TTL increases subprocess call frequency; a longer TTL risks stale health
+signals during active development. 60 seconds is the right balance.
+
+---
 
 ## Phase-Gated Behaviour
 
-The `foundry_change_generation_enabled` flag governs the Phase 3 → Phase 4 transition.
-This is a **static config value**, not a `fun_with_flags` flag:
+The `change_generation_enabled` flag governs the Phase 3 → Phase 4 transition.
+Static config, not a `fun_with_flags` flag:
 
 ```elixir
-# config/foundry_studio.exs
-# Phase 3 deployment:
+# Phase 3:
 config :foundry_studio, change_generation_enabled: false
 
-# Phase 4 deployment:
+# Phase 4:
 config :foundry_studio, change_generation_enabled: true
 ```
 
-`fun_with_flags` is for runtime-togglable feature flags in target platforms. The phase gate
-is a deployment-time decision that the platform team sets deliberately — it is not a
-per-user or per-environment runtime toggle.
-
-**When `change_generation_enabled: false`:**
-- Task 1 (classification) still runs fully
-- `task == "change"` routes to `CHANGE_PREVIEW` handler
-- The handler runs context assembly and contradiction check, then emits a natural-language
-  description of what the operation would do: "I would propose [operation], which would
-  create [module] classified as [:behavioral]. The diff would touch [files]. Code generation
-  is not yet enabled in this deployment."
-- This allows the team to validate classification quality before trusting code output
-
----
-
-## Error Codes
-
-The copilot engine emits structured errors. These are the canonical codes used in
-`studio_copilot_failure.md` and `Foundry.Copilot.Engine`:
-
-| Code | Trigger | User-facing action |
-|---|---|---|
-| `:context_build_failed` | `mix foundry.context` returned non-zero | "Project may have compilation errors. Run `mix compile`." |
-| `:igniter_operation_failed` | Igniter dry-run returned error | "Scaffold operation failed. See runbook: igniter_operation_failure.md." |
-| `:llm_api_error` | Anthropic API unreachable or rate-limited | "LLM service unavailable. CLI tools remain functional." |
-| `:version_mismatch` | Stack version detection failed | "Run `mix foundry.versions.refresh`." |
-| `:adr_contradiction` | Contradiction check returned `true` | Cite the specific ADR/INV. Do not offer to bypass. |
-| `:context_budget_exceeded` | Budget exceeded after all drops | "Narrow the request scope to a single module or domain." |
-| `:clarification_required` | confidence < 0.7 or task == "ambiguous" | Present the binary-choice clarifying question (INV-005). |
-
-These codes are logged with the full assembled context (minus the user message, which
-may contain sensitive domain information) to the Studio's telemetry pipeline.
-
----
-
-## What the Copilot Never Does
-
-- **Never includes raw source files in context.** Always use `mix foundry.context` structured
-  output. A full 200-line Ash resource costs ~1000 tokens and is mostly noise for any
-  specific task. Structured introspection provides attribute-level precision at a fraction
-  of the token cost.
-- **Never generates Elixir source as a string.** The LLM produces operation parameters.
-  Igniter produces code. This is INV-002 and INV-003 of ADR-002.
-- **Never bypasses the ADR contradiction check.** Even if the model is highly confident,
-  the check runs. If the ADR is wrong, the ADR is updated by a human.
-- **Never silently truncates context.** Budget overflow is a hard error, not a soft trim.
+When `false`: `change` intent routes to `CHANGE_PREVIEW` handler. Full classification,
+context assembly, and contradiction check still run. The handler describes what the
+operation would do without generating a diff. Validates classification quality before
+trusting code output.
 
 ---
 
 ## Consequences
 
-- The model name comes from `config/foundry.exs` under `:llm_model` — not hardcoded
-- Changing the model requires an ADR update and re-validation of the full scaffold operation suite
-- If the Claude API is unavailable, all four visualization panels continue to function — they do not use the LLM
-- The context assembly pipeline (`Foundry.Copilot.ContextBuilder`) is the highest-value component to test — its output quality directly determines proposal quality
-- There is no embedding model, no vector database. The system has no ML infrastructure dependency beyond the LLM API
-- INV-006 (stack versions always in every prompt) is enforced at the `ContextBuilder` layer — it is structurally impossible to call the LLM without Slot 1 being populated
-- The phase gate (`change_generation_enabled`) is what makes Phase 3 ("questions only") and Phase 4 ("proposals") distinct deployments of the same codebase
+- The bash tool and agent loop in `Foundry.Copilot.Engine` are the highest-value
+  components to test. Test shell constraint enforcement in isolation. Test the full
+  loop against the iGaming reference project fixture.
+- `Foundry.Copilot.ContextBuilder` Tier 2 assembly is the second-highest priority.
+  A bug here produces subtle reasoning errors, not hard failures. Test that the
+  snapshot is present and correctly formatted before any LLM call is made.
+- There is no embedding model, no vector database, no similarity search. All retrieval
+  is via shell (bash + Mix tasks) or direct file reads. No ML infrastructure dependency
+  beyond the LLM API.
+- INV-006 (stack versions always in system prompt) is enforced at ContextBuilder
+  initialisation — structurally impossible to start the agent loop without stack
+  versions in Tier 1.
+- The two-write-path distinction (DSL operations via catalogue vs. plain Elixir via
+  raw Igniter) is dissolved. One write path: agent generates content, Igniter applies,
+  compiler and linter verify. The operations catalogue is a quality accelerator, not
+  a capability boundary.
+- If the LLM API is unavailable, all four visualization panels continue to function.
+  They do not use the LLM.
+- The phase gate makes Phase 3 ("questions only") and Phase 4 ("proposals") distinct
+  deployments of the same codebase — only the config flag differs.
