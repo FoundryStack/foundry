@@ -104,9 +104,16 @@ If no substantive paragraph found in first 30 lines: `summary` is `null`, genera
 ## Token Budget
 
 Full index must stay within **400 tokens** when included in Tier 1 system prompt.
-`mix foundry.spec_kit.index` warns at 380 tokens (10% headroom).
-Growth rate: ~15 tokens per document. Budget accommodates ~26 documents.
-When project reaches 25 documents, review against ADR-010 §Tier 1.
+`mix foundry.spec_kit.index` warns at 360 tokens (10% headroom).
+Growth rate: ~15 tokens per document at minimum; summaries for longer ADRs run 20–25 tokens.
+Practical ceiling: **24 documents** before the warn threshold is reliably hit.
+Current doc count as of 2026-03: 30 indexed. Immediate action required — see below.
+
+**`spec_kit_index_schema.md` itself must NOT be indexed** — it describes the index format
+and is read by implementors, not by the agent. Exclude it from `mix foundry.spec_kit.index`
+output. Similarly exclude `docs/reference-project-fixture.md` (test fixture, not spec-kit).
+Removing these two plus the two merged runbooks (patch p7) brings the count to 26 — still
+two over the practical ceiling. Review ADR-010 §Tier 1 for options before adding new docs.
 
 ---
 

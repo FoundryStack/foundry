@@ -1,6 +1,6 @@
 # ADR-019: Package Extraction — Reusable Primitives vs Foundry-Internal Modules
 
-**Status:** Deferred — write in full when first package is published to Hex
+**Status:** Stub — expand to full ADR before first package ships to Hex
 **Date:** 2026-03
 **Deciders:** Platform team
 

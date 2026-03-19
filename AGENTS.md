@@ -106,156 +106,47 @@ Layer 3: Domain Builder (form-driven scaffold, developer review required)
 
 These are constraints the system enforces and agents must respect. Not guidelines.
 
-**INV-001: No autonomous changes to sensitive domain resources**
-Any change touching resources designated `:sensitive` in the project manifest (typically:
-ledger entries, wallets, transfer amounts, PII-bearing resources, audit records) requires
-the approval class declared in the manifest before the change is applied. An agent must
-never auto-apply such a change regardless of lint result.
+> **Numbering note:** These INV-001..017 govern agent behaviour and Foundry's build rules.
+> `docs/regulations/platform_invariants.md` uses an overlapping but **distinct** INV
+> numbering for target-platform domain requirements (its INV-004 = idempotency, INV-005 =
+> runbook links, INV-006 = description coverage — different from below). Do not conflate
+> the two sets. When an ADR cites "INV-NNN", check which document it is referencing.
 
-**INV-002: No direct filesystem writes from agent**
-All code changes go through Igniter operations executed by the Foundry backend.
-The mechanism: the copilot engine calls `Foundry.Operations.run/2` which uses Igniter
-internally and streams the resulting diff back over WebSocket. The agent never calls
-`File.write!/2`, `File.stream!/2`, or any direct IO on source files.
-For `:behavioral` and `:compliance` changes, the agent drafts required spec-kit documents
-(ADRs, runbooks, regulation entries) as the first files in the proposal branch, alongside
-the code they govern. Spec-kit files and Elixir source files are reviewed and committed
-together in one proposal. The human never touches git manually for governed changes.
-The one exception is standalone `speckit` intent requests (documenting an already-made
-decision with no associated code change) — those produce an Activity Feed card for human
-review and manual commit, as no proposal branch is warranted.
+| INV | Statement | Detail |
+|---|---|---|
+| INV-001 | No autonomous changes to `:sensitive` resources — dual approval required | ADR-005 |
+| INV-002 | No direct filesystem writes — all writes via `Foundry.Operations.run/2` / Igniter | ADR-002 |
+| INV-003 | All Elixir generation via raw Igniter API; string interpolation to source forbidden | ADR-002 |
+| INV-004 | Infrastructure changes are proposal-only; no `Op.ApplyInfrastructure` exists | ADR-006 |
+| INV-005 | One clarifying question maximum per turn; UX: binary-choice buttons (ADR-013) | ADR-013 §Clarifying Question UX |
+| INV-006 | Stack versions always in Tier 1 system prompt — structurally enforced by `ContextBuilder` | ADR-010 §Tier 1 |
+| INV-007 | Dependency additions governed by ADR-004 category policy | ADR-004 |
+| INV-008 | Committed diagram must always match live code; CI enforces via diff-check | ADR-010 §Spec-Kit Index |
+| INV-009 | Only ADRs, runbooks, regulations, and AGENTS.md require manual authorship | ADR-003 |
+| INV-010 | Manifest must declare notification channels for `runbook_stale`, `adapter_verify_failed`, `compliance_test_failed` | ADR-001 §Notifications |
+| INV-011 | All `:sensitive` resources must use `AshPaperTrail` — lint error if absent | ADR-001 §Ash Ecosystem |
+| INV-012 | All `:sensitive` resources must use `AshArchival` — hard deletion prohibited | ADR-001 §Ash Ecosystem |
+| INV-013 | `fun_with_flags` flags gating compliance controls must declare an ADR link | ADR-001 §Feature Flags |
+| INV-014 | `decision` and `scorer` agent steps must declare `confidence_threshold` and `on_low_confidence` | ADR-017 |
+| INV-015 | `decision` agent steps on compliance-gated flows must declare `human_gate` | ADR-017 |
+| INV-016 | Agent steps must declare complete `tools` list; undeclared tool usage is a lint error | ADR-017 |
+| INV-017 | All agent steps must emit telemetry spans with `agent_type`, `model`, `confidence`, `latency_ms` | ADR-017 |
 
-**INV-003: All writes go through Igniter. The agent generates Elixir source for everything.**
-There is no catalogue of pre-built operation modules. The agent uses raw Igniter API
-(`Igniter.create_new_file/3`, `Igniter.Project.Module.create_module/3`,
-`Igniter.Project.Module.find_and_update_module/3`) guided by:
-- The closest existing project example (`mix foundry.pattern.find <type>`)
-- Foundry conventions (`cat .foundry/usage_rules/foundry_conventions.md`)
-- Exact DSL API (`mix foundry.exdoc <Module>`)
-
-Two thin named wrappers exist where the logic is Foundry-specific metadata, not just
-Igniter calls: `Op.AddComplianceLink` (pure compliance registry update, no Igniter
-equivalent) and `Op.AddAgentStep` (Phase 8 governance scaffold with dual-proposal
-cascade). All other generation uses raw Igniter directly.
-
-**The prohibition is on the mechanism, not the capability:**
-- Never: `File.write!/2`, `File.stream!/2`, or any direct IO on source files
-- Never: string interpolation assembled into source and written to disk directly
-- Always: content → Igniter pipeline → formatted, AST-valid output → git branch → diff → review
-
-All generation writes to a `foundry/prop_<id>` git branch, not the working tree.
-The branch is merged on approval and discarded on rejection or failure.
-
-Igniter ensures formatting and AST correctness. The compiler and linter are the
-verification layer — not any catalogue boundary.
-
-**INV-004: Infrastructure is proposal-only**
-Kubernetes, Postgres config, GitHub Actions base pipelines — agents produce structured
-proposals rendered as diffs in the review panel. A human with infrastructure context applies them.
-There is no `Op.ApplyInfrastructure` operation and there never will be.
-
-**INV-005: One clarifying question maximum — grounded in spec-kit quality**
-Before generating a proposal for ambiguous intent, ask at most one clarifying question.
-The rationale is not just UX. If the spec-kit (AGENTS.md, ADRs, DSL declarations) is
-complete, the agent should rarely need to ask at all — context should resolve ambiguity.
-Frequent clarifying questions are a symptom of an incomplete spec-kit or thin `@description`
-coverage, not a normal operating condition. When a clarifying question is necessary, it
-exposes a gap that should be closed in the spec-kit or DSL declarations.
-If the answer is still ambiguous: state the two interpretations explicitly and ask the user
-to choose. Never ask a third question. Never generate on unresolved ambiguity.
-The clarifying question UX (binary-choice buttons, not free-text) is specified in ADR-013.
-
-**INV-006: Stack versions always in system prompt**
-Every agent session includes the current `mix.exs` dependency versions in the Tier 1
-system prompt — injected by `Foundry.Copilot.ContextBuilder` before the agent loop
-starts. Structurally impossible to start the agent loop without them. This prevents
-Ash 2.x vs 3.x confusion — the most common and most damaging hallucination class.
+**INV-006 lookup guidance** (not in platform_invariants.md — agent operational behaviour):
 When in doubt about a DSL option: `bash("mix foundry.exdoc <Module> --function <fn>")`.
 When in doubt about a pattern: `bash("mix foundry.pattern.find <type>")`.
 When in doubt about an operation: `bash("cat .foundry/usage_rules/foundry_operations.md")`.
 Never generate code from training memory alone when the current API surface is retrievable.
 
-**INV-007: Approved dependency policy governs additions**
-Category-based. See ADR-004-dependency-governance.md. The `:ecto` forbidden rule targets
-direct application-level usage; `ecto_sql` and `postgrex` as transitive dependencies of
-`ash_postgres` are permitted.
-
-**INV-008: Generated diagrams must be committed**
-The system diagram generated by `mix foundry.diagram.generate` must not have an uncommitted
-diff at CI time. CI runs `mix foundry.diagram.generate` and checks for unstaged changes.
-An uncommitted diagram means the diagram no longer reflects the current codebase — a
-violation of the "always current" guarantee. See `docs/regulations/platform_invariants.md`.
-
-**INV-009: The spec-kit is the only manual documentation**
-The only documentation that requires manual authorship is: ADRs, regulation files, runbooks,
-and AGENTS.md. All other documentation is generated from code. Manually maintaining what the
-compiler already knows creates synchronisation drift. See `docs/regulations/platform_invariants.md`.
-
-**INV-010: Staleness conditions must have notification channels**
-The project manifest must declare notification targets for three staleness conditions:
-`runbook_stale`, `adapter_verify_failed`, `compliance_test_failed`. Staleness is never
-silently ignored. See `docs/regulations/platform_invariants.md` for the manifest syntax
-and the full enforcement specification.
-
-**INV-011: Sensitive resources must have change history**
-All `:sensitive` resources must use `AshPaperTrail`. Lint error. Exemptions are `:compliance` class changes.
-
-**INV-012: Sensitive resources must use soft delete**
-All `:sensitive` resources must use `AshArchival`. Hard deletion prohibited without exemption.
-
-**INV-013: Compliance-gated feature flags must have ADR links**
-Any `fun_with_flags` flag gating a compliance control must declare an ADR link.
-Adding or toggling a compliance-gated flag is a `:compliance` class change.
-
-**INV-014: Agent steps require declared confidence thresholds**
-Any Reactor step implemented by a module using `Foundry.AgentStep` with `agent_type`
-of `decision` or `scorer` must declare an explicit `confidence_threshold` and an
-`on_low_confidence` handler. The only permitted handler in v1 is `escalate_human`, which
-creates a review task and halts the step pending human resolution. A `decision` or `scorer`
-agent step without a confidence threshold is a lint error. Adding or changing the threshold
-value is a `:behavioral` class change.
-
-**INV-015: Human-in-the-loop gates on compliance-gated flows**
-Any Transfer or Reactor that contains an `agent` step of type `decision` which gates a
-compliance-controlled action (spending limit change, withdrawal approval, KYC override) must
-declare an explicit `human_gate` in the Reactor DSL. The gate defines the review queue,
-SLA, and escalation path. Removing a `human_gate` from a compliance-gated decision step
-is a `:compliance` class change requiring ADR linkage.
-
-**INV-016: Agent steps must declare tool access explicitly**
-An `agent` step must declare the complete set of Ash actions it may invoke as tools via
-the `tools` declaration in the AshAI domain DSL. An agent step that reads resources not
-declared in its `tools` list is a lint error. Expanding an agent's tool access on a
-compliance-gated resource is a `:compliance` change.
-
-**INV-017: Agent steps must emit telemetry**
-All `agent` steps must emit telemetry spans with the `agent_type`, `model`, `confidence`,
-and `latency_ms` fields. The telemetry prefix follows the same convention as other steps:
-`[app_name, domain_name, reactor_name, step_name]`. Missing telemetry on an agent step
-is a lint error. These spans are the source of data for the Agent Health panel in Phase 8.
-
 ---
 
 ## Change Classification
 
-Every proposed change must be classified. The four classes are **domain-agnostic** —
-the examples use a fintech/iGaming context but the model applies to any regulated domain.
+Full classification rules, trigger patterns, and migration classification: ADR-005.
 
-| Class | Trigger pattern | Approver | Auto-apply | Audit logged |
-|---|---|---|---|---|
-| `:structural` | New resource, attribute, relationship, description updates, test skeletons | Any developer | Configurable | No |
-| `:behavioral` | New Rule, Transfer step, Blueprint, Reactor, Oban job, state machine transition | Domain lead | Never | Yes |
-| `:sensitive` | Resources/attributes marked `:sensitive` in the manifest — ledger entries, PII, audit records, access control | Sensitive lead + one other (dual) | Never | Yes, mandatory |
-| `:compliance` | Changes to `compliance:` declarations, policy modules, requirement links | Compliance officer | Never | Yes, ADR required |
-
-**The `:sensitive` class is configured per project, not hardcoded.**
-A healthcare platform marks `:phi` resources as sensitive. A legal platform marks `:privileged`
-documents. The classification engine reads the manifest's `sensitive_resources:` list.
-iGaming uses ledger and wallet resources — that is a project-level configuration, not a
-Foundry-level assumption.
-
-**When in doubt, classify upward.** A `:behavioral` change misclassified as `:structural`
-and auto-applied is a governance failure. The reverse is merely inconvenient.
+**When in doubt, classify upward.** `:behavioral` misclassified as `:structural` and
+auto-applied is a governance failure. The reverse is merely inconvenient.
+`:sensitive` is configured per project via `manifest.sensitive_resources` — not hardcoded.
 
 ---
 
@@ -390,120 +281,17 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 
 ## How the Scaffold Mechanism Works
 
-The copilot does not call an HTTP server. It calls `Foundry.Operations.run/2` directly
-(local mode) or sends a WebSocket message to the Foundry backend (cloud mode), which runs it.
-No intermediate HTTP service.
-
-```
-Copilot intent → Foundry.Copilot.Engine
-  → assemble Tier 1 + Tier 2 context (ContextBuilder)
-  → agent loop begins (first step classifies intent inline):
-      → classify intent: question | change | speckit | ambiguous
-      → if question: answer with source citations, done
-      → if speckit: produce plain-text spec-kit draft proposal, done
-      → if ambiguous: clarifying question (INV-005), done
-      → if change:
-          → run speckit.checklist (§Spec-Kit Tasks)
-          → bash tool calls: read ADRs, read module context, fetch pattern example
-          → check @description fields on touched attributes
-          → contradiction check via reasoning
-          → if BLOCKED: cite ADR/INV, done
-          → construct ordered session plan
-          → present plan for human confirmation
-  → on plan confirmation:
-      → git checkout -b foundry/prop_<id>          [isolate writes]
-      → Igniter apply to branch                    [raw Igniter + pattern example]
-      → mix ash.codegen on branch                  [migration, if needed]
-      → mix compile on branch
-          → fail: git branch -D foundry/prop_<id>  [clean discard]
-                  → APPLY_FAILED state, agent retry (max 3)
-          → pass: capture diff with git diff main..foundry/prop_<id>
-      → git checkout main                          [working tree untouched]
-      → diff + lint result + session plan streamed to review panel
-      → system map enters preview mode
-  → user approves
-      → git merge --ff-only foundry/prop_<id>
-      → git branch -D foundry/prop_<id>
-      → git commit created, CI triggered
-```
-
-The Mix tasks (`mix foundry.context`, `mix foundry.diagram.generate`, etc.) are the
-**data interface** — read-only, always current, callable from the UI backend, CI, and CLI.
-They are not a server. They are idempotent commands.
+Full engine flow, git branch lifecycle, and apply mechanics: ADR-010 §How the Scaffold
+Mechanism Works and ADR-014 §The Apply Step. Mix tasks are the data interface — read-only,
+idempotent, callable from UI backend, CI, and CLI.
 
 ---
 
 ## What the Context Mix Task Returns
 
-`mix foundry.context <Module>` returns:
-
-```json
-{
-  "module": "MyApp.Finance.WithdrawalTransfer",
-  "type": "transfer",
-  "domain": "Finance",
-  "description": "...",
-  "steps": [...],
-  "rules": ["SufficientBalance", "SameSource", "WithdrawalLimit"],
-  "compliance": ["RG-UK-014", "RG-MGA-007"],
-  "runbook": "docs/runbooks/withdrawal_transfer.md",
-  "invariants": [...],
-  "related_resources": ["Wallet", "LedgerEntry", "WithdrawalRequest"],
-  "adrs": ["ADR-002"],
-  "last_modified": "2026-03-01",
-  "sensitive": true,
-  "test_coverage": {
-    "property_tests": true,
-    "scenario_tests": true,
-    "e2e_tests": false
-  },
-  "data_layer": "ash_postgres",
-  "pending_migrations": false,
-  "paper_trail": true,
-  "archival": true,
-  "state_machine": {
-    "present": false,
-    "states": [],
-    "transitions": [],
-    "state_attribute": null
-  },
-  "api_routes": [],
-  "telemetry_prefix": ["my_app", "finance", "withdrawal_transfer"],
-  "money_attributes": [
-    { "name": "amount", "type": "Ash.Type.Money", "cldr_backend": "MyApp.Cldr" }
-  ],
-  "authentication_subject": false,
-  "oban_queues": [],
-  "rate_limited": false,
-  "feature_flags": [],
-  "agent_steps": [
-    {
-      "step_id": "risk_score",
-      "agent_type": "scorer",
-      "model": "claude-sonnet",
-      "input_schema": "RiskInput",
-      "output_schema": "RiskScore",
-      "tools": ["read_player_history", "check_velocity"],
-      "confidence_threshold": 0.7,
-      "on_low_confidence": "escalate_human",
-      "human_gate": {
-        "queue": "compliance_review",
-        "sla_hours": 4,
-        "escalation_path": "compliance_officer"
-      },
-      "telemetry_prefix": ["my_app", "risk", "withdrawal", "risk_score"]
-    }
-  ]
-}
-```
-
-Use this schema exactly. Do not invent fields. The full schema is defined in ADR-003.
-
-`agent_steps` is an empty list `[]` when the module has no AshAI agent step declarations.
-A non-empty list requires AshAI v2 or later (see ADR-017). The `mix foundry.context` task
-will warn (not fail) if AshAI is present but the version cannot be determined — this
-follows the same pattern as the v1 ignore-and-warn stance in ADR-001, which is superseded
-by ADR-017 for projects that opt in to agent support.
+Schema: ADR-003 §`mix foundry.context` Schema. Do not invent fields.
+`agent_steps` is `[]` when no AshAI declarations are present; requires AshAI v2+ (ADR-017).
+The task warns (never fails) if AshAI is present but version is undetermined.
 
 ---
 
@@ -566,8 +354,6 @@ docs/
     platform_invariants.md
   runbooks/
     studio_copilot_failure.md
-    igniter_operation_failure.md
-    project_reader_unavailable.md
     compliance_test_failure.md
     approval_queue_blocked.md
     studio_ux_degradation.md

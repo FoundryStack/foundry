@@ -22,12 +22,12 @@
 # Check the Studio logs for the last copilot request
 mix foundry.logs --tail=50 --filter=copilot
 
-# Look for one of these error codes:
-# :context_build_failed    → Project Reader is unavailable (see: runbooks/project_reader_unavailable.md)
-# :igniter_operation_failed → Scaffold operation errored (see: runbooks/igniter_operation_failure.md)
-# :llm_api_error           → Anthropic API error (proceed to Step 2)
-# :version_mismatch        → Stack version detection failed (proceed to Step 3)
-# :adr_contradiction       → Proposal contradicts an ADR (proceed to Step 4)
+# Match the error code to the step below:
+# :context_build_failed     → see studio_ux_degradation.md Step 3
+# :igniter_operation_failed → see §Scaffold Operation Failure in this file
+# :llm_api_error            → Anthropic API error (proceed to Step 2)
+# :version_mismatch         → Stack version detection failed (proceed to Step 3)
+# :adr_contradiction        → Proposal contradicts an ADR (proceed to Step 4)
 ```
 
 ---
@@ -99,6 +99,65 @@ mix foundry.scaffold.validate --last-proposal
 Common causes:
 - The Igniter operation is outdated and generates deprecated DSL syntax (update the operation module)
 - The project has a custom lint rule that isn't covered by the standard validation pipeline (add it to `config/foundry_studio.exs` under `:custom_lint_rules`)
+
+---
+
+## Scaffold Operation Failure
+
+**Symptoms:**
+- Copilot shows "Scaffold operation failed" in the review panel
+- `mix foundry.scaffold.last-error` reports a non-zero exit
+- Proposed diff is empty or malformed
+- Applied change results in a compilation error
+
+### Step A: Read the Operation Error
+
+```bash
+mix foundry.scaffold.last-error
+# Output includes:
+# - operation: which Op.* or raw Igniter call failed
+# - step: which pipeline step failed
+# - reason: the Igniter error or AST parse error
+# - dry_run_output: partial diff before failure
+```
+
+### Step B: AST Parse Error
+
+If `reason` contains "failed to parse module" or "zipper could not find target":
+
+```bash
+# The target module may have a syntax error preventing Igniter from reading it
+mix compile --force 2>&1 | head -30
+# Fix compilation errors first; the scaffold operation cannot apply to a broken module
+```
+
+### Step C: DSL Option Outdated
+
+If `reason` contains "unknown DSL option" or "deprecated key", the pattern example or
+ExDoc the agent used references a changed DSL surface.
+
+```bash
+mix foundry.versions.check
+mix foundry.exdoc Ash.Resource.Attribute --function allow_nil?
+# Compare against the failing operation's generated source
+# Workaround: make the change manually using the CLI pattern the operation would generate
+```
+
+### Step D: Dry-Run Passes, Apply Fails
+
+```bash
+ls -la lib/   # check file permissions
+mix foundry.scaffold.retry --last-operation
+```
+
+If retry also fails, apply the dry-run diff manually:
+
+```bash
+mix foundry.scaffold.last-error --dry-run-diff > /tmp/proposed.patch
+patch -p1 < /tmp/proposed.patch
+mix compile
+mix foundry.lint.all
+```
 
 ---
 

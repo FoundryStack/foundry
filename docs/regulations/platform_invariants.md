@@ -1,8 +1,16 @@
 # Platform Invariants
 
-> These are the non-negotiable constraints of Foundry itself — not of any target platform.
-> They are enforced by the compiler, the linter, and the approval workflow.
-> Violations are build failures, not warnings.
+> **Scope:** These are target-platform domain requirements — constraints on what Foundry
+> enforces about the code it governs (sensitive resources, idempotency, runbook links,
+> description coverage, compliance implementation, etc.).
+>
+> **Numbering note:** INV-001..013 here use the same numbers as AGENTS.md §Hard Invariants
+> but cover different requirements from INV-003 onward. AGENTS.md INVs govern agent
+> behaviour and Foundry's build rules. These INVs govern target-platform code requirements.
+> When an ADR cites "INV-NNN", check which document it references.
+>
+> Enforcement: compiler, linter (`mix foundry.lint.all`), and approval workflow.
+> Violations are build failures unless marked `:warning`.
 
 ---
 

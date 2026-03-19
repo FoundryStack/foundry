@@ -65,9 +65,8 @@ requirements in that document govern Phase 2 implementation.
 **No copilot. No code generation. Read-only.**
 
 **Done when:** The iGaming reference project's system map opens, shows all domains, all
-resources clickable with correct detail panels (content matches `mix foundry.context` output),
-updates within 2 seconds of a file save, passes WCAG 2.1 AA audit for all rendered panels,
-and renders within the performance budgets defined in ADR-012 §Performance Budgets.
+resources clickable with correct detail panels, updates within 2 seconds of a file save,
+passes WCAG 2.1 AA audit (ADR-012 §Accessibility), and meets all ADR-012 §Performance Budgets.
 
 ---
 
@@ -156,25 +155,19 @@ Mis-answers to questions are recoverable. Mis-generated code changes are not.
 - LLM API key configuration
 
 **Done when:**
-- Copilot correctly answers all questions in `docs/phase3-acceptance-questions.md`
-  (Gap #70, authored alongside `docs/reference-project-fixture.md` Gap #54),
-  citing specific modules and ADRs, with no Ash 2.x syntax in any response
-- All five error codes exercised in test environment with correct structured
-  responses matching ADR-013 §Error Recovery Responses format
-- Clarifying question UX renders option buttons as primary path with Activity
-  Feed input visible below; free-text re-entry re-classifies correctly
-- `CHANGE_PREVIEW` responses describe operation, change class, and affected files
-  without generating any diff or code
-- Reasoning trace present and correctly structured in all CHANGE_PREVIEW responses:
-  non-empty `checked_adrs` and `checked_invs`, `shell_calls` reflecting actual reads
-- `mix foundry.spec_kit.index --check` passes in CI
-- `mix foundry.project.snapshot` produces output within 400-token bound for the
-  iGaming reference project
-- Shell constraint enforcement: blocked commands (git commit, mix deps.get,
-  File.write!) are rejected with structured errors
-- `LMStudioAdapter` startup validation detects and warns on non-tool-calling models
-- `mix foundry.usage_rules.fetch` populates `.foundry/usage_rules/` including
-  `foundry_conventions.md` with Foundry generation conventions documented
+- `docs/phase3-acceptance-questions.md` (Gap #70) passes: all answers cite specific modules
+  and ADRs with no Ash 2.x syntax
+- All five ADR-013 §Error Recovery error codes exercised with correct structured responses
+- Clarifying question UX conforms to ADR-013 §Clarifying Question UX (buttons primary,
+  input always visible, free-text re-classification works)
+- `CHANGE_PREVIEW` conforms to ADR-013 §Phase-Gated Copilot Behaviour
+- Reasoning trace conforms to ADR-015 §Proposal File Format (`checked_adrs` and
+  `checked_invs` non-empty, `shell_calls` reflects actual reads)
+- `mix foundry.spec_kit.index --check` passes in CI (ADR-010 §Spec-Kit Index)
+- `mix foundry.project.snapshot` ≤ 400 tokens on iGaming reference project (ADR-010 §Tier 2)
+- Shell constraint enforcement matches ADR-010 §Shell Constraints blocked-command list
+- `LMStudioAdapter` startup validation behaves per ADR-010 §LLM Adapter degraded-mode spec
+- `mix foundry.usage_rules.fetch` populates `.foundry/usage_rules/` including `foundry_conventions.md`
 
 **Gap #70 (new):** `docs/phase3-acceptance-questions.md` — 10+ representative
 questions about the iGaming reference project with expected citation format and

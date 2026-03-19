@@ -45,31 +45,9 @@ behavioural requirements that the system prompt and test suite enforce.
 ## Decision: Intent Classification
 
 Intent classification is the **first reasoning step of the agent loop** — not a separate
-pre-LLM call. The agent classifies the user's message before making any tool calls.
-See ADR-010 §Intent Classification for the full specification.
-
-**`question`** — the user is asking about the current state of the system.
-Indicators: interrogative syntax ("what does", "why does", "show me", "explain", "where is",
-"how does", "which"), explicit question marks, no imperative verb directing a change.
-
-**`change`** — the user wants to modify the system.
-Indicators: imperative verbs ("add", "create", "update", "remove", "rename", "generate",
-"link", "implement"), description of a desired future state ("I want", "we need",
-"the resource should", "it should also").
-
-**`speckit`** — the user asks to draft or update a spec-kit document.
-Indicators: "write an ADR", "draft a runbook", "add a regulation entry", "update the ADR for",
-"document this decision". Produces a plain-text proposal (no Igniter call, no git branch).
-The human reviews the draft in the Activity Feed and commits it manually.
-
-**`ambiguous`** — the message contains both question and change indicators, or neither.
-Examples: "Can we add a rule for X?" (question form, change intent), "What about a Transfer
-for Y?" (question form, but clearly describing an addition).
-
-When `ambiguous`, the engine invokes the clarifying question path (INV-005).
-Confidence below 0.7 on any classification → treat as `ambiguous`.
-
-**Not overridable from the UI.** Unresolved ambiguity always goes to clarifying question path (INV-005).
+pre-LLM call. Full intent types, indicators, and confidence threshold: ADR-010 §Intent
+Classification. Unresolved ambiguity always routes to the clarifying question path (INV-005);
+this is not overridable from the UI.
 
 ---
 
@@ -184,7 +162,7 @@ can do. Links to the relevant runbook.
 I couldn't read context for [module]. The project may have a compilation error.
 
 Run `mix compile` to see the error. Once it compiles, I can proceed.
-See runbook: docs/runbooks/project_reader_unavailable.md
+See runbook: `docs/runbooks/studio_ux_degradation.md`
 ```
 
 ### `:igniter_operation_failed`

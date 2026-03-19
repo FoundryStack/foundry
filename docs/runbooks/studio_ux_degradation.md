@@ -195,7 +195,8 @@ If changes were expected, the operation parameters may be incorrect — dismiss 
 **If `diff_present: true` but the panel shows blank:**
 The LiveView component lost its socket state. Hard-refresh (`Cmd+Shift+R`).
 If hard-refresh doesn't restore the diff: dismiss and regenerate. The proposal diff is
-stored in the database — regeneration is not data loss, it is re-computation.
+stored in `.foundry/proposals/prop_<id>.json` (git-backed) — regeneration is not data
+loss, it is re-computation. Foundry has no database (ADR-015).
 
 **If the diff renders but is visually broken (overlapping lines, missing syntax highlighting):**
 Browser compatibility issue. Supported browsers: latest Chrome, Firefox, Safari (desktop only).
@@ -230,9 +231,11 @@ mix foundry.cluster.pubsub.check
 ## What Is Never Acceptable
 
 - Clearing the Nebulex cache manually without restarting Studio (cache state may be inconsistent mid-session)
-- Modifying proposal records directly in the database to change state — use `mix foundry.proposals.*` commands only
+- Modifying `.foundry/proposals/prop_<id>.json` files directly to change state — use
+  `mix foundry.proposals.*` commands only; Foundry has no database (ADR-015)
 - Disabling the blob hash check to force-apply a stale proposal
-- Restarting the database to resolve a UX issue (this purges in-flight proposals — confirm no pending approvals before any database restart)
+- Restarting the Studio process while proposals are PENDING_REVIEW without confirming
+  with approvers first (ETS cache is lost on restart; git-backed proposal files are not)
 
 ---
 
@@ -258,8 +261,8 @@ Post the bundle in `#foundry-studio-platform`. Do not share in public channels.
 
 | Symptom | Runbook |
 |---|---|
-| Copilot context build fails | `docs/runbooks/project_reader_unavailable.md` |
-| Scaffold operation fails in review panel | `docs/runbooks/igniter_operation_failure.md` |
+| Copilot context build fails | `docs/runbooks/studio_ux_degradation.md` Step 3 (this file) |
+| Scaffold operation fails in review panel | `docs/runbooks/studio_copilot_failure.md` §Scaffold Operation Failure |
 | Copilot returns `:llm_api_error` persistently | `docs/runbooks/studio_copilot_failure.md` |
 | Approval queue blocked / SLA exceeded | `docs/runbooks/approval_queue_blocked.md` |
 | Compliance test failing in CI | `docs/runbooks/compliance_test_failure.md` |

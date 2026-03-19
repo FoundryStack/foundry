@@ -192,33 +192,9 @@ The schema is identical regardless of whether the project is Foundry itself or a
 
 ## Field Reference Table
 
-| Field | Type | Required | Default | Source |
-|---|---|---|---|---|
-| `project_name` | string | yes | — | convention |
-| `domain_type` | atom | no | `:other` | bootstrap templates |
-| `sensitive_resources` | list of modules | no | `[]` | ADR-005, INV-001 |
-| `sensitive_resource_exemptions` | keyword list | no | `[]` | INV-011, INV-012 |
-| `approvers` | keyword list | yes | — | ADR-005, ADR-014 |
-| `approvers.sensitive_lead` | email string | yes | — | ADR-005 |
-| `approvers.sensitive_lead_delegate` | email string | no | none | approval runbook |
-| `approvers.domain_lead` | email string | no | none | ADR-005 |
-| `approvers.platform_lead` | email string | no | none | ADR-014 |
-| `approvers.compliance_officer` | email string | yes | — | ADR-005 |
-| `approvers.compliance_officer_delegate` | email string | no | none | approval runbook |
-| `approval_sla` | keyword list | no | see defaults | approval runbook |
-| `auto_apply_structural` | boolean | no | `false` | ADR-005, ADR-014 |
-| `change_generation_enabled` | boolean | no | `true` | ADR-010, ADR-013 |
-| `notifications` | keyword list | yes* | — | INV-010 |
-| `notifications.runbook_stale` | channel config | yes* | — | INV-010 |
-| `notifications.adapter_verify_failed` | channel config | yes* | — | INV-010 |
-| `notifications.compliance_test_failed` | channel config | yes* | — | INV-010 |
-| `coverage_gate` | boolean | no | `false` | ADR-007 |
-| `coverage_weights` | keyword list | no | see ADR-007 defaults | ADR-007 |
-| `data_retention` | keyword list | no | see ADR-012 defaults | ADR-012 |
-| `context_exclusions` | list of modules | no | `[]` | degradation runbook |
-| `conditional_libraries` | list of atoms | no | `[]` | ADR-001 |
-
-*Required in the sense that omission triggers a lint warning (not a build failure). See INV-010.
+Each field's source ADR or INV is declared in the inline comment above it in the schema.
+Required/optional status and defaults are specified there. `notifications.*` fields trigger
+a lint warning (not build failure) when absent — see INV-010.
 
 ---
 
