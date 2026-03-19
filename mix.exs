@@ -1,4 +1,4 @@
-defmodule Foundry.MixProject do
+defmodule Foundry.Umbrella.MixProject do
   use Mix.Project
 
   def project do
