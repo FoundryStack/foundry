@@ -29,6 +29,11 @@ Foundry has two modes:
 - *Foundry* — this meta-platform
 - *Target platform* — a platform built using Foundry (e.g., an iGaming back office, a fintech ledger system)
 - *Spec-kit* — the four document types that capture what code cannot: ADRs, Regulations, Runbooks, AGENTS.md
+- *Project context* — the full system map produced by `mix foundry.project.context`:
+  all nodes, edges, and spec-kit index metadata for the current project. Studio data only —
+  not included in LLM context tiers directly.
+- *Project status* — the health summary produced by `mix foundry.project.status`:
+  lint, migrations, proposals, compliance gaps. Tier 2 LLM context. Replaces "project snapshot".
 
 ---
 
@@ -64,6 +69,11 @@ that Foundry depends on. Rationale for each extraction decision is in ADR-019.
   manifest sensitive-resources list and Foundry's classification ruleset. Too specific to extract.
 - `Foundry.SpecKit` — spec-kit document parser using `MDEx` + `NimbleOptions`. "Spec-kit" is
   Foundry vocabulary; no external audience for the format yet.
+- `Foundry.FileSystem` — validated file read boundary for all channel and controller reads.
+  Enforces permitted root paths per project context (lib/, test/, config/, priv/repo/migrations/,
+  spec-kit paths, mix.exs, .foundry/). Internal module, not a Hex package. All channels
+  that read project files must call `Foundry.FileSystem.read/2` — direct `File.read!/1`
+  in channels is forbidden. See ADR-020.
 - `Foundry.Operations` — the two thin named wrappers (`Op.AddComplianceLink`,
   `Op.AddAgentStep`). All other generation uses raw Igniter directly. Extract only if a
   second tool needs the same wrapper protocol.
@@ -234,6 +244,17 @@ and `latency_ms` fields. The telemetry prefix follows the same convention as oth
 `[app_name, domain_name, reactor_name, step_name]`. Missing telemetry on an agent step
 is a lint error. These spans are the source of data for the Agent Health panel in Phase 8.
 
+**INV-018: All file reads from channels go through `Foundry.FileSystem`**
+No Phoenix channel or controller may call `File.read!/1`, `File.stream!/2`, or any direct
+filesystem IO on project source files. All reads route through `Foundry.FileSystem.read/2`,
+which enforces the permitted root boundary for the current project context. The permitted
+roots are: `lib/`, `test/`, `config/`, `priv/repo/migrations/`, `docs/adrs/`,
+`docs/runbooks/`, `docs/regulations/`, `AGENTS.md`, `mix.exs`, `.foundry/manifest.exs`,
+`.foundry/usage_rules/`. In umbrella projects the `lib/` root expands to `apps/*/lib/`.
+Paths outside these roots return `{:error, :outside_boundary}` — they are never surfaced
+to the client. `project_root` is always resolved server-side from the session context;
+the client cannot supply or influence it.
+
 ---
 
 ## Change Classification
@@ -356,10 +377,13 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 | What does resource X do? | `mix foundry.context MyApp.Domain.Resource` |
 | What compliance requirements affect feature Y? | `mix foundry.compliance.check --filter=Y` |
 | What changed in the system recently? | `git log` + `mix foundry.diagram.diff` |
+| Full system map (all nodes + edges)? | `mix foundry.project.context` — studio data source |
+| Current project health (lint, proposals, gaps)? | `mix foundry.project.status` — Tier 2 context |
 | Which spec-kit document covers a concept? | Spec-kit index in Tier 1 context — agent reads summaries and tags, then `bash("cat <path>")` |
 | Correct DSL syntax for X? | `bash("mix foundry.exdoc <Module>")` or `bash("cat .foundry/usage_rules/<lib>.md")` |
 | Pattern for a new construct type? | `bash("mix foundry.pattern.find <type> --domain <D>")` |
 | Operation parameter schema? | `bash("cat .foundry/usage_rules/foundry_operations.md")` or `bash("mix foundry.operation.schema <Op>")` |
+| Read a source file or spec-kit document? | `Foundry.FileSystem.read/2` via FoundryChannel `fetch_file` / `fetch_document` |
 | Spec-kit task postures? | §Spec-Kit Tasks above |
 
 ---
@@ -385,6 +409,7 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 | ADR-015 | storage-model | Git-backed files + ETS only — no Postgres dependency for Foundry itself |
 | ADR-016 | visualization-paradigm-v2 | Four C4 levels, 11 node types, 8 edge types, authorization matrix view, agent node type (⊕) |
 | ADR-017 | agent-injection-governance | AshAI integration model, 10 agent types, human-in-the-loop gate spec, change classification for agent constructs |
+| ADR-020 | project-context-filesystem-umbrella | Unified `mix foundry.project.context` command, `Foundry.FileSystem` read boundary, umbrella and related-project support, `snapshot` → `status` rename |
 
 ---
 
@@ -505,6 +530,10 @@ will warn (not fail) if AshAI is present but the version cannot be determined �
 follows the same pattern as the v1 ignore-and-warn stance in ADR-001, which is superseded
 by ADR-017 for projects that opt in to agent support.
 
+The per-module schema above is also the NodeEntry schema within `mix foundry.project.context`
+output — the project context is a bulk projection of per-module context into a single graph
+document. The two schemas are kept in sync. See `docs/project_context_schema.md`.
+
 ---
 
 ## Foundry vs Target Platforms
@@ -543,7 +572,8 @@ docs/
   REVIEW_AND_PLAN.md                         ← gap tracking and what belongs in code
   manifest-schema-draft.md                   ← pre-ADR-011 manifest field schema (consolidated)
   spec_kit_index_schema.md                   ← index format contract
-  mix_task_summary_schemas.md                ← project snapshot schema
+  mix_task_summary_schemas.md                ← project status schema (renamed from snapshot per ADR-020)
+  project_context_schema.md                  ← schema for mix foundry.project.context output
   phase3-acceptance-questions.md             ← Gap #70 (to be written)
   adrs/
     ADR-001-stack-selection.md
@@ -573,6 +603,7 @@ docs/
     studio_ux_degradation.md
 .foundry/
   spec_kit_index.json                        ← generated by mix foundry.spec_kit.index
+  project_context.json                       ← generated by mix foundry.project.context, committed
   usage_rules/                               ← generated by mix foundry.usage_rules.fetch
     ash.md
     reactor.md

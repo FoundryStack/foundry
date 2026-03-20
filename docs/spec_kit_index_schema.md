@@ -107,13 +107,33 @@ Full index must stay within **400 tokens** when included in Tier 1 system prompt
 `mix foundry.spec_kit.index` warns at 360 tokens (10% headroom).
 Growth rate: ~15 tokens per document at minimum; summaries for longer ADRs run 20–25 tokens.
 Practical ceiling: **24 documents** before the warn threshold is reliably hit.
-Current doc count as of 2026-03: 30 indexed. Immediate action required — see below.
 
-**`spec_kit_index_schema.md` itself must NOT be indexed** — it describes the index format
-and is read by implementors, not by the agent. Exclude it from `mix foundry.spec_kit.index`
-output. Similarly exclude `docs/reference-project-fixture.md` (test fixture, not spec-kit).
-Removing these two plus the two merged runbooks (patch p7) brings the count to 26 — still
-two over the practical ceiling. Review ADR-010 §Tier 1 for options before adding new docs.
+**Current count after ADR-020 additions:** ADR-020 and `project_context_schema.md` are
+added to the corpus. Apply the exclusion rules below before counting — the net addition
+is one document (ADR-020 only; `project_context_schema.md` is excluded as a schema doc).
+Review the token count after generating the updated index and consolidate runbooks if needed.
+
+The spec-kit index token budget is surfaced in `mix foundry.project.context` output as
+`spec_kit.index_token_count` and `spec_kit.index_token_warn`. The studio renders a warning
+badge when `index_token_warn: true`. See `docs/project_context_schema.md`.
+
+---
+
+## Exclusion Rules
+
+The following files must NOT be indexed. They describe infrastructure or are test fixtures,
+not spec-kit documents the agent reasons about.
+
+| File | Reason |
+|---|---|
+| `docs/spec_kit_index_schema.md` | Describes the index format; read by implementors, not the agent |
+| `docs/project_context_schema.md` | Describes the project context schema; studio/implementor reference |
+| `docs/mix_task_summary_schemas.md` | Describes the project status schema; studio/implementor reference |
+| `docs/reference-project-fixture.md` | Test fixture, not spec-kit |
+| `docs/manifest-schema-draft.md` | Pre-ADR-011 draft; superseded content, not active spec-kit |
+
+Schema documents (files whose purpose is to describe other documents' formats) are never
+indexed — they are read by implementors and by `mix foundry.project.context`, not by the agent.
 
 ---
 
@@ -134,7 +154,9 @@ mix foundry.spec_kit.index --check
 
 ## What Is NOT in the Index
 
-- Full document content — agent reads with `bash("cat <path>")`
+- Full document content — agent reads with `bash("cat <path>")` or via FoundryChannel `fetch_document`
 - Elixir source files — introspected via `mix foundry.context`, searched via `bash("grep ...")`
+- Schema documents — `project_context_schema.md`, `mix_task_summary_schemas.md`, this file
 - Proposal files — scanned separately from `.foundry/proposals/`
 - Audit log — append-only, never indexed
+- Project context JSON — `mix foundry.project.context` output is studio data, not spec-kit
