@@ -185,6 +185,7 @@ docs/
   runbooks/
     studio_copilot_failure.md
     igniter_operation_failure.md
+    project_reader_unavailable.md
     compliance_test_failure.md
     approval_queue_blocked.md
     studio_ux_degradation.md           ← new
