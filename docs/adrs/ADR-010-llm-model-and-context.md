@@ -24,7 +24,7 @@ and fetches what it needs rather than receiving a pre-assembled fixed window.
 
 **Primary model: Claude Sonnet (latest stable) for all task types.**
 **The agent operates in a single agentic loop with a bash tool.**
-**Context is assembled in three tiers: system prompt, session snapshot, retrieved via shell.**
+**Context is assembled in three tiers: system prompt, session status, retrieved via shell.**
 
 ---
 
@@ -75,13 +75,13 @@ assembly timing, caching behaviour, and token characteristics.
 ### Tier 1 — System Prompt (assembled once per Studio session)
 
 Loaded by `Foundry.Copilot.ContextBuilder` at Studio startup. Reloaded only on
-Studio restart or stack version change detection.
+Studio restart or project context cache invalidation.
 
 | Component | Token bound | Source | Cache key |
 |---|---|---|---|
 | AGENTS.md | ~800 | File read | `{:spec_kit, path, mtime}` |
-| Stack versions | ~200 | `mix foundry.versions.check` | `{:versions, mix_exs_mtime}` |
-| Spec-kit index | ~400 | `.foundry/spec_kit_index.json` | `{:spec_kit_index, index_mtime}` |
+| Stack versions | ~200 | `stack` field from `project.status` (sourced from `mix.lock`) | `{:project_status, hash}` |
+| Spec-kit index | ~400 | `spec_kit` field from project context ETS cache | `{:project_context, project_root, max_mtime}` |
 | **Tier 1 total** | **~1400** | | |
 
 AGENTS.md is the agent's constitution — invariants, orientation, spec-kit task postures,
@@ -91,29 +91,34 @@ The spec-kit index gives the agent a map of all spec-kit documents (ADRs, runboo
 regulations, usage rules) with summaries and tags. The agent reads this directly from
 context to decide which documents to read via bash. No search tool needed.
 
+Stack versions come from the `stack` field of `mix foundry.project.status`, which
+sources them from `mix.lock` resolved values. This is not a separate task call —
+it reads from the same `project.status` object that feeds Tier 2.
+
 INV-006 is enforced at ContextBuilder initialisation — structurally impossible to start
 the agent loop without stack versions in the system prompt.
 
 ---
 
-### Tier 2 — Session Snapshot (refreshed per copilot request)
+### Tier 2 — Session Status (refreshed per copilot request)
 
-A single compact JSON object assembled by `Foundry.Copilot.ContextBuilder` at the
-start of each request. 60-second TTL. Reflects current project state.
+A truncated view of `mix foundry.project.status`, assembled by
+`Foundry.Copilot.ContextBuilder` at the start of each request. 60-second TTL.
 
-**Source:** `mix foundry.project.snapshot`
-**Token bound:** ≤ 400 tokens
+**Source:** `mix foundry.project.status` — full runtime health, no cap at data layer
+**ContextBuilder view:** ~400 tokens — the builder applies its own truncation (top 5
+violations, top 5 gaps, top 5 proposals) when assembling the prompt
 **Schema:** `docs/mix_task_summary_schemas.md`
 
-Contains: domain list, sensitive module names, project structure shape (workers,
-integrations, web layer), health signals (lint errors, open proposals, compliance gaps,
-pending migrations), key file digest (core deps from mix.exs, approver from manifest).
+Contains: domain list, sensitive module names, health signals (lint errors, open
+proposals, compliance gaps, pending migrations), CI state, stack versions, manifest
+summary. The token truncation lives in `ContextBuilder`, not in the task itself — the
+task always returns the complete current state.
 
-**Why a snapshot replaces eight separate components:** Earlier drafts assembled domain
-map, compliance summary, lint status, open proposals, pending migrations, project
-structure, mix.exs, and manifest.exs separately (≤ 900 tokens total). The snapshot
-gives the same orientation signal in ≤ 400 tokens with one assembly call and one
-cache entry. When the agent needs depth on any component, it uses bash.
+**Why separate observation from truncation:** Earlier drafts applied a 400-token hard
+cap inside the status task itself. This conflated the data model (complete current state)
+with a rendering concern (how much to include in a prompt). The task now returns
+everything; `ContextBuilder` decides what to include for the LLM.
 
 ---
 
@@ -139,8 +144,8 @@ grep -B3 -A50 "defmodule.*Wallet" lib/my_app/finance/wallet.ex
 ls lib/my_app/integrations/
 find lib/ -name "*.ex" -path "*/workers/*"
 
-# Semantic module introspection
-mix foundry.context MyApp.Finance.Wallet --json
+# Semantic module introspection (per-module lazy lookup)
+mix foundry.project.context MyApp.Finance.Wallet
 
 # API reference at pinned version
 mix foundry.exdoc Ash.Resource.Attribute --function allow_nil?
@@ -168,7 +173,8 @@ format is specced and stable.
 **Circuit breaker:** `max_tool_calls` per request (default 20, manifest key
 `copilot.max_tool_calls`). If reached without resolution: `:context_budget_exceeded`.
 Safety valve against runaway loops — normal operations use 8–15 calls; the higher
-default ensures cross-domain changes with multiple context reads are never silently truncated.
+default ensures cross-domain changes with multiple context reads are never silently
+truncated.
 
 ---
 
@@ -177,7 +183,7 @@ default ensures cross-domain changes with multiple context reads are never silen
 | Tier | Bound |
 |---|---|
 | Tier 1 (system prompt) | ~1400 tokens |
-| Tier 2 (session snapshot) | ≤ 400 tokens |
+| Tier 2 (status view, truncated by ContextBuilder) | ~400 tokens |
 | Tier 3 (shell / tools, accumulated) | Grows during loop; circuit breaker at 20 calls |
 | User message + 3-turn history | ~300 tokens |
 | **Static total (Tier 1 + 2)** | **~1800 tokens** |
@@ -193,55 +199,38 @@ The bash tool operates with a permitted command list. This is enforced at the ad
 layer — blocked commands are rejected before execution with a structured error.
 
 **Permitted:**
-
 ```
-Read:      cat, ls, find, grep, head, tail, sed, wc, awk (read-only patterns)
-Mix tasks: mix compile, mix foundry.*, mix test <specific-file>
-Git read:  git log, git diff, git status, git show, git blame
+mix foundry.project.context [<Module>]
+mix foundry.project.status
+mix foundry.lint.all
+mix foundry.pattern.find
+mix foundry.exdoc
+mix foundry.operation.schema
+mix ash.codegen
+mix compile
+mix test
+cat, grep, find, ls, git diff, git log
 ```
 
 **Blocked:**
-
 ```
-Direct writes:   File.write!, cp/mv targeting lib/ or config/ — use Igniter
-Git writes:      git commit, git push, git merge — Foundry manages commits
-Deps:            mix deps.get, mix deps.compile — :compliance class, proposal-only
-DB ops:          mix ecto.migrate, mix ash.migrate — proposal-only, never from agent
-Network:         curl, wget, npm, pip, mix hex.* — no network from agent shell
-Process:         kill, pkill, systemctl — no process management
+File.write!, File.stream!, any direct IO on source files
+mix deps.get, mix deps.update (dependency changes are infrastructure)
+git push, git merge (applied only by the approval workflow)
+rm, mv on lib/ or test/ paths
 ```
 
-The blocked list maps directly to INV-001 (no autonomous sensitive changes), INV-002
-(no direct filesystem writes), INV-004 (infrastructure proposal-only), and the
-principle that dependency and schema changes are governed changes, not agent actions.
+Any command not on the permitted list is rejected with
+`{:error, :command_not_permitted, command}`. The agent receives this as a structured
+tool error and must route to an alternative approach or surface it to the user.
 
 ---
 
-## Change Intent Reasoning Posture
+## Pattern Selection
 
-For `change` intents, the agent follows this posture before producing any output.
-Enforced via system prompt instruction, not a separate API call.
-
-1. Read the spec-kit index (already in Tier 1) — identify relevant ADRs and INVs by tag
-2. Read those documents via `bash("cat <path>")` — follow cross-references with further reads
-3. Read module context: `bash("mix foundry.context <Module> --json")`
-4. Read a pattern example if creating a new construct: `bash("mix foundry.pattern.find <type>")`
-5. Read the operation schema if using a catalogue operation: `bash("mix foundry.operation.schema <Op>")`
-6. Reason about change classification and contradictions
-7. If contradiction: BLOCKED — cite ADR/INV, do not proceed
-8. If no contradiction: plain prose description (Phase 3) or full generation pass (Phase 4+)
-
-**The agent follows references, it does not preload.** The index in Tier 1 ensures all
-ADR summaries are visible. References encountered during reading (e.g. "see ADR-005
-§Migration Classification") trigger additional `cat` calls. Fetch on reference, not
-on anticipation.
-
----
-
-## Pattern Selection Criteria
-
-`mix foundry.pattern.find <type> [--domain D]` returns the module whose Spark DSL
-declarations most closely match what the agent is trying to generate.
+`mix foundry.pattern.find <type> [--domain D]` finds the most instructive existing
+module in the project whose DSL declarations most closely match what the agent is
+trying to generate.
 
 **`type`** — required. One of: `rule`, `transfer`, `reactor`, `blueprint`, `resource`,
 `oban_worker`.
@@ -256,8 +245,9 @@ cross-domain if no match found within the domain.
 4. Has associated property tests (agent uses as model for test generation)
 5. Not `:sensitive` in manifest (avoids leaking sensitive field names as scaffolding suggestions)
 
-Output: full `mix foundry.context` struct for the top-ranked module, truncated at
-400 tokens if necessary (truncation preserves module header and first 5–8 attributes).
+Output: full `mix foundry.project.context <Module>` struct for the top-ranked module,
+truncated at 400 tokens if necessary (truncation preserves module header and first
+5–8 attributes).
 
 Backed by `Foundry.Context.PatternFinder`. Deterministic and unit-testable — no fuzzy
 matching.
@@ -373,19 +363,20 @@ All caching via Nebulex L1 (ETS):
 
 | Cache key | TTL | Invalidation trigger |
 |---|---|---|
-| `{:spec_kit, file_path, mtime}` | Mtime-based | inotify file watcher |
-| `{:spec_kit_index, index_mtime}` | Mtime-based | `mix foundry.spec_kit.index` re-run |
-| `{:project_snapshot, hash}` | 60 seconds | TTL expiry |
+| `{:project_context, project_root, max_mtime}` | Mtime-based | inotify file watcher (any lib/ or test/ change) |
+| `{:spec_kit, file_path, mtime}` | Mtime-based | inotify file watcher (spec-kit file change) |
+| `{:project_status, hash}` | 60 seconds | TTL expiry |
 | `{:exdoc, library, version}` | 24 hours | TTL expiry |
-| `{:versions, mix_exs_mtime}` | Mtime-based | mix.exs change |
 
-**Pre-warming on startup:** `Foundry.Context.SpecKitReader` pre-warms the spec-kit index
-and all indexed documents during application start (20–40 files typically — acceptable
-for a local dev tool). First user request sees no cold-start delay.
+**Pre-warming on startup:** `Foundry.Context.SpecKitReader` pre-warms the project
+context (which includes the spec-kit index) and all spec-kit document ASTs during
+application start (20–40 files typically — acceptable for a local dev tool). First
+user request sees no cold-start delay.
 
-**Cloud mode:** Pre-warming runs after git clone/pull, before WebSocket accepts connections.
+**Cloud mode:** Pre-warming runs after git clone/pull, before WebSocket accepts
+connections.
 
-**Session snapshot (Tier 2) uses TTL caching**, not mtime. The 60-second window means
+**Session status (Tier 2) uses TTL caching**, not mtime. The 60-second window means
 the agent sees state that is at most 60 seconds old — acceptable for a human-in-the-loop
 tool. A shorter TTL increases subprocess call frequency; a longer TTL risks stale health
 signals during active development. 60 seconds is the right balance.
@@ -419,17 +410,16 @@ trusting code output.
   loop against the iGaming reference project fixture.
 - `Foundry.Copilot.ContextBuilder` Tier 2 assembly is the second-highest priority.
   A bug here produces subtle reasoning errors, not hard failures. Test that the
-  snapshot is present and correctly formatted before any LLM call is made.
+  status view is present and correctly formatted before any LLM call is made.
 - There is no embedding model, no vector database, no similarity search. All retrieval
   is via shell (bash + Mix tasks) or direct file reads. No ML infrastructure dependency
   beyond the LLM API.
 - INV-006 (stack versions always in system prompt) is enforced at ContextBuilder
   initialisation — structurally impossible to start the agent loop without stack
   versions in Tier 1.
-- The two-write-path distinction (DSL operations via catalogue vs. plain Elixir via
-  raw Igniter) is dissolved. One write path: agent generates content, Igniter applies,
-  compiler and linter verify. The operations catalogue is a quality accelerator, not
-  a capability boundary.
+- Stack versions are sourced from `mix.lock` via the `project.status` stack field.
+  There is no standalone `mix foundry.versions.check` task — version enforcement is
+  handled by `Foundry.LintRules.VersionRule` in `mix foundry.lint.all`.
 - If the LLM API is unavailable, all four visualization panels continue to function.
   They do not use the LLM.
 - The phase gate makes Phase 3 ("questions only") and Phase 4 ("proposals") distinct

@@ -1,37 +1,44 @@
 # docs/project_context_schema.md — Project Context Schema
 
 > **Status:** Active — governs `mix foundry.project.context` output format.
-> **Supersedes:** `docs/spec_kit_index_schema.md` (retired per ADR-021 — the `spec_kit` field
-> here is the single authoritative spec-kit index for both the studio and the Tier 1 system prompt).
+> **Supersedes:** `docs/spec_kit_index_schema.md` (retired per ADR-020 — the `spec_kit`
+> field here is the single authoritative spec-kit index for both the studio and the
+> Tier 1 system prompt).
 >
 > `Foundry.Studio.SystemMapChannel` uses this as its primary data source.
-> `Foundry.Copilot.ContextBuilder` reads the `spec_kit` field from this output for Tier 1
-> context assembly — there is no separate `.foundry/spec_kit_index.json` file.
-> The agent navigates code and specs as a unified graph: every NodeEntry links to its ADRs,
-> runbooks, and compliance requirements, and the `spec_kit` field lists every document with
-> its tags and summary. Code→spec linkage is preserved in both directions.
+> `Foundry.Copilot.ContextBuilder` reads the `spec_kit` field from the ETS-cached
+> project context for Tier 1 context assembly — there is no separate
+> `.foundry/spec_kit_index.json` file and no separate `mix foundry.spec_kit.index` task.
+> The agent navigates code and specs as a unified graph: every NodeEntry links to its
+> ADRs, runbooks, and compliance requirements, and the `spec_kit` field lists every
+> document with its tags and summary. Code→spec linkage is preserved in both directions.
 >
 > Do not change the schema without updating `Foundry.Studio.SystemMapChannel`,
-> `Foundry.Copilot.ContextBuilder`, the studio `data.ts` type definitions, and the CI
-> staleness check.
+> `Foundry.Copilot.ContextBuilder`, the studio `data.ts` type definitions, and the
+> CI staleness check.
 
 ---
 
-## Command
+## Commands
 
 ```bash
-# Generate (used by studio on load and on file-change events)
+# Generate and update lockfile (used by studio on load and on file-change events)
 mix foundry.project.context
 
-# CI staleness check — exits 0 if current, 1 if any source file is newer than cached output
+# Per-module detail — same command, optional argument narrows to one NodeEntry
+mix foundry.project.context MyApp.Finance.Wallet
+
+# CI staleness check — compares sha256(lib/**/*.ex + test/**/*.ex) against .foundry/context.lock
+# Exits 0 if hashes match, 1 if they differ or if lock file is absent
 mix foundry.project.context --check
 
 # Umbrella: scans all apps/* trees automatically when project_type: :umbrella in manifest
 mix foundry.project.context
 ```
 
-Output is written to `.foundry/project_context.json` and committed. CI enforces freshness
-via `--check` on the same pattern as `mix foundry.spec_kit.index --check`.
+The command output lives in ETS (Nebulex L1), not in a committed JSON file.
+`.foundry/context.lock` is the only committed artifact — a 50-byte SHA256 hash of
+all source files. CI enforces freshness via `--check`.
 
 ---
 
@@ -45,7 +52,8 @@ via `--check` on the same pattern as `mix foundry.spec_kit.index --check`.
   "domain_type": "igaming",
   "nodes": [ ...NodeEntry... ],
   "edges": [ ...EdgeEntry... ],
-  "spec_kit": { ...SpecKitIndex... }
+  "spec_kit": { ...SpecKitIndex... },
+  "graph_delta": null
 }
 ```
 
@@ -55,16 +63,18 @@ via `--check` on the same pattern as `mix foundry.spec_kit.index --check`.
 | `project` | string | From `.foundry/manifest.exs` `project_name` |
 | `project_type` | `"standard" \| "umbrella"` | From manifest; `"standard"` if absent |
 | `domain_type` | string | From manifest; `null` if absent |
-| `nodes` | NodeEntry[] | One entry per module — see below |
-| `edges` | EdgeEntry[] | Derived from DSL declarations — see below |
-| `spec_kit` | SpecKitIndex | Index metadata only; full content fetched on demand |
+| `nodes` | NodeEntry[] | One entry per module — alphabetical by FQN |
+| `edges` | EdgeEntry[] | Derived from DSL declarations — ordered by from FQN, then to FQN |
+| `spec_kit` | SpecKitIndex | Index metadata only; full parsed document fetched on demand |
+| `graph_delta` | GraphDelta \| null | Present when a session state exists; shows changes vs session start |
 
 ---
 
 ## NodeEntry Schema
 
-Each entry corresponds to one compiled module. Schema matches `mix foundry.context <Module>`
-exactly — this is a bulk projection of per-module context into the graph.
+Each entry corresponds to one compiled module. Schema matches
+`mix foundry.project.context <Module>` exactly — the bulk output is a projection of
+per-module context into the graph.
 
 ```json
 {
@@ -90,6 +100,7 @@ exactly — this is a bulk projection of per-module context into the graph.
     { "name": "execute", "change_class": "sensitive" },
     { "name": "rollback", "change_class": "sensitive" }
   ],
+  "rules": ["SufficientBalance", "WithdrawalLimitNotExceeded"],
   "compliance": ["RG-UK-014", "RG-MGA-007"],
   "adrs": ["ADR-002", "ADR-005"],
   "runbook": "docs/runbooks/withdrawal_transfer.md",
@@ -121,6 +132,7 @@ exactly — this is a bulk projection of per-module context into the graph.
   "feature_flags": [],
   "steps": [ ...StepEntry... ],
   "outputs": [ ...OutputEntry... ],
+  "agent_steps": [],
   "last_modified": "2026-03-02"
 }
 ```
@@ -130,7 +142,7 @@ exactly — this is a bulk projection of per-module context into the graph.
 | Field | Type | Notes |
 |---|---|---|
 | `id` | string | Fully-qualified module name. Primary key for edges. |
-| `module` | string | Same as `id`. Retained for compatibility with per-module context schema. |
+| `module` | string | Same as `id`. Retained for compatibility with per-module schema. |
 | `type` | enum | See Node types below |
 | `domain` | string | Ash domain short name |
 | `app` | string\|null | Umbrella app name (`"igaming_core"`); `null` for standard projects |
@@ -138,12 +150,13 @@ exactly — this is a bulk projection of per-module context into the graph.
 | `description` | string | `@moduledoc` first paragraph |
 | `attributes` | AttributeEntry[] | Empty for non-resource types |
 | `actions` | ActionEntry[] | Empty for non-resource types |
+| `rules` | string[] | Short names of policy/rule modules declared on this resource |
 | `compliance` | string[] | Requirement IDs linked via DSL |
 | `adrs` | string[] | ADR IDs linked via DSL `@adrs` annotation |
 | `runbook` | string\|null | Path to runbook doc; `null` if none declared |
 | `test_coverage` | TestCoverage | Three boolean flags |
 | `data_layer` | string\|null | `"ash_postgres"` etc.; `null` for non-persisted types |
-| `pending_migrations` | boolean | True if `mix ash.codegen` would produce output |
+| `pending_migrations` | boolean | True if `mix ash.codegen --check` exits non-zero |
 | `paper_trail` | boolean | True if `AshPaperTrail` extension present |
 | `archival` | boolean | True if `AshArchival` extension present |
 | `state_machine` | StateMachine | FSM declaration |
@@ -156,6 +169,7 @@ exactly — this is a bulk projection of per-module context into the graph.
 | `feature_flags` | FeatureFlag[] | `fun_with_flags` flags gating this module |
 | `steps` | StepEntry[] | Reactor/Transfer steps; empty for resources |
 | `outputs` | OutputEntry[] | Terminal outcomes; empty for resources |
+| `agent_steps` | AgentStep[] | AshAI agent step declarations; `[]` if none |
 | `last_modified` | ISO 8601 date | File mtime |
 
 ### Node types
@@ -174,52 +188,9 @@ exactly — this is a bulk projection of per-module context into the graph.
 | `trigger` | HTTP endpoint or scheduler entry point | `/api/register`, `cron 0 * * * *` |
 | `agent` | Standalone AshAI agent module | `MyApp.Risk.WithdrawalScorerAgent` |
 
-### StepEntry schema
+---
 
-```json
-{
-  "id": "w-check-limits",
-  "name": "check_limits",
-  "kind": "standard | agent",
-  "reads": ["MyApp.Identity.SpendingLimit"],
-  "writes": [],
-  "compliance": ["RG-UK-031", "RG-MGA-022"],
-  "change_class": "behavioral",
-  "guard_rules": ["MyApp.Compliance.ResponsibleGamingCheck"],
-  "compensation": null,
-  "agent": {
-    "agent_type": "scorer",
-    "model": "claude-sonnet",
-    "input_schema": "RiskInput",
-    "output_schema": "RiskScore",
-    "tools": ["read_player_history", "check_velocity", "read_spending_limit"],
-    "confidence_threshold": 0.7,
-    "on_low_confidence": "escalate_human",
-    "human_gate": {
-      "queue": "compliance_review",
-      "sla_hours": 4,
-      "escalation_path": "compliance_officer"
-    },
-    "telemetry_prefix": ["my_app", "risk", "withdrawal", "check_limits"]
-  }
-}
-```
-
-`agent` field is `null` for `kind: "standard"` steps.
-`agent` field is required for `kind: "agent"` steps — a step with `kind: "agent"` and
-`agent: null` is a schema error and `mix foundry.project.context` will warn and omit the step.
-
-### OutputEntry schema
-
-```json
-{
-  "id": "withdraw-commit",
-  "label": "committed",
-  "kind": "success | error | compensation"
-}
-```
-
-### EdgeEntry schema
+## EdgeEntry Schema
 
 ```json
 {
@@ -231,47 +202,90 @@ exactly — this is a bulk projection of per-module context into the graph.
 }
 ```
 
-#### Edge relation types
-
-| Relation | Meaning |
-|---|---|
-| `writes` | Source creates or mutates target resource |
-| `reads` | Source reads target resource |
-| `triggers` | Source initiates target (HTTP → action, cron → reactor) |
-| `async` | Source enqueues target asynchronously via Oban |
-| `guard` | Source rule gates execution of target |
-| `eligibleIf` | Source blueprint requires target condition |
-| `compensates` | Source step undoes target step on failure |
-| `calls` | Cross-project declared dependency (manifest only) |
-
-`cross_app: true` when `from` and `to` belong to different umbrella apps.
-`cross_project: true` when the edge is declared in `cross_project_edges` in the manifest.
+Edges are ordered: `from` FQN ascending, then `to` FQN ascending.
 
 ---
 
-## SpecKitIndex embedded in context
+## GraphDelta Schema
 
-The spec-kit index is embedded in `project.context` as metadata only. Full document
-content is never included — it is fetched on demand via `FoundryChannel` `fetch_document` event.
+Present when `Foundry.Context.SessionState` holds a baseline for the current session.
+`null` when no editing session is active.
+
+```json
+{
+  "graph_delta": {
+    "session_started_at": "2026-03-21T09:00:00Z",
+    "added_nodes": ["MyApp.Finance.NewResource"],
+    "changed_nodes": ["MyApp.Finance.Wallet"],
+    "removed_nodes": [],
+    "added_edges": [
+      {"from": "MyApp.Finance.NewResource", "to": "MyApp.Finance.Wallet", "relation": "reads"}
+    ],
+    "removed_edges": []
+  }
+}
+```
+
+The studio uses `graph_delta` to render the system map in preview mode during active
+proposals: added nodes highlighted green, changed nodes amber, removed nodes dimmed red.
+
+---
+
+## SpecKitDocument Struct
+
+Returned by `FoundryChannel fetch_document` events. Parsed from the MDEx AST cached
+in ETS by `{:spec_kit, file_path, mtime}`. The index builder and document server share
+the same cached AST — one parse, two views.
+
+```json
+{
+  "id": "ADR-003",
+  "type": "adr",
+  "title": "Agent Context — Structured Retrieval, Not RAG Over Code",
+  "status": "Accepted",
+  "file_path": "docs/adrs/ADR-003-agent-context-strategy.md",
+  "sections": [
+    { "heading": "Context", "body": "The copilot needs accurate..." },
+    { "heading": "Decision", "body": "Structured retrieval over..." }
+  ],
+  "compliance_refs": [],
+  "module_refs": ["Foundry.Copilot.ContextBuilder", "Foundry.Context.PatternFinder"],
+  "last_modified": "2026-03-16"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Same as SpecKitIndex entry id |
+| `type` | enum | `adr`, `runbook`, `regulation`, `agents`, `usage_rules` |
+| `title` | string | First H1 heading |
+| `status` | string\|null | `**Status:**` frontmatter field; `null` for non-ADR documents |
+| `file_path` | string | Relative path from project root |
+| `sections` | Section[] | H2 headings with body text (list of `{heading, body}`) |
+| `compliance_refs` | string[] | RG-* requirement IDs extracted from body text |
+| `module_refs` | string[] | Fully-qualified Elixir module names extracted from body text |
+| `last_modified` | string | File mtime, ISO 8601 date |
+
+The diff view of a spec-kit document (in the proposal review panel) uses the raw
+unified git diff output, not `SpecKitDocument` sections. The parsed struct is for the
+read/navigation view only.
+
+---
+
+## SpecKitIndex Schema
 
 This field has two consumers:
-- **Studio** (`Foundry.Studio.SystemMapChannel`) — renders the spec-kit panel and overlays
-  document links on node detail drawers
-- **Copilot Tier 1** (`Foundry.Copilot.ContextBuilder`) — reads the `spec_kit` field from
-  the cached `mix foundry.project.context` output at session startup to build the system prompt.
-  The agent uses it to decide which documents to read via bash. No search tool needed.
-
-The unified structure means node `adrs`, `runbook`, and `compliance` fields link outward to
-the same document entries in `spec_kit`, preserving bidirectional code→spec traceability in
-a single data source.
-
-### JSON schema
+- **Studio** (`Foundry.Studio.SystemMapChannel`) — renders the spec-kit panel and
+  overlays document links on node detail drawers
+- **Copilot Tier 1** (`Foundry.Copilot.ContextBuilder`) — reads the `spec_kit` field
+  from the cached project context at session startup to build the system prompt. The
+  agent uses it to decide which documents to read via bash. No search tool needed.
 
 ```json
 {
   "spec_kit": {
     "index_token_count": 387,
-    "index_token_warn": true,
+    "index_token_warn": false,
     "index_token_limit": 400,
     "adrs": [
       {
@@ -287,63 +301,25 @@ a single data source.
         "last_modified": "2026-03-16"
       }
     ],
-    "runbooks": [
-      {
-        "id": "runbook:withdrawal_transfer",
-        "type": "runbook",
-        "title": "Runbook: WithdrawalTransfer",
-        "file_path": "docs/runbooks/withdrawal_transfer.md",
-        "summary": "Operational failure scenarios for WithdrawalTransfer Reactor.",
-        "tags": ["withdrawal", "transfer", "reactor", "compensation"],
-        "last_modified": "2026-03-02"
-      }
-    ],
-    "regulations": [
-      {
-        "id": "regulation:platform_invariants",
-        "type": "regulation",
-        "title": "Platform Invariants",
-        "file_path": "docs/regulations/platform_invariants.md",
-        "summary": "Hard invariants enforced by compiler, linter, and CI.",
-        "tags": ["invariants", "lint", "ci", "compliance"],
-        "last_modified": "2026-03-10"
-      }
-    ],
-    "agents": {
-      "id": "AGENTS",
-      "type": "agents",
-      "title": "AGENTS.md — Foundry",
-      "file_path": "AGENTS.md",
-      "summary": "Primary context document. Invariants, change classification, agent reasoning sequence.",
-      "tags": ["agents", "invariants", "copilot", "change", "classification"],
-      "last_modified": "2026-03-18"
-    },
-    "usage_rules": [
-      {
-        "id": "usage_rules:ash",
-        "type": "usage_rules",
-        "title": "Ash 3.x Usage Rules",
-        "file_path": ".foundry/usage_rules/ash.md",
-        "summary": "Idiomatic Ash 3.x patterns, anti-patterns, and version-specific gotchas for agent code generation.",
-        "tags": ["ash", "dsl", "resource", "action", "policy"],
-        "last_modified": "2026-03-10"
-      }
-    ]
+    "runbooks": [ ...entries... ],
+    "regulations": [ ...entries... ],
+    "agents": { ...entry... },
+    "usage_rules": [ ...entries... ]
   }
 }
 ```
 
-### Per-document entry fields
+### Per-document index entry fields
 
 | Field | Type | Extraction source | Required |
 |---|---|---|---|
 | `id` | string | Filename prefix (`ADR-010`) or `AGENTS`, `runbook:<slug>`, `regulation:<slug>`, `usage_rules:<lib>` | Yes |
-| `type` | enum | Derived from directory path — see table below | Yes |
+| `type` | enum | Derived from directory path | Yes |
 | `title` | string | First H1 heading | Yes |
 | `status` | string | `**Status:**` frontmatter field; `null` for non-ADR documents | ADRs only |
 | `file_path` | string | Relative path from project root | Yes |
 | `summary` | string | First substantive paragraph, max 2 sentences / 300 characters | Yes |
-| `tags` | string[] | Extracted keywords — see Tag Extraction below | Yes |
+| `tags` | string[] | Extracted keywords — see Tag Extraction | Yes |
 | `supersedes` | string\|null | `**Supersedes:**` frontmatter value | No |
 | `superseded_by` | string\|null | `**Superseded by:**` frontmatter value | No |
 | `last_modified` | string | File mtime, ISO 8601 date | Yes |
@@ -360,8 +336,6 @@ a single data source.
 
 ### Tag extraction
 
-Lowercase keywords from title + summary + H2 headings:
-
 1. Split into words, lowercase, strip punctuation
 2. Remove stop words: the, a, an, is, are, for, with, by, in, on, at, to, of, and, or,
    not, this, that, it, its, be, as, from, will, must, when, if, all, any, each, per, no
@@ -369,8 +343,8 @@ Lowercase keywords from title + summary + H2 headings:
 4. Deduplicate, sort alphabetically
 5. Maximum 12 tags per document
 
-**Manual override:** A document may declare `**Tags:** llm, context, adapter` in frontmatter.
-Merged with extracted tags, capped at 12. Use sparingly.
+**Manual override:** A document may declare `**Tags:** llm, context, adapter` in
+frontmatter. Merged with extracted tags, capped at 12. Use sparingly.
 
 ### Summary extraction
 
@@ -382,19 +356,21 @@ If no substantive paragraph found in first 30 lines: `summary` is `null`; genera
 ### Token budget
 
 The `spec_kit` field must serialize to ≤ **400 tokens** for inclusion in Tier 1.
-`mix foundry.project.context` warns (but does not fail) when `index_token_count > 360` (10% headroom).
-`index_token_warn: true` is set when the count exceeds 360. The studio renders a warning badge.
+`mix foundry.project.context` warns (but does not fail) when `index_token_count > 360`
+(10% headroom). `index_token_warn: true` is set when the count exceeds 360. The studio
+renders a warning badge.
 
-Growth rate: ~15 tokens per document at minimum; summaries for longer ADRs run 20–25 tokens.
-Practical ceiling: **24 documents** before the warn threshold is reliably hit.
+Growth rate: ~15 tokens per document at minimum; summaries for longer ADRs run 20–25
+tokens. Practical ceiling: **24 documents** before the warn threshold is reliably hit.
 
-When the budget is exceeded: consolidate runbooks first (they have the lowest information density
-per token), then consider shortening summaries for large ADRs.
+**Testing the warn path:** The Phase 1 acceptance tests include a synthetic corpus
+expansion test — documents are added to push `index_token_count` above 360 and the
+test asserts `index_token_warn: true`. This ensures the warning logic is exercised,
+not just the happy path.
 
 ### Exclusion rules
 
-The following files must NOT be indexed. They are infrastructure references, not documents the
-agent reasons about:
+The following files must NOT be indexed:
 
 | File | Reason |
 |---|---|
@@ -404,13 +380,6 @@ agent reasons about:
 | `docs/reference-project-fixture.md` | Test fixture, not spec-kit |
 | `docs/manifest-schema-draft.md` | Pre-ADR-011 draft; superseded |
 | `docs/BUILD_SEQUENCE.md` | Implementation sequencing; not a decision or invariant |
-
-Schema documents (files whose purpose is to describe other documents' formats) are never
-indexed. BUILD_SEQUENCE.md captures sequencing, not decisions — it is not spec-kit.
-
-`index_token_warn: true` when `index_token_count > 360` (10% below the 400-token limit).
-The studio renders a visible warning badge on the spec-kit panel when this flag is set.
-The copilot logs a warning but does not fail — context is still assembled.
 
 ---
 
@@ -446,9 +415,10 @@ The top-level structure gains an `apps` field in umbrella mode:
 
 ## What is NOT in this output
 
-- Full document content — fetched on demand via `FoundryChannel` `fetch_document`
+- Full document content — fetched on demand via `FoundryChannel fetch_document`
+  (returns `SpecKitDocument`) or `fetch_file` (returns raw string)
 - Full `mix.exs` dependency list — available via `bash("cat mix.exs")`
 - Proposal content — scanned from `.foundry/proposals/` by `mix foundry.project.status`
 - Audit log — append-only, never indexed
 - `_build/`, `deps/` — never read
-- LLM context tiers — this file is studio data, not agent context
+- LLM context tiers — this data lives in ETS; ContextBuilder reads from it

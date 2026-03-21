@@ -2,30 +2,31 @@
 
 > **Status:** Active — governs `mix foundry.project.status` output format.
 > **Supersedes:** `mix foundry.project.snapshot` (renamed per ADR-020).
-> `Foundry.Copilot.ContextBuilder` includes the status in Tier 2 session context,
-> refreshed on every copilot request.
+> `Foundry.Copilot.ContextBuilder` reads from this task for Tier 2 session context,
+> refreshed on every copilot request. The token truncation is applied by ContextBuilder,
+> not by this task — the task always returns complete current state.
 >
-> **Rule:** All output must stay within declared token bounds regardless of project
-> size. Each component is responsible for its own truncation.
+> **Rule:** This task returns the full runtime health picture with no token cap.
+> ContextBuilder applies its own ~400-token view when assembling the Tier 2 prompt.
 
 ---
 
 ## `mix foundry.project.status`
 
-**Token bound:** ≤ 400 tokens total.
+**Token cap:** None at the data layer. ContextBuilder applies truncation for Tier 2.
 **Cache TTL:** 60 seconds (stale enough to be cheap, fresh enough to reflect recent changes).
-**Used by:** `Foundry.Copilot.ContextBuilder` — assembled into Tier 2 session context.
+**Used by:** `Foundry.Copilot.ContextBuilder` — truncated view assembled into Tier 2.
+**Also used by:** Studio health panels, Operations Board (Phase 5).
 
 Single command that composes all health and orientation signals into one JSON object.
-The agent reads this from Tier 2 and uses it for orientation before calling any shell commands.
-
-The name reflects what the data describes: the current *condition* of the project.
-"Snapshot" was retired in ADR-020 because it implied a frozen point-in-time record
-rather than a live health signal.
+The agent reads a ContextBuilder-truncated view of this from Tier 2 and uses it for
+orientation before calling any shell commands. For full detail on any field, the agent
+uses bash to call the appropriate Mix task or read the relevant file.
 
 ```json
 {
   "generated_at": "2026-03-21T10:00:00Z",
+  "compiled_at": "2026-03-21T09:55:00Z",
   "project": "MyApp",
 
   "domains": ["Finance", "Identity", "Compliance", "Game"],
@@ -40,7 +41,8 @@ rather than a live health signal.
         "rule": "INV-017",
         "module": "MyApp.Finance.WithdrawalTransfer",
         "step": "w-approve",
-        "message": "Agent step missing telemetry_prefix declaration"
+        "message": "Agent step missing telemetry_prefix declaration",
+        "severity": "warning"
       }
     ]
   },
@@ -73,11 +75,18 @@ rather than a live health signal.
 
   "compliance": {
     "gap_count": 1,
-    "gaps": [
+    "requirements": [
       {
-        "requirement": "RG-UK-022",
+        "id": "RG-UK-022",
+        "title": "Spending limit enforcement",
+        "status": "gap",
         "module": "MyApp.Identity.SpendingLimit",
-        "reason": "No scenario or e2e tests covering limit enforcement"
+        "reason": "No scenario or e2e tests covering limit enforcement",
+        "coverage": {
+          "property_tests": false,
+          "scenario_tests": false,
+          "e2e_tests": false
+        }
       }
     ]
   },
@@ -101,16 +110,15 @@ rather than a live health signal.
     "branch": "main",
     "lint_passed": true,
     "tests_passed": true,
-    "diagram_current": true,
-    "spec_kit_index_current": true
+    "context_lock_current": true
   },
 
   "stack": {
-    "elixir": "1.17",
+    "elixir": "1.17.0",
     "ash": "3.4.1",
-    "phoenix": "1.7.x",
-    "reactor": "0.9",
-    "oban": "2.x"
+    "phoenix": "1.7.14",
+    "reactor": "0.9.1",
+    "oban": "2.18.0"
   },
 
   "manifest": {
@@ -125,111 +133,136 @@ rather than a live health signal.
 
 ## Field definitions
 
+### `compiled_at`
+Max mtime of files under `_build/dev/lib/<app>/ebin/`. Allows consumers to detect
+whether the compiled state is stale relative to source files. The studio shows a
+recompilation banner when `compiled_at < max(lib/**/*.ex mtime)`.
+
 ### `domains`
-All domain names from compiled Ash domain modules. No truncation — domain count is bounded
-by project structure.
+All domain names from compiled Ash domain modules. No truncation — domain count is
+bounded by project structure.
 
 ### `sensitive_modules`
-Short names only (last module segment). Maximum 8.
-If more: `["Wallet", "LedgerEntry", "+N more"]`.
+Short names (last module segment) of all resources declared in
+`manifest.sensitive_resources`. No truncation — the manifest list is bounded.
 
 ### `lint`
-Composed from `mix foundry.lint.all --json`.
+Composed from `mix foundry.lint.all`. Returns all violations — no truncation at the
+data layer. ContextBuilder shows the first 5 violations in Tier 2.
 
-`violations` contains the first 5 violations only — enough for the agent to diagnose
-the issue without blowing the token budget. Full list available via
-`bash("mix foundry.lint.all --json")`.
-
-Truncation: if more than 5 violations, append `{ "truncated": N }` as the last item.
+`violations` includes all violations. Each entry has: `rule`, `module`, `message`,
+`severity`. Version constraint violations (`:ash_version_outdated` etc.) appear here,
+sourced from `Foundry.LintRules.VersionRule`.
 
 ### `migrations`
-Composed from `mix foundry.context.all --pending-migrations`.
-
-`pending` lists up to 5 pending migrations. If more: append `{ "truncated": N }`.
+Composed from per-module pending migration detection (`mix ash.codegen --check`
+per resource). Lists all pending migrations — no truncation at the data layer.
 
 ### `proposals`
 Scanned from `.foundry/proposals/` — `PENDING_REVIEW` state only.
-
-`items` lists up to 5 open proposals. If more: append `{ "truncated": N }`.
+Lists all open proposals — no truncation at the data layer.
 
 `adr_linked: false` on a `:compliance` proposal is a signal the agent surfaces
-explicitly in the Activity Feed — a compliance change cannot be approved without an ADR link.
+explicitly — a compliance change cannot be approved without an ADR link.
 
 ### `compliance`
-Composed from `mix foundry.compliance.check --summary`.
+Full compliance matrix — all declared RG-* requirements with status and coverage detail.
+`status` is one of: `"covered"` (all three test types present), `"partial"` (some
+tests present), `"gap"` (no tests), `"planned"` (requirement declared but no module
+linked yet).
 
-`gaps` lists requirement IDs with the first affected module and a brief reason string.
-Maximum 5. If more: append `{ "truncated": N }`.
+This field replaces the former `mix foundry.compliance.check` standalone task.
 
 ### `test_coverage`
 `overall_pct` is the aggregate across all modules with declared compliance links.
-`modules_with_gaps` lists modules where all three coverage flags are false.
-Maximum 5. If more: append `{ "truncated": N }`.
+`modules_with_gaps` lists modules where coverage is incomplete. No truncation at the
+data layer.
 
 ### `ci`
 Reflects the last recorded CI run. All boolean flags default to `null` if CI has not
 yet run or if the CI integration is not configured.
 
-`diagram_current` maps to the `mix foundry.project.context --check` result (renamed from
-`mix foundry.diagram.generate --check` per ADR-020).
-`spec_kit_index_current` maps to `mix foundry.spec_kit.index --check`.
+`context_lock_current` maps to the `mix foundry.project.context --check` result —
+`true` if `.foundry/context.lock` matches the current source hash.
 
 ### `stack`
-Core dependencies only: elixir, ash, phoenix, reactor, oban.
-Full version strings. Strip test-only and build tool dependencies.
+All core runtime dependencies with resolved version strings sourced from `mix.lock`.
+Version strings are exact resolved values, not constraints (e.g. `"3.4.1"` not `"~> 3.4"`).
+Git-sourced dependencies emit their commit SHA as the version string.
 Full dependency list available via `bash("cat mix.exs")`.
 
 ### `manifest`
-Domain type, sensitive resource short names (max 5), and `domain_lead` email only.
+Domain type, sensitive resource short names (all of them), and `domain_lead` email.
 Full manifest available via `bash("cat .foundry/manifest.exs")`.
 
 ---
 
-## Underlying commands
+## Underlying data sources
 
-The status is composed from these commands internally. They are not directly called by
-the agent — they are implementation details of `mix foundry.project.status`.
+The status is composed from these sources internally. They are implementation details
+of `mix foundry.project.status` — not called directly by callers.
 
-| Command | Contributes to |
+| Source | Contributes to |
 |---|---|
-| `mix foundry.context.all --summary` | `domains`, `sensitive_modules` |
-| `mix foundry.lint.all --json` | `lint` |
-| `mix foundry.compliance.check --summary` | `compliance` |
-| `mix foundry.context.all --pending-migrations` | `migrations` |
+| Compiled module scan | `domains`, `sensitive_modules` |
+| `mix foundry.lint.all` | `lint` |
+| Per-resource `mix ash.codegen --check` | `migrations` |
 | `.foundry/proposals/` scan | `proposals` |
-| `find lib/ -type d` + module scan | implied by domains/sensitive |
-| `mix.exs` parse | `stack` |
+| Per-module compliance declarations | `compliance` |
+| Per-module test file scan | `test_coverage` |
+| CI integration record | `ci` |
+| `mix.lock` parse | `stack` |
 | `.foundry/manifest.exs` parse | `manifest` |
+| `_build/` mtime scan | `compiled_at` |
 
-In umbrella mode, `find lib/` expands to `find apps/*/lib/`.
+In umbrella mode, module scan covers `apps/*/lib/`.
 
 ---
 
-## Session context refresh policy
+## ContextBuilder Tier 2 truncation policy
+
+ContextBuilder applies these truncations when assembling the ~400-token Tier 2 view:
+
+- `lint.violations` — first 5 by severity (errors before warnings)
+- `migrations.pending` — first 5
+- `proposals.items` — first 5
+- `compliance.requirements` — first 5 gaps (status: "gap" or "partial")
+- `test_coverage.modules_with_gaps` — first 5
+- `stack` — all fields (small, bounded)
+- `sensitive_modules` — first 8; if more: `[..., "+N more"]`
+
+When truncating, append `{"truncated": N}` as the last item in the array so the agent
+knows the full list is longer and can call `bash("mix foundry.project.status")` for
+the complete view if needed.
+
+---
+
+## Status refresh policy
 
 The status is refreshed on every copilot request — not cached between requests beyond
 the 60-second TTL. It must reflect current project state.
 
 **Staleness note:** If `mix compile` has not been run since the last source change,
-lint and context summaries reflect stale compiled state. The Studio shell shows a
-recompilation banner — the agent is not responsible for detecting this condition.
+lint and context summaries reflect stale compiled state. The studio shows a
+recompilation banner when `compiled_at < max(lib/**/*.ex mtime)`. The agent is not
+responsible for detecting this condition — the `compiled_at` field surfaces it.
 
 ---
 
 ## What is NOT in the status
 
-Available via bash when needed — not in the status to preserve the token budget:
+Available via bash when needed:
 
 ```bash
-cat mix.exs                                      # full dependency list
-cat .foundry/manifest.exs                        # full manifest
-mix foundry.compliance.check --json              # full compliance matrix
-mix foundry.lint.all --json                      # full violation list
-mix foundry.context MyApp.Finance.Wallet --json  # full module context
-cat .foundry/proposals/prop_<id>.json            # specific proposal detail
-mix foundry.project.context                      # full system map with all nodes and edges
+cat mix.exs                                                   # full dependency list
+cat .foundry/manifest.exs                                     # full manifest
+mix foundry.lint.all --json                                   # full violation list
+mix foundry.project.context MyApp.Finance.Wallet              # full module context
+cat .foundry/proposals/prop_<id>.json                         # specific proposal detail
+mix foundry.project.context                                   # full system map
 ```
 
-The system map (`mix foundry.project.context`) is never included in the Tier 2 LLM context —
-it is studio UI data, not agent orientation data. The agent navigates via per-module
-`mix foundry.context <Module>` calls, not by scanning the full graph.
+The system map (`mix foundry.project.context`) is never included in the Tier 2 LLM
+context — it is studio UI data and ETS cache data, not agent orientation data. The
+agent navigates via per-module `mix foundry.project.context <Module>` calls, not by
+scanning the full graph.
