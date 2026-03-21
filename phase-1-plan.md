@@ -80,17 +80,22 @@ directory prefixes (`"lib/"`, `"docs/adrs/"`) and exact file paths (`"AGENTS.md"
 paths — it would allow `AGENTS.md.bak` to pass. The implementation must distinguish
 between the two kinds and apply the right check.
 
-**On node counting in the reference project:** The fixture declares 30 nodes. The
-breakdown: 16 resources (Wallet, LedgerEntry, Transfer, WithdrawalRequest, Player,
+**On node counting in the reference project:** The fixture declares **33 nodes** (AUTHORITATIVE).
+The breakdown: 17 resources (Wallet, LedgerEntry, Transfer, WithdrawalRequest, Player,
 KYCDocument, SelfExclusionRecord, KYCUploadToken, BonusCampaign, BonusGrant,
-AuditEntry, PIIVault, ProviderConfig, Game, GameVersion, GameCatalog — 16 incl.
-KYCUploadToken and the read-only GameCatalog) + 3 reactors/transfers
-(WithdrawalTransfer, BonusGrantTransfer, ProviderSyncReactor) + 1 job (CatalogSyncJob)
-+ 8 rules + 1 blueprint + 2 providers = 31. The fixture count table sums to 32 with
-the read-only derived resource. Resolve this before writing acceptance tests:
-confirm which of KYCUploadToken and GameCatalog are included as nodes vs treated as
-supporting infrastructure. The acceptance test for `nodes count: 30` must reflect the
-authoritative count from the fixture — recount and lock before writing that assertion.
+AuditEntry, PIIVault, ProviderConfig, Game, GameVersion, GameCatalog, Players) + 1 read-only
+derived resource (GameCatalog is read-only) + 3 reactors/transfers (WithdrawalTransfer,
+BonusGrantTransfer, ProviderSyncReactor) + 1 job (CatalogSyncJob) + 8 rules + 1 blueprint
++ 2 providers = 33. Both KYCUploadToken and GameCatalog are included as nodes and are
+documented in the fixture resource table. The acceptance test for `nodes count: 33` must
+match this count exactly.
+
+**On fixture domain table:** The reference project fixture must include **6 domains**:
+Finance, Players, Promotions, Gaming, Ops, **Accounts**. The current fixture table
+omits Accounts. This is an oversight — both `IgamingRef.Accounts.User` and
+`IgamingRef.Accounts.Token` are scaffolded and appear in the fixture. Add `Accounts`
+to the fixture domain table before P-1 scaffold begins, so acceptan tests match the
+actual project structure.
 
 **On the `adapter_version_not_active` lint warning:** This rule ID does not appear in
 `lint-catalogue.md`. It is referenced only in the acceptance matrix. Either add it to
@@ -181,13 +186,12 @@ defmodule Foundry.Phase1AcceptanceTest do
 
   # Helpers
   defp run_task(task, args \\ []) do
-    # Runs a Mix task in the reference project's directory.
-    # Returns {stdout, exit_code}.
-    original_dir = File.cwd!()
-    File.cd!(@ref_root)
-    result = Mix.Task.run(task, args)
-    File.cd!(original_dir)
-    result
+    # Runs a Mix task in the reference project's directory via System.cmd.
+    # Returns {stdout, exit_code}. Uses System.cmd instead of Mix.Task.run/2
+    # because Mix.Task.run/2 executes in the current Mix project's registry,
+    # not in the specified directory's project.
+    {output, exit_code} = System.cmd("mix", [task | args], cd: @ref_root)
+    {output, exit_code}
   end
 
   defp decode_json!(output), do: Jason.decode!(output)
@@ -747,7 +751,9 @@ end
 ```
 
 **2c.** `put_description/1` — `@moduledoc` first paragraph. Note the runtime format
-of `__info__(:attributes)[:moduledoc]` is `[{line, text}]` in Elixir 1.15+:
+of `__info__(:attributes)[:moduledoc]` is `[{line, text}]` in Elixir 1.15+. The `Keyword.get`
+call returns the first entry if multiple `:moduledoc` attributes exist (allowed by Elixir);
+this is acceptable for practical use since duplicate `@moduledoc` declarations are rare:
 
 ```elixir
 defp put_description(%ModuleInfo{module: module} = info) do
@@ -1210,6 +1216,11 @@ defmodule Foundry.Context.Cache do
   use Nebulex.Cache, otp_app: :foundry, adapter: Nebulex.Adapters.Local
 
   def get_or_compute(key, ttl \\ :infinity, fun) do
+    # CONCURRENCY NOTE: This is a best-effort cache (last-write-wins on race).
+    # Two concurrent calls with a cold cache will both compute and both put.
+    # This is acceptable because: (1) `SparkMeta.walk/1` is idempotent, (2) test
+    # environment is single-threaded with `async: false`, (3) real projects are
+    # read-heavy on modules. If atomicity becomes critical, add a lock.
     case get(key) do
       nil   -> fun.() |> tap(&put(key, &1, ttl: ttl))
       value -> value
@@ -1318,7 +1329,8 @@ describe "mix foundry.project.context (bulk)" do
 
   test "nodes count matches fixture", %{context: ctx} do
     # Verify exact count against fixture before freezing (see §Known constraints)
-    assert length(ctx["nodes"]) == 30
+    # 17 resources + 3 reactors + 1 job + 8 rules + 1 blueprint + 2 providers + 1 read-only = 33
+    assert length(ctx["nodes"]) == 33
   end
 
   test "nodes ordered alphabetically by FQN", %{context: ctx} do
@@ -1423,7 +1435,35 @@ describe "mix foundry.project.context (bulk)" do
 end
 ```
 
-### 4.2 Implementation
+### 4.2 Pre-implementation extraction
+
+**CRITICAL:** Before Step 4 begins, extract `discover_project_modules/2` into a shared module.
+This function is defined identically in two places with different call signatures:
+- `Foundry.Context.GraphBuilder.build/2` calls it with `(project_root, root_name)`
+- `Mix.Tasks.Foundry.Lint.All.run/1` calls it with `(project_root, manifest)`
+
+Create `Foundry.Context.ModuleDiscovery` with:
+
+```elixir
+defmodule Foundry.Context.ModuleDiscovery do
+  def all_project_modules(project_root, project_name_string) do
+    ebin_path = Path.join([project_root, "_build", "dev", "lib",
+                           Macro.underscore(project_name_string), "ebin"])
+    prefix    = "Elixir." <> project_name_string <> "."
+
+    Path.wildcard(Path.join(ebin_path, "*.beam"))
+    |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
+    |> Enum.filter(&(Atom.to_string(&1) |> String.starts_with?(prefix)))
+    |> Enum.filter(&Code.ensure_loaded?/1)
+  end
+end
+```
+
+Both call sites must then use `Foundry.Context.ModuleDiscovery.all_project_modules(project_root, project_name_string)`.
+For `GraphBuilder`, pass `Keyword.get(manifest, :project_name, "")`. For `Mix.Tasks.Foundry.Lint.All`, extract
+the `:project_name` from manifest. This eliminates the duplication and creates a single source of truth.
+
+### 4.3 Implementation
 
 **4a.** `Foundry.Context.GraphBuilder` — assembles all nodes and derives edges:
 
@@ -1434,7 +1474,7 @@ defmodule Foundry.Context.GraphBuilder do
     {:ok, pending_set} = Foundry.Context.PendingMigrations.check(project_root)
 
     nodes =
-      discover_project_modules(project_root, root_name)
+      Foundry.Context.ModuleDiscovery.all_project_modules(project_root, root_name)
       |> Enum.map(fn mod ->
         info    = Foundry.SparkMeta.walk(mod)
         pending = Foundry.Context.PendingMigrations.pending?(mod, pending_set)
@@ -1476,7 +1516,6 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
     docs/mix_task_summary_schemas.md
     docs/reference-project-fixture.md
     docs/manifest-schema-draft.md
-    docs/BUILD_SEQUENCE.md
   ]
 
   def build(project_root) do
@@ -1812,6 +1851,10 @@ end
 
 defmodule Foundry.SparkLint.Runner do
   def run(rules, modules, base_context) do
+    # KNOWN LIMITATION: Uses `acc_v ++ new_v` which is O(n) per append. For ~30 modules × 7 rules,
+    # this is acceptable (O(210²) ≈ 44K operations). Before `spark_lint` Hex extraction,
+    # optimize to `[new_v | acc_v]` + `Enum.reverse/1` or accumulate as flat list with
+    # `Enum.flat_map/2`. Phase 1 baseline is correct, just not optimal at scale.
     {violations, errors} =
       for rule <- rules, module <- modules, reduce: {[], []} do
         {acc_v, acc_e} ->
@@ -2081,7 +2124,8 @@ defmodule Mix.Tasks.Foundry.Lint.All do
     manifest_violations = Foundry.LintRules.ManifestValidator.check(manifest)
 
     # Module-level rules
-    modules  = discover_project_modules(project_root, manifest)
+    project_name = Keyword.get(manifest, :project_name, "")
+    modules  = Foundry.Context.ModuleDiscovery.all_project_modules(project_root, project_name)
     metadata = %{
       manifest:         manifest,
       sensitive_modules: Keyword.get(manifest, :sensitive_resources, []),
@@ -2118,18 +2162,6 @@ defmodule Mix.Tasks.Foundry.Lint.All do
     end
 
     if error_count > 0, do: exit({:shutdown, 1})
-  end
-
-  defp discover_project_modules(project_root, manifest) do
-    project_name = Keyword.get(manifest, :project_name, "")
-    ebin_path    = Path.join([project_root, "_build", "dev", "lib",
-                              Macro.underscore(project_name), "ebin"])
-    prefix       = "Elixir." <> project_name <> "."
-
-    Path.wildcard(Path.join(ebin_path, "*.beam"))
-    |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
-    |> Enum.filter(&(Atom.to_string(&1) |> String.starts_with?(prefix)))
-    |> Enum.filter(&Code.ensure_loaded?/1)
   end
 end
 ```
@@ -2187,10 +2219,11 @@ describe "mix foundry.project.status" do
     do: assert s["proposals"]["open_count"] == 0
 
   test "compliance contains all 17 RG-* IDs", %{status: s} do
-    # Complete RG-* list from reference-project-fixture.md
+    # Complete RG-* list from reference-project-fixture.md (17 total)
     expected_ids = ~w[RG-MGA-001 RG-MGA-002 RG-MGA-003 RG-MGA-005 RG-MGA-007
                       RG-MGA-009 RG-UK-002 RG-UK-003 RG-UK-004 RG-UK-008
-                      RG-UK-011 RG-UK-014 RG-UK-022]
+                      RG-UK-011 RG-UK-014 RG-UK-022 RG-MGA-004 RG-MGA-006
+                      RG-UK-001 RG-UK-012]
     actual_ids = Enum.map(s["compliance"]["requirements"], & &1["id"])
     for id <- expected_ids, do: assert id in actual_ids, "Missing: #{id}"
   end
