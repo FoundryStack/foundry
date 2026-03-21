@@ -754,6 +754,167 @@ Running `mix foundry.lint.all --json` against a freshly scaffolded reference pro
 
 ---
 
+## Phase 1 Acceptance Matrix
+
+This section is the authoritative "done when" contract for Phase 1. Every row must pass
+before Phase 2 begins. The ExUnit integration test module `Foundry.Phase1AcceptanceTest`
+runs all assertions below against the reference project at `reference_projects/igaming/`.
+
+### `mix foundry.context <Module> --json`
+
+| Assertion | Module under test | Expected |
+|---|---|---|
+| All ADR-003 top-level fields present | `IgamingRef.Finance.WithdrawalTransfer` | `module`, `type`, `domain`, `description`, `steps`, `rules`, `compliance`, `runbook`, `invariants`, `related_resources`, `adrs`, `last_modified`, `sensitive`, `test_coverage`, `data_layer`, `pending_migrations`, `paper_trail`, `archival`, `state_machine`, `api_routes`, `telemetry_prefix`, `money_attributes`, `authentication_subject`, `oban_queues`, `rate_limited`, `feature_flags`, `agent_steps` |
+| `type` field correct | `IgamingRef.Finance.WithdrawalTransfer` | `"transfer"` |
+| `sensitive: true` | `IgamingRef.Finance.Wallet` | `true` |
+| `sensitive: false` | `IgamingRef.Gaming.Game` | `false` |
+| `paper_trail: true` | `IgamingRef.Finance.LedgerEntry` | `true` |
+| `archival: true` | `IgamingRef.Finance.LedgerEntry` | `true` |
+| `state_machine.present: true` | `IgamingRef.Finance.Wallet` | `true`; states include `"active"`, `"frozen"`, `"closed"` |
+| `state_machine.present: false` | `IgamingRef.Finance.LedgerEntry` | `false`; `states: []` |
+| `money_attributes` populated | `IgamingRef.Finance.LedgerEntry` | Entry for `amount` with `type: "Ash.Type.Money"` and non-null `cldr_backend` |
+| `money_attributes: []` | `IgamingRef.Gaming.Game` | `[]` |
+| `authentication_subject: true` | `IgamingRef.Accounts.User` | `true` |
+| `pending_migrations: false` | any module | `false` (reference project has no outstanding migrations) |
+| `compliance` non-empty | `IgamingRef.Finance.WithdrawalTransfer` | Contains `"RG-UK-014"` and `"RG-MGA-007"` |
+| `runbook` declared | `IgamingRef.Finance.WithdrawalTransfer` | `"docs/runbooks/withdrawal_transfer.md"` |
+| `agent_steps: []` | any module | `[]` (no AshAI agent steps in reference project) |
+| Unknown module exits non-zero | `IgamingRef.Finance.DoesNotExist` | Exit code 1, error JSON with `"error": "module_not_found"` |
+
+### `mix foundry.context.all --json`
+
+| Assertion | Expected |
+|---|---|
+| Top-level keys | `generated_at`, `domains` (map keyed by domain name) |
+| Domain count | 6 (`Finance`, `Players`, `Promotions`, `Gaming`, `Ops`, `Accounts`) |
+| `Finance` resource count | 4 resources + 1 transfer = 5 nodes |
+| `Finance` rule count | 3 (`SufficientBalance`, `WithdrawalLimitNotExceeded`, `PlayerKYCVerified`) |
+| `Players` resource count | 3 resources |
+| `Promotions` blueprint count | 1 (`DepositMatchBlueprint`) |
+| `Gaming` provider count | 2 (`PragmaticPlayV1`, `PragmaticPlayV2`) |
+| `Gaming` job count | 1 (`CatalogSyncJob`) |
+| `Ops` resource count | 2 (`AuditEntry`, `PIIVault`) |
+| `Accounts` resource count | 2 (`User`, `Token`) |
+| Total modules | 30 (16 resources + 1 read-only + 3 reactors/transfers + 1 job + 8 rules + 1 blueprint + 2 providers — matches fixture table) |
+
+### `mix foundry.project.context --json`
+
+| Assertion | Expected |
+|---|---|
+| Top-level keys | `generated_at`, `project`, `project_type`, `domain_type`, `nodes`, `edges`, `spec_kit` |
+| `project` | `"IgamingRef"` |
+| `project_type` | `"standard"` |
+| `domain_type` | `"igaming"` |
+| `nodes` count | 30 (same total as `context.all`) |
+| Every node has `id`, `module`, `type`, `domain`, `app: null` | All 30 nodes |
+| Sensitive node: `sensitive: true` | Any node in `sensitive_resources` manifest list |
+| Non-sensitive node: `sensitive: false` | `IgamingRef.Gaming.Game` |
+| `edges` non-empty | At minimum: `WithdrawalTransfer → Wallet (writes)`, `WithdrawalTransfer → LedgerEntry (writes)` |
+| `WithdrawalTransfer → Wallet` edge exists | `relation: "writes"`, `cross_app: false`, `cross_project: false` |
+| `CatalogSyncJob → ProviderSyncReactor` edge exists | `relation: "async"` |
+| `cross_app: false` on all edges | All edges (standard project, no umbrella) |
+| `spec_kit` field present | Non-null object |
+| `spec_kit.adrs` non-empty | At least the reference project's ADRs |
+| `spec_kit.runbooks` count | 3 (withdrawal_transfer, bonus_grant_transfer, provider_sync_reactor) |
+| `spec_kit.index_token_count` ≤ 400 | Numeric, ≤ 400 |
+| `spec_kit.index_token_warn` | `false` (reference project corpus is small) |
+
+### `mix foundry.project.context --check`
+
+| Assertion | Setup | Expected exit code |
+|---|---|---|
+| Exits 0 when current | `.foundry/project_context.json` freshly generated | 0 |
+| Exits 1 when source newer | Touch any `lib/` file after generating | 1 |
+| Exits 1 when output absent | Delete `.foundry/project_context.json` | 1 |
+
+### `mix foundry.project.status --json`
+
+| Assertion | Expected |
+|---|---|
+| Top-level keys present | `generated_at`, `project`, `domains`, `sensitive_modules`, `lint`, `migrations`, `proposals`, `compliance`, `test_coverage`, `ci`, `stack`, `manifest` |
+| `project` | `"IgamingRef"` |
+| `domains` | List of 6 domain names |
+| `sensitive_modules` | Contains short names matching manifest `sensitive_resources` list |
+| `lint.errors` | `0` (clean reference project) |
+| `lint.warnings` count | ≥ 1 (`:adapter_version_not_active` for PragmaticPlayV2) |
+| `migrations.pending_count` | `0` |
+| `proposals.open_count` | `0` |
+| `stack.ash` non-null | Non-null string |
+| `manifest.domain_type` | `"igaming"` |
+| Total token count | ≤ 400 tokens when serialized |
+
+### `mix foundry.compliance.check --json`
+
+| Assertion | Expected |
+|---|---|
+| All 17 `RG-*` IDs from fixture appear in output | All present |
+| At least one requirement has `status: "planned"` | True (fixture requires this) |
+| Requirements with module links have `coverage` populated | All `RG-*` linked to a module |
+| Exit code on gap | Exits 0 (gaps are reported, not fatal at this phase) |
+
+### `mix foundry.lint.all --json`
+
+| Assertion | Setup | Expected |
+|---|---|---|
+| Clean run exits 0 | Reference project as scaffolded | Exit 0; `errors: 0` |
+| `:missing_runbook` fires | Remove `@runbook` from `WithdrawalTransfer` | Exit 1; violation with `rule: "missing_runbook"`, `module: "IgamingRef.Finance.WithdrawalTransfer"` |
+| `:missing_paper_trail` fires | Remove AshPaperTrail from `Wallet` | Exit 1; violation with `rule: "missing_paper_trail"` |
+| `:missing_archival` fires | Remove AshArchival from `LedgerEntry` | Exit 1; violation with `rule: "missing_archival"` |
+| `:missing_idempotency` fires | Remove idempotency key from `WithdrawalTransfer` | Exit 1; violation with `rule: "missing_idempotency"` |
+| `:missing_description` fires | Remove `@moduledoc` from any non-test module | Exit 1 |
+| Manifest missing `sensitive_lead` exits 1 | Remove `approvers.sensitive_lead` from manifest | Exit 1; `rule: "manifest_missing_required_approver"` |
+| Warnings don't fail CI | `:adapter_version_not_active` warning present | Exit 0 |
+| Output is valid JSON | Any run | `Jason.decode!/1` succeeds on stdout |
+| Violations include `module`, `rule`, `message` fields | Any violation | All three fields present |
+
+### `mix foundry.versions.check --json`
+
+| Assertion | Expected |
+|---|---|
+| Output contains `elixir`, `ash`, `phoenix`, `reactor` keys | All present |
+| Values are non-null strings | All non-null |
+| `ash` version starts with `"3."` | True (ADR-001: Ash 3.x only) |
+
+### `Foundry.FileSystem.read/2`
+
+| Assertion | Call | Expected |
+|---|---|---|
+| Permitted path succeeds | `read(root, "lib/igaming_ref/finance/wallet.ex")` | `{:ok, content}` |
+| Spec-kit path succeeds | `read(root, "docs/adrs/ADR-003-agent-context-strategy.md")` | `{:ok, content}` |
+| `AGENTS.md` succeeds | `read(root, "AGENTS.md")` | `{:ok, content}` |
+| `.foundry/manifest.exs` succeeds | `read(root, ".foundry/manifest.exs")` | `{:ok, content}` |
+| `_build/` rejected | `read(root, "_build/dev/lib/igaming_ref/ebin/something.beam")` | `{:error, :outside_boundary}` |
+| `deps/` rejected | `read(root, "deps/ash/lib/ash.ex")` | `{:error, :outside_boundary}` |
+| `.env` rejected | `read(root, ".env")` | `{:error, :outside_boundary}` |
+| Path traversal rejected | `read(root, "lib/../../.env")` | `{:error, :outside_boundary}` |
+| Non-existent permitted path | `read(root, "lib/does_not_exist.ex")` | `{:error, :not_found}` |
+
+### Integration: CI pipeline simulation
+
+Run in sequence against the reference project. All must pass:
+
+```
+mix compile --warnings-as-errors
+mix foundry.versions.check --json
+mix foundry.context.all --json
+mix foundry.project.context
+mix foundry.project.context --check   # must exit 0 (just generated)
+mix foundry.compliance.check --json
+mix foundry.lint.all --json           # must exit 0 on clean project
+mix foundry.project.status --json
+```
+
+Then touch a source file and assert:
+```
+touch lib/igaming_ref/finance/wallet.ex
+mix foundry.project.context --check   # must exit 1 (stale)
+```
+
+**Note:** spec-kit index staleness is enforced via `mix foundry.project.context --check` —
+there is no separate `mix foundry.spec_kit.index --check` step (ADR-021).
+
+---
+
 ## Runbooks Required
 
 These runbooks are referenced by Transfer and Reactor modules (INV-005) and must exist as files:

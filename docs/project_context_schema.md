@@ -1,13 +1,19 @@
 # docs/project_context_schema.md — Project Context Schema
 
 > **Status:** Active — governs `mix foundry.project.context` output format.
+> **Supersedes:** `docs/spec_kit_index_schema.md` (retired per ADR-021 — the `spec_kit` field
+> here is the single authoritative spec-kit index for both the studio and the Tier 1 system prompt).
+>
 > `Foundry.Studio.SystemMapChannel` uses this as its primary data source.
-> `Foundry.Copilot.ContextBuilder` does NOT include this in the LLM context directly —
-> the LLM uses `mix foundry.context <Module>` per-module and `mix foundry.project.status`
-> for orientation. See ADR-020 and ADR-010.
+> `Foundry.Copilot.ContextBuilder` reads the `spec_kit` field from this output for Tier 1
+> context assembly — there is no separate `.foundry/spec_kit_index.json` file.
+> The agent navigates code and specs as a unified graph: every NodeEntry links to its ADRs,
+> runbooks, and compliance requirements, and the `spec_kit` field lists every document with
+> its tags and summary. Code→spec linkage is preserved in both directions.
 >
 > Do not change the schema without updating `Foundry.Studio.SystemMapChannel`,
-> the studio `data.ts` type definitions, and the CI staleness check.
+> `Foundry.Copilot.ContextBuilder`, the studio `data.ts` type definitions, and the CI
+> staleness check.
 
 ---
 
@@ -248,6 +254,19 @@ exactly — this is a bulk projection of per-module context into the graph.
 The spec-kit index is embedded in `project.context` as metadata only. Full document
 content is never included — it is fetched on demand via `FoundryChannel` `fetch_document` event.
 
+This field has two consumers:
+- **Studio** (`Foundry.Studio.SystemMapChannel`) — renders the spec-kit panel and overlays
+  document links on node detail drawers
+- **Copilot Tier 1** (`Foundry.Copilot.ContextBuilder`) — reads the `spec_kit` field from
+  the cached `mix foundry.project.context` output at session startup to build the system prompt.
+  The agent uses it to decide which documents to read via bash. No search tool needed.
+
+The unified structure means node `adrs`, `runbook`, and `compliance` fields link outward to
+the same document entries in `spec_kit`, preserving bidirectional code→spec traceability in
+a single data source.
+
+### JSON schema
+
 ```json
 {
   "spec_kit": {
@@ -298,10 +317,96 @@ content is never included — it is fetched on demand via `FoundryChannel` `fetc
       "summary": "Primary context document. Invariants, change classification, agent reasoning sequence.",
       "tags": ["agents", "invariants", "copilot", "change", "classification"],
       "last_modified": "2026-03-18"
-    }
+    },
+    "usage_rules": [
+      {
+        "id": "usage_rules:ash",
+        "type": "usage_rules",
+        "title": "Ash 3.x Usage Rules",
+        "file_path": ".foundry/usage_rules/ash.md",
+        "summary": "Idiomatic Ash 3.x patterns, anti-patterns, and version-specific gotchas for agent code generation.",
+        "tags": ["ash", "dsl", "resource", "action", "policy"],
+        "last_modified": "2026-03-10"
+      }
+    ]
   }
 }
 ```
+
+### Per-document entry fields
+
+| Field | Type | Extraction source | Required |
+|---|---|---|---|
+| `id` | string | Filename prefix (`ADR-010`) or `AGENTS`, `runbook:<slug>`, `regulation:<slug>`, `usage_rules:<lib>` | Yes |
+| `type` | enum | Derived from directory path — see table below | Yes |
+| `title` | string | First H1 heading | Yes |
+| `status` | string | `**Status:**` frontmatter field; `null` for non-ADR documents | ADRs only |
+| `file_path` | string | Relative path from project root | Yes |
+| `summary` | string | First substantive paragraph, max 2 sentences / 300 characters | Yes |
+| `tags` | string[] | Extracted keywords — see Tag Extraction below | Yes |
+| `supersedes` | string\|null | `**Supersedes:**` frontmatter value | No |
+| `superseded_by` | string\|null | `**Superseded by:**` frontmatter value | No |
+| `last_modified` | string | File mtime, ISO 8601 date | Yes |
+
+### Document types
+
+| Directory / path | Type | ID format | Example |
+|---|---|---|---|
+| `docs/adrs/` | `adr` | `ADR-NNN` from filename | `ADR-010` |
+| `docs/runbooks/` | `runbook` | `runbook:<slug>` | `runbook:studio_copilot_failure` |
+| `docs/regulations/` | `regulation` | `regulation:<slug>` | `regulation:platform_invariants` |
+| `AGENTS.md` | `agents` | `AGENTS` | `AGENTS` |
+| `.foundry/usage_rules/` | `usage_rules` | `usage_rules:<lib>` | `usage_rules:ash` |
+
+### Tag extraction
+
+Lowercase keywords from title + summary + H2 headings:
+
+1. Split into words, lowercase, strip punctuation
+2. Remove stop words: the, a, an, is, are, for, with, by, in, on, at, to, of, and, or,
+   not, this, that, it, its, be, as, from, will, must, when, if, all, any, each, per, no
+3. Remove words shorter than 3 characters
+4. Deduplicate, sort alphabetically
+5. Maximum 12 tags per document
+
+**Manual override:** A document may declare `**Tags:** llm, context, adapter` in frontmatter.
+Merged with extracted tags, capped at 12. Use sparingly.
+
+### Summary extraction
+
+First substantive paragraph after the frontmatter block (lines matching `**Key:** Value`).
+Skip: blockquotes, code fences, horizontal rules, headings, empty lines.
+Truncate at 2 sentences or 300 characters, whichever comes first. Do not truncate mid-word.
+If no substantive paragraph found in first 30 lines: `summary` is `null`; generation warns.
+
+### Token budget
+
+The `spec_kit` field must serialize to ≤ **400 tokens** for inclusion in Tier 1.
+`mix foundry.project.context` warns (but does not fail) when `index_token_count > 360` (10% headroom).
+`index_token_warn: true` is set when the count exceeds 360. The studio renders a warning badge.
+
+Growth rate: ~15 tokens per document at minimum; summaries for longer ADRs run 20–25 tokens.
+Practical ceiling: **24 documents** before the warn threshold is reliably hit.
+
+When the budget is exceeded: consolidate runbooks first (they have the lowest information density
+per token), then consider shortening summaries for large ADRs.
+
+### Exclusion rules
+
+The following files must NOT be indexed. They are infrastructure references, not documents the
+agent reasons about:
+
+| File | Reason |
+|---|---|
+| `docs/project_context_schema.md` | This file — describes its own format |
+| `docs/spec_kit_index_schema.md` | Retired tombstone |
+| `docs/mix_task_summary_schemas.md` | Schema reference for implementors |
+| `docs/reference-project-fixture.md` | Test fixture, not spec-kit |
+| `docs/manifest-schema-draft.md` | Pre-ADR-011 draft; superseded |
+| `docs/BUILD_SEQUENCE.md` | Implementation sequencing; not a decision or invariant |
+
+Schema documents (files whose purpose is to describe other documents' formats) are never
+indexed. BUILD_SEQUENCE.md captures sequencing, not decisions — it is not spec-kit.
 
 `index_token_warn: true` when `index_token_count > 360` (10% below the 400-token limit).
 The studio renders a visible warning badge on the spec-kit panel when this flag is set.

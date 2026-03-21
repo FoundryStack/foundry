@@ -1,9 +1,16 @@
-# docs/spec_kit_index_schema.md — Spec-Kit Index Schema
+# docs/spec_kit_index_schema.md — RETIRED
 
-> **Status:** Active — governs `mix foundry.spec_kit.index` output format.
-> `Foundry.Copilot.ContextBuilder` includes this file in the Tier 1 system prompt.
-> The agent reads it directly from context — no tool call needed to locate documents.
-> Do not change the schema without updating ContextBuilder and the index generation task.
+> **Status:** Superseded by `docs/project_context_schema.md` §SpecKitIndex embedded in context.
+> **Superseded by:** ADR-021
+>
+> `mix foundry.spec_kit.index` and `.foundry/spec_kit_index.json` no longer exist.
+> The spec-kit index is embedded in `mix foundry.project.context` output as the `spec_kit` field.
+> `Foundry.Copilot.ContextBuilder` reads the `spec_kit` field from `mix foundry.project.context`
+> for Tier 1 context assembly — not a separate file.
+>
+> The exclusion rules, token budget, tag extraction rules, and per-document entry schema
+> are now governed by `docs/project_context_schema.md`. This file is kept as a tombstone
+> only. Do not add content here.
 
 ---
 

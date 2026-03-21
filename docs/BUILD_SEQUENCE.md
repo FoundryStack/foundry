@@ -17,13 +17,44 @@
 If the JSON schema is unstable, everything built on top breaks. Stabilize it before building on it.
 
 **Deliverables:**
-- `mix foundry.context <Module> --json` — DSL introspection for a single module (full schema per ADR-003)
+
+Mix tasks (external surface — schemas frozen at phase end):
+- `mix foundry.context <Module> --json` — DSL introspection for a single module (ADR-003 schema)
 - `mix foundry.context.all --json` — all modules in the project, indexed by domain
-- `mix foundry.diagram.generate --json` — system map as graph (nodes, edges, clusters)
+- `mix foundry.project.context --json` — full system map: nodes, edges, spec-kit index metadata
+  (ADR-020; supersedes `mix foundry.diagram.generate` as the canonical studio data source).
+  Schema: `docs/project_context_schema.md`. The `spec_kit` field is the authoritative spec-kit
+  index for both the studio and the copilot Tier 1 system prompt — there is no separate index
+  file or task. Code→spec linkage is preserved bidirectionally in a single output.
+- `mix foundry.project.context --check` — CI staleness check; exits 1 if any source file is
+  newer than `.foundry/project_context.json`
+- `mix foundry.project.status --json` — composed health summary ≤ 400 tokens, 60s TTL
+  (ADR-020; replaces `mix foundry.project.snapshot`). Schema: `docs/mix_task_summary_schemas.md`.
+  Composition of lint, compliance, migrations, proposals, and manifest fields. Included here
+  because all its source tasks are Phase 1 tasks — deferring it to Phase 3 leaves the studio
+  (Phase 2) without a structured health signal and adds cold-start complexity to Phase 3.
 - `mix foundry.compliance.check --json` — requirement coverage status
-- `mix foundry.lint.all --json` — lint results with structured violations (includes INV-011, INV-012, INV-013 rules).
-  Rule engine: `spark_lint` package. Rule modules: `Foundry.LintRules.*` (internal). See ADR-019.
+- `mix foundry.lint.all --json` — lint results with structured violations (INV-011, INV-012,
+  INV-013 rules). Rule engine: `spark_lint` (internal as `Foundry.SparkLint.*` in Phase 1;
+  extracted to Hex post-Phase 1 per ADR-019). Rule modules: `Foundry.LintRules.*` (always internal).
 - `mix foundry.versions.check --json` — current stack versions from mix.exs (full ecosystem per ADR-001)
+
+Internal modules (no external surface, built in Phase 1):
+- `Foundry.FileSystem` — validated read boundary for all file reads (ADR-020). All channels
+  and controllers that read project files must call `Foundry.FileSystem.read/2`. Built in Phase 1
+  so Phase 2 channels inherit it with no rework. 40 lines: resolve permitted roots from manifest,
+  reject paths outside them, return `{:ok, content}` or `{:error, :outside_boundary | :not_found}`.
+- `Foundry.SparkMeta.*` — Spark DSL walker powering all context tasks. Designed as the future
+  `spark_meta` package from day one; extraction to Hex is post-Phase 1 work.
+- `Foundry.SparkLint.*` — rule runner engine (behaviour + violation struct + runner). Designed
+  as the future `spark_lint` package from day one; extraction to Hex is post-Phase 1 work.
+- `Foundry.SpecKit.IndexBuilder` — spec-kit document walker that populates the `spec_kit`
+  field of `mix foundry.project.context`. This is the sole source for both studio rendering
+  and Tier 1 copilot context assembly. No standalone task; no separate output file.
+
+Retained alias (backward compat only — not a primary deliverable):
+- `mix foundry.diagram.generate` may alias to `mix foundry.project.context` for any existing
+  scripts; not listed in canonical documentation.
 
 **Schema design review before freeze:** Before the Phase 1 schema is frozen, conduct a
 review against the full ADR-001 ecosystem. The schema must include all fields defined in
@@ -32,10 +63,13 @@ ADR-003 (`data_layer`, `pending_migrations`, `paper_trail`, `archival`, `state_m
 `rate_limited`, `feature_flags`). Adding these fields after the freeze requires an ADR.
 
 **JSON schemas are frozen** at the end of Phase 1. Breaking schema changes require an ADR.
-The `mix foundry.context` schema in ADR-003 is the contract.
+The `mix foundry.context` schema in ADR-003 is the contract; `docs/project_context_schema.md`
+and `docs/mix_task_summary_schemas.md` are the contracts for the two new tasks.
 
-**Done when:** All six tasks run against the iGaming reference project and produce valid JSON
-matching the full ADR-003 schema. CI uses `mix foundry.lint.all` and fails on violations.
+**Done when:** All tasks below pass against the iGaming reference project.
+See `docs/reference-project-fixture.md` §Phase 1 Acceptance Matrix for the complete
+per-task assertion set including expected counts, field presence, lint profile,
+boundary rejection tests, and CI check exit codes.
 
 ---
 
@@ -48,7 +82,7 @@ Every team member immediately benefits. Builds trust in the platform before it c
 
 **Deliverables:**
 - Phoenix LiveView application (`mix foundry.studio`)
-- System Map panel — D3 interactive graph from `diagram.generate --json`
+- System Map panel — D3 interactive graph from `mix foundry.project.context --json`
 - Node detail panel — moduledoc, attributes, actions, linked ADRs, test status (ADR-012 §System Map Interaction Details)
 - System map table view alternative — required for WCAG 2.1 AA compliance (ADR-012 §Accessibility)
 - Empty and loading states for all panels (ADR-012 §Empty and Loading States)
@@ -57,7 +91,7 @@ Every team member immediately benefits. Builds trust in the platform before it c
 - Command palette (`Cmd+K`) — navigation and operation preview, with phase-gate (ADR-012 §Command Palette)
 - Notification inbox UI (ADR-012 §Notification Inbox)
 - inotify file watcher → live reload on source change
-- `mix foundry.diagram.generate` running in CI with diff check (INV-008)
+- `mix foundry.project.context --check` running in CI (INV-008 enforcement; renamed per ADR-020)
 
 **UX specification:** ADR-012. All interaction details, performance budgets, and accessibility
 requirements in that document govern Phase 2 implementation.
@@ -80,11 +114,7 @@ Mis-answers to questions are recoverable. Mis-generated code changes are not.
 
 **Deliverables:**
 
-**Spec-kit indexing and usage rules:**
-- `mix foundry.spec_kit.index` — generates `.foundry/spec_kit_index.json`.
-  Schema: `docs/spec_kit_index_schema.md`. Warns at 380 tokens. Run in CI.
-- `mix foundry.spec_kit.index --check` — CI staleness check, exits 1 if stale.
-  Same enforcement pattern as `mix foundry.diagram.generate` + INV-008.
+**Usage rules:**
 - `mix foundry.usage_rules.fetch` — copies `USAGE.md` / `AGENTS.md` from each
   dependency into `.foundry/usage_rules/<lib>.md` at `mix deps.get` time.
   Foundry maintains usage rules for core stack: Ash 3.x, Reactor, Phoenix LiveView,
@@ -92,20 +122,23 @@ Mis-answers to questions are recoverable. Mis-generated code changes are not.
   conventions every generated module must follow (see ADR-002 §Foundry Conventions File).
 
 **Context assembly:**
-- `mix foundry.project.snapshot` — single JSON object (≤ 400 tokens, 60s TTL)
-  combining: domain list, sensitive modules, project structure shape, health signals
-  (lint errors, open proposals, compliance gaps, pending migrations), key file digest.
+- `mix foundry.project.status` — single JSON object (≤ 400 tokens, 60s TTL) built from the
+  underlying Phase 1 tasks. Renamed from `mix foundry.project.snapshot` per ADR-020.
   Schema: `docs/mix_task_summary_schemas.md`.
+  Built in Phase 1; wired into `ContextBuilder` here.
 - `Foundry.Copilot.ContextBuilder` — assembles three-tier context:
-  - Tier 1 (system prompt, per session): AGENTS.md + stack versions + spec-kit index,
-    pre-warmed at startup, Nebulex mtime-cached
-  - Tier 2 (session snapshot, per request): `mix foundry.project.snapshot`, 60s TTL
+  - Tier 1 (system prompt, per session): AGENTS.md + stack versions + spec-kit index.
+    The spec-kit index is read from the `spec_kit` field of `.foundry/project_context.json`
+    (the same file the studio uses — no separate index file). Nebulex key:
+    `{:project_context, context_mtime}`. Pre-warmed at startup.
+  - Tier 2 (session snapshot, per request): `mix foundry.project.status`, 60s TTL
   - Tier 3 (shell): assembled dynamically by the agent during the loop
 
 **Agent loop and tool interface:**
 - `Foundry.Copilot.Engine` — agentic loop: assembles Tier 1 + 2 context, runs
   tool loop, dispatches bash calls, accumulates context, produces streaming response.
-  Circuit breaker: `max_tool_calls` (default 8, manifest: `copilot.max_tool_calls`).
+  Circuit breaker: `max_tool_calls` (default 20, manifest: `copilot.max_tool_calls`).
+  See ADR-010 §Shell Constraints for the permitted command list.
 - `Foundry.Copilot.Tools` — declares the bash tool with shell constraint enforcement
   (permitted/blocked command list per ADR-010 §Shell Constraints). Enforces the
   permitted list at the adapter layer before execution.
@@ -163,8 +196,9 @@ Mis-answers to questions are recoverable. Mis-generated code changes are not.
 - `CHANGE_PREVIEW` conforms to ADR-013 §Phase-Gated Copilot Behaviour
 - Reasoning trace conforms to ADR-015 §Proposal File Format (`checked_adrs` and
   `checked_invs` non-empty, `shell_calls` reflects actual reads)
-- `mix foundry.spec_kit.index --check` passes in CI (ADR-010 §Spec-Kit Index)
-- `mix foundry.project.snapshot` ≤ 400 tokens on iGaming reference project (ADR-010 §Tier 2)
+- `mix foundry.project.context --check` passes in CI (spec-kit index staleness is now
+  enforced via the project context check — ADR-021)
+- `mix foundry.project.status` ≤ 400 tokens on iGaming reference project (ADR-010 §Tier 2)
 - Shell constraint enforcement matches ADR-010 §Shell Constraints blocked-command list
 - `LMStudioAdapter` startup validation behaves per ADR-010 §LLM Adapter degraded-mode spec
 - `mix foundry.usage_rules.fetch` populates `.foundry/usage_rules/` including `foundry_conventions.md`
