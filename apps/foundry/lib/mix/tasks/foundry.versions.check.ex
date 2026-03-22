@@ -84,7 +84,6 @@ defmodule Mix.Tasks.Foundry.Versions.Check do
     :stream_data,
     :bypass,
     :mox,
-    :wallaby,
     :ex_machina,
     # UI
     :ash_pyro

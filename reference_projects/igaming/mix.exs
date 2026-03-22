@@ -25,8 +25,8 @@ defmodule IgamingRef.MixProject do
 
   defp deps do
     [
-      # Core Ash stack
-      {:ash, "~> 3.0"},
+      # Core Ash stack — upgraded to 3.20 for Foundry compatibility
+      {:ash, "~> 3.20"},
       {:ash_postgres, "~> 2.0"},
       {:spark, "~> 2.0"},
       {:ecto_sql, "~> 3.11"},
@@ -45,8 +45,8 @@ defmodule IgamingRef.MixProject do
       {:ash_archival, "~> 1.0"},
       {:ash_json_api, "~> 1.0"},
 
-      # Reactor (Transfers)
-      {:reactor, "~> 0.10"},
+      # Reactor — upgraded to 1.0 (stable release) from 0.10
+      {:reactor, "~> 1.0"},
 
       # Money
       {:ash_money, "~> 0.1"},
@@ -60,7 +60,7 @@ defmodule IgamingRef.MixProject do
 
       # Background jobs
       {:oban, "~> 2.17"},
-      {:ash_oban, "~> 0.2", override: true},
+      {:ash_oban, "~> 0.2"},
 
       # Rate limiting (runtime: false — configure when needed)
       {:hammer, "~> 6.1", runtime: false},
@@ -70,8 +70,11 @@ defmodule IgamingRef.MixProject do
       {:opentelemetry, "~> 1.3"},
       {:opentelemetry_exporter, "~> 1.6"},
 
-      # Igniter (required by Foundry)
-      {:igniter, "~> 0.3"},
+      # Igniter — upgraded for Ash 3.20 compatibility
+      {:igniter, "~> 0.6"},
+
+      # Foundry — meta-framework for governance
+      {:foundry, path: "../../apps/foundry"},
 
       # Serialisation
       {:jason, "~> 1.4"},
@@ -80,7 +83,6 @@ defmodule IgamingRef.MixProject do
       {:stream_data, "~> 1.0"},
       {:bypass, "~> 2.1", only: :test},
       {:mox, "~> 1.1", only: :test},
-      {:wallaby, "~> 0.30", only: :test},
       {:ex_machina, "~> 2.7", only: :test}
     ]
   end
