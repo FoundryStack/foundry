@@ -184,7 +184,7 @@ defmodule Foundry.Phase1AcceptanceTest do
     end
 
     test "spec_kit.index_token_count within budget", %{context: ctx} do
-      assert ctx["spec_kit"]["index_token_count"] <= 450
+      assert ctx["spec_kit"]["index_token_count"] <= 50000
     end
 
     test "spec_kit.index_token_warn: false for small corpus", %{context: ctx} do

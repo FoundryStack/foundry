@@ -12,10 +12,6 @@ defmodule IgamingRef.Gaming.CatalogSyncJob do
 
   use Oban.Worker, queue: :default, max_attempts: 3
 
-  # Foundry metadata: names the reactor this job dispatches
-  Module.register_attribute(__MODULE__, :foundry_performs, accumulate: false)
-  @foundry_performs "ProviderSyncReactor"
-
   alias IgamingRef.Gaming.ProviderConfig
 
   @impl Oban.Worker
@@ -25,6 +21,9 @@ defmodule IgamingRef.Gaming.CatalogSyncJob do
     :ok
   end
 
+
+  # Foundry configuration: metadata for Foundry integration
+  @foundry %{performs: IgamingRef.Gaming.ProviderSyncReactor}
   defp sync_provider(provider) do
     # Dispatch a ProviderSyncReactor for each provider
     # In production, this would queue or invoke the reactor

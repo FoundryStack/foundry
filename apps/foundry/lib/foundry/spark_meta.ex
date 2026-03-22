@@ -356,8 +356,8 @@ defmodule Foundry.SparkMeta do
   end
 
   defp put_oban_performs(%ModuleInfo{module: module} = info) do
-    # Extract @foundry_performs attribute for Oban workers
-    # This attribute names the reactor that the job dispatches
+    # Extract performs from @foundry config map for Oban workers
+    # Usage: @foundry %{performs: ModuleName} or %{performs: "ModuleName"}
     behaviours =
       try do
         module.__info__(:attributes) |> Keyword.get(:behaviour, [])
@@ -368,7 +368,17 @@ defmodule Foundry.SparkMeta do
     if Oban.Worker in behaviours do
       performs =
         try do
-          get_attr_single(module.__info__(:attributes), :foundry_performs)
+          foundry_config = get_attr_single(module.__info__(:attributes), :foundry)
+
+          if is_map(foundry_config) do
+            case Map.get(foundry_config, :performs) do
+              atom when is_atom(atom) -> Atom.to_string(atom)
+              string when is_binary(string) -> string
+              _ -> nil
+            end
+          else
+            nil
+          end
         rescue
           _ -> nil
         end
