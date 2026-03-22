@@ -80,6 +80,7 @@ defmodule Foundry.Context.NodeEntry do
     oban_queues: [],
     rate_limited: false,
     feature_flags: [],
+    performs: nil,
     outputs: [],
     agent_steps: [],
     last_modified: nil
@@ -90,7 +91,7 @@ defimpl Jason.Encoder, for: Foundry.Context.NodeEntry do
   @field_order ~w[id module type domain app sensitive description attributes actions
     rules compliance adrs runbook test_coverage data_layer pending_migrations
     paper_trail archival state_machine api_routes telemetry_prefix money_attributes
-    authentication_subject oban_queues rate_limited feature_flags steps outputs
+    authentication_subject oban_queues rate_limited feature_flags steps performs outputs
     agent_steps last_modified]a
 
   def encode(entry, opts) do

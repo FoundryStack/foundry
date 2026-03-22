@@ -10,9 +10,11 @@ defmodule IgamingRef.Gaming.CatalogSyncJob do
   Compliance: RG-MGA-006 (provider agreements), RG-UK-007 (game certification)
   """
 
-  @performs "catalog_sync"
-
   use Oban.Worker, queue: :default, max_attempts: 3
+
+  # Foundry metadata: names the reactor this job dispatches
+  Module.register_attribute(__MODULE__, :foundry_performs, accumulate: false)
+  @foundry_performs "ProviderSyncReactor"
 
   alias IgamingRef.Gaming.ProviderConfig
 
