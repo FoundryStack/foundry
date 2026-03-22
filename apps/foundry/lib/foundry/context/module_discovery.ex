@@ -16,5 +16,14 @@ defmodule Foundry.Context.ModuleDiscovery do
     |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
     |> Enum.filter(&(Atom.to_string(&1) |> String.starts_with?(prefix)))
     |> Enum.filter(&Code.ensure_loaded?/1)
+    |> Enum.filter(&is_project_module?/1)
+  end
+
+  # Filter out generated modules and extension points
+  # Keep user-defined resources, reactors, rules, blueprints, providers, jobs, and middleware
+  defp is_project_module?(module) do
+    module_str = Atom.to_string(module)
+    # Exclude generated modules (Cldr, Version, migrations, etc.)
+    not String.contains?(module_str, [".Cldr.", "Version", "Migrations."])
   end
 end

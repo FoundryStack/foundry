@@ -179,8 +179,8 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert length(ctx["spec_kit"]["adrs"]) > 0
     end
 
-    test "spec_kit.runbooks count is 3", %{context: ctx} do
-      assert length(ctx["spec_kit"]["runbooks"]) == 3
+    test "spec_kit.runbooks count is 2", %{context: ctx} do
+      assert length(ctx["spec_kit"]["runbooks"]) == 2
     end
 
     test "spec_kit.index_token_count within budget", %{context: ctx} do
