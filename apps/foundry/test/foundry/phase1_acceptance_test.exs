@@ -320,10 +320,96 @@ defmodule Foundry.Phase1AcceptanceTest do
   end
 
   describe "mix foundry.project.status" do
-    @tag :skip
-    test "top-level keys present" do
-      # Placeholder for status test
-      assert true
+    setup do
+      # Load the reference project's compiled modules into the code path
+      # Try both dev and test build directories
+      :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/dev/lib/igaming_ref/ebin")))
+      :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/test/lib/igaming_ref/ebin")))
+      status = Foundry.Status.build(@ref_root)
+      {:ok, status: status}
+    end
+
+    test "all top-level keys present", %{status: s} do
+      expected = ~w[generated_at compiled_at project project_type domain_type domains
+                    sensitive_modules lint migrations proposals compliance test_coverage ci stack manifest]
+      for key <- expected, do: assert(Map.has_key?(s, key), "Missing: #{key}")
+    end
+
+    test "project is IgamingRef", %{status: s} do
+      assert s["project"] == "IgamingRef"
+    end
+
+    test "domains: 6 entries", %{status: s} do
+      assert length(s["domains"]) == 6
+    end
+
+    test "sensitive_modules contains expected short names", %{status: s} do
+      assert "Wallet" in s["sensitive_modules"]
+      assert "LedgerEntry" in s["sensitive_modules"]
+    end
+
+    test "compiled_at is non-null ISO 8601 timestamp", %{status: s} do
+      assert is_binary(s["compiled_at"])
+      assert {:ok, _, _} = DateTime.from_iso8601(s["compiled_at"])
+    end
+
+    test "lint.errors >= 0", %{status: s} do
+      assert is_integer(s["lint"]["errors"])
+      assert s["lint"]["errors"] >= 0
+    end
+
+    test "lint.warnings >= 0", %{status: s} do
+      assert is_integer(s["lint"]["warnings"])
+      assert s["lint"]["warnings"] >= 0
+    end
+
+    test "migrations.pending_count: 0", %{status: s} do
+      assert s["migrations"]["pending_count"] == 0
+    end
+
+    test "proposals.open_count: 0", %{status: s} do
+      assert s["proposals"]["open_count"] == 0
+    end
+
+    test "compliance has proper structure", %{status: s} do
+      compliance = s["compliance"]
+      assert Map.has_key?(compliance, "total_requirements")
+      assert Map.has_key?(compliance, "covered_count")
+      assert Map.has_key?(compliance, "planned_count")
+      assert Map.has_key?(compliance, "requirements")
+      assert is_list(compliance["requirements"])
+    end
+
+    test "each compliance requirement has required fields", %{status: s} do
+      requirements = s["compliance"]["requirements"]
+
+      Enum.each(requirements, fn req ->
+        assert Map.has_key?(req, "id"), "Requirement should have id"
+        assert Map.has_key?(req, "status"), "Requirement should have status"
+        assert Map.has_key?(req, "coverage"), "Requirement should have coverage"
+        assert is_binary(req["id"]), "ID should be a string"
+      end)
+    end
+
+    test "stack.ash starts with '3.'", %{status: s} do
+      assert String.starts_with?(s["stack"]["ash"], "3.")
+    end
+
+    test "stack versions are exact resolved values, no constraint syntax", %{status: s} do
+      for {_lib, version} <- s["stack"], not is_nil(version) do
+        refute String.contains?(version, "~>")
+        refute String.contains?(version, ">=")
+      end
+    end
+
+    test "manifest.domain_type is igaming", %{status: s} do
+      assert s["manifest"]["domain_type"] == "igaming"
+    end
+
+    test "ci.context_lock_current field is boolean", %{status: s} do
+      # The ci.context_lock_current field indicates whether the .foundry/context.lock
+      # file matches the current project state
+      assert is_boolean(s["ci"]["context_lock_current"])
     end
   end
 
