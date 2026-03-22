@@ -164,6 +164,14 @@ are identified by their commit SHA; version rules are skipped for them (warning 
 
 ---
 
+### Provider Adapter Version
+
+| Rule ID | Severity | Description | Implementation module | Status |
+|---|---|---|---|---|
+| `:adapter_version_not_active` | `:warning` | A provider adapter module is registered in `conditional_libraries` but is not set as the active version on any `ProviderConfig` record in the project. Indicates unused or deprecated adapter configuration. | `Foundry.LintRules.AdapterVersionRule` | planned |
+
+---
+
 ## Rule Implementation Notes
 
 All rules in `Foundry.LintRules.*` follow the same contract:
