@@ -138,6 +138,51 @@ defmodule IgamingRef.Integration.CIPipelineTest do
       end
     end
 
+    # Helper for mutations that affect lock file — must apply AFTER deps.get/compile
+    # since deps.get will overwrite lock file mutations with constraint-resolved versions
+    defp with_lock_mutation(mutation_fn, test_fn) do
+      tmpdir = Path.join(System.tmp_dir!(), "igaming_mut_#{:rand.uniform(1_000_000)}")
+      root_dir = Path.dirname(Path.dirname(@project_root))
+
+      File.cp_r!(@project_root, tmpdir)
+
+      try do
+        # Update mix.exs to use absolute path for foundry dependency
+        mix_exs_path = Path.join(tmpdir, "mix.exs")
+        mix_exs = File.read!(mix_exs_path)
+
+        foundry_path = Path.join(root_dir, "apps/foundry")
+        updated_mix_exs = String.replace(mix_exs, ~r/{:foundry, path: "[^"]*"}/, "{:foundry, path: \"#{foundry_path}\"}")
+        File.write!(mix_exs_path, updated_mix_exs)
+
+        env = [{"MIX_ENV", "test"}, {"FOUNDRY_TASKS_ONLY", "1"}]
+
+        # First: deps.get to resolve constraints (this will write current versions to mix.lock)
+        {_get_output, get_exit} =
+          System.cmd("mix", ["deps.get"], cd: tmpdir, env: env, stderr_to_stdout: true)
+
+        assert get_exit == 0, "deps.get failed"
+
+        # Second: compile to build the project
+        {output, exit_code} =
+          System.cmd("mix", ["compile"], cd: tmpdir, env: env, stderr_to_stdout: true)
+
+        assert exit_code == 0, "Compile failed after deps.get in temp dir. Output:\n#{output}"
+
+        # Third: apply lock file mutation AFTER compile so it persists
+        mutation_fn.(tmpdir)
+
+        # Fourth: run lint in subprocess
+        {json_output, lint_exit_code} =
+          System.cmd("mix", ["foundry.lint.all", "--json"], cd: tmpdir, env: env, stderr_to_stdout: false)
+
+        report = Jason.decode!(json_output)
+        test_fn.(report, lint_exit_code)
+      after
+        File.rm_rf!(tmpdir)
+      end
+    end
+
     test "removing @runbook from WithdrawalTransfer triggers missing_runbook" do
       with_mutation(
         fn tmpdir ->
@@ -241,7 +286,7 @@ defmodule IgamingRef.Integration.CIPipelineTest do
     end
 
     test "outdated ash version (2.x) triggers ash_version_outdated" do
-      with_mutation(
+      with_lock_mutation(
         fn tmpdir ->
           path = Path.join([tmpdir, "mix.lock"])
           content = File.read!(path)
