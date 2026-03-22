@@ -51,8 +51,6 @@ defmodule Foundry.Proposals.Proposal do
       AshArchival.Resource
     ]
 
-  alias Foundry.Proposals.{ApprovalSlot, BlobHash, LintResult, ImpactAnalysis}
-
   # ---------------------------------------------------------------------------
   # Attributes
   # ---------------------------------------------------------------------------
@@ -67,6 +65,7 @@ defmodule Foundry.Proposals.Proposal do
 
     attribute :state, :atom do
       description("Current lifecycle state. Managed by AshStateMachine — do not set directly.")
+      allow_nil?(false)
 
       constraints(
         one_of: [
@@ -121,15 +120,15 @@ defmodule Foundry.Proposals.Proposal do
       allow_nil?(true)
     end
 
-    attribute :blob_hashes, {:array, BlobHash} do
+    attribute :blob_hashes, :map do
       description(
         "Git blob hashes of all files affected by this proposal at creation time. Used for stale detection (ADR-009). A proposal is STALE when any hash no longer matches the current HEAD."
       )
 
-      default([])
+      default(%{})
     end
 
-    attribute :lint_result, LintResult do
+    attribute :lint_result, :map do
       description(
         "Structured lint output from the pre-approval lint run. Nil until the proposal reaches PENDING_REVIEW."
       )
@@ -137,7 +136,7 @@ defmodule Foundry.Proposals.Proposal do
       allow_nil?(true)
     end
 
-    attribute :impact_analysis, ImpactAnalysis do
+    attribute :impact_analysis, :map do
       description(
         "Deterministic impact analysis computed by Foundry.Copilot.ImpactAnalyzer. Nil until the proposal reaches PENDING_REVIEW."
       )
@@ -158,7 +157,7 @@ defmodule Foundry.Proposals.Proposal do
       allow_nil?(false)
     end
 
-    attribute :approval_slot_1, ApprovalSlot do
+    attribute :approval_slot_1, :map do
       description(
         "First approval slot. For :sensitive proposals: must be filled by sensitive_lead. For :behavioral: domain_lead. For :structural: any developer."
       )
@@ -166,7 +165,7 @@ defmodule Foundry.Proposals.Proposal do
       allow_nil?(true)
     end
 
-    attribute :approval_slot_2, ApprovalSlot do
+    attribute :approval_slot_2, :map do
       description(
         "Second approval slot. Only used for :sensitive proposals (dual approval). Must be a different person from approval_slot_1. May be filled by domain_lead, platform_lead, or compliance_officer per manifest."
       )
@@ -467,12 +466,12 @@ defmodule Foundry.Proposals.LintResult do
       allow_nil?(false)
     end
 
-    attribute :violations, {:array, Foundry.Proposals.LintViolation} do
+    attribute :violations, :map do
       description(
         "All violations found. May include :warning and :info severity items even when passed is true."
       )
 
-      default([])
+      default(%{})
     end
 
     attribute :ran_at, :utc_datetime do

@@ -346,8 +346,6 @@ defmodule Foundry.Lint.Rules.AdminRouteRule do
 
   alias Foundry.Lint.LintReport.Violation
 
-  @admin_route_patterns ["/oban", "/dashboard", "/feature-flags"]
-
   @impl true
   def check(%{module: mod}) do
     # Only applies to Router modules
