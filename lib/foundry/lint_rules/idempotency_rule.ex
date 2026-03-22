@@ -98,11 +98,13 @@ defmodule Foundry.LintRules.IdempotencyRule do
   # Search for the module's source file in lib/ directories
   defp find_module_source_file(module_str, project_root) do
     # Convert Module.Name to module/name.ex (with underscoring applied)
+    # Module format: "Elixir.ProjectName.Section.Module"
+    # File path: lib/section/module.ex (project name prefix is omitted)
     parts = String.split(module_str, ".")
 
     filename_lower =
       (parts
-       |> Enum.drop(1)
+       |> Enum.drop(2)
        |> Enum.map(&Macro.underscore/1)
        |> Enum.join("/")) <> ".ex"
 
