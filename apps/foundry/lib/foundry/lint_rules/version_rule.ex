@@ -39,7 +39,7 @@ defmodule Foundry.LintRules.VersionRule do
       nil ->
         violations
 
-      {:hex, "ash", version, _, _, _} ->
+      {:hex, :ash, version, _, _, _} ->
         case Version.parse(version) do
           {:ok, %Version{major: major}} when major >= 3 ->
             violations
@@ -69,7 +69,7 @@ defmodule Foundry.LintRules.VersionRule do
       nil ->
         violations
 
-      {:hex, "ash_ai", version, _, _, _} ->
+      {:hex, :ash_ai, version, _, _, _} ->
         case Version.parse(version) do
           {:ok, %Version{major: major}} when major >= 2 ->
             violations
