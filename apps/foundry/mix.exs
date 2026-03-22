@@ -38,6 +38,8 @@ defmodule Foundry.MixProject do
     [
       {:ash, "~> 3.20"},
       {:ash_state_machine, "~> 0.2"},
+      {:ash_paper_trail, "~> 0.5"},
+      {:ash_archival, "~> 2.0"},
       {:picosat_elixir, "~> 0.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:phoenix_pubsub, "~> 2.1"},
