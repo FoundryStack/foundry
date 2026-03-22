@@ -39,7 +39,6 @@ defmodule FoundryWeb.MixProject do
   defp deps do
     [
       {:phoenix, "~> 1.8.3"},
-      {:phoenix_ecto, "~> 4.5"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 1.1.0"},
@@ -69,7 +68,7 @@ defmodule FoundryWeb.MixProject do
   defp aliases do
     [
       setup: ["deps.get", "assets.setup", "assets.build"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      test: ["test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind foundry_web", "esbuild foundry_web"],
       "assets.deploy": [
