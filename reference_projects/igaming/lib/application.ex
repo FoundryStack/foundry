@@ -29,51 +29,10 @@ defmodule IgamingRef.Repo do
   end
 end
 
-# ---------------------------------------------------------------------------
-# Domains
-# ---------------------------------------------------------------------------
-
-defmodule IgamingRef.Finance do
-  @moduledoc "Ledger, wallets, and financial transfers — the financial core of the reference project."
-
-  use Ash.Domain, otp_app: :igaming_ref
-
-  resources do
-    resource(IgamingRef.Finance.Wallet)
-    resource(IgamingRef.Finance.LedgerEntry)
-    resource(IgamingRef.Finance.WithdrawalRequest)
-  end
-end
-
-defmodule IgamingRef.Players do
-  @moduledoc "Player accounts, KYC, and self-exclusion."
-
-  use Ash.Domain, otp_app: :igaming_ref
-
-  resources do
-    resource(IgamingRef.Players.Player)
-    resource(IgamingRef.Players.SelfExclusionRecord)
-  end
-end
-
-defmodule IgamingRef.Promotions do
-  @moduledoc "Bonus campaigns, grants, and wagering."
-
-  use Ash.Domain, otp_app: :igaming_ref
-
-  resources do
-    resource(IgamingRef.Promotions.BonusCampaign)
-    resource(IgamingRef.Promotions.BonusGrant)
-  end
-end
-
-defmodule IgamingRef.Accounts do
-  @moduledoc "Authentication subjects and tokens. Always treated as sensitive by Foundry."
-
-  use Ash.Domain, otp_app: :igaming_ref
-
-  resources do
-    resource(IgamingRef.Accounts.User)
-    resource(IgamingRef.Accounts.Token)
-  end
-end
+# Note: Domain modules are defined in dedicated files:
+# - lib/finance.ex
+# - lib/players.ex
+# - lib/promotions.ex
+# - lib/accounts.ex
+# - lib/ops.ex
+# - lib/gaming.ex

@@ -192,6 +192,96 @@ defmodule IgamingRef.Promotions.Rules.CampaignNotExpired do
   def description, do: "Campaign must not have expired"
 end
 
+defmodule IgamingRef.Finance.Rules.PlayerKYCVerified do
+  @moduledoc """
+  Rule: the player must have verified KYC status before certain transactions.
+
+  Applied by: Deposit and withdrawal operations
+  Compliance: RG-MGA-003 (KYC requirements)
+  """
+
+  @compliance [:RG_MGA_003]
+  @spec_invariants [
+    "rule rejects when player.kyc_status != :verified",
+    "rule passes when player.kyc_status == :verified",
+    "rule is a hard requirement for withdrawal processing"
+  ]
+
+  @behaviour IgamingRef.Rule
+
+  @impl IgamingRef.Rule
+  def evaluate(%{player: player}, _context) do
+    if player.kyc_status == :verified do
+      :ok
+    else
+      {:error, :kyc_not_verified, "Player #{player.id} has kyc_status #{player.kyc_status}, must be :verified (RG-MGA-003)"}
+    end
+  end
+
+  @impl IgamingRef.Rule
+  def description, do: "Player must have verified KYC status"
+end
+
+defmodule IgamingRef.Gaming.Rules.ProviderActive do
+  @moduledoc """
+  Rule: the gaming provider must be in :active status.
+
+  Applied by: Game operations, catalog syncs
+  Compliance: RG-MGA-006 (provider agreements)
+  """
+
+  @compliance [:RG_MGA_006]
+  @spec_invariants [
+    "rule rejects when provider status is not :active",
+    "rule passes when provider.status == :active",
+    "games from inactive providers are not playable"
+  ]
+
+  @behaviour IgamingRef.Rule
+
+  @impl IgamingRef.Rule
+  def evaluate(%{provider_config: config}, _context) do
+    if config.status == :active do
+      :ok
+    else
+      {:error, :provider_inactive, "Provider #{config.provider_name} has status #{config.status}, must be :active (RG-MGA-006)"}
+    end
+  end
+
+  @impl IgamingRef.Rule
+  def description, do: "Provider must be in active status"
+end
+
+defmodule IgamingRef.Gaming.Rules.GameRTPCertified do
+  @moduledoc """
+  Rule: the game version must have RTP certification.
+
+  Applied by: Game launch operations
+  Compliance: RG-UK-007 (game certification)
+  """
+
+  @compliance [:RG_UK_007]
+  @spec_invariants [
+    "rule rejects when game_version.rtp_certified is false",
+    "rule passes when game_version.rtp_certified is true",
+    "uncertified game versions cannot be played"
+  ]
+
+  @behaviour IgamingRef.Rule
+
+  @impl IgamingRef.Rule
+  def evaluate(%{game_version: version}, _context) do
+    if version.rtp_certified do
+      :ok
+    else
+      {:error, :rtp_not_certified, "Game version #{version.id} is not RTP-certified. Cannot be played (RG-UK-007)"}
+    end
+  end
+
+  @impl IgamingRef.Rule
+  def description, do: "Game version must be RTP-certified"
+end
+
 # ---------------------------------------------------------------------------
 # Rule behaviour
 # ---------------------------------------------------------------------------
