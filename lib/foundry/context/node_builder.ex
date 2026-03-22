@@ -39,6 +39,7 @@ defmodule Foundry.Context.NodeBuilder do
       rate_limited: info.rate_limited,
       feature_flags: info.feature_flags,
       steps: info.steps,
+      performs: info.performs,
       outputs: info.outputs,
       agent_steps: info.agent_steps,
       last_modified: format_mtime(info.last_modified)

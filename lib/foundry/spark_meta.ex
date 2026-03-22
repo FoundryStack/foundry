@@ -33,6 +33,7 @@ defmodule Foundry.SparkMeta.ModuleInfo do
     steps: [],
     outputs: [],
     agent_steps: [],
+    performs: nil,
     last_modified: nil
   ]
 end
@@ -102,6 +103,8 @@ defmodule Foundry.SparkMeta do
     |> put_reactor_steps()
     # behaviour list
     |> put_oban_fields()
+    # @performs attribute for Oban workers
+    |> put_oban_performs()
     # AshAI DSL entities if present
     |> put_agent_steps()
     # source file mtime
@@ -296,12 +299,14 @@ defmodule Foundry.SparkMeta do
   end
 
   defp put_reactor_steps(%ModuleInfo{module: module} = info) do
-    if function_exported?(module, :__reactor__, 0) do
+    # Reactor modules export entities/1 function to access DSL entities
+    if function_exported?(module, :entities, 1) do
       steps =
         try do
-          Spark.Dsl.Extension.get_entities(module, [:reactor, :steps])
+          module.entities([:reactor])
+          |> Enum.filter(&match?(%{__struct__: Reactor.Dsl.Step}, &1))
           |> Enum.map(fn step ->
-            %Foundry.SparkMeta.StepEntry{
+            %{
               name: to_string(step.name),
               type:
                 step.__struct__
@@ -350,6 +355,32 @@ defmodule Foundry.SparkMeta do
     _ -> info
   end
 
+  defp put_oban_performs(%ModuleInfo{module: module} = info) do
+    # Extract @foundry_performs attribute for Oban workers
+    # This attribute names the reactor that the job dispatches
+    behaviours =
+      try do
+        module.__info__(:attributes) |> Keyword.get(:behaviour, [])
+      rescue
+        _ -> []
+      end
+
+    if Oban.Worker in behaviours do
+      performs =
+        try do
+          get_attr_single(module.__info__(:attributes), :foundry_performs)
+        rescue
+          _ -> nil
+        end
+
+      %{info | performs: performs}
+    else
+      info
+    end
+  rescue
+    _ -> info
+  end
+
   defp put_agent_steps(%ModuleInfo{module: module} = info) do
     # AshAI agent steps detection and extraction deferred to Phase 2+
     # For now, always empty list
@@ -391,7 +422,8 @@ defmodule Foundry.SparkMeta do
   end
 
   defp reactor_module?(module) do
-    function_exported?(module, :__reactor__, 0)
+    # Reactor modules export either __reactor__ or reactor/0
+    function_exported?(module, :__reactor__, 0) or function_exported?(module, :reactor, 0)
   rescue
     _ -> false
   end
