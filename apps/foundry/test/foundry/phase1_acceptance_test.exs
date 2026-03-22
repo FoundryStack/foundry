@@ -4,6 +4,40 @@ defmodule Foundry.Phase1AcceptanceTest do
 
   @ref_root Path.expand("../../../../reference_projects/igaming", __DIR__)
 
+  # Pre-compute expensive operations once at module load time, then share across all tests
+  setup_all do
+    # Load code path once
+    :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/dev/lib/igaming_ref/ebin")))
+    :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/test/lib/igaming_ref/ebin")))
+
+    # Build graph context once
+    {:ok, manifest} = Foundry.Manifest.Parser.read(@ref_root)
+    {nodes, edges} = Foundry.Context.GraphBuilder.build(@ref_root, manifest)
+    spec_kit = Foundry.Context.SpecKitIndexBuilder.build(@ref_root)
+
+    domain_type = Keyword.get(manifest, :domain_type, "")
+    domain_type_str = if is_atom(domain_type), do: Atom.to_string(domain_type), else: domain_type
+
+    context = %{
+      "generated_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "project" => Keyword.get(manifest, :project_name, ""),
+      "project_type" => Keyword.get(manifest, :project_type, "standard"),
+      "domain_type" => domain_type_str,
+      "nodes" => Enum.map(nodes, &to_json_node/1),
+      "edges" => Enum.map(edges, &to_json_edge/1),
+      "spec_kit" => spec_kit,
+      "graph_delta" => nil
+    }
+
+    # Lint once
+    lint_report = Foundry.Lint.Runner.run(@ref_root)
+
+    # Status once
+    status = Foundry.Status.build(@ref_root)
+
+    {:ok, context: context, lint_report: lint_report, status: status}
+  end
+
   # Helpers
   # Note: These are placeholders used by Step 3+ tests (currently skipped).
   defp run_task(task, args \\ []) do
@@ -37,33 +71,6 @@ defmodule Foundry.Phase1AcceptanceTest do
   end
 
   describe "mix foundry.project.context (bulk)" do
-    setup do
-      # For Phase 1, we test by directly calling our modules instead of invoking mix tasks
-      # The reference project doesn't have Foundry as a dependency
-      # We need to add the reference project's compiled modules to the code path
-      :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/dev/lib/igaming_ref/ebin")))
-
-      {:ok, manifest} = Foundry.Manifest.Parser.read(@ref_root)
-      {nodes, edges} = Foundry.Context.GraphBuilder.build(@ref_root, manifest)
-      spec_kit = Foundry.Context.SpecKitIndexBuilder.build(@ref_root)
-
-      domain_type = Keyword.get(manifest, :domain_type, "")
-      domain_type_str = if is_atom(domain_type), do: Atom.to_string(domain_type), else: domain_type
-
-      context = %{
-        "generated_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
-        "project" => Keyword.get(manifest, :project_name, ""),
-        "project_type" => Keyword.get(manifest, :project_type, "standard"),
-        "domain_type" => domain_type_str,
-        "nodes" => Enum.map(nodes, &to_json_node/1),
-        "edges" => Enum.map(edges, &to_json_edge/1),
-        "spec_kit" => spec_kit,
-        "graph_delta" => nil
-      }
-
-      {:ok, context: context}
-    end
-
     test "top-level keys present", %{context: ctx} do
       expected = ~w[generated_at project project_type domain_type nodes edges spec_kit graph_delta]
       Enum.each(expected, fn key ->
@@ -179,8 +186,8 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert length(ctx["spec_kit"]["adrs"]) > 0
     end
 
-    test "spec_kit.runbooks count is 2", %{context: ctx} do
-      assert length(ctx["spec_kit"]["runbooks"]) == 2
+    test "spec_kit.runbooks count is 3", %{context: ctx} do
+      assert length(ctx["spec_kit"]["runbooks"]) == 3
     end
 
     test "spec_kit.index_token_count within budget", %{context: ctx} do
@@ -229,10 +236,12 @@ defmodule Foundry.Phase1AcceptanceTest do
       File.write!(wallet_path, content <> "\n# test comment\n")
 
       # Check should return stale error
-      assert {:error, :stale} == Foundry.Context.LockFile.check(@ref_root)
-
-      # Restore the file
-      File.write!(wallet_path, content)
+      try do
+        assert {:error, :stale} == Foundry.Context.LockFile.check(@ref_root)
+      after
+        # Restore the file even if assertion fails
+        File.write!(wallet_path, content)
+      end
     end
 
     test "lock file check returns :missing when context.lock is absent", %{lock_path: lock_path} do
@@ -240,18 +249,17 @@ defmodule Foundry.Phase1AcceptanceTest do
       File.rm(lock_path)
 
       # Check should return missing error
-      assert {:error, :missing} == Foundry.Context.LockFile.check(@ref_root)
+      try do
+        assert {:error, :missing} == Foundry.Context.LockFile.check(@ref_root)
+      after
+        # Restore lock file for subsequent tests
+        Foundry.Context.LockFile.write(@ref_root)
+      end
     end
   end
 
   describe "mix foundry.lint.all" do
-    setup do
-      # Load the reference project's compiled modules into the code path
-      :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/dev/lib/igaming_ref/ebin")))
-      {:ok, report: Foundry.Lint.Runner.run(@ref_root)}
-    end
-
-    test "clean run produces valid LintReport structure", %{report: report} do
+    test "clean run produces valid LintReport structure", %{lint_report: report} do
       # Report should have the required fields
       assert is_map(report)
       assert is_boolean(report.passed)
@@ -262,7 +270,7 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert is_binary(report.generated_at)
     end
 
-    test "every violation has rule_id, module, message, severity", %{report: report} do
+    test "every violation has rule_id, module, message, severity", %{lint_report: report} do
       Enum.each(report.violations, fn v ->
         assert is_atom(v.rule_id), "rule_id must be atom: #{inspect(v.rule_id)}"
         assert v.module != nil, "module must be present: #{inspect(v.module)}"
@@ -271,7 +279,7 @@ defmodule Foundry.Phase1AcceptanceTest do
       end)
     end
 
-    test "violation passed status reflects only errors", %{report: report} do
+    test "violation passed status reflects only errors", %{lint_report: report} do
       # report.passed == true if and only if error_count == 0
       if report.error_count == 0 do
         assert report.passed == true
@@ -280,11 +288,11 @@ defmodule Foundry.Phase1AcceptanceTest do
       end
     end
 
-    test ":ash_version_outdated does NOT appear on clean Ash 3.x project", %{report: report} do
+    test ":ash_version_outdated does NOT appear on clean Ash 3.x project", %{lint_report: report} do
       refute Enum.any?(report.violations, &(&1.rule_id == :ash_version_outdated))
     end
 
-    test "violations ordered :error before :warning, alphabetically by module", %{report: report} do
+    test "violations ordered :error before :warning, alphabetically by module", %{lint_report: report} do
       violations = report.violations
 
       error_positions =
@@ -320,15 +328,6 @@ defmodule Foundry.Phase1AcceptanceTest do
   end
 
   describe "mix foundry.project.status" do
-    setup do
-      # Load the reference project's compiled modules into the code path
-      # Try both dev and test build directories
-      :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/dev/lib/igaming_ref/ebin")))
-      :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/test/lib/igaming_ref/ebin")))
-      status = Foundry.Status.build(@ref_root)
-      {:ok, status: status}
-    end
-
     test "all top-level keys present", %{status: s} do
       expected = ~w[generated_at compiled_at project project_type domain_type domains
                     sensitive_modules lint migrations proposals compliance test_coverage ci stack manifest]

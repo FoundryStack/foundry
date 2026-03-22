@@ -14,7 +14,24 @@ defmodule IgamingRef.Integration.CIPipelineTest do
 
   @project_root File.cwd!()
 
+  # Shared tmpdir for all mutation tests (reuse compiled artifacts between tests)
+  # Initialized on first use via ensure_mutation_tmpdir/0
+  @mutation_tmpdir_name "igaming_mutations_#{:rand.uniform(1_000_000_000)}"
+  @mutation_tmpdir_path System.tmp_dir!() |> Path.join(@mutation_tmpdir_name)
+
+  # Cleanup shared tmpdir after all tests complete
+  defp cleanup_all do
+    on_exit(fn ->
+      tmpdir = @mutation_tmpdir_path
+      if File.exists?(tmpdir) do
+        File.rm_rf!(tmpdir)
+      end
+    end)
+  end
+
   describe "sequence: baseline CI pipeline" do
+    setup do: cleanup_all()
+
     test "foundry.lint.all passes with no violations on clean project" do
       report = Foundry.Lint.Runner.run(@project_root)
 
@@ -93,93 +110,124 @@ defmodule IgamingRef.Integration.CIPipelineTest do
   end
 
   describe "mutation tests: lint rules catch violations" do
-    # Helper to run lint as subprocess in temp copy of project
-    defp with_mutation(mutation_fn, test_fn) do
-      tmpdir = Path.join(System.tmp_dir!(), "igaming_mut_#{:rand.uniform(1_000_000)}")
-      root_dir = Path.dirname(Path.dirname(@project_root))
+    # Cache environment once instead of spawning subprocess for each test
+    @cached_env (System.cmd("env", []) |> elem(0) |> String.trim() |> String.split("\n") |> Enum.map(&String.split(&1, "=", parts: 2)) |> Enum.filter(&(length(&1) == 2)) |> Enum.map(&List.to_tuple/1))
 
-      File.cp_r!(@project_root, tmpdir)
+    # Helper to build environment by merging with cached environment
+    defp build_env(overrides) do
+      merged = @cached_env ++ overrides
+      merged |> Enum.reverse() |> Enum.uniq_by(&elem(&1, 0)) |> Enum.reverse()
+    end
 
-      try do
-        # Apply mutation
-        mutation_fn.(tmpdir)
+    # Initialize shared tmpdir once, copy igaming and run deps.get + compile
+    defp ensure_mutation_tmpdir do
+      tmpdir = @mutation_tmpdir_path
+      if not File.exists?(tmpdir) do
+        root_dir = Path.dirname(Path.dirname(@project_root))
 
-        # Update mix.exs to use absolute path for foundry dependency
+        # Copy without _build and deps
+        File.cp_r!(@project_root, tmpdir, fn src, _dst ->
+          not (src =~ ~r{/_build(/|$)}) and not (src =~ ~r{/deps(/|$)})
+        end)
+
+        # Patch foundry path
         mix_exs_path = Path.join(tmpdir, "mix.exs")
         mix_exs = File.read!(mix_exs_path)
-
         foundry_path = Path.join(root_dir, "apps/foundry")
         updated_mix_exs = String.replace(mix_exs, ~r/{:foundry, path: "[^"]*"}/, "{:foundry, path: \"#{foundry_path}\"}")
         File.write!(mix_exs_path, updated_mix_exs)
 
-        # Deps.get in temp copy to resolve dependencies
-        env = [{"MIX_ENV", "test"}, {"FOUNDRY_TASKS_ONLY", "1"}]
+        env = build_env([{"MIX_ENV", "test"}, {"FOUNDRY_TASKS_ONLY", "1"}])
 
-        {_get_output, get_exit} =
-          System.cmd("mix", ["deps.get"], cd: tmpdir, env: env, stderr_to_stdout: true)
+        # One-time deps.get and compile for the shared tmpdir
+        {_out, code} = System.cmd("mix", ["deps.get", "--no-deps-check"], cd: tmpdir, env: env, stderr_to_stdout: true)
+        assert code == 0, "deps.get failed in shared tmpdir"
 
-        assert get_exit == 0, "deps.get failed"
+        {_out, code} = System.cmd("mix", ["compile"], cd: tmpdir, env: env, stderr_to_stdout: true)
+        assert code == 0, "compile failed in shared tmpdir"
+      end
 
-        # Recompile temp copy
-        {output, exit_code} =
-          System.cmd("mix", ["compile"], cd: tmpdir, env: env, stderr_to_stdout: true)
+      tmpdir
+    end
 
-        assert exit_code == 0, "Compile failed after mutation in temp dir. Output:\n#{output}"
+    # Helper to run lint as subprocess in shared temp copy
+    # Mutations are applied to source files; mix compile incrementally recompiles them
+    defp with_mutation(mutation_fn, test_fn) do
+      tmpdir = ensure_mutation_tmpdir()
 
-        # Run lint in subprocess (fresh VM so mutated modules are loaded)
-        # stderr_to_stdout: false to keep stderr separate so JSON is clean
-        {json_output, lint_exit_code} =
-          System.cmd("mix", ["foundry.lint.all", "--json"], cd: tmpdir, env: env, stderr_to_stdout: false)
+      try do
+        # Apply mutation to source files in shared tmpdir
+        mutation_fn.(tmpdir)
 
+        env = build_env([{"MIX_ENV", "test"}, {"FOUNDRY_TASKS_ONLY", "1"}])
+
+        # Run lint in subprocess - compilation output may be mixed with JSON
+        {output, lint_exit_code} =
+          System.cmd("mix", ["foundry.lint.all", "--json"], cd: tmpdir, env: env, stderr_to_stdout: true)
+
+        # Extract JSON from output (compiler output often comes before JSON)
+        json_output =
+          output
+          |> String.split("\n")
+          |> Enum.find(&String.trim_leading(&1, " ") |> String.starts_with?("{"))
+
+        # Debug: show what we found
+        if is_nil(json_output) do
+          IO.puts("ERROR: No JSON found in subprocess output")
+          IO.puts("First 500 chars: #{String.slice(output, 0..500)}")
+          IO.puts("Exit code: #{lint_exit_code}")
+        end
+
+        json_output = json_output || "{}"
         report = Jason.decode!(json_output)
         test_fn.(report, lint_exit_code)
       after
-        File.rm_rf!(tmpdir)
+        # Restore mutated source files to original state for next test
+        # (so mutations don't accumulate)
+        # Copy only lib/ from original @project_root to restore sources
+        lib_src = Path.join(@project_root, "lib")
+        lib_dst = Path.join(tmpdir, "lib")
+        File.rm_rf!(lib_dst)
+        File.cp_r!(lib_src, lib_dst)
       end
     end
 
-    # Helper for mutations that affect lock file — must apply AFTER deps.get/compile
-    # since deps.get will overwrite lock file mutations with constraint-resolved versions
+    # Helper for mutations that affect lock file
+    # Must use the shared tmpdir to reuse compile cache; lock mutations don't persist anyway
+    # (mix compile with the original mix.lock will re-resolve)
     defp with_lock_mutation(mutation_fn, test_fn) do
-      tmpdir = Path.join(System.tmp_dir!(), "igaming_mut_#{:rand.uniform(1_000_000)}")
-      root_dir = Path.dirname(Path.dirname(@project_root))
-
-      File.cp_r!(@project_root, tmpdir)
+      tmpdir = ensure_mutation_tmpdir()
 
       try do
-        # Update mix.exs to use absolute path for foundry dependency
-        mix_exs_path = Path.join(tmpdir, "mix.exs")
-        mix_exs = File.read!(mix_exs_path)
-
-        foundry_path = Path.join(root_dir, "apps/foundry")
-        updated_mix_exs = String.replace(mix_exs, ~r/{:foundry, path: "[^"]*"}/, "{:foundry, path: \"#{foundry_path}\"}")
-        File.write!(mix_exs_path, updated_mix_exs)
-
-        env = [{"MIX_ENV", "test"}, {"FOUNDRY_TASKS_ONLY", "1"}]
-
-        # First: deps.get to resolve constraints (this will write current versions to mix.lock)
-        {_get_output, get_exit} =
-          System.cmd("mix", ["deps.get"], cd: tmpdir, env: env, stderr_to_stdout: true)
-
-        assert get_exit == 0, "deps.get failed"
-
-        # Second: compile to build the project
-        {output, exit_code} =
-          System.cmd("mix", ["compile"], cd: tmpdir, env: env, stderr_to_stdout: true)
-
-        assert exit_code == 0, "Compile failed after deps.get in temp dir. Output:\n#{output}"
-
-        # Third: apply lock file mutation AFTER compile so it persists
+        # Apply lock file mutation
         mutation_fn.(tmpdir)
 
-        # Fourth: run lint in subprocess
-        {json_output, lint_exit_code} =
-          System.cmd("mix", ["foundry.lint.all", "--json"], cd: tmpdir, env: env, stderr_to_stdout: false)
+        env = build_env([{"MIX_ENV", "test"}, {"FOUNDRY_TASKS_ONLY", "1"}])
+
+        # Run lint in subprocess - compilation output may be mixed with JSON
+        {output, lint_exit_code} =
+          System.cmd("mix", ["foundry.lint.all", "--json"], cd: tmpdir, env: env, stderr_to_stdout: true)
+
+        # Extract JSON from output (compiler output often comes before JSON)
+        json_output =
+          output
+          |> String.split("\n")
+          |> Enum.find(&String.trim_leading(&1, " ") |> String.starts_with?("{"))
+          || "{}"
 
         report = Jason.decode!(json_output)
         test_fn.(report, lint_exit_code)
       after
-        File.rm_rf!(tmpdir)
+        # Restore lock file to original
+        lock_src = Path.join(@project_root, "mix.lock")
+        lock_dst = Path.join(tmpdir, "mix.lock")
+        File.cp!(lock_src, lock_dst)
+
+        # Also restore lib/ sources like with_mutation does
+        lib_src = Path.join(@project_root, "lib")
+        lib_dst = Path.join(tmpdir, "lib")
+        File.rm_rf!(lib_dst)
+        File.cp_r!(lib_src, lib_dst)
       end
     end
 
