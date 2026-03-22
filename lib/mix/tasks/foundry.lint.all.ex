@@ -62,22 +62,27 @@ defmodule Mix.Tasks.Foundry.Lint.All do
     }
 
     case format do
-      :json -> IO.puts(Jason.encode!(sorted_report, pretty: true))
-      :text -> print_text_report(sorted_report)
-    end
+      :json ->
+        IO.puts(Jason.encode!(sorted_report, pretty: true))
+        unless report.passed do
+          exit({:shutdown, 1})
+        end
 
-    unless report.passed do
-      Mix.shell().error(
-        "\n#{report.error_count} error(s), #{report.warning_count} warning(s). Lint failed."
-      )
+      :text ->
+        print_text_report(sorted_report)
+        unless report.passed do
+          Mix.shell().error(
+            "\n#{report.error_count} error(s), #{report.warning_count} warning(s). Lint failed."
+          )
 
-      exit({:shutdown, 1})
-    end
+          exit({:shutdown, 1})
+        end
 
-    if report.warning_count > 0 do
-      Mix.shell().info("\n#{report.warning_count} warning(s). Lint passed with warnings.")
-    else
-      Mix.shell().info("\nLint passed. No violations.")
+        if report.warning_count > 0 do
+          Mix.shell().info("\n#{report.warning_count} warning(s). Lint passed with warnings.")
+        else
+          Mix.shell().info("\nLint passed. No violations.")
+        end
     end
   end
 
