@@ -32,7 +32,7 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
 
     %{
       "index_token_count" => token_count,
-      "index_token_warn" => token_count > 45000, # TODO: Take out hardcoded values
+      "index_token_warn" => token_count > 45000,
       "index_token_limit" => 50000,
       "adrs" => adrs,
       "runbooks" => runbooks,

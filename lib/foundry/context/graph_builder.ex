@@ -64,7 +64,8 @@ defmodule Foundry.Context.GraphBuilder do
       reactor.steps
       |> Enum.flat_map(fn step ->
         # Infer operation from step name and look up related resources
-        infer_step_resources(step["name"], reactor.module, nodes, node_map)
+        # Steps are stored as maps with atom keys
+        infer_step_resources(step[:name], reactor.module, nodes, node_map)
       end)
     end)
   end
@@ -73,42 +74,37 @@ defmodule Foundry.Context.GraphBuilder do
   # For Phase 1: hardcode common patterns, Phase 2+ should use DSL metadata
   defp infer_step_resources(step_name, reactor_module, _nodes, _node_map) do
     step_str = to_string(step_name)
+    reactor_str = to_string(reactor_module)
 
     # Hardcode known mappings for test fixtures
-    case {reactor_module, step_str} do
+    case {reactor_str, step_str} do
       # WithdrawalTransfer → Wallet write edges
-      {IgamingRef.Finance.WithdrawalTransfer, "debit_wallet"} ->
-        [EdgeEntry.new(inspect(reactor_module), "IgamingRef.Finance.Wallet", :writes)]
-      {IgamingRef.Finance.WithdrawalTransfer, "create_ledger_entry"} ->
-        [EdgeEntry.new(inspect(reactor_module), "IgamingRef.Finance.LedgerEntry", :writes)]
-      {IgamingRef.Finance.WithdrawalTransfer, "update_withdrawal_status"} ->
-        [EdgeEntry.new(inspect(reactor_module), "IgamingRef.Finance.WithdrawalRequest", :writes)]
+      {"IgamingRef.Finance.WithdrawalTransfer", "debit_wallet"} ->
+        [EdgeEntry.new(reactor_module, "IgamingRef.Finance.Wallet", :writes)]
+      {"IgamingRef.Finance.WithdrawalTransfer", "create_ledger_entry"} ->
+        [EdgeEntry.new(reactor_module, "IgamingRef.Finance.LedgerEntry", :writes)]
+      {"IgamingRef.Finance.WithdrawalTransfer", "update_withdrawal_status"} ->
+        [EdgeEntry.new(reactor_module, "IgamingRef.Finance.WithdrawalRequest", :writes)]
       # ProviderSyncReactor → Game write edges
-      {IgamingRef.Gaming.ProviderSyncReactor, "sync_games"} ->
-        [EdgeEntry.new(inspect(reactor_module), "IgamingRef.Gaming.Game", :writes)]
-      {IgamingRef.Gaming.ProviderSyncReactor, "update_catalog"} ->
-        [EdgeEntry.new(inspect(reactor_module), "IgamingRef.Gaming.GameCatalog", :writes)]
+      {"IgamingRef.Gaming.ProviderSyncReactor", "sync_games"} ->
+        [EdgeEntry.new(reactor_module, "IgamingRef.Gaming.Game", :writes)]
+      {"IgamingRef.Gaming.ProviderSyncReactor", "update_catalog"} ->
+        [EdgeEntry.new(reactor_module, "IgamingRef.Gaming.GameCatalog", :writes)]
       _ ->
         []
     end
   end
 
-  # Oban jobs: @performs attribute linking to Reactor
+  # Oban jobs: linking to Reactor via @performs attribute or domain heuristic
   defp derive_job_edges(nodes, node_map) do
     nodes
     |> Enum.filter(&(&1.type == "job"))
     |> Enum.flat_map(fn job ->
-      # The SparkMeta walker provides @performs attribute directly
-      case job.performs do
-        performs when is_binary(performs) ->
-          # Find a reactor in the same domain that likely handles this job
-          # Phase 1: Simple heuristic — same domain + reactor type
-          # Phase 2+: Could use naming conventions or manifest metadata
-          job_domain = job.domain
-          reactor = find_reactor_in_domain(node_map, job_domain)
-          if reactor, do: [EdgeEntry.new(job.module, reactor.module, :async)], else: []
-        _ -> []
-      end
+      # Phase 1: Look for a reactor in the same domain
+      # Phase 2+: Use @performs attribute if available
+      job_domain = job.domain
+      reactor = find_reactor_in_domain(node_map, job_domain)
+      if reactor, do: [EdgeEntry.new(job.module, reactor.module, :async)], else: []
     end)
   end
 
