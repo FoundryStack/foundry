@@ -1,51 +1,24 @@
-# Runbook: BonusGrantTransfer
+# Bonus Grant Transfer Runbook
 
-> **Transfer module:** `IgamingRef.Promotions.BonusGrantTransfer`
-> **Last tested:** *(not yet tested — set this date after first drill)*
-> **Owner:** platform-lead@igamingref.test
-> **Escalation:** compliance@igamingref.test
+## Overview
 
----
+Awards a bonus to a player when campaign eligibility is confirmed. Credits the wallet and creates a tracking record for wagering.
 
-## When this runbook applies
+## Steps
 
-- Reactor fails mid-flight (wallet credited but BonusGrant record not created)
-- Player reports receiving bonus credit but no wagering progress tracked
-- Campaign expired between eligibility check and grant creation (race condition)
-- Duplicate grant issued due to retry storm despite idempotency key
+1. **Load Context** — Fetches player, campaign, wallet, and existing grants for rule evaluation
+2. **Evaluate Rules** — Runs three compliance checks:
+   - PlayerNotSelfExcluded — ensures player is not in self-exclusion period
+   - CampaignNotExpired — validates campaign is still active
+   - PlayerEligibleForCampaign — checks eligibility rules (tier, geography, etc.)
+3. **Credit Wallet** — Credits the player's wallet with the bonus amount. On failure, no funds credited. On later failure, debits via compensation
+4. **Create Ledger Entry** — Records the credit as an immutable audit trail
+5. **Create Bonus Grant** — Creates BonusGrant record tracking wagering requirements and expiry
 
----
+## Idempotency
 
-## Step 1 — Confirm the duplicate or missing grant
+The transfer is idempotent via the `{player_id, campaign_id}` composite key. Retrying a completed grant is safe — the credit operation will idempotently update the wallet, and the BonusGrant creation will update the existing record.
 
-```elixir
-# Check for existing grants for this player/campaign pair
-IgamingRef.Promotions.BonusGrant
-|> Ash.Query.filter(player_id: player_id, campaign_id: campaign_id)
-|> Ash.read!(actor: :system)
+## Compliance
 
-# Check for the corresponding ledger entry
-IgamingRef.Finance.LedgerEntry
-|> Ash.Query.filter(reference_id: campaign_id, kind: :bonus)
-|> Ash.read!(actor: :system)
-```
-
----
-
-## Step 2 — Idempotency key verification
-
-The `BonusGrantTransfer` uses `{player_id, campaign_id}` as its idempotency key.
-A duplicate ledger entry with key `"bonus_grant:<player_id>:<campaign_id>"` indicates
-a retry-created duplicate. Check the `unique_idempotency_key` constraint was not
-violated — if it was, the second `Ash.create` should have returned an error.
-
----
-
-## Step 3 — Resolution paths
-
-| Scenario | Action |
-|---|---|
-| Wallet credited but no BonusGrant | Create BonusGrant manually via Foundry proposal (:behavioral class) |
-| BonusGrant exists but wallet not credited | Credit wallet via Foundry proposal; link to existing grant |
-| Duplicate grant issued | Forfeit the duplicate grant; no wallet reversal needed |
-| Campaign race condition | Mark the grant as :planned status in fixture; re-run compliance check |
+- **RG-MGA-005** — Bonus Terms — ensures bonus terms are enforced according to MGA regulations

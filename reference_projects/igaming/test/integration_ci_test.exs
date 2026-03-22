@@ -39,9 +39,9 @@ defmodule IgamingRef.Integration.CIPipelineTest do
     test "foundry.project.status returns valid JSON structure" do
       status = Foundry.Status.build(@project_root)
       assert is_map(status)
-      assert Map.has_key?(status, :project)
-      assert Map.has_key?(status, :lint)
-      assert Map.has_key?(status, :compiled_at)
+      assert Map.has_key?(status, "project")
+      assert Map.has_key?(status, "lint")
+      assert Map.has_key?(status, "compiled_at")
     end
   end
 

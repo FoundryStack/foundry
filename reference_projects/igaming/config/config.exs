@@ -23,3 +23,5 @@ config :igaming_ref, Oban,
 # When true, skip Repo/Oban (for mix foundry.* tasks without a running DB).
 # Default true so Foundry tasks run without Postgres; set FOUNDRY_TASKS_ONLY=0 to start DB.
 config :igaming_ref, :foundry_tasks_only, System.get_env("FOUNDRY_TASKS_ONLY", "1") != "0"
+
+import_config "#{config_env()}.exs"

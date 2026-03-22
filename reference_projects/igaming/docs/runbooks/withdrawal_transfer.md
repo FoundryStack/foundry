@@ -1,78 +1,27 @@
-# Runbook: WithdrawalTransfer
+# Withdrawal Transfer Runbook
 
-> **Transfer module:** `IgamingRef.Finance.WithdrawalTransfer`
-> **Last tested:** *(not yet tested — set this date after first drill)*
-> **Owner:** finance-lead@igamingref.test
-> **Escalation:** platform-lead@igamingref.test
+## Overview
 
----
+Handles the complete flow of processing an approved withdrawal request through to provider submission.
 
-## When this runbook applies
+## Steps
 
-This runbook covers operational failure scenarios for the `WithdrawalTransfer` Reactor:
+1. **Load Request** — Fetches the withdrawal request from the database and validates it's in the :approved state
+2. **Load Player & Wallet** — Retrieves the player and wallet records needed for rule evaluation
+3. **Evaluate Rules** — Runs three compliance rules:
+   - PlayerNotSelfExcluded — ensures player is not in self-exclusion period
+   - SufficientBalance — validates wallet has sufficient balance
+   - WithdrawalLimitNotExceeded — checks against daily/weekly/monthly limits
+4. **Debit Wallet** — Atomically deducts funds. On failure, no funds move. On later failure, re-credits via compensation
+5. **Create Ledger Entry** — Records the debit as an immutable audit trail
+6. **Submit to Provider** — Sends withdrawal request to payment provider (Stripe/PayPal). Failures trigger compensation (re-credit)
+7. **Update Status** — Marks the WithdrawalRequest as :processing with provider reference
 
-- Reactor step fails mid-flight (wallet debited but ledger entry not created)
-- Provider submission fails after ledger entry written
-- Duplicate withdrawal requests from retry storms
-- Withdrawal stuck in `:processing` state
+## Idempotency
 
----
+The transfer is idempotent via the `withdrawal_request_id` key. Retrying a completed transfer is safe — the debit operation will idempotently update the wallet balance, and the provider will reject duplicate submission attempts.
 
-## Step 1 — Identify the stuck withdrawal
+## Compliance
 
-```bash
-# Find withdrawal requests in :processing for more than 2 hours
-mix foundry.context IgamingRef.Finance.WithdrawalRequest
-
-# In iex
-IgamingRef.Finance.WithdrawalRequest
-|> Ash.Query.filter(status: :processing)
-|> Ash.Query.filter(updated_at: [less_than: DateTime.add(DateTime.utc_now(), -7200, :second)])
-|> Ash.read!(actor: :system)
-```
-
----
-
-## Step 2 — Check ledger entry
-
-Verify whether a ledger entry was created for this withdrawal:
-
-```elixir
-IgamingRef.Finance.LedgerEntry
-|> Ash.Query.filter(reference_id: withdrawal_request_id)
-|> Ash.read!(actor: :system)
-```
-
-If **no ledger entry exists**: the wallet debit also did not complete. The Reactor compensated
-correctly. Confirm wallet balance is intact, then re-trigger the Transfer.
-
-If **ledger entry exists but no provider reference**: the provider call failed after the
-ledger entry was written. Check provider logs. If the provider has no record of the
-transaction, void the ledger entry manually (requires compliance officer approval —
-`:compliance` class change) and re-trigger.
-
----
-
-## Step 3 — Check provider status
-
-Use the provider's admin console or API to look up the transaction by
-`withdrawal_request.provider_reference`.
-
----
-
-## Step 4 — Resolution paths
-
-| Scenario | Action |
-|---|---|
-| Provider confirms payment sent | Call `mark_completed` action on the WithdrawalRequest |
-| Provider has no record | Re-trigger the Transfer with the same `withdrawal_request_id` (idempotent) |
-| Provider rejected (insufficient funds at provider) | Reject the WithdrawalRequest with reason; re-credit wallet |
-| Reactor stuck, compensation failed | Page platform-lead; escalate to emergency override path |
-
----
-
-## Compliance note
-
-All manual interventions on sensitive resources require a Foundry proposal with
-`:compliance` classification. Do not modify `WithdrawalRequest` or `LedgerEntry`
-records directly — route all changes through Foundry.
+- **RG-UK-014** — Withdrawal Processing — ensures withdrawals follow FCA-mandated procedures
+- **RG-MGA-007** — Withdrawal Limits — enforces daily/monthly limits for MGA-licensed operators
