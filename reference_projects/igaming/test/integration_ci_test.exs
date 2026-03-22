@@ -256,6 +256,13 @@ defmodule IgamingRef.Integration.CIPipelineTest do
         lib_dst = Path.join(tmpdir, "lib")
         File.rm_rf!(lib_dst)
         File.cp_r!(lib_src, lib_dst)
+
+        # Also restore manifest in case any test mutated it
+        manifest_src = Path.join([@project_root, ".foundry", "manifest.exs"])
+        manifest_dst = Path.join([tmpdir, ".foundry", "manifest.exs"])
+        if File.exists?(manifest_src) do
+          File.cp!(manifest_src, manifest_dst)
+        end
       end
     end
 
@@ -426,9 +433,24 @@ defmodule IgamingRef.Integration.CIPipelineTest do
         fn tmpdir ->
           path = Path.join([tmpdir, "lib", "transfers.ex"])
           content = File.read!(path)
-          # Remove "@idempotency_key :withdrawal_request_id"
-          mutated = String.replace(content, ~r/@idempotency_key :withdrawal_request_id\n/, "")
-          File.write!(path, mutated)
+          # Remove the @idempotency_key line from WithdrawalTransfer (around line 17)
+          lines = String.split(content, "\n")
+          # Find the first @idempotency_key that mentions withdrawal_request_id
+          target_idx = Enum.find_index(lines, fn line ->
+            String.contains?(line, "@idempotency_key") and String.contains?(line, "withdrawal_request_id")
+          end)
+
+          IO.puts("\n--- Mutation: Removing @idempotency_key ---")
+          IO.puts("Found at index: #{target_idx}")
+
+          if target_idx do
+            mutated_lines = List.delete_at(lines, target_idx)
+            mutated = Enum.join(mutated_lines, "\n")
+            File.write!(path, mutated)
+            IO.puts("Mutation applied")
+          else
+            IO.puts("ERROR: Could not find @idempotency_key line")
+          end
         end,
         fn report, _exit_code ->
           rule_ids = Enum.map(report["violations"], & &1["rule_id"])
