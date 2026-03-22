@@ -11,7 +11,8 @@ import Config
 
 # Configure Mix tasks and generators
 config :foundry,
-  ecto_repos: [Foundry.Repo]
+  ecto_repos: [Foundry.Repo],
+  ash_domains: [Foundry.Audit, Foundry.Config, Foundry.Proposals]
 
 # Configure the mailer
 #

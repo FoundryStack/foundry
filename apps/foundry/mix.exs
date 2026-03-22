@@ -36,12 +36,15 @@ defmodule Foundry.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:ash, "~> 3.20"},
+      {:ash_state_machine, "~> 0.2"},
+      {:picosat_elixir, "~> 0.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:phoenix_pubsub, "~> 2.1"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, ">= 0.0.0"},
-      {:jason, "~> 1.2"},
-      {:swoosh, "~> 1.16"},
+      {:jason, "~> 1.4"},
+      {:swoosh, "~> 1.23"},
       {:req, "~> 0.5"}
     ]
   end

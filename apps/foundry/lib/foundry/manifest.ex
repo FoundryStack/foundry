@@ -51,14 +51,6 @@ defmodule Foundry.Manifest do
     domain: Foundry.Config,
     data_layer: Ash.DataLayer.Simple
 
-  alias Foundry.Manifest.{
-    ApproverConfig,
-    ApprovalSla,
-    NotificationConfig,
-    CoverageWeights,
-    DataRetention
-  }
-
   # ---------------------------------------------------------------------------
   # Attributes
   # ---------------------------------------------------------------------------

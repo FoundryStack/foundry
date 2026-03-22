@@ -15,14 +15,6 @@ defmodule Foundry.Manifest.Reader do
   end
 
   def load_from_kw!(kw) when is_list(kw) do
-    Ash.Changeset.for_create(Foundry.Manifest, :load, kw)
-    |> Ash.Changeset.apply_action(:create)
-    |> case do
-      {:ok, record} ->
-        record
-
-      {:error, %Ash.Changeset{errors: errors}} ->
-        raise "Manifest validation failed: #{inspect(errors)}"
-    end
+    Ash.create!(Foundry.Manifest, kw, action: :load)
   end
 end

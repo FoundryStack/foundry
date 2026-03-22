@@ -114,7 +114,7 @@ uses bash to call the appropriate Mix task or read the relevant file.
   },
 
   "stack": {
-    "elixir": "1.17.0",
+    "elixir": "1.19",
     "ash": "3.4.1",
     "phoenix": "1.7.14",
     "reactor": "0.9.1",
