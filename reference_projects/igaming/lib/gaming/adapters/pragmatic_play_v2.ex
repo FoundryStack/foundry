@@ -9,6 +9,8 @@ defmodule IgamingRef.Gaming.Adapters.PragmaticPlayV2 do
   Compliance: RG-MGA-006 (provider agreements)
   """
 
+  @behaviour IgamingRef.Gaming.ProviderAdapter
+
   @compliance [:RG_MGA_006]
   @provider_name "pragmatic_play_v2"
 

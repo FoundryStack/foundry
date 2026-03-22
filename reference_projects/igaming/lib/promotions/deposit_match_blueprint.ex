@@ -12,6 +12,9 @@ defmodule IgamingRef.Promotions.DepositMatchBlueprint do
   @compliance [:RG_MGA_005]
   @telemetry_prefix [:igaming_ref, :promotions, :deposit_match_blueprint]
 
+  # Mark this as a blueprint module for Foundry introspection
+  def __blueprint__(), do: true
+
   defstruct [
     :name,
     :match_percentage,
