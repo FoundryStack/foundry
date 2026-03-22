@@ -157,31 +157,88 @@ defmodule IgamingRef.Integration.CIPipelineTest do
 
       try do
         # Apply mutation to source files in shared tmpdir
+        IO.puts("\n=== MUTATION DEBUG ===")
+        IO.puts("Tmpdir: #{tmpdir}")
         mutation_fn.(tmpdir)
 
         env = build_env([{"MIX_ENV", "test"}, {"FOUNDRY_TASKS_ONLY", "1"}])
 
         # Run lint in subprocess - compilation output may be mixed with JSON
+        IO.puts("Running: mix foundry.lint.all --json")
         {output, lint_exit_code} =
           System.cmd("mix", ["foundry.lint.all", "--json"], cd: tmpdir, env: env, stderr_to_stdout: true)
 
+        IO.puts("Exit code: #{lint_exit_code}")
+        IO.puts("Output length: #{String.length(output)} bytes")
+        IO.puts("Last 500 chars of output:\n#{String.slice(output, -500..-1)}")
+
         # Extract JSON from output (compiler output often comes before JSON)
-        # Look for a line that is valid JSON (starts with { and ends with })
-        json_output =
-          output
-          |> String.split("\n")
-          |> Enum.find(fn line ->
+        # JSON is pretty-printed multi-line starting with { and ending with }
+        lines = String.split(output, "\n")
+        IO.puts("Total output lines: #{length(lines)}")
+
+        # Find the line where JSON starts (opens with {)
+        json_start_idx =
+          lines
+          |> Enum.with_index()
+          |> Enum.find_value(fn {line, idx} ->
             trimmed = String.trim(line)
-            String.starts_with?(trimmed, "{") and String.ends_with?(trimmed, "}")
+            if trimmed == "{" do
+              IO.puts("Found JSON start at line #{idx}")
+              idx
+            else
+              nil
+            end
           end)
 
+        json_output =
+          if is_nil(json_start_idx) do
+            IO.puts("WARNING: No JSON start { found in subprocess output")
+            nil
+          else
+            # Collect all lines from JSON start until we find the closing }
+            # Use a counter to track brace depth
+            remaining_lines = Enum.drop(lines, json_start_idx)
+
+            {json_lines, _} =
+              remaining_lines
+              |> Enum.reduce_while({[], 0}, fn line, {acc, depth} ->
+                trimmed = String.trim(line)
+                # Count opening and closing braces
+                new_depth =
+                  depth +
+                  String.count(trimmed, "{") +
+                  String.count(trimmed, "[") -
+                  String.count(trimmed, "}") -
+                  String.count(trimmed, "]")
+
+                acc_with_line = acc ++ [line]
+
+                # Stop when we've closed all braces and we're back to depth 0
+                if new_depth <= 0 and trimmed == "}" do
+                  {:halt, {acc_with_line, new_depth}}
+                else
+                  {:cont, {acc_with_line, new_depth}}
+                end
+              end)
+
+            IO.puts("Collected #{length(json_lines)} JSON lines (brace depth tracking)")
+            Enum.join(json_lines, "\n")
+          end
+
         # If no JSON found, return empty violations report
-        if is_nil(json_output) do
+        if is_nil(json_output) or String.length(json_output) < 10 do
+          IO.puts("WARNING: No valid JSON found in subprocess output")
           report = %{"violations" => [], "passed" => true, "error_count" => 0, "warning_count" => 0, "info_count" => 0}
           test_fn.(report, lint_exit_code)
         else
           try do
+            IO.puts("Decoding JSON (#{String.length(json_output)} bytes): #{String.slice(json_output, 0..150)}")
             report = Jason.decode!(json_output)
+            IO.puts("Decoded violations count: #{length(report["violations"])}")
+            Enum.each(report["violations"], fn v ->
+              IO.puts("  - Rule: #{v["rule_id"]}, Module: #{v["module"]}, Msg: #{v["message"]}")
+            end)
             test_fn.(report, lint_exit_code)
           rescue
             e in Jason.DecodeError ->
@@ -219,28 +276,58 @@ defmodule IgamingRef.Integration.CIPipelineTest do
           System.cmd("mix", ["foundry.lint.all", "--json"], cd: tmpdir, env: env, stderr_to_stdout: true)
 
         # Extract JSON from output (compiler output often comes before JSON)
-        # Look for a line that is valid JSON (starts with { and ends with })
-        json_output =
-          output
-          |> String.split("\n")
-          |> Enum.find(fn line ->
-            trimmed = String.trim(line)
-            String.starts_with?(trimmed, "{") and String.ends_with?(trimmed, "}")
+        # JSON is pretty-printed multi-line starting with { and ending with }
+        lines = String.split(output, "\n")
+
+        # Find the line where JSON starts (opens with {)
+        json_start_idx =
+          lines
+          |> Enum.find_index(fn line ->
+            String.trim(line) == "{"
           end)
+
+        json_output =
+          if is_nil(json_start_idx) do
+            nil
+          else
+            # Collect all lines from JSON start until we find the closing }
+            # Use a counter to track brace depth
+            remaining_lines = Enum.drop(lines, json_start_idx)
+
+            {json_lines, _} =
+              remaining_lines
+              |> Enum.reduce_while({[], 0}, fn line, {acc, depth} ->
+                trimmed = String.trim(line)
+                # Count opening and closing braces
+                new_depth =
+                  depth +
+                  String.count(trimmed, "{") +
+                  String.count(trimmed, "[") -
+                  String.count(trimmed, "}") -
+                  String.count(trimmed, "]")
+
+                acc_with_line = acc ++ [line]
+
+                # Stop when we've closed all braces and we're back to depth 0
+                if new_depth <= 0 and trimmed == "}" do
+                  {:halt, {acc_with_line, new_depth}}
+                else
+                  {:cont, {acc_with_line, new_depth}}
+                end
+              end)
+
+            Enum.join(json_lines, "\n")
+          end
 
         # If no JSON found, return empty violations report
         report =
-          if is_nil(json_output) do
-            IO.puts("WARN: No JSON in subprocess output. Last 300 chars: #{String.slice(output, -300..-1)}")
-            IO.puts("Exit code: #{lint_exit_code}")
+          if is_nil(json_output) or String.length(json_output) < 10 do
             %{"violations" => [], "passed" => true, "error_count" => 0, "warning_count" => 0, "info_count" => 0}
           else
             try do
               Jason.decode!(json_output)
             rescue
               e in Jason.DecodeError ->
-                IO.puts("ERROR decoding JSON. Input: #{String.slice(json_output, 0..100)}")
-                IO.puts("Error: #{inspect(e)}")
                 %{"violations" => [], "passed" => true, "error_count" => 0, "warning_count" => 0, "info_count" => 0}
             end
           end
@@ -265,8 +352,32 @@ defmodule IgamingRef.Integration.CIPipelineTest do
         fn tmpdir ->
           path = Path.join([tmpdir, "lib", "transfers.ex"])
           content = File.read!(path)
-          mutated = String.replace(content, ~r/@runbook "docs\/runbooks\/withdrawal_transfer\.md"\n/, "")
+          IO.puts("\n--- Mutation: Removing @runbook from WithdrawalTransfer (line ~18) ---")
+
+          # Split by lines and remove only the @runbook for WithdrawalTransfer (class starts at line 1)
+          # The file has multiple resources, each with their own @runbook
+          # We want to remove the FIRST one (for WithdrawalTransfer, which is at line 18)
+          lines = String.split(content, "\n")
+
+          # Find the first @runbook that mentions withdrawal_transfer.md
+          target_idx = Enum.find_index(lines, fn line ->
+            String.contains?(line, "@runbook") and String.contains?(line, "withdrawal_transfer.md")
+          end)
+
+          IO.puts("Target @runbook line index: #{target_idx}")
+          IO.puts("Target line: #{Enum.at(lines, target_idx) |> inspect}")
+
+          mutated_lines = List.delete_at(lines, target_idx)
+          mutated = Enum.join(mutated_lines, "\n")
+
+          IO.puts("Original @runbook count: #{Enum.count(lines, &String.contains?(&1, "@runbook"))}")
+          IO.puts("Mutated @runbook count: #{Enum.count(mutated_lines, &String.contains?(&1, "@runbook"))}")
+
           File.write!(path, mutated)
+          # Verify file was written
+          verify = File.read!(path)
+          verify_lines = String.split(verify, "\n")
+          IO.puts("File verify @runbook count: #{Enum.count(verify_lines, &String.contains?(&1, "@runbook"))}")
         end,
         fn report, _exit_code ->
           rule_ids = Enum.map(report["violations"], & &1["rule_id"])
