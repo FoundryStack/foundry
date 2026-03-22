@@ -637,9 +637,13 @@ defmodule Foundry.SparkMeta do
 
   # Search for the module's source file in lib/ directories
   defp find_module_source_file(module_str) do
-    # Convert Module.Name to module/name.ex
+    # Convert Module.Name to module/name.ex (with underscoring applied)
     parts = String.split(module_str, ".")
-    filename_lower = Enum.join(Enum.drop(parts, 1), "/") <> ".ex"
+    filename_lower =
+      (parts
+       |> Enum.drop(1)
+       |> Enum.map(&Macro.underscore/1)
+       |> Enum.join("/")) <> ".ex"
 
     cwd = File.cwd!()
 
@@ -658,25 +662,36 @@ defmodule Foundry.SparkMeta do
     end
   end
 
-  # Search .ex files in lib root for module definition
+  # Search .ex files in lib and subdirectories for module definition
   defp search_lib_files(lib_path, module_str) do
     try do
+      # Strip "Elixir." prefix if present (Atom.to_string includes it)
+      clean_module_str = String.replace_prefix(module_str, "Elixir.", "")
+
       lib_path
       |> File.ls!()
       |> Enum.find_value(fn entry ->
-        if String.ends_with?(entry, ".ex") do
-          file_path = Path.join(lib_path, entry)
-          case File.read(file_path) do
-            {:ok, content} ->
-              if String.contains?(content, "defmodule #{module_str}") do
-                file_path
-              else
+        full_path = Path.join(lib_path, entry)
+        cond do
+          File.dir?(full_path) ->
+            # Recurse into subdirectory
+            search_lib_files(full_path, module_str)
+
+          String.ends_with?(entry, ".ex") ->
+            case File.read(full_path) do
+              {:ok, content} ->
+                if String.contains?(content, "defmodule #{clean_module_str}") do
+                  full_path
+                else
+                  nil
+                end
+
+              _ ->
                 nil
-              end
-            _ -> nil
-          end
-        else
-          nil
+            end
+
+          true ->
+            nil
         end
       end)
     rescue
@@ -688,6 +703,9 @@ defmodule Foundry.SparkMeta do
   # Handles multiple module definitions in one file by finding the module's defmodule block
   defp extract_runbook_from_file(file, module_str) do
     try do
+      # Strip "Elixir." prefix if present
+      clean_module_str = String.replace_prefix(module_str, "Elixir.", "")
+
       content = File.read!(file)
       lines = String.split(content, "\n")
 
@@ -695,7 +713,7 @@ defmodule Foundry.SparkMeta do
       module_line_idx =
         lines
         |> Enum.find_index(fn line ->
-          String.contains?(line, "defmodule #{module_str}")
+          String.contains?(line, "defmodule #{clean_module_str}")
         end)
 
       case module_line_idx do
@@ -703,24 +721,19 @@ defmodule Foundry.SparkMeta do
           nil
 
         idx ->
-          # Search for @runbook starting from the defmodule line until the next defmodule or use statement
-          lines
-          |> Enum.drop(idx)
-          |> Enum.find_value(fn line ->
-            cond do
-              # Stop searching at the next defmodule (new module definition)
-              String.match?(line, ~r/^\s*defmodule\s+\w+/) && !String.contains?(line, module_str) ->
-                nil
+          # Extract only the lines for this module's block (until the next defmodule)
+          rest = Enum.drop(lines, idx + 1)
 
-              # Match @runbook
-              String.match?(line, ~r/@runbook\s+"([^"]+)"/) ->
-                case Regex.run(~r/@runbook\s+"([^"]+)"/, line) do
-                  [_, path] -> path
-                  _ -> nil
-                end
+          module_lines =
+            Enum.take_while(rest, fn line ->
+              not String.match?(line, ~r/^\s*defmodule\s+\w/)
+            end)
 
-              true ->
-                nil
+          # Search for @runbook within the module's lines
+          Enum.find_value(module_lines, fn line ->
+            case Regex.run(~r/@runbook\s+"([^"]+)"/, line) do
+              [_, path] -> path
+              _ -> nil
             end
           end)
       end
