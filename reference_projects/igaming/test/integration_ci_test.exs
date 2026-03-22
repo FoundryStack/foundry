@@ -19,18 +19,18 @@ defmodule IgamingRef.Integration.CIPipelineTest do
   @mutation_tmpdir_name "igaming_mutations_#{:rand.uniform(1_000_000_000)}"
   @mutation_tmpdir_path System.tmp_dir!() |> Path.join(@mutation_tmpdir_name)
 
-  # Cleanup shared tmpdir after all tests complete
-  defp cleanup_all do
+  # Module-level cleanup: remove golden tmpdir after all tests complete
+  setup_all do
     on_exit(fn ->
       tmpdir = @mutation_tmpdir_path
       if File.exists?(tmpdir) do
         File.rm_rf!(tmpdir)
       end
     end)
+    :ok
   end
 
   describe "sequence: baseline CI pipeline" do
-    setup do: cleanup_all()
 
     test "foundry.lint.all passes with no violations on clean project" do
       report = Foundry.Lint.Runner.run(@project_root)
