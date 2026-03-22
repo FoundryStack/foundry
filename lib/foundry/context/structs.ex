@@ -356,7 +356,6 @@ defmodule Foundry.Versions.VersionManifest do
     stream_data: nil,
     bypass: nil,
     mox: nil,
-    wallaby: nil,
     ex_machina: nil,
 
     # UI

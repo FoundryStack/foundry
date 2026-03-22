@@ -56,7 +56,7 @@ defmodule Foundry.Audit.Event do
   # ---------------------------------------------------------------------------
 
   attributes do
-    uuid_primary_key(:id)
+    uuid_primary_key :id
 
     attribute :event_type, :atom do
       description("The type of audit event. See event type definitions below.")
