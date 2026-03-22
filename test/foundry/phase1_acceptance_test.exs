@@ -245,10 +245,77 @@ defmodule Foundry.Phase1AcceptanceTest do
   end
 
   describe "mix foundry.lint.all" do
-    @tag :skip
-    test "clean run exits 0" do
-      # Placeholder for lint test
-      assert true
+    setup do
+      # Load the reference project's compiled modules into the code path
+      :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/dev/lib/igaming_ref/ebin")))
+      {:ok, report: Foundry.Lint.Runner.run(@ref_root)}
+    end
+
+    test "clean run produces valid LintReport structure", %{report: report} do
+      # Report should have the required fields
+      assert is_map(report)
+      assert is_boolean(report.passed)
+      assert is_integer(report.error_count)
+      assert is_integer(report.warning_count)
+      assert is_integer(report.info_count)
+      assert is_list(report.violations)
+      assert is_binary(report.generated_at)
+    end
+
+    test "every violation has rule_id, module, message, severity", %{report: report} do
+      Enum.each(report.violations, fn v ->
+        assert is_atom(v.rule_id), "rule_id must be atom: #{inspect(v.rule_id)}"
+        assert v.module != nil, "module must be present: #{inspect(v.module)}"
+        assert is_binary(v.message), "message must be string: #{inspect(v.message)}"
+        assert v.severity in [:error, :warning, :info], "severity must be valid: #{inspect(v.severity)}"
+      end)
+    end
+
+    test "violation passed status reflects only errors", %{report: report} do
+      # report.passed == true if and only if error_count == 0
+      if report.error_count == 0 do
+        assert report.passed == true
+      else
+        assert report.passed == false
+      end
+    end
+
+    test ":ash_version_outdated does NOT appear on clean Ash 3.x project", %{report: report} do
+      refute Enum.any?(report.violations, &(&1.rule_id == :ash_version_outdated))
+    end
+
+    test "violations ordered :error before :warning, alphabetically by module", %{report: report} do
+      violations = report.violations
+
+      error_positions =
+        violations
+        |> Enum.with_index()
+        |> Enum.filter(&(elem(&1, 0).severity == :error))
+        |> Enum.map(&elem(&1, 1))
+
+      warning_positions =
+        violations
+        |> Enum.with_index()
+        |> Enum.filter(&(elem(&1, 0).severity == :warning))
+        |> Enum.map(&elem(&1, 1))
+
+      if error_positions != [] and warning_positions != [] do
+        assert Enum.max(error_positions) < Enum.min(warning_positions),
+               "Errors must come before warnings"
+      end
+
+      # Within each severity, check alphabetical order by module
+      errors = Enum.filter(violations, &(&1.severity == :error))
+      error_modules = Enum.map(errors, & &1.module)
+
+      assert error_modules == Enum.sort(error_modules),
+             "Errors should be sorted alphabetically by module"
+
+      warnings = Enum.filter(violations, &(&1.severity == :warning))
+      warning_modules = Enum.map(warnings, & &1.module)
+
+      assert warning_modules == Enum.sort(warning_modules),
+             "Warnings should be sorted alphabetically by module"
     end
   end
 
