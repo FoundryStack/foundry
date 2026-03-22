@@ -163,6 +163,18 @@ defmodule IgamingRef.Integration.CIPipelineTest do
 
         env = build_env([{"MIX_ENV", "test"}, {"FOUNDRY_TASKS_ONLY", "1"}])
 
+        # Verify mutation is still in place before compiling
+        verify_after_mutation = File.read!(Path.join([tmpdir, "lib", "transfers.ex"]))
+        verify_lines = String.split(verify_after_mutation, "\n")
+        verify_has = Enum.any?(verify_lines, fn line ->
+          String.contains?(line, "@idempotency_key") and String.contains?(line, "withdrawal_request_id")
+        end)
+        IO.puts("Mutation verification before compile: @idempotency_key withdrawal_request_id present: #{verify_has}")
+
+        # First compile to pick up the mutations
+        IO.puts("Recompiling project with mutation...")
+        {_compile_out, _compile_code} = System.cmd("mix", ["compile"], cd: tmpdir, env: env, stderr_to_stdout: true)
+
         # Run lint in subprocess - compilation output may be mixed with JSON
         IO.puts("Running: mix foundry.lint.all --json")
         {output, lint_exit_code} =
@@ -432,6 +444,14 @@ defmodule IgamingRef.Integration.CIPipelineTest do
       with_mutation(
         fn tmpdir ->
           path = Path.join([tmpdir, "lib", "transfers.ex"])
+
+          # Force remove compilation cache so mix will recompile
+          manifest_path = Path.join([tmpdir, "_build", "test", ".mix"])
+          if File.exists?(manifest_path) do
+            File.rm_rf!(manifest_path)
+            IO.puts("Cleared compilation manifest to force recompilation")
+          end
+
           content = File.read!(path)
           # Remove the @idempotency_key line from WithdrawalTransfer (around line 17)
           lines = String.split(content, "\n")
@@ -441,13 +461,26 @@ defmodule IgamingRef.Integration.CIPipelineTest do
           end)
 
           IO.puts("\n--- Mutation: Removing @idempotency_key ---")
-          IO.puts("Found at index: #{target_idx}")
+          IO.puts("Path: #{path}")
+          IO.puts("Total lines in file: #{length(lines)}")
+          IO.puts("Found @idempotency_key at index: #{target_idx}")
+          if target_idx do
+            IO.puts("Line content: #{Enum.at(lines, target_idx)}")
+          end
 
           if target_idx do
             mutated_lines = List.delete_at(lines, target_idx)
             mutated = Enum.join(mutated_lines, "\n")
             File.write!(path, mutated)
-            IO.puts("Mutation applied")
+
+            # Verify mutation was written
+            verify_content = File.read!(path)
+            verify_lines = String.split(verify_content, "\n")
+            # Check specifically for the withdrawal_request_id version
+            has_withdrawal_idempotency = Enum.any?(verify_lines, fn line ->
+              String.contains?(line, "@idempotency_key") and String.contains?(line, "withdrawal_request_id")
+            end)
+            IO.puts("Mutation applied. File still has withdrawal_request_id @idempotency_key: #{has_withdrawal_idempotency}")
           else
             IO.puts("ERROR: Could not find @idempotency_key line")
           end
