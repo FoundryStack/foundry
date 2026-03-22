@@ -259,12 +259,14 @@ defmodule Foundry.Lint.LintReport do
   Frozen at end of Phase 1. Breaking changes require an ADR.
   """
 
+  @derive Jason.Encoder
   @enforce_keys [:passed, :violations, :generated_at]
   defstruct [:passed, :violations, :generated_at, error_count: 0, warning_count: 0, info_count: 0]
 
   defmodule Violation do
     @moduledoc "A single lint violation from any lint rule."
 
+    @derive Jason.Encoder
     @enforce_keys [:rule_id, :severity, :message]
     defstruct [
       # atom — e.g. :missing_description
