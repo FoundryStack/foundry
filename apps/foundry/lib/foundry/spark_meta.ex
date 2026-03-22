@@ -159,10 +159,15 @@ defmodule Foundry.SparkMeta do
   defp put_module_attributes(%ModuleInfo{module: module} = info) do
     attrs = module.__info__(:attributes)
 
+    runbook = get_attr_single(attrs, :runbook)
+    # Fallback: for Reactor modules, __info__(:attributes) may not have @runbook
+    # Try to extract it from the source file directly
+    runbook = runbook || extract_runbook_from_source(module)
+
     %{
       info
       | telemetry_prefix: get_attr_list(attrs, :telemetry_prefix),
-        runbook: get_attr_single(attrs, :runbook),
+        runbook: runbook,
         compliance: get_attr_list(attrs, :compliance),
         adrs: get_attr_list(attrs, :adrs)
     }
@@ -613,6 +618,115 @@ defmodule Foundry.SparkMeta do
     end
   rescue
     _ -> nil
+  end
+
+  # Fallback to extract @runbook from source file for modules (like Reactor)
+  # where __info__(:attributes) doesn't preserve the attribute
+  defp extract_runbook_from_source(module) do
+    try do
+      module_str = Atom.to_string(module)
+      # Look for the source file by searching in lib/
+      case find_module_source_file(module_str) do
+        nil -> nil
+        file -> extract_runbook_from_file(file, module_str)
+      end
+    rescue
+      _ -> nil
+    end
+  end
+
+  # Search for the module's source file in lib/ directories
+  defp find_module_source_file(module_str) do
+    # Convert Module.Name to module/name.ex
+    parts = String.split(module_str, ".")
+    filename_lower = Enum.join(Enum.drop(parts, 1), "/") <> ".ex"
+
+    cwd = File.cwd!()
+
+    # Try standard patterns first
+    candidates = [
+      Path.join(cwd, "lib/#{filename_lower}"),
+      Path.join(cwd, filename_lower)
+    ]
+
+    case Enum.find(candidates, &File.exists?/1) do
+      nil ->
+        # Fallback: search lib/*.ex files for the module definition (for multi-module files)
+        search_lib_files(Path.join(cwd, "lib"), module_str)
+      file ->
+        file
+    end
+  end
+
+  # Search .ex files in lib root for module definition
+  defp search_lib_files(lib_path, module_str) do
+    try do
+      lib_path
+      |> File.ls!()
+      |> Enum.find_value(fn entry ->
+        if String.ends_with?(entry, ".ex") do
+          file_path = Path.join(lib_path, entry)
+          case File.read(file_path) do
+            {:ok, content} ->
+              if String.contains?(content, "defmodule #{module_str}") do
+                file_path
+              else
+                nil
+              end
+            _ -> nil
+          end
+        else
+          nil
+        end
+      end)
+    rescue
+      _ -> nil
+    end
+  end
+
+  # Extract @runbook value for a specific module from source file
+  # Handles multiple module definitions in one file by finding the module's defmodule block
+  defp extract_runbook_from_file(file, module_str) do
+    try do
+      content = File.read!(file)
+      lines = String.split(content, "\n")
+
+      # Find the line where this module is defined
+      module_line_idx =
+        lines
+        |> Enum.find_index(fn line ->
+          String.contains?(line, "defmodule #{module_str}")
+        end)
+
+      case module_line_idx do
+        nil ->
+          nil
+
+        idx ->
+          # Search for @runbook starting from the defmodule line until the next defmodule or use statement
+          lines
+          |> Enum.drop(idx)
+          |> Enum.find_value(fn line ->
+            cond do
+              # Stop searching at the next defmodule (new module definition)
+              String.match?(line, ~r/^\s*defmodule\s+\w+/) && !String.contains?(line, module_str) ->
+                nil
+
+              # Match @runbook
+              String.match?(line, ~r/@runbook\s+"([^"]+)"/) ->
+                case Regex.run(~r/@runbook\s+"([^"]+)"/, line) do
+                  [_, path] -> path
+                  _ -> nil
+                end
+
+              true ->
+                nil
+            end
+          end)
+      end
+    rescue
+      _ -> nil
+    end
   end
 
   defp authentication_ext?(ext) do
