@@ -205,10 +205,42 @@ defmodule Foundry.Phase1AcceptanceTest do
   end
 
   describe "mix foundry.project.context --check" do
-    @tag :skip
-    test "exits 0 when lock is current" do
-      # Placeholder for --check test
-      assert true
+    setup do
+      # Ensure lock file path is accessible
+      lock_path = Path.join(@ref_root, ".foundry/context.lock")
+      {:ok, lock_path: lock_path}
+    end
+
+    test "lock file check returns :ok when lock is current", %{lock_path: _lock_path} do
+      # Generate hash for current state
+      Foundry.Context.LockFile.write(@ref_root)
+
+      # Verify check returns :ok
+      assert Foundry.Context.LockFile.check(@ref_root) == :ok
+    end
+
+    test "lock file check returns :stale when lib/ file is modified", %{lock_path: _lock_path} do
+      # Generate lock
+      Foundry.Context.LockFile.write(@ref_root)
+
+      # Modify a file to make lock stale
+      wallet_path = Path.join(@ref_root, "lib/wallet.ex")
+      content = File.read!(wallet_path)
+      File.write!(wallet_path, content <> "\n# test comment\n")
+
+      # Check should return stale error
+      assert {:error, :stale} == Foundry.Context.LockFile.check(@ref_root)
+
+      # Restore the file
+      File.write!(wallet_path, content)
+    end
+
+    test "lock file check returns :missing when context.lock is absent", %{lock_path: lock_path} do
+      # Remove lock file if it exists
+      File.rm(lock_path)
+
+      # Check should return missing error
+      assert {:error, :missing} == Foundry.Context.LockFile.check(@ref_root)
     end
   end
 
