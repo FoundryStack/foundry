@@ -469,8 +469,13 @@ defmodule Foundry.SparkMeta do
     end
   end
 
+  defp module_has_behaviour?(behaviour) when is_atom(behaviour) do
+    # Recognize common provider behaviour patterns
+    behaviour_str = to_string(behaviour)
+    String.contains?(behaviour_str, ["ProviderAdapter", "Provider"])
+  end
+
   defp module_has_behaviour?(_behaviour) do
-    # Providers detection is deferred to Phase 2+
     false
   end
 
