@@ -8,15 +8,26 @@ defmodule Foundry.Context.ModuleDiscovery do
 
   @spec all_project_modules(String.t(), String.t()) :: list(atom())
   def all_project_modules(project_root, project_name_string) do
-    ebin_path = Path.join([project_root, "_build", "dev", "lib",
-                           Macro.underscore(project_name_string), "ebin"])
-    prefix    = "Elixir." <> project_name_string <> "."
+    underscored = Macro.underscore(project_name_string)
+    prefix = "Elixir." <> project_name_string <> "."
 
-    Path.wildcard(Path.join(ebin_path, "*.beam"))
-    |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
-    |> Enum.filter(&(Atom.to_string(&1) |> String.starts_with?(prefix)))
-    |> Enum.filter(&Code.ensure_loaded?/1)
-    |> Enum.filter(&is_project_module?/1)
+    # Try dev first, then fall back to test (for subprocess with MIX_ENV=test)
+    ebin_path =
+      ["dev", "test"]
+      |> Enum.map(&Path.join([project_root, "_build", &1, "lib", underscored, "ebin"]))
+      |> Enum.find(&File.dir?/1)
+
+    case ebin_path do
+      nil ->
+        []
+
+      path ->
+        Path.wildcard(Path.join(path, "*.beam"))
+        |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
+        |> Enum.filter(&(Atom.to_string(&1) |> String.starts_with?(prefix)))
+        |> Enum.filter(&Code.ensure_loaded?/1)
+        |> Enum.filter(&is_project_module?/1)
+    end
   end
 
   # Filter out generated modules, domains, and infrastructure
