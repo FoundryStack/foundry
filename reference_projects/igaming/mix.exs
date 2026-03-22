@@ -42,7 +42,7 @@ defmodule IgamingRef.MixProject do
       {:ash_authentication_phoenix, "~> 2.0"},
       {:ash_state_machine, "~> 0.2"},
       {:ash_paper_trail, "~> 0.1"},
-      {:ash_archival, "~> 2.0"},
+      {:ash_archival, "~> 1.0"},
       {:ash_json_api, "~> 1.0"},
 
       # Reactor — upgraded to 1.0 (stable release) from 0.10
@@ -63,7 +63,8 @@ defmodule IgamingRef.MixProject do
       {:ash_oban, "~> 0.2"},
 
       # Rate limiting (runtime: false — configure when needed)
-      {:hammer, "~> 7.0", runtime: false},
+      {:hammer, "~> 6.1", runtime: false},
+      {:hammer_plug, "~> 3.0", runtime: false},
 
       # Observability
       {:opentelemetry, "~> 1.3"},
