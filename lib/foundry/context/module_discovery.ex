@@ -35,7 +35,8 @@ defmodule Foundry.Context.ModuleDiscovery do
         # Infrastructure modules (but keep .Rules.*)
         (String.contains?(module_str, [".Application", ".Repo", ".Secrets"]) and
            not String.contains?(module_str, [".Rules."])) or
-        # The bare Rule behavior module
+        # Behaviour definitions and base behavior modules (Adapter, Rule)
+        String.contains?(module_str, "Adapter") and not String.contains?(module_str, ".Adapters.") or
         module_str == "Elixir.IgamingRef.Rule" or
         # Domain containers have exactly 2 parts (Project.Domain)
         part_count == 2
