@@ -39,7 +39,6 @@ defmodule Foundry.Context.NodeEntry do
           telemetry_prefix: [String.t()]
         }
 
-  @derive Jason.Encoder
   @enforce_keys [:module, :type, :domain, :description]
   defstruct [
     # Required fields
