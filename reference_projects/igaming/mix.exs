@@ -73,9 +73,6 @@ defmodule IgamingRef.MixProject do
       # Igniter (required by Foundry)
       {:igniter, "~> 0.3"},
 
-      # Foundry (local dev / CI)
-      {:foundry, path: "../../"},
-
       # Serialisation
       {:jason, "~> 1.4"},
 

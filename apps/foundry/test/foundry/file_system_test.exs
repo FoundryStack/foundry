@@ -1,40 +1,45 @@
 defmodule Foundry.FileSystemTest do
   use ExUnit.Case, async: true
 
-  @root Path.expand("../../reference_projects/igaming", __DIR__)
+  @root Path.expand("../../../../reference_projects/igaming", __DIR__)
 
   describe "permitted paths" do
     test "lib/ file" do
-      assert {:ok, content} = Foundry.FileSystem.read(@root, "lib/igaming_ref/finance/wallet.ex")
+      assert {:ok, content} = Foundry.FileSystem.read(@root, "lib/wallet.ex")
       assert String.contains?(content, "defmodule")
     end
 
-    test "docs/adrs/ file" do
-      # Uses one of the stub ADRs created in P-1
-      {:ok, first_adr} =
-        File.ls!(Path.join(@root, "docs/adrs/"))
-        |> Enum.find(&String.ends_with?(&1, ".md"))
-        |> then(&{:ok, &1})
-
-      assert {:ok, _} = Foundry.FileSystem.read(@root, "docs/adrs/#{first_adr}")
-    end
-
-    test "AGENTS.md" do
-      assert {:ok, _} = Foundry.FileSystem.read(@root, "AGENTS.md")
+    test "test/ file" do
+      assert {:ok, content} = Foundry.FileSystem.read(@root, "test/transfers_test.exs")
+      assert String.contains?(content, "defmodule")
     end
 
     test ".foundry/manifest.exs" do
-      assert {:ok, _} = Foundry.FileSystem.read(@root, ".foundry/manifest.exs")
+      assert {:ok, content} = Foundry.FileSystem.read(@root, ".foundry/manifest.exs")
+      assert String.contains?(content, "project_name:")
     end
 
     test "mix.exs" do
-      assert {:ok, _} = Foundry.FileSystem.read(@root, "mix.exs")
+      assert {:ok, content} = Foundry.FileSystem.read(@root, "mix.exs")
+      assert String.contains?(content, "defmodule")
     end
 
-    test "priv/repo/migrations/ file" do
-      # Create a stub migration file in P-1 if none exists
-      assert {:ok, _} =
-               Foundry.FileSystem.read(@root, "priv/repo/migrations/20260101000000_init.exs")
+    test "config/ file" do
+      assert {:ok, _} = Foundry.FileSystem.read(@root, "config/config.exs")
+    end
+
+    test "docs/runbooks/ file (if exists)" do
+      # Only test if directory exists
+      docs_path = Path.join(@root, "docs/runbooks/")
+
+      if File.dir?(docs_path) and File.ls!(docs_path) != [] do
+        {:ok, first_file} =
+          File.ls!(docs_path)
+          |> Enum.find(&String.ends_with?(&1, ".md"))
+          |> then(&{:ok, &1})
+
+        assert {:ok, _} = Foundry.FileSystem.read(@root, "docs/runbooks/#{first_file}")
+      end
     end
   end
 

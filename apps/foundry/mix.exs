@@ -41,8 +41,6 @@ defmodule Foundry.MixProject do
       {:picosat_elixir, "~> 0.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:phoenix_pubsub, "~> 2.1"},
-      {:ecto_sql, "~> 3.13"},
-      {:postgrex, ">= 0.0.0"},
       {:jason, "~> 1.4"},
       {:swoosh, "~> 1.23"},
       {:req, "~> 0.5"}
@@ -54,10 +52,8 @@ defmodule Foundry.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get", "ecto.setup"],
-      "ecto.setup": ["ecto.create", "ecto.migrate", "run #{__DIR__}/priv/repo/seeds.exs"],
-      "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
+      setup: ["deps.get"],
+      test: ["test"]
     ]
   end
 end

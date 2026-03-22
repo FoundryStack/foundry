@@ -8,7 +8,6 @@ defmodule Foundry.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      Foundry.Repo,
       {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Foundry.PubSub}
       # Start a worker by calling: Foundry.Worker.start_link(arg)

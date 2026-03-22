@@ -11,7 +11,6 @@ import Config
 
 # Configure Mix tasks and generators
 config :foundry,
-  ecto_repos: [Foundry.Repo],
   ash_domains: [Foundry.Audit, Foundry.Config, Foundry.Proposals]
 
 # Configure the mailer
@@ -24,7 +23,6 @@ config :foundry,
 config :foundry, Foundry.Mailer, adapter: Swoosh.Adapters.Local
 
 config :foundry_web,
-  ecto_repos: [Foundry.Repo],
   generators: [context_app: :foundry]
 
 # Configures the endpoint

@@ -5,6 +5,7 @@ defmodule Foundry.Phase1AcceptanceTest do
   @ref_root Path.expand("../../reference_projects/igaming", __DIR__)
 
   # Helpers
+  # Note: These are placeholders used by Step 3+ tests (currently skipped).
   defp run_task(task, args \\ []) do
     # Runs a Mix task in the reference project's directory via System.cmd.
     # Returns {stdout, exit_code}. Uses System.cmd instead of Mix.Task.run/2
@@ -20,6 +21,9 @@ defmodule Foundry.Phase1AcceptanceTest do
     @tag :skip
     test "permitted path in lib/ returns {:ok, content}" do
       # Placeholder for full FileSystem test suite
+      # Will use: run_task/2, decode_json!/1
+      _task = run_task("test")
+      _decoded = decode_json!("{}")
       assert true
     end
   end
