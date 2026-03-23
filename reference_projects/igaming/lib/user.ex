@@ -121,7 +121,7 @@ defmodule IgamingRef.Secrets do
   @moduledoc false
   use AshAuthentication.Secret
 
-  def secret_for([:authentication, :tokens, :signing_secret], IgamingRef.Accounts.User, _opts) do
+  def secret_for([:authentication, :tokens, :signing_secret], IgamingRef.Accounts.User, _resource, _opts) do
     case Application.fetch_env(:igaming_ref, :token_signing_secret) do
       {:ok, secret} -> {:ok, secret}
       :error -> {:error, "token_signing_secret not configured"}

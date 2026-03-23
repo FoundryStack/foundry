@@ -14,6 +14,7 @@ defmodule IgamingRef.Gaming do
 
   resources do
     resource IgamingRef.Gaming.ProviderConfig
+    resource IgamingRef.Gaming.ProviderConfig.Version
     resource IgamingRef.Gaming.Game
     resource IgamingRef.Gaming.GameVersion
     resource IgamingRef.Gaming.GameCatalog

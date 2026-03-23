@@ -136,6 +136,7 @@ defmodule IgamingRef.Promotions.BonusCampaign do
 
     update :update do
       description("Update campaign configuration. Only permitted while in :draft state.")
+      require_atomic?(false)
 
       accept([
         :name,
@@ -307,6 +308,7 @@ defmodule IgamingRef.Promotions.BonusGrant do
 
     update :apply_wager do
       description("Decrement wagering_remaining. When it reaches zero, transitions to :wagered.")
+      require_atomic?(false)
 
       argument :wager_amount, :decimal do
         description("The wagered amount to apply toward the requirement.")

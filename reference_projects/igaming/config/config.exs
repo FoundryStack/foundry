@@ -3,9 +3,17 @@ import Config
 # Reduce log noise when running mix foundry.* (JSON output must be parseable)
 config :logger, level: :warning
 
-# Ash money type — required for :money attribute shorthand
+# Ash configuration
 config :ash, :custom_types, money: AshMoney.Types.Money
 config :ash, :known_types, [AshMoney.Types.Money]
+config :igaming_ref, ash_domains: [
+  IgamingRef.Accounts,
+  IgamingRef.Finance,
+  IgamingRef.Gaming,
+  IgamingRef.Players,
+  IgamingRef.Promotions,
+  IgamingRef.Ops
+]
 
 # ex_money / ex_cldr — required for Money types at runtime
 config :ex_cldr, default_backend: IgamingRef.Cldr

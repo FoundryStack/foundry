@@ -13,5 +13,6 @@ defmodule IgamingRef.Ops do
   resources do
     resource IgamingRef.Ops.AuditEntry
     resource IgamingRef.Ops.PIIVault
+    resource IgamingRef.Ops.PIIVault.Version
   end
 end

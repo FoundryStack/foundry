@@ -182,6 +182,7 @@ defmodule IgamingRef.Finance.Wallet do
 
     update :close do
       description("Permanently close the wallet. Irreversible. Requires zero balance.")
+      require_atomic?(false)
       change(transition_state(:closed))
 
       validate(fn changeset, _ ->

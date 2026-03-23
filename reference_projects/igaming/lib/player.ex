@@ -147,6 +147,7 @@ defmodule IgamingRef.Players.Player do
         "Record a player's self-exclusion request. Creates a SelfExclusionRecord and transitions status (RG-UK-008)."
       )
 
+      require_atomic?(false)
       change(transition_state(:self_excluded))
 
       change(fn changeset, context ->
@@ -288,6 +289,7 @@ defmodule IgamingRef.Players.SelfExclusionRecord do
     update :mark_reinstated do
       description("Record the reinstatement timestamp when a temporary exclusion expires.")
       accept([:reinstated_at])
+      require_atomic?(false)
 
       validate(fn changeset, _ ->
         exclusion_type = Ash.Changeset.get_attribute(changeset, :exclusion_type)

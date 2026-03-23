@@ -83,6 +83,7 @@ defmodule IgamingRef.Players.KYCUploadToken do
     update :mark_consumed do
       description("Mark the token as consumed by a KYC document upload.")
       accept([:consumed_by_document_id])
+      require_atomic?(false)
 
       change(fn changeset, _ ->
         Ash.Changeset.change_attribute(changeset, :consumed_at, DateTime.utc_now())
