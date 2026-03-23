@@ -5,7 +5,7 @@ defmodule Foundry.LintRules.IdempotencyRule do
 
   def check(module, ctx) do
     info = Foundry.SparkMeta.walk(module)
-    project_root = ctx[:metadata][:project_root]
+    project_root = ctx.metadata[:project_root]
 
     cond do
       info.type not in [:transfer, :reactor] ->
