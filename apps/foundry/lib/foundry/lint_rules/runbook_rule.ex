@@ -1,5 +1,5 @@
 defmodule Foundry.LintRules.RunbookRule do
-  @behaviour Foundry.SparkLint.Rule
+  @behaviour SparkLint.Rule
 
   def check(module, ctx) do
     project_root = ctx.metadata[:project_root] || File.cwd!()
@@ -13,7 +13,7 @@ defmodule Foundry.LintRules.RunbookRule do
         {:ok, []}
 
       is_nil(info.runbook) ->
-        {:ok, [%Foundry.SparkLint.Violation{
+        {:ok, [%SparkLint.Violation{
           rule:     :missing_runbook,
           module:   module,
           message:  "#{inspect module} has #{length(info.steps)} steps but declares no @runbook",
@@ -21,7 +21,7 @@ defmodule Foundry.LintRules.RunbookRule do
         }]}
 
       not File.exists?(Path.join(project_root, info.runbook)) ->
-        {:ok, [%Foundry.SparkLint.Violation{
+        {:ok, [%SparkLint.Violation{
           rule:     :missing_runbook,
           module:   module,
           message:  "#{inspect module} @runbook path does not exist: #{info.runbook}",

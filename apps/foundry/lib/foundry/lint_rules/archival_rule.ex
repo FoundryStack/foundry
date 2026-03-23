@@ -1,11 +1,11 @@
 defmodule Foundry.LintRules.ArchivalRule do
-  @behaviour Foundry.SparkLint.Rule
+  @behaviour SparkLint.Rule
 
   def check(module, ctx) do
     sensitive = ctx.metadata[:sensitive_modules] || []
 
     if module in sensitive and not archival?(module) do
-      {:ok, [%Foundry.SparkLint.Violation{
+      {:ok, [%SparkLint.Violation{
         rule:     :missing_archival,
         module:   module,
         message:  "#{inspect module} is sensitive but does not use AshArchival.Resource",

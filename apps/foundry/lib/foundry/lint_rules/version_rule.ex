@@ -1,5 +1,5 @@
 defmodule Foundry.LintRules.VersionRule do
-  @behaviour Foundry.SparkLint.Rule
+  @behaviour SparkLint.Rule
 
   def check(_module, ctx) do
     project_root = ctx.metadata[:project_root] || File.cwd!()
@@ -47,7 +47,7 @@ defmodule Foundry.LintRules.VersionRule do
             violations
 
           _ ->
-            [%Foundry.SparkLint.Violation{
+            [%SparkLint.Violation{
               rule:     :ash_version_outdated,
               module:   Foundry.Manifest,
               message:  "Ash version #{version} is outdated — require 3.x or later",
@@ -79,7 +79,7 @@ defmodule Foundry.LintRules.VersionRule do
             violations
 
           _ ->
-            [%Foundry.SparkLint.Violation{
+            [%SparkLint.Violation{
               rule:     :ashai_version_outdated,
               module:   Foundry.Manifest,
               message:  "Ash.AI version #{version} is outdated — require 2.x or later (if agent_steps present)",

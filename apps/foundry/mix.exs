@@ -46,7 +46,8 @@ defmodule Foundry.MixProject do
       {:jason, "~> 1.4"},
       {:swoosh, "~> 1.23"},
       {:req, "~> 0.5"},
-      {:spark_meta, path: "../../packages/spark_meta"}
+      {:spark_meta, path: "../../packages/spark_meta"},
+      {:spark_lint, path: "../../packages/spark_lint"}
     ]
   end
 

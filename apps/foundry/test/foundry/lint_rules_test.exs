@@ -1,7 +1,7 @@
 defmodule Foundry.LintRulesTest do
   use ExUnit.Case, async: true
 
-  alias Foundry.SparkLint.Context
+  alias SparkLint.Context
 
   describe "Foundry.LintRules.PaperTrailRule" do
     test "returns no violation when module not in sensitive list" do

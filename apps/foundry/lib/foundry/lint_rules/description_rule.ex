@@ -1,5 +1,5 @@
 defmodule Foundry.LintRules.DescriptionRule do
-  @behaviour Foundry.SparkLint.Rule
+  @behaviour SparkLint.Rule
 
   def check(module, _ctx) do
     violations = []
@@ -8,7 +8,7 @@ defmodule Foundry.LintRules.DescriptionRule do
     violations =
       case Code.fetch_docs(module) do
         {:docs_v1, _, _, _, :none, _, _} ->
-          [%Foundry.SparkLint.Violation{
+          [%SparkLint.Violation{
             rule:     :missing_description,
             module:   module,
             message:  "#{inspect module} is missing @moduledoc",
@@ -29,7 +29,7 @@ defmodule Foundry.LintRules.DescriptionRule do
 
         Enum.reduce(info.attributes, violations, fn attr, acc ->
           if is_nil(attr.description) or attr.description == "" do
-            [%Foundry.SparkLint.Violation{
+            [%SparkLint.Violation{
               rule:     :missing_description,
               module:   module,
               message:  "#{inspect module}.#{attr.name} is missing a description:",
