@@ -79,17 +79,17 @@ defmodule IgamingRef.Promotions.DepositMatchBlueprint do
         {:error, "Deposit below minimum of #{blueprint.min_deposit_amount}"}
 
       _ ->
-        matched = Money.mult(
-          deposit_amount,
-          Decimal.to_string(Decimal.div(blueprint.match_percentage, 100))
-        )
+        with {:ok, matched} <- Money.mult(
+               deposit_amount,
+               Decimal.to_string(Decimal.div(blueprint.match_percentage, 100))
+             ) do
+          bonus = case Money.compare!(matched, blueprint.max_bonus_amount) do
+            :gt -> blueprint.max_bonus_amount
+            _ -> matched
+          end
 
-        bonus = case Money.compare!(matched, blueprint.max_bonus_amount) do
-          :gt -> blueprint.max_bonus_amount
-          _ -> matched
+          {:ok, bonus}
         end
-
-        {:ok, bonus}
     end
   end
 
