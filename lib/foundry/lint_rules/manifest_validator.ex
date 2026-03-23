@@ -4,7 +4,7 @@ defmodule Foundry.LintRules.ManifestValidator do
   Does not implement SparkLint.Rule — it is run as a separate pass.
   """
 
-  @spec check(manifest :: keyword()) :: [Foundry.SparkLint.Violation.t()]
+  @spec check(manifest :: keyword()) :: [SparkLint.Violation.t()]
   def check(manifest) do
     []
     |> check_required_approvers(manifest)
@@ -21,7 +21,7 @@ defmodule Foundry.LintRules.ManifestValidator do
       if Keyword.get(approvers, key) do
         a
       else
-        [%Foundry.SparkLint.Violation{
+        [%SparkLint.Violation{
           rule:     :manifest_missing_required_approver,
           module:   Foundry.Manifest,
           message:  "manifest.approvers.#{key} is required but absent",
@@ -37,7 +37,7 @@ defmodule Foundry.LintRules.ManifestValidator do
 
     Enum.reduce(exemptions, acc, fn exempt_mod, a ->
       unless exempt_mod in sensitive do
-        [%Foundry.SparkLint.Violation{
+        [%SparkLint.Violation{
           rule:     :manifest_unknown_sensitive_resource,
           module:   Foundry.Manifest,
           message:  "#{inspect exempt_mod} is in sensitive_resource_exemptions but not in sensitive_resources",
@@ -58,7 +58,7 @@ defmodule Foundry.LintRules.ManifestValidator do
       total = Keyword.values(weights) |> Enum.sum()
 
       if abs(total - 1.0) > 0.001 do
-        [%Foundry.SparkLint.Violation{
+        [%SparkLint.Violation{
           rule:     :manifest_invalid_coverage_weights,
           module:   Foundry.Manifest,
           message:  "coverage_weights sum to #{Float.round(total, 6)}, must be 1.0 ± 0.001",

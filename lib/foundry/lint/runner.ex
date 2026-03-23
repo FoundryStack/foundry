@@ -38,7 +38,7 @@ defmodule Foundry.Lint.Runner do
     }
 
     {spark_violations, _rule_errors} =
-      Foundry.SparkLint.Runner.run(
+      SparkLint.Runner.run(
         Registry.module_rules(),
         modules,
         %{metadata: metadata}
@@ -71,7 +71,7 @@ defmodule Foundry.Lint.Runner do
   # Private
   # ---------------------------------------------------------------------------
 
-  defp to_lint_violation(%Foundry.SparkLint.Violation{} = v) do
+  defp to_lint_violation(%SparkLint.Violation{} = v) do
     %LintReport.Violation{
       rule_id: v.rule,
       severity: v.severity,

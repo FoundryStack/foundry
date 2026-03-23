@@ -294,9 +294,9 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 |---|---|
 | `Foundry.FileSystem` | Validated read boundary — all file access routes through here; enforces permitted root paths |
 | `Foundry.SparkMeta` | Spark DSL walker — extracts typed information from compiled modules |
-| `Foundry.SparkLint.Rule` | Behaviour for lint rules: `check/2 → {:ok, [violation]}` |
-| `Foundry.SparkLint.Runner` | Executes rules across all modules, collects violations |
-| `Foundry.SparkLint.Violation` | Violation struct: `rule_id, module, message, severity, step, attribute` |
+| `SparkLint.Rule` (package) | Behaviour for lint rules: `check/2 → {:ok, [violation]}` |
+| `SparkLint.Runner` (package) | Executes rules across all modules, collects violations |
+| `SparkLint.Violation` (package) | Violation struct: `rule_id, module, message, severity, step, attribute` |
 | `Foundry.LintRules.*` | Rule implementations — one module per rule |
 | `Foundry.LintRules.Registry` | Explicit rule registration; `module_rules/0` and `manifest_validators/0` |
 | `Foundry.Lint.Runner` | High-level orchestrator: discovers modules, runs registry rules, emits `LintReport` |
@@ -319,7 +319,7 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 
 ```elixir
 defmodule Foundry.LintRules.YourRule do
-  @behaviour Foundry.SparkLint.Rule
+  @behaviour SparkLint.Rule
 
   def check(module, ctx) do
     # ctx.metadata[:sensitive_modules] — list of sensitive module atoms

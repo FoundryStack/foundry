@@ -1,5 +1,5 @@
 defmodule Foundry.LintRules.IdempotencyRule do
-  @behaviour Foundry.SparkLint.Rule
+  @behaviour SparkLint.Rule
 
   @side_effect_steps ~w[create update destroy action run step]
 
@@ -15,7 +15,7 @@ defmodule Foundry.LintRules.IdempotencyRule do
         {:ok, []}
 
       not has_idempotency_key?(module, project_root) ->
-        {:ok, [%Foundry.SparkLint.Violation{
+        {:ok, [%SparkLint.Violation{
           rule:     :missing_idempotency,
           module:   module,
           message:  "#{inspect module} has side effects but declares no @idempotency_key",

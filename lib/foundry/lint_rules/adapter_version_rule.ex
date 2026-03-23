@@ -1,5 +1,5 @@
 defmodule Foundry.LintRules.AdapterVersionRule do
-  @behaviour Foundry.SparkLint.Rule
+  @behaviour SparkLint.Rule
 
   def check(_module, _ctx) do
     # Phase 1: minimal implementation
