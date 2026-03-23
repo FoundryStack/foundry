@@ -502,10 +502,13 @@ defmodule IgamingRef.Integration.CIPipelineTest do
             end
 
           if start_idx && end_idx do
-            mutated_lines = Enum.take(lines, start_idx) ++ Enum.drop(lines, end_idx + 1)
+            mutated_lines =
+              Enum.take(lines, start_idx) ++
+              ["  @moduledoc false"] ++
+              Enum.drop(lines, end_idx + 1)
             mutated = Enum.join(mutated_lines, "\n")
             File.write!(path, mutated)
-            IO.puts("Mutation: @moduledoc removed: #{not String.contains?(mutated, "@moduledoc")}")
+            IO.puts("Mutation: @moduledoc replaced with false: #{String.contains?(mutated, "@moduledoc false")}")
           end
         end,
         fn report, _exit_code ->

@@ -4,18 +4,6 @@ defmodule Foundry.LintRules.DescriptionRule do
   def check(module, _ctx) do
     violations = []
 
-    # Reload module to get fresh docs from recompiled BEAM (important for mutation tests)
-    # This ensures we catch mutations that remove @moduledoc
-    try do
-      # Try to reload the module from disk
-      case :code.load_file(module) do
-        {:module, _} -> :ok
-        _ -> :ok
-      end
-    rescue
-      _ -> :ok
-    end
-
     # Check @moduledoc
     violations =
       case Code.fetch_docs(module) do
@@ -28,8 +16,12 @@ defmodule Foundry.LintRules.DescriptionRule do
           } | violations]
 
         {:docs_v1, _, _, _, :hidden, _, _} ->
-          # @moduledoc false is acceptable
-          violations
+          [%Foundry.SparkLint.Violation{
+            rule:     :missing_description,
+            module:   module,
+            message:  "#{inspect module} uses @moduledoc false - explicit documentation is required",
+            severity: :error
+          } | violations]
 
         _ ->
           violations
