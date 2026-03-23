@@ -64,7 +64,7 @@ defmodule IgamingRef.Gaming.Adapters.PragmaticPlayV2 do
 
   Returns: {:ok, %{status: String.t()}} | {:error, reason}
   """
-  def health_check(provider_config) do
+  def health_check(_provider_config) do
     # In production, this would call the provider's health endpoint
     {:ok, %{status: "healthy"}}
   end
