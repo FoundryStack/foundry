@@ -14,26 +14,10 @@ defmodule IgamingRef.Gaming.CatalogSyncJob do
 
   use Oban.Worker, queue: :default, max_attempts: 3
 
-
   @impl Oban.Worker
   def perform(%Oban.Job{args: _args}) do
     # Fetch all active providers and sync each one
     # In production, this would properly query and sync all active providers
     :ok
-  end
-
-
-  # Foundry configuration: metadata for Foundry integration
-  @foundry %{performs: IgamingRef.Gaming.ProviderSyncReactor}
-  defp _sync_provider(provider) do
-    # Dispatch a ProviderSyncReactor for each provider
-    # In production, this would queue or invoke the reactor
-    case IgamingRef.Gaming.ProviderSyncReactor.run(
-      %{provider_id: provider.id, actor: :system},
-      timeout: 30_000
-    ) do
-      {:ok, _result} -> :ok
-      {:error, err} -> {:error, err}
-    end
   end
 end
