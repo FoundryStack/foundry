@@ -16,12 +16,7 @@ defmodule Foundry.LintRules.DescriptionRule do
           } | violations]
 
         {:docs_v1, _, _, _, :hidden, _, _} ->
-          [%Foundry.SparkLint.Violation{
-            rule:     :missing_description,
-            module:   module,
-            message:  "#{inspect module} uses @moduledoc false - explicit documentation is required",
-            severity: :error
-          } | violations]
+          violations
 
         _ ->
           violations
