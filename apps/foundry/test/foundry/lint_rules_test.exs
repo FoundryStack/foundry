@@ -119,7 +119,7 @@ defmodule Foundry.LintRulesTest do
 
       lock_content = """
       %{
-        "ash": {:hex, :ash, "2.17.0", "abc123", [:mix], [], "hexpm", "def456"}
+        ash: {:hex, :ash, "2.17.0", "abc123", [:mix], [], "hexpm", "def456"}
       }
       """
       File.write!(Path.join(tmpdir, "mix.lock"), lock_content)
@@ -142,7 +142,7 @@ defmodule Foundry.LintRulesTest do
 
       lock_content = """
       %{
-        "ash": {:hex, :ash, "3.20.0", "abc123", [:mix], [], "hexpm", "def456"}
+        ash: {:hex, :ash, "3.20.0", "abc123", [:mix], [], "hexpm", "def456"}
       }
       """
       File.write!(Path.join(tmpdir, "mix.lock"), lock_content)
