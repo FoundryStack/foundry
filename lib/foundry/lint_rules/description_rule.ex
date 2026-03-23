@@ -4,13 +4,16 @@ defmodule Foundry.LintRules.DescriptionRule do
   def check(module, _ctx) do
     violations = []
 
-    # Purge module from memory to force fresh code reloading (important for mutation tests)
+    # Reload module to get fresh docs from recompiled BEAM (important for mutation tests)
+    # This ensures we catch mutations that remove @moduledoc
     try do
-      :code.purge(module)
-      :code.delete(module)
-      Code.ensure_loaded(module)
+      # Try to reload the module from disk
+      case :code.load_file(module) do
+        {:module, _} -> :ok
+        _ -> :ok
+      end
     rescue
-      _ -> nil
+      _ -> :ok
     end
 
     # Check @moduledoc
