@@ -39,7 +39,9 @@ defmodule Foundry.LintRules.VersionRule do
       nil ->
         violations
 
-      {:hex, :ash, version, _, _, _} ->
+      tuple when is_tuple(tuple) and tuple_size(tuple) >= 3 and
+                 elem(tuple, 0) == :hex and elem(tuple, 1) == :ash ->
+        version = elem(tuple, 2)
         case Version.parse(version) do
           {:ok, %Version{major: major}} when major >= 3 ->
             violations
@@ -69,7 +71,9 @@ defmodule Foundry.LintRules.VersionRule do
       nil ->
         violations
 
-      {:hex, :ash_ai, version, _, _, _} ->
+      tuple when is_tuple(tuple) and tuple_size(tuple) >= 3 and
+                 elem(tuple, 0) == :hex and elem(tuple, 1) == :ash_ai ->
+        version = elem(tuple, 2)
         case Version.parse(version) do
           {:ok, %Version{major: major}} when major >= 2 ->
             violations

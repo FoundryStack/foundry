@@ -309,7 +309,10 @@ defmodule Foundry.SparkMeta do
       steps =
         try do
           module.entities([:reactor])
-          |> Enum.filter(&match?(%{__struct__: Reactor.Dsl.Step}, &1))
+          |> Enum.filter(fn step ->
+            is_struct(step) and
+              step.__struct__ |> Atom.to_string() |> String.starts_with?("Elixir.Reactor.Dsl.Step")
+          end)
           |> Enum.map(fn step ->
             %{
               name: to_string(step.name),

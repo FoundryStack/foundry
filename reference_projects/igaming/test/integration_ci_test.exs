@@ -472,15 +472,6 @@ defmodule IgamingRef.Integration.CIPipelineTest do
             mutated_lines = List.delete_at(lines, target_idx)
             mutated = Enum.join(mutated_lines, "\n")
             File.write!(path, mutated)
-
-            # Verify mutation was written
-            verify_content = File.read!(path)
-            verify_lines = String.split(verify_content, "\n")
-            # Check specifically for the withdrawal_request_id version
-            has_withdrawal_idempotency = Enum.any?(verify_lines, fn line ->
-              String.contains?(line, "@idempotency_key") and String.contains?(line, "withdrawal_request_id")
-            end)
-            IO.puts("Mutation applied. File still has withdrawal_request_id @idempotency_key: #{has_withdrawal_idempotency}")
           else
             IO.puts("ERROR: Could not find @idempotency_key line")
           end
@@ -498,9 +489,24 @@ defmodule IgamingRef.Integration.CIPipelineTest do
         fn tmpdir ->
           path = Path.join([tmpdir, "lib", "wallet.ex"])
           content = File.read!(path)
-          # Remove the @moduledoc ... line
-          mutated = String.replace(content, ~r/@moduledoc """[\s\S]*?"""\n\n/, "")
-          File.write!(path, mutated)
+
+          # Remove @moduledoc block using line-based approach
+          lines = String.split(content, "\n")
+          start_idx = Enum.find_index(lines, &String.contains?(&1, ~s(@moduledoc """)))
+
+          end_idx =
+            if start_idx do
+              rest = Enum.drop(lines, start_idx + 1)
+              closing_idx = Enum.find_index(rest, &(String.trim(&1) == ~s(""")))
+              if closing_idx, do: start_idx + 1 + closing_idx, else: nil
+            end
+
+          if start_idx && end_idx do
+            mutated_lines = Enum.take(lines, start_idx) ++ Enum.drop(lines, end_idx + 1)
+            mutated = Enum.join(mutated_lines, "\n")
+            File.write!(path, mutated)
+            IO.puts("Mutation: @moduledoc removed: #{not String.contains?(mutated, "@moduledoc")}")
+          end
         end,
         fn report, _exit_code ->
           rule_ids = Enum.map(report["violations"], & &1["rule_id"])
