@@ -68,10 +68,11 @@ end
 
 defmodule Foundry.SparkMeta do
   @moduledoc """
-  Generic Spark DSL walker for introspecting compiled modules.
+  Foundry-specific Spark DSL walker for introspecting compiled modules.
 
-  Produces SparkMeta.ModuleInfo structs without Foundry-specific assumptions.
-  This module will become the `spark_meta` Hex package (ADR-019).
+  Produces ModuleInfo structs with Foundry-specific field extensions beyond the generic
+  SparkMeta.DslState, including type detection, state machines, Oban configuration,
+  and runbook extraction.
 
   The walker uses a pipeline pattern: start with a basic ModuleInfo struct,
   then apply a series of transformations to populate fields via Spark introspection APIs.
@@ -227,7 +228,7 @@ defmodule Foundry.SparkMeta do
     if AshStateMachine.Resource in safe_extensions(module) do
       states =
         try do
-          Spark.Dsl.Extension.get_entities(module, [:state_machine, :states])
+          SparkMeta.entities(module, [:state_machine, :states])
           |> Enum.map(&to_string(&1.name))
         rescue
           _ -> []
@@ -235,7 +236,7 @@ defmodule Foundry.SparkMeta do
 
       transitions =
         try do
-          Spark.Dsl.Extension.get_entities(module, [:state_machine, :transitions])
+          SparkMeta.entities(module, [:state_machine, :transitions])
           |> Enum.map(fn t ->
             %{from: to_string(t.from), to: to_string(t.to), action: to_string(t.action)}
           end)
@@ -245,7 +246,7 @@ defmodule Foundry.SparkMeta do
 
       state_attr =
         try do
-          Spark.Dsl.Extension.get_opt(module, [:state_machine], :state_attribute, nil)
+          SparkMeta.get_opt(module, [:state_machine], :state_attribute, nil)
           |> then(&if &1, do: to_string(&1), else: nil)
         rescue
           _ -> nil
@@ -349,7 +350,7 @@ defmodule Foundry.SparkMeta do
       # Extract queue names from Oban DSL
       queues =
         try do
-          Spark.Dsl.Extension.get_entities(module, [:oban])
+          SparkMeta.entities(module, [:oban])
           |> Enum.map(&to_string(&1.queue))
         rescue
           _ -> []
@@ -530,11 +531,7 @@ defmodule Foundry.SparkMeta do
   end
 
   defp safe_extensions(module) do
-    if function_exported?(module, :__spark_dsl_config__, 0) do
-      Spark.extensions(module)
-    else
-      []
-    end
+    SparkMeta.extensions(module)
   rescue
     _ -> []
   end
@@ -772,18 +769,3 @@ defmodule Foundry.SparkMeta do
   end
 end
 
-defmodule Foundry.SparkMeta.Extension do
-  @moduledoc """
-  Opt-in hook for Spark extension authors to provide richer walker output.
-
-  Implement this behaviour in your extension module to supply structured data
-  that SparkMeta cannot derive from the generic Spark DSL introspection API.
-
-  Unknown extensions (those not implementing this behaviour) receive a raw
-  key-value fallback via Spark.Dsl.Extension.get_entities/3 — they do not
-  cause crashes or produce missing data.
-  """
-
-  @callback enrich(module :: module(), info :: Foundry.SparkMeta.ModuleInfo.t()) ::
-              Foundry.SparkMeta.ModuleInfo.t()
-end

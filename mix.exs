@@ -45,7 +45,8 @@ defmodule Foundry.MixProject do
       {:phoenix_pubsub, "~> 2.1"},
       {:jason, "~> 1.4"},
       {:swoosh, "~> 1.23"},
-      {:req, "~> 0.5"}
+      {:req, "~> 0.5"},
+      {:spark_meta, path: "../../packages/spark_meta"}
     ]
   end
 
