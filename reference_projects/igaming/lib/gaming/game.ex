@@ -8,6 +8,8 @@ defmodule IgamingRef.Gaming.Game do
   Compliance: RG-MGA-006 (provider agreements), RG-UK-007 (game certification)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_006, :RG_UK_007]
   @telemetry_prefix [:igaming_ref, :gaming, :game]
 

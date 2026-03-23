@@ -9,6 +9,8 @@ defmodule IgamingRef.Gaming.Adapters.PragmaticPlayV2 do
   Compliance: RG-MGA-006 (provider agreements)
   """
 
+  use Foundry.Annotations
+
   @behaviour IgamingRef.Gaming.ProviderAdapter
 
   @compliance [:RG_MGA_006]

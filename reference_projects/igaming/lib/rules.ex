@@ -6,6 +6,8 @@ defmodule IgamingRef.Finance.Rules.SufficientBalance do
   Compliance: RG-MGA-001 (wallet balance integrity — balance never goes negative)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_001]
   @spec_invariants [
     "balance after debit is never negative",
@@ -38,6 +40,8 @@ defmodule IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded do
   Applied by: IgamingRef.Finance.WithdrawalTransfer
   Compliance: RG-UK-014 (withdrawal processing), RG-MGA-007 (withdrawal limits)
   """
+
+  use Foundry.Annotations
 
   @compliance [:RG_UK_014, :RG_MGA_007]
   @spec_invariants [
@@ -84,6 +88,8 @@ defmodule IgamingRef.Players.Rules.PlayerNotSelfExcluded do
   Compliance: RG-UK-008, RG-MGA-009 (self-exclusion integrity)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_UK_008, :RG_MGA_009]
   @spec_invariants [
     "rule rejects when player.status == :self_excluded",
@@ -116,6 +122,8 @@ defmodule IgamingRef.Promotions.Rules.PlayerEligibleForCampaign do
   Applied by: IgamingRef.Promotions.BonusGrantTransfer
   Compliance: RG-MGA-005 (bonus terms transparency and enforcement)
   """
+
+  use Foundry.Annotations
 
   @compliance [:RG_MGA_005]
   @spec_invariants [
@@ -160,6 +168,8 @@ defmodule IgamingRef.Promotions.Rules.CampaignNotExpired do
   Compliance: RG-MGA-005
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_005]
   @spec_invariants [
     "rule rejects when campaign.expires_at is in the past",
@@ -200,6 +210,8 @@ defmodule IgamingRef.Finance.Rules.PlayerKYCVerified do
   Compliance: RG-MGA-003 (KYC requirements)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_003]
   @spec_invariants [
     "rule rejects when player.kyc_status != :verified",
@@ -230,6 +242,8 @@ defmodule IgamingRef.Gaming.Rules.ProviderActive do
   Compliance: RG-MGA-006 (provider agreements)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_006]
   @spec_invariants [
     "rule rejects when provider status is not :active",
@@ -259,6 +273,8 @@ defmodule IgamingRef.Gaming.Rules.GameRTPCertified do
   Applied by: Game launch operations
   Compliance: RG-UK-007 (game certification)
   """
+
+  use Foundry.Annotations
 
   @compliance [:RG_UK_007]
   @spec_invariants [

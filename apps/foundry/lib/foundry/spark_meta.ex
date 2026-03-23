@@ -376,7 +376,7 @@ defmodule Foundry.SparkMeta do
     if Oban.Worker in behaviours do
       performs =
         try do
-          foundry_config = get_attr_single(module.__info__(:attributes), :foundry)
+          foundry_config = get_attr_raw(module.__info__(:attributes), :foundry)
 
           if is_map(foundry_config) do
             case Map.get(foundry_config, :performs) do
@@ -611,6 +611,16 @@ defmodule Foundry.SparkMeta do
     end
   rescue
     _ -> []
+  end
+
+  defp get_attr_raw(attrs, key) do
+    case Keyword.get(attrs, key) do
+      nil -> nil
+      [value | _] -> value
+      value -> value
+    end
+  rescue
+    _ -> nil
   end
 
   defp get_attr_single(attrs, key) do

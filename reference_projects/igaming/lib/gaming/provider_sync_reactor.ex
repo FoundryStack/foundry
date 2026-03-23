@@ -14,6 +14,8 @@ defmodule IgamingRef.Gaming.ProviderSyncReactor do
   Compliance: RG-MGA-006 (provider agreements), RG-UK-007 (game certification)
   """
 
+  use Foundry.Annotations
+
   @idempotency_key :provider_id
   @runbook "docs/runbooks/provider_sync.md"
   @compliance [:RG_MGA_006, :RG_UK_007]

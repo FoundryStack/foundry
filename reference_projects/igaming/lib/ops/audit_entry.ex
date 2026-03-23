@@ -9,6 +9,8 @@ defmodule IgamingRef.Ops.AuditEntry do
   Compliance: RG-MGA-002 (audit trail requirements)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_002]
   @telemetry_prefix [:igaming_ref, :ops, :audit_entry]
 

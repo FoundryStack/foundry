@@ -10,6 +10,8 @@ defmodule IgamingRef.Players.Player do
   RG-UK-008 (self-exclusion).
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_UK_002, :RG_MGA_003, :RG_UK_008]
   @telemetry_prefix [:igaming_ref, :players, :player]
 
@@ -202,6 +204,8 @@ defmodule IgamingRef.Players.SelfExclusionRecord do
 
   Compliance: RG-UK-008, RG-MGA-009 (self-exclusion integrity).
   """
+
+  use Foundry.Annotations
 
   @compliance [:RG_UK_008, :RG_MGA_009]
   @telemetry_prefix [:igaming_ref, :players, :self_exclusion_record]

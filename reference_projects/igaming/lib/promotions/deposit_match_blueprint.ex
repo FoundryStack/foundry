@@ -9,6 +9,8 @@ defmodule IgamingRef.Promotions.DepositMatchBlueprint do
   Compliance: RG-MGA-005 (bonus terms transparency)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_005]
   @telemetry_prefix [:igaming_ref, :promotions, :deposit_match_blueprint]
 

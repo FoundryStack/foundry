@@ -14,6 +14,8 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
   Compliance: RG-UK-014 (withdrawal processing), RG-MGA-007 (withdrawal limits)
   """
 
+  use Foundry.Annotations
+
   @idempotency_key :withdrawal_request_id
   @runbook "docs/runbooks/withdrawal_transfer.md"
   @compliance [:RG_UK_014, :RG_MGA_007]
@@ -173,6 +175,8 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
 
   Compliance: RG-MGA-005 (bonus terms must be enforced)
   """
+
+  use Foundry.Annotations
 
   @idempotency_key {:player_id, :campaign_id}
   @runbook "docs/runbooks/bonus_grant_transfer.md"

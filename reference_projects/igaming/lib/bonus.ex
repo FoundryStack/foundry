@@ -9,6 +9,8 @@ defmodule IgamingRef.Promotions.BonusCampaign do
   Compliance: RG-MGA-005 (bonus terms transparency), RG-UK-011 (bonus wagering disclosure).
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_005, :RG_UK_011]
   @telemetry_prefix [:igaming_ref, :promotions, :bonus_campaign]
 
@@ -204,7 +206,9 @@ defmodule IgamingRef.Promotions.BonusGrant do
   Compliance: RG-MGA-005, RG-UK-011.
   """
 
-  @compliance [:RG_MGA_005, :RG_UK_011]
+  use Foundry.Annotations
+
+  @compliance [:RG_MMA_005, :RG_UK_011]
   @telemetry_prefix [:igaming_ref, :promotions, :bonus_grant]
 
   use Ash.Resource,

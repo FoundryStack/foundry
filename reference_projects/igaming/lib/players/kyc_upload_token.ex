@@ -8,6 +8,8 @@ defmodule IgamingRef.Players.KYCUploadToken do
   Compliance: RG-MGA-003 (KYC requirements), RG-UK-002 (player verification)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_003, :RG_UK_002]
   @telemetry_prefix [:igaming_ref, :players, :kyc_upload_token]
 

@@ -8,6 +8,8 @@ defmodule IgamingRef.Finance.Transfer do
   Compliance: RG-MGA-001 (wallet integrity), RG-UK-003 (balance accuracy)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_001, :RG_UK_003]
   @telemetry_prefix [:igaming_ref, :finance, :transfer]
 

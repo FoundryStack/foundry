@@ -10,6 +10,8 @@ defmodule IgamingRef.Finance.LedgerEntry do
   Compliance: RG-MGA-001, RG-MGA-002 (ledger immutability), RG-UK-003.
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_001, :RG_MGA_002, :RG_UK_003]
   @telemetry_prefix [:igaming_ref, :finance, :ledger_entry]
 

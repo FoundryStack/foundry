@@ -8,6 +8,8 @@ defmodule IgamingRef.Gaming.ProviderConfig do
   Compliance: RG-MGA-006 (provider agreements and certifications)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_006]
   @telemetry_prefix [:igaming_ref, :gaming, :provider_config]
 

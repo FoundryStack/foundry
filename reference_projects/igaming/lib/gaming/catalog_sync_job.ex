@@ -10,6 +10,8 @@ defmodule IgamingRef.Gaming.CatalogSyncJob do
   Compliance: RG-MGA-006 (provider agreements), RG-UK-007 (game certification)
   """
 
+  use Foundry.Annotations
+
   use Oban.Worker, queue: :default, max_attempts: 3
 
   alias IgamingRef.Gaming.ProviderConfig

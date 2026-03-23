@@ -11,6 +11,8 @@ defmodule IgamingRef.Ops.PIIVault do
   Compliance: RG-MGA-002 (data protection), RG-UK-002 (player verification)
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_MGA_002, :RG_UK_002]
   @telemetry_prefix [:igaming_ref, :ops, :pii_vault]
 

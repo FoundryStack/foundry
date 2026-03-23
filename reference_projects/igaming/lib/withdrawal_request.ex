@@ -8,6 +8,8 @@ defmodule IgamingRef.Finance.WithdrawalRequest do
   Compliance: RG-UK-014 (withdrawal processing), RG-MGA-007 (withdrawal limits).
   """
 
+  use Foundry.Annotations
+
   @compliance [:RG_UK_014, :RG_MGA_007]
   @telemetry_prefix [:igaming_ref, :finance, :withdrawal_request]
 
