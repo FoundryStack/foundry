@@ -112,6 +112,52 @@ defmodule Foundry.LintRulesTest do
       # Should not crash, returns empty list or violations
       assert is_list(violations)
     end
+
+    test "detects outdated ash version (2.x) in mix.lock" do
+      tmpdir = System.tmp_dir!() |> Path.join("version_rule_test_#{:rand.uniform(1_000_000)}")
+      File.mkdir_p!(tmpdir)
+
+      lock_content = """
+      %{
+        "ash": {:hex, :ash, "2.17.0", "abc123", [:mix], [], "hexpm", "def456"}
+      }
+      """
+      File.write!(Path.join(tmpdir, "mix.lock"), lock_content)
+
+      ctx = %Context{
+        module: String,
+        modules: [String],
+        metadata: %{project_root: tmpdir}
+      }
+      {:ok, violations} = Foundry.LintRules.VersionRule.check(String, ctx)
+      rule_ids = Enum.map(violations, & &1.rule)
+      assert :ash_version_outdated in rule_ids
+
+      File.rm_rf!(tmpdir)
+    end
+
+    test "no violation for current ash version (3.x) in mix.lock" do
+      tmpdir = System.tmp_dir!() |> Path.join("version_rule_test_#{:rand.uniform(1_000_000)}")
+      File.mkdir_p!(tmpdir)
+
+      lock_content = """
+      %{
+        "ash": {:hex, :ash, "3.20.0", "abc123", [:mix], [], "hexpm", "def456"}
+      }
+      """
+      File.write!(Path.join(tmpdir, "mix.lock"), lock_content)
+
+      ctx = %Context{
+        module: String,
+        modules: [String],
+        metadata: %{project_root: tmpdir}
+      }
+      {:ok, violations} = Foundry.LintRules.VersionRule.check(String, ctx)
+      rule_ids = Enum.map(violations, & &1.rule)
+      refute :ash_version_outdated in rule_ids
+
+      File.rm_rf!(tmpdir)
+    end
   end
 
   describe "Foundry.LintRules.AdapterVersionRule" do
