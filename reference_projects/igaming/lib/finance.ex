@@ -10,7 +10,7 @@ defmodule IgamingRef.Finance do
   """
 
   use Ash.Domain,
-    extensions: [AshArchival.Domain],
+    extensions: [AshArchival.Domain, AshPaperTrail.Domain],
     validate_config_inclusion?: false
 
   resources do
