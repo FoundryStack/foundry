@@ -23,7 +23,7 @@ defmodule IgamingRef.Gaming.ProviderSyncReactor do
 
   use Reactor
 
-  alias IgamingRef.Gaming.{ProviderConfig, Game, GameVersion, GameCatalog}
+  alias IgamingRef.Gaming.{ProviderConfig, Game}
 
   input :provider_id
   input :actor

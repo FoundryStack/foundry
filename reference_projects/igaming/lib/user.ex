@@ -39,6 +39,7 @@ defmodule IgamingRef.Accounts.User do
 
       magic_link do
         identity_field(:email)
+        require_interaction?(true)
         sender(IgamingRef.Accounts.Emails.MagicLinkEmail)
       end
     end

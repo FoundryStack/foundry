@@ -4,5 +4,6 @@ defmodule IgamingRef.Cldr do
   """
   use Cldr,
     locales: ["en"],
-    default_locale: "en"
+    default_locale: "en",
+    otp_app: :igaming_ref
 end
