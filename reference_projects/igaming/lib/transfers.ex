@@ -141,7 +141,7 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
 
     # Sum completed withdrawal amounts in the last 24 hours
     # Full implementation queries LedgerEntry — stubbed for reference project
-    case Ash.read(LedgerEntry, :read, filter: [
+    case Ash.read(LedgerEntry, filter: [
       wallet_id: {:in, player_wallet_ids(player_id)},
       kind: :withdrawal,
       direction: :debit,
@@ -153,7 +153,7 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
   end
 
   defp player_wallet_ids(player_id) do
-    case Ash.read(Wallet, :read, filter: [player_id: player_id], actor: :system) do
+    case Ash.read(Wallet, filter: [player_id: player_id], actor: :system) do
       {:ok, wallets} -> Enum.map(wallets, & &1.id)
       _ -> []
     end
@@ -285,7 +285,7 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   # ---------------------------------------------------------------------------
 
   defp primary_wallet(player_id) do
-    case Ash.read(Wallet, :read, filter: [player_id: player_id, status: :active], actor: :system) do
+    case Ash.read(Wallet, filter: [player_id: player_id, status: :active], actor: :system) do
       {:ok, [wallet | _]} -> {:ok, wallet}
       {:ok, []}           -> {:error, "No active wallet found for player #{player_id}"}
       {:error, err}       -> {:error, err}
@@ -293,7 +293,7 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   end
 
   defp existing_grants(player_id, campaign_id) do
-    Ash.read(BonusGrant, :read,
+    Ash.read(BonusGrant,
       filter: [player_id: player_id, campaign_id: campaign_id],
       actor: :system)
   end
