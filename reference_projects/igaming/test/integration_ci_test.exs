@@ -126,9 +126,11 @@ defmodule IgamingRef.Integration.CIPipelineTest do
         root_dir = Path.dirname(Path.dirname(@project_root))
 
         # Copy without _build and deps
-        File.cp_r!(@project_root, tmpdir, fn src, _dst ->
-          not (src =~ ~r{/_build(/|$)}) and not (src =~ ~r{/deps(/|$)})
-        end)
+        File.cp_r!(@project_root, tmpdir,
+          on_conflict: fn src, _dst ->
+            not (src =~ ~r{/_build(/|$)}) and not (src =~ ~r{/deps(/|$)})
+          end
+        )
 
         # Patch foundry path
         mix_exs_path = Path.join(tmpdir, "mix.exs")
@@ -346,7 +348,7 @@ defmodule IgamingRef.Integration.CIPipelineTest do
             try do
               Jason.decode!(json_output)
             rescue
-              e in Jason.DecodeError ->
+              _e in Jason.DecodeError ->
                 %{"violations" => [], "passed" => true, "error_count" => 0, "warning_count" => 0, "info_count" => 0}
             end
           end
