@@ -10,16 +10,13 @@ defmodule IgamingRef.Finance do
   """
 
   use Ash.Domain,
-    extensions: [AshArchival.Domain]
+    extensions: [AshArchival.Domain],
+    validate_config_inclusion?: false
 
   resources do
     resource IgamingRef.Finance.Wallet
-    resource IgamingRef.Finance.Wallet.Version
     resource IgamingRef.Finance.LedgerEntry
-    resource IgamingRef.Finance.LedgerEntry.Version
     resource IgamingRef.Finance.WithdrawalRequest
-    resource IgamingRef.Finance.WithdrawalRequest.Version
     resource IgamingRef.Finance.Transfer
-    resource IgamingRef.Finance.Transfer.Version
   end
 end

@@ -8,11 +8,11 @@ defmodule IgamingRef.Ops do
   """
 
   use Ash.Domain,
-    extensions: [AshArchival.Domain]
+    extensions: [AshArchival.Domain],
+    validate_config_inclusion?: false
 
   resources do
     resource IgamingRef.Ops.AuditEntry
     resource IgamingRef.Ops.PIIVault
-    resource IgamingRef.Ops.PIIVault.Version
   end
 end

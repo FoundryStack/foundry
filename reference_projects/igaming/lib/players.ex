@@ -10,15 +10,13 @@ defmodule IgamingRef.Players do
   """
 
   use Ash.Domain,
-    extensions: [AshArchival.Domain]
+    extensions: [AshArchival.Domain],
+    validate_config_inclusion?: false
 
   resources do
     resource IgamingRef.Players.Player
-    resource IgamingRef.Players.Player.Version
     resource IgamingRef.Players.SelfExclusionRecord
-    resource IgamingRef.Players.SelfExclusionRecord.Version
     resource IgamingRef.Players.KYCDocument
-    resource IgamingRef.Players.KYCDocument.Version
     resource IgamingRef.Players.KYCUploadToken
   end
 end

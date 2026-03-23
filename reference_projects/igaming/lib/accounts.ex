@@ -8,7 +8,8 @@ defmodule IgamingRef.Accounts do
   """
 
   use Ash.Domain,
-    extensions: [AshArchival.Domain]
+    extensions: [AshArchival.Domain],
+    validate_config_inclusion?: false
 
   resources do
     resource IgamingRef.Accounts.User
