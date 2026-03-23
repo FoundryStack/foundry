@@ -14,6 +14,8 @@ defmodule Foundry.Annotations do
     - @foundry          - Map of Foundry metadata for Oban workers and others
     - @runbook          - Path to operational runbook document
     - @adrs             - List of ADR references
+    - @idempotency_key  - Reactor idempotency key for deduplication (atom or tuple)
+    - @spec_invariants  - Custom spec rule invariants and constraints
 
   Usage:
       use Foundry.Annotations
@@ -32,6 +34,8 @@ defmodule Foundry.Annotations do
       Module.register_attribute(__MODULE__, :foundry, persist: true)
       Module.register_attribute(__MODULE__, :runbook, persist: true)
       Module.register_attribute(__MODULE__, :adrs, persist: true)
+      Module.register_attribute(__MODULE__, :idempotency_key, persist: true)
+      Module.register_attribute(__MODULE__, :spec_invariants, persist: true)
     end
   end
 end
