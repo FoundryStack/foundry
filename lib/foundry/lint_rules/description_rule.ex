@@ -4,6 +4,15 @@ defmodule Foundry.LintRules.DescriptionRule do
   def check(module, _ctx) do
     violations = []
 
+    # Purge module from memory to force fresh code reloading (important for mutation tests)
+    try do
+      :code.purge(module)
+      :code.delete(module)
+      Code.ensure_loaded(module)
+    rescue
+      _ -> nil
+    end
+
     # Check @moduledoc
     violations =
       case Code.fetch_docs(module) do
