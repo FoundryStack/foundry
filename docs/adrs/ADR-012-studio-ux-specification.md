@@ -242,7 +242,7 @@ Run `mix compile` in your project directory to populate the system map.
 ```
 Copy-to-clipboard button on the command.
 
-**Compile error state:** If `mix foundry.diagram.generate` returns non-zero, the map shows:
+**Compile error state:** If `mix foundry.project.context` returns non-zero (compile failure), the map shows:
 ```
 The project has compilation errors. Fix these before the system map can render:
 [compiler error output, truncated to 20 lines with "Show full output" expansion]

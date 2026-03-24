@@ -1,0 +1,169 @@
+{
+  "generated_at": "2026-03-25T02:50:00Z",
+  "project": "igaming",
+  "project_type": "standard",
+  "domain_type": "ash",
+  "nodes": [
+    {
+      "id": "Finance.Wallet",
+      "type": "resource",
+      "domain": "Finance",
+      "description": "User wallet and balance management",
+      "compliance": ["PCI-DSS", "GDPR"],
+      "test_coverage": {"e2e_tests": true},
+      "sensitive": true,
+      "paper_trail": true,
+      "archival": true,
+      "data_layer": "ash_postgres",
+      "rules": ["wallet_balance_rule"],
+      "adrs": ["ADR-001"],
+      "pending_migrations": false
+    },
+    {
+      "id": "Finance.Transaction",
+      "type": "resource",
+      "domain": "Finance",
+      "description": "Financial transactions",
+      "compliance": ["PCI-DSS"],
+      "test_coverage": {"e2e_tests": false},
+      "sensitive": true,
+      "paper_trail": true,
+      "archival": false,
+      "rules": [],
+      "adrs": [],
+      "pending_migrations": false
+    },
+    {
+      "id": "Gaming.GameSession",
+      "type": "resource",
+      "domain": "Gaming",
+      "description": "Active gaming session",
+      "compliance": [],
+      "test_coverage": {"e2e_tests": true},
+      "sensitive": false,
+      "paper_trail": false,
+      "archival": false,
+      "rules": ["session_timeout_rule"],
+      "adrs": ["ADR-002"],
+      "pending_migrations": false
+    },
+    {
+      "id": "Gaming.BetProcessor",
+      "type": "reactor",
+      "domain": "Gaming",
+      "description": "Processes player bets",
+      "compliance": [],
+      "test_coverage": {"e2e_tests": true},
+      "sensitive": false,
+      "rules": [],
+      "adrs": [],
+      "pending_migrations": false
+    },
+    {
+      "id": "Players.Player",
+      "type": "resource",
+      "domain": "Players",
+      "description": "Player account and profile",
+      "compliance": ["GDPR"],
+      "test_coverage": {"e2e_tests": true},
+      "sensitive": true,
+      "paper_trail": true,
+      "archival": true,
+      "data_layer": "ash_postgres",
+      "rules": [],
+      "adrs": ["ADR-003"],
+      "pending_migrations": false
+    },
+    {
+      "id": "Promotions.Campaign",
+      "type": "blueprint",
+      "domain": "Promotions",
+      "description": "Promotional campaign definition",
+      "compliance": [],
+      "test_coverage": {"e2e_tests": false},
+      "sensitive": false,
+      "rules": ["campaign_validation_rule"],
+      "adrs": [],
+      "pending_migrations": false
+    },
+    {
+      "id": "Promotions.BonusEngine",
+      "type": "rule",
+      "domain": "Promotions",
+      "description": "Bonus calculation and application",
+      "compliance": [],
+      "test_coverage": {"e2e_tests": true},
+      "sensitive": false,
+      "rules": [],
+      "adrs": ["ADR-004"],
+      "pending_migrations": false
+    },
+    {
+      "id": "Operations.Audit",
+      "type": "liveview",
+      "domain": "Operations",
+      "description": "Audit log viewer",
+      "compliance": [],
+      "test_coverage": {"e2e_tests": false},
+      "sensitive": false,
+      "rules": [],
+      "adrs": [],
+      "pending_migrations": false
+    },
+    {
+      "id": "Operations.Notification",
+      "type": "trigger",
+      "domain": "Operations",
+      "description": "Event notification dispatcher",
+      "compliance": [],
+      "test_coverage": {"e2e_tests": true},
+      "sensitive": false,
+      "rules": [],
+      "adrs": [],
+      "pending_migrations": false
+    }
+  ],
+  "edges": [
+    {
+      "source": "Finance.Wallet",
+      "target": "Finance.Transaction",
+      "relation": "writes"
+    },
+    {
+      "source": "Gaming.BetProcessor",
+      "target": "Finance.Wallet",
+      "relation": "reads"
+    },
+    {
+      "source": "Gaming.GameSession",
+      "target": "Gaming.BetProcessor",
+      "relation": "triggers"
+    },
+    {
+      "source": "Players.Player",
+      "target": "Finance.Wallet",
+      "relation": "renders"
+    },
+    {
+      "source": "Promotions.Campaign",
+      "target": "Promotions.BonusEngine",
+      "relation": "configured_by"
+    },
+    {
+      "source": "Promotions.BonusEngine",
+      "target": "Finance.Wallet",
+      "relation": "writes"
+    },
+    {
+      "source": "Operations.Notification",
+      "target": "Finance.Transaction",
+      "relation": "async"
+    },
+    {
+      "source": "Operations.Audit",
+      "target": "Finance.Wallet",
+      "relation": "reads"
+    }
+  ],
+  "spec_kit": {}
+}

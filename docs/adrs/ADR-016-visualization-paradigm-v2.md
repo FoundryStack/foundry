@@ -1,8 +1,8 @@
 # ADR-016: Visualization Paradigm v2
 
-**Status:** Accepted  
-**Date:** 2026-03  
-**Deciders:** Platform team  
+**Status:** Accepted — §Data Source and §Diagram JSON Contract amended by ADR-020
+**Date:** 2026-03
+**Deciders:** Platform team
 **Supersedes:** ADR-008 (retained for historical record)
 
 ---
@@ -18,9 +18,9 @@ The design was arrived at through explicit rejection of two failure modes:
 1. Mermaid-only output — loses all compliance signal; diagrams become documentation, not governance instruments
 2. Over-engineered abstraction — renderer registries, semantic schema contracts, adapter layers. These are correct for a multi-stack product. Foundry is single-stack. The abstraction cost is not justified.
 
-The right model is: Cytoscape.js canvas consuming a simple JSON contract produced by
-`mix foundry.diagram.generate --json`, with Foundry-specific styling applied via a direct
-`switch` on node type. No framework. No registry. A well-organized frontend module.
+The right model is: Cytoscape.js canvas consuming the `mix foundry.project.context`
+NodeEntry JSON directly, with Foundry-specific styling applied via a direct `switch`
+on node type. No framework. No registry. A well-organized frontend module.
 
 ---
 
@@ -28,30 +28,32 @@ The right model is: Cytoscape.js canvas consuming a simple JSON contract produce
 
 ### Four C4 Levels — All Present, Different Surfaces
 
-**Level 1 — System Context (outermost zoom)**  
+**Level 1 — System Context (outermost zoom)**
 Shows the system boundary, user personas, and external systems. Rendered as the fully
 zoomed-out state of the main canvas. User personas and non-Elixir external system
 descriptions are hand-authored in the spec-kit manifest YAML (`foundry.exs` or
 `docs/system-context.yml`). Provider nodes (`⬚`) and API entry points are auto-derived.
 This level is not a separate diagram — it is what the canvas shows at maximum zoom-out.
 
-**Level 2 — Containers**  
+**Level 2 — Containers**
 For monolithic Phoenix applications (Foundry's primary target), Level 2 is incorporated
 into Level 1. Relevant external containers (Postgres, Redis, Oban queue, external providers)
 appear as Provider nodes. Multi-service architectures are not a v1 target.
 
-**Level 3 — Components (primary operating level)**  
+**Level 3 — Components (primary operating level)**
 Domains as Cytoscape compound nodes. Resources, Transfers, Reactors, Rules, LiveViews as
 node-level components inside domain clusters. This is the ambient canvas state at normal
 zoom. All governance signal — compliance posture, test coverage, sensitivity — is expressed
 here. This level drives all copilot navigation.
 
-**Level 4 — Code detail (detail drawer)**  
+**Level 4 — Code detail (detail drawer)**
 Full attribute list with types and sensitivity flags, action signatures with accept/return
 types, policy logic with actor/condition/outcome, FSM transition conditions, step
 input/output types. Level 4 is not a separate diagram; it is the content rendered in the
-detail drawer when any Level 3 node is clicked. `mix foundry.context <Module>` is the
-data source.
+detail drawer when any Level 3 node is clicked. The full NodeEntry (already in memory
+from the graph load) is the data source — no additional server fetch needed for
+projects ≤200 modules. Beyond that threshold, the drawer fetches the single NodeEntry
+on demand via `mix foundry.project.context <Module>`.
 
 ### Node Taxonomy — Final, 11 Types
 
@@ -134,22 +136,31 @@ The canvas supports four modes, selectable from the toolbar:
 | Authorization | Shows auth edges between actor-identity resources and the resources they can access |
 | Config view | Highlights Blueprint nodes and their `configured-by` edges — shows what is adjustable without a code change |
 
+Mode switching is entirely client-side. The JS module computes which nodes and edges
+to highlight from the already-loaded graph data — no round-trip to the server.
+
 ---
 
 ### Proposal Preview Mode — `ProposalGraphDelta`
 
 When a DRAFT or PENDING_REVIEW proposal is active, the canvas enters preview mode.
 The preview is driven by a `graph_delta` field stored in the proposal JSON (ADR-014),
-not by reading the proposal git branch. No subprocess is required — the delta is
-derived from operation parameters at plan confirmation time and is available immediately
-when the proposal enters DRAFT.
+not by re-running `mix foundry.project.context` against the proposal branch. No subprocess
+is required — the delta is derived from operation parameters at plan confirmation time
+and is available immediately when the proposal enters DRAFT.
+
+**Note on naming:** The `graph_delta` field also appears in `mix foundry.project.context`
+output (see `project_context_schema.md`). That field tracks live session state against
+the baseline at session start — it is a different concern. The proposal canvas overlay
+reads from `proposal.graph_delta` (the proposal JSON), not from the project context output.
+The two fields have the same shape but different producers and consumers.
 
 **Struct definition** (`Foundry.Proposals.GraphDelta`):
 
 ```elixir
 defstruct [
   :proposal_id,
-  :base_diagram_hash,   # sha256 of diagram.generate output at base_commit
+  :base_diagram_hash,   # sha256 of project.context output at base_commit
   nodes_added: [],      # phantom nodes — new modules being created
   nodes_modified: [],   # existing nodes touched by the proposal
   nodes_removed: [],    # rare — modules being deleted
@@ -158,8 +169,7 @@ defstruct [
 ]
 ```
 
-Each entry in `nodes_added` is a minimal node descriptor matching the diagram JSON
-node shape, with `"state": "phantom"` added:
+Each entry in `nodes_added` is a minimal NodeEntry subset with `"state": "phantom"` added:
 
 ```json
 {
@@ -190,76 +200,56 @@ the existing node with an amber ring and a dot indicator in the detail drawer.
 - Available on canvas from the moment the proposal enters DRAFT
 - Reverted to committed state on REJECTED or STALE
 - Solidifies into real nodes on COMMITTED via the inotify watcher triggering
-  `mix foundry.diagram.generate` reload — phantom nodes become live nodes
+  a `mix foundry.project.context` reload — phantom nodes become live nodes
 
 **What this is not:** The `graph_delta` shows structural intent — which modules are
 added or touched. It does not show implementation detail. Implementation detail is
 in the diff panel. The two surfaces are complementary: canvas for spatial orientation,
 diff panel for code review.
 
-### What the Diagram JSON Contract Contains
+---
 
-Produced by `mix foundry.diagram.generate --json`. Schema is frozen — breaking changes
-require an ADR.
+### Data Source — `mix foundry.project.context`
 
-```json
-{
-  "generated_at": "ISO8601",
-  "domains": [
-    {
-      "id": "finance",
-      "name": "Finance",
-      "health": { "coverage": 0.78, "gaps": 2, "sensitive_gaps": 1 }
-    }
-  ],
-  "nodes": [
-    {
-      "id": "MyApp.Finance.WithdrawalTransfer",
-      "type": "transfer",
-      "name": "WithdrawalTransfer",
-      "domain": "finance",
-      "sensitive": true,
-      "health": {
-        "compliance_posture": "gap",
-        "test_coverage": 0.88,
-        "has_runbook": true,
-        "pending_migration": false
-      },
-      "triggers": ["POST /api/withdraw"],
-      "reads": ["MyApp.Identity.Player", "MyApp.Finance.Wallet"],
-      "writes": ["MyApp.Finance.Wallet", "MyApp.Finance.LedgerEntry"],
-      "guards": ["MyApp.Compliance.KycCheck"],
-      "terminals": ["committed", "kyc_error", "compensated"],
-      "steps": [
-        {
-          "id": "validate_inputs",
-          "kind": "step",
-          "guards": ["MyApp.Compliance.KycCheck"],
-          "reads": [], "writes": [],
-          "error_paths": [{"type": "halt", "id": "kyc_error"}]
-        }
-      ]
-    }
-  ],
-  "edges": [
-    {
-      "from": "POST /api/withdraw",
-      "to": "MyApp.Finance.WithdrawalTransfer",
-      "type": "triggers"
-    }
-  ]
-}
-```
+**Amended by ADR-020.** The canonical studio data source is `mix foundry.project.context`,
+not `mix foundry.diagram.generate`. The command performs one pass over all compiled
+modules and returns the full NodeEntry corpus, EdgeEntry list, and spec-kit index in a
+single response. Output lives in ETS (Nebulex L1), not in a committed JSON file.
 
-Agent steps appear in `steps` with `"kind": "agent"` and the agent-specific fields defined
-in ADR-017. They are not top-level nodes and do not appear in `nodes`.
+`mix foundry.diagram.generate` is retained as a backward-compat alias and is not
+documented as canonical.
 
-The `kind` field is new in this schema version. All existing step objects that predate
-this field are treated as `"kind": "step"` by the renderer — the field defaults to `"step"`
-when absent, making the addition non-breaking for existing consumers. Valid `kind` values
-are: `"step"` (generic step), `"update"` (Ash resource update), `"create"` (Ash resource
-create), `"read"` (Ash resource read), and `"agent"` (Foundry agent step). Renderers that
-do not recognise a `kind` value must fall back to `"step"` rendering rather than erroring.
+The JS canvas receives the full `mix foundry.project.context` output embedded in the
+page at mount (as a `data-context` attribute or equivalent). For projects ≤200 modules,
+this is the only data fetch on page load — no channel join, no additional XHR. The
+full NodeEntry corpus is sufficient for all canvas rendering, all mode switching,
+all search, and all drawer content at this scale.
+
+**Schema contract:** The NodeEntry and EdgeEntry schemas are defined in
+`docs/project_context_schema.md`. That document is authoritative. This ADR does not
+duplicate the schema — do not add schema details here.
+
+**Fields the canvas renderer reads from NodeEntry** (the visual subset — the rest
+is used only by the drawer):
+
+| Field | Used for |
+|---|---|
+| `id`, `type`, `domain`, `app` | Node identity, cluster grouping |
+| `sensitive` | PSE badge, sensitive border style |
+| `description` | Tooltip on hover |
+| `compliance[]`, `test_coverage` | ◉/○ compliance indicator |
+| `paper_trail`, `archival`, `data_layer` | PSE badge computation |
+| `pending_migrations` | ↻ badge |
+| `runbook` | ~ badge |
+| `adrs[]` | 📖 badge |
+| `rules[]` | ⬡ badge |
+| `steps[]` with `kind` | Step expansion inside Transfer/Reactor swimlanes |
+| `agent_steps[]` | ⊕ inline agent step nodes (ADR-017) |
+| `state_machine.present` | State expansion inside Resource nodes |
+
+EdgeEntry fields used: `from`, `to`, `relation`, `cross_app`, `cross_project`.
+
+---
 
 ### Implementation Stack
 
@@ -267,12 +257,23 @@ do not recognise a `kind` value must fall back to `"step"` rendering rather than
   compound nodes, zoom, click/hover events.
 - **Node styling**: Direct `switch` on `node.type` in the frontend module. Not a registry.
   Not a behaviour. A switch statement with 11 cases.
-- **Detail drawer data**: `mix foundry.context <Module>` output rendered directly.
-  No transformation layer between the Mix task output and the drawer template.
-- **Live reload**: inotify watcher → Phoenix PubSub → LiveView push. The canvas re-renders
-  on any source file change within 2 seconds (performance budget per ADR-012).
-- **Diagram JSON generation**: `mix foundry.diagram.generate --json` is idempotent and
-  fast (target: <500ms for a 50-module project). It must be runnable in CI for INV-008.
+- **JS architecture**: Two plain JS modules. `CytoscapeGraph` — a pure Cytoscape.js
+  wrapper with no LiveView or Foundry knowledge. `FoundryGraph` — configures
+  `CytoscapeGraph` with Foundry-specific render functions, edge styles, indicator logic,
+  search predicate, and mode definitions. No Elixir struct layer mirrors these in Elixir.
+- **Detail drawer data**: The full NodeEntry is already in memory from the initial graph
+  load. The drawer renders directly from it — no additional fetch for projects ≤200 modules.
+  Above that threshold: `mix foundry.project.context <Module>` fetched on node click.
+- **Live reload**: inotify watcher → Phoenix PubSub → `push_event("graph:delta")` →
+  `CytoscapeGraph.applyDelta()`. The canvas re-renders on any source file change within
+  2 seconds (performance budget per ADR-012). Full reload is not needed — incremental
+  delta is applied directly to the live Cytoscape instance.
+- **Mode switching, search, hover**: Entirely client-side. No round-trip to the server.
+  The JS module computes active nodes and edges from already-loaded data.
+- **Server round-trips that ARE required**: (1) initial graph load at mount, embedded
+  in page — not a round-trip; (2) proposal delta pushed by server on proposal state
+  change; (3) intent shortcut triggers, which must populate the Activity Feed; (4) node
+  click above the 200-module threshold.
 
 ---
 
@@ -283,14 +284,19 @@ do not recognise a `kind` value must fall back to `"step"` rendering rather than
   change the interaction model.
 - The 11 node types and 8 edge types are the complete visual vocabulary. Adding types
   requires an ADR with justification for why the existing taxonomy is insufficient.
-- Mermaid output is a secondary artifact from the same JSON contract, used for GitHub
-  README documentation and PR descriptions. `mix foundry.diagram.mermaid` produces it.
-  The Cytoscape canvas is the primary governance instrument.
+- Mermaid output is a secondary artifact produced from `mix foundry.project.context`
+  output by `mix foundry.diagram.mermaid`. The Cytoscape canvas is the primary
+  governance instrument.
 - Authorization matrix is Level 4 (drawer), not Level 3 (canvas), by explicit decision.
   The canvas edge approach is available in "Authorization" mode for on-demand use.
-- The diagram JSON schema is frozen at the end of Phase 2. Adding fields requires an ADR.
+- The NodeEntry schema is frozen at the end of Phase 2. Adding fields requires an ADR.
   Agent step fields (ADR-017) are added as a non-breaking extension — new fields inside
   the existing `steps` array item, ignored by renderers that do not handle `"kind": "agent"`.
+- `mix foundry.diagram.generate` is a deprecated alias. All new code targets
+  `mix foundry.project.context`. CI staleness check uses `mix foundry.project.context --check`.
+- The drawer does not require a server fetch for projects ≤200 modules — the full
+  NodeEntry corpus is loaded at mount. This eliminates the click latency concern at the
+  scale Foundry targets in v1.
 
 ---
 

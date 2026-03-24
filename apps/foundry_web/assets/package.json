@@ -1,0 +1,9 @@
+{
+  "name": "foundry_web_assets",
+  "version": "1.0.0",
+  "dependencies": {
+    "cytoscape": "^3.28",
+    "cytoscape-cose-bilkent": "^4.1",
+    "cytoscape-node-html-label": "^1.0"
+  }
+}

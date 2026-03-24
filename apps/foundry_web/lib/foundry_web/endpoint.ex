@@ -33,7 +33,12 @@ defmodule FoundryWeb.Endpoint do
     socket "/phoenix/live_reload/socket", Phoenix.LiveReloader.Socket
     plug Phoenix.LiveReloader
     plug Phoenix.CodeReloader
-    plug Phoenix.Ecto.CheckRepoStatus, otp_app: :foundry_web
+
+    # Plug compile-time validation can run before dependency modules are loaded
+    # into the compiler, so guard to avoid warnings-as-errors failures.
+    if Code.ensure_loaded?(Phoenix.Ecto.CheckRepoStatus) do
+      plug Phoenix.Ecto.CheckRepoStatus, otp_app: :foundry_web
+    end
   end
 
   plug Phoenix.LiveDashboard.RequestLogger,

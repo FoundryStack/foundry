@@ -1,0 +1,28 @@
+<div class="flex h-screen bg-base-100">
+  <!-- Main map area -->
+  <div class="flex-1 relative">
+    <%= if @context_json do %>
+      <div
+        id="system-map"
+        phx-hook="SystemMap"
+        data-context={@context_json}
+        class="w-full h-full"
+      />
+    <% else %>
+      <div class="flex items-center justify-center h-full">
+        <p class="text-base-content/60">
+          No modules found. Run <code>mix compile</code> in your project directory.
+        </p>
+      </div>
+    <% end %>
+  </div>
+
+  <!-- Detail drawer (left, slides over map) — Phase 2 minimal -->
+  <%= if @selected_node do %>
+    <div class="absolute left-0 top-0 h-full w-[360px] bg-base-200 shadow-lg z-10 overflow-y-auto p-4">
+      <h2 class="font-mono text-sm font-bold"><%= @selected_node["id"] %></h2>
+      <span class="badge badge-sm"><%= @selected_node["type"] %></span>
+      <p class="text-sm mt-2 text-base-content/70"><%= @selected_node["description"] %></p>
+    </div>
+  <% end %>
+</div>
