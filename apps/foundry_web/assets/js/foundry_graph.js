@@ -144,8 +144,8 @@ function _extractColors() {
     yw: tok('--fg-yw'),
     rd: tok('--fg-rd'),
     pu: tok('--fg-pu'),
-    ac: tok('--fg-ac'),
-    r: tok('--fg-r')
+    ac: tok('--fg-ac')
+    // Note: --fg-r is a radius value, not a color - excluded from color extraction
   }
 }
 
