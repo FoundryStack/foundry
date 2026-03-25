@@ -8,16 +8,29 @@ defmodule Foundry.Context.EdgeEntry do
   - `writes`: behavioral write dependency (Reactor create/update step)
   - `reads`: behavioral read dependency (Reactor read step)
   - `async`: event-driven dependency (Oban job → Reactor)
+  - `guards`: rule guards a step or resource policy
+  - `sequence`: step-to-step ordering within Reactor/Transfer
+  - `compensation`: compensation path in saga
+  - `configures`: blueprint configures a Reactor
+  - `authenticates`: AshAuthentication User → Token
+  - `persists_to`: resource persists to external system
+  - `queues_via`: job/reactor queues via external queue
+  - `calls_provider`: transfer step calls provider
   """
 
-  @type relation :: :references | :referenced_by | :writes | :reads | :async
+  @type relation :: :references | :referenced_by | :writes | :reads | :async | :guards | :sequence |
+    :compensation | :configures | :authenticates | :persists_to | :queues_via | :calls_provider
 
   @type t :: %__MODULE__{
     from: String.t(),
     to: String.t(),
     relation: relation(),
     cross_app: boolean(),
-    cross_project: boolean()
+    cross_project: boolean(),
+    step_name: String.t() | nil,
+    step_index: integer() | nil,
+    action_name: String.t() | nil,
+    compliance_ids: [String.t()]
   }
 
   @derive Jason.Encoder
@@ -27,7 +40,11 @@ defmodule Foundry.Context.EdgeEntry do
     :to,
     :relation,
     cross_app: false,
-    cross_project: false
+    cross_project: false,
+    step_name: nil,
+    step_index: nil,
+    action_name: nil,
+    compliance_ids: []
   ]
 
   @spec new(from :: String.t(), to :: String.t(), relation :: relation()) :: t()

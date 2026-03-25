@@ -50,49 +50,36 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list = edge_list ++ derive_reactor_edges(nodes, node_map)
     edge_list = edge_list ++ derive_job_edges(nodes, node_map)
     edge_list = edge_list ++ derive_resource_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_auth_edges(nodes, node_map)
 
     edge_list
   end
 
-  # Reactor steps: create/update/read steps pointing to resources
-  # For Phase 1: infer operation type from step name and determine target resources
-  # by scanning step descriptions for resource references or deriving from domain context
-  defp derive_reactor_edges(nodes, node_map) do
+  # Reactor steps: data-driven derivation from step_kind and target_resource
+  # Steps now carry step_kind (:read, :write, :map, :custom) and target_resource (FQN)
+  defp derive_reactor_edges(nodes, _node_map) do
     nodes
     |> Enum.filter(&(&1.type == "reactor"))
     |> Enum.flat_map(fn reactor ->
       reactor.steps
       |> Enum.flat_map(fn step ->
-        # Infer operation from step name and look up related resources
-        # Steps are stored as maps with atom keys
-        infer_step_resources(step[:name], reactor.module, nodes, node_map)
+        # Use StepEntry struct fields if available
+        target_resource = Map.get(step, :target_resource) || Map.get(step, "target_resource")
+        step_kind = Map.get(step, :step_kind) || Map.get(step, "step_kind")
+
+        if target_resource do
+          case step_kind do
+            :write -> [EdgeEntry.new(reactor.module, target_resource, :writes)]
+            "write" -> [EdgeEntry.new(reactor.module, target_resource, :writes)]
+            :read -> [EdgeEntry.new(reactor.module, target_resource, :reads)]
+            "read" -> [EdgeEntry.new(reactor.module, target_resource, :reads)]
+            _ -> []
+          end
+        else
+          []
+        end
       end)
     end)
-  end
-
-  # Helper: infer which resources a step affects based on name heuristics
-  # For Phase 1: hardcode common patterns, Phase 2+ should use DSL metadata
-  defp infer_step_resources(step_name, reactor_module, _nodes, _node_map) do
-    step_str = to_string(step_name)
-    reactor_str = to_string(reactor_module)
-
-    # Hardcode known mappings for test fixtures
-    case {reactor_str, step_str} do
-      # WithdrawalTransfer → Wallet write edges
-      {"IgamingRef.Finance.WithdrawalTransfer", "debit_wallet"} ->
-        [EdgeEntry.new(reactor_module, "IgamingRef.Finance.Wallet", :writes)]
-      {"IgamingRef.Finance.WithdrawalTransfer", "create_ledger_entry"} ->
-        [EdgeEntry.new(reactor_module, "IgamingRef.Finance.LedgerEntry", :writes)]
-      {"IgamingRef.Finance.WithdrawalTransfer", "update_withdrawal_status"} ->
-        [EdgeEntry.new(reactor_module, "IgamingRef.Finance.WithdrawalRequest", :writes)]
-      # ProviderSyncReactor → Game write edges
-      {"IgamingRef.Gaming.ProviderSyncReactor", "sync_games"} ->
-        [EdgeEntry.new(reactor_module, "IgamingRef.Gaming.Game", :writes)]
-      {"IgamingRef.Gaming.ProviderSyncReactor", "update_catalog"} ->
-        [EdgeEntry.new(reactor_module, "IgamingRef.Gaming.GameCatalog", :writes)]
-      _ ->
-        []
-    end
   end
 
   # Oban jobs: linking to Reactor via @performs attribute or domain heuristic
@@ -117,21 +104,62 @@ defmodule Foundry.Context.GraphBuilder do
     |> then(&if &1, do: elem(&1, 1), else: nil)
   end
 
-  # Resource relationships: belongs_to/has_many/has_one
+  # Resource relationships: driven by relationship data from SparkMeta
   defp derive_resource_edges(nodes, _node_map) do
     nodes
     |> Enum.filter(&(&1.type == "resource"))
     |> Enum.flat_map(fn resource ->
-      resource.attributes
-      |> Enum.flat_map(fn attr ->
-        case {Map.get(attr, "relationship_type"), Map.get(attr, "related_resource")} do
-          {"belongs_to", related} when is_binary(related) ->
-            [EdgeEntry.new(resource.module, related, :references)]
-          {"has_many", related} when is_binary(related) ->
-            [EdgeEntry.new(resource.module, related, :referenced_by)]
-          {"has_one", related} when is_binary(related) ->
-            [EdgeEntry.new(resource.module, related, :referenced_by)]
-          _ -> []
+      resource.relationships
+      |> Enum.flat_map(fn rel ->
+        rel_type = Map.get(rel, :type) || Map.get(rel, "type")
+        related = Map.get(rel, :related_resource) || Map.get(rel, "related_resource")
+
+        if related do
+          case rel_type do
+            :belongs_to ->
+              [EdgeEntry.new(resource.module, related, :references)]
+            "belongs_to" ->
+              [EdgeEntry.new(resource.module, related, :references)]
+            :has_many ->
+              [EdgeEntry.new(resource.module, related, :referenced_by)]
+            "has_many" ->
+              [EdgeEntry.new(resource.module, related, :referenced_by)]
+            :has_one ->
+              [EdgeEntry.new(resource.module, related, :referenced_by)]
+            "has_one" ->
+              [EdgeEntry.new(resource.module, related, :referenced_by)]
+            :many_to_many ->
+              [
+                EdgeEntry.new(resource.module, related, :references),
+                EdgeEntry.new(resource.module, related, :referenced_by)
+              ]
+            "many_to_many" ->
+              [
+                EdgeEntry.new(resource.module, related, :references),
+                EdgeEntry.new(resource.module, related, :referenced_by)
+              ]
+            _ ->
+              []
+          end
+        else
+          []
+        end
+      end)
+    end)
+  end
+
+  # Authentication edges: User resource with auth_strategies → token resources
+  defp derive_auth_edges(nodes, _node_map) do
+    nodes
+    |> Enum.filter(&(&1.authentication_subject == true))
+    |> Enum.flat_map(fn user_node ->
+      user_node.auth_strategies
+      |> Enum.flat_map(fn strategy ->
+        token_resource = Map.get(strategy, :token_resource) || Map.get(strategy, "token_resource")
+        if token_resource do
+          [EdgeEntry.new(user_node.module, token_resource, :authenticates)]
+        else
+          []
         end
       end)
     end)
