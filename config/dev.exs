@@ -80,3 +80,7 @@ config :swoosh, :api_client, false
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.
 config :phoenix, :stacktrace_depth, 20
+
+# Configure igaming project root for System Map Viewer
+config :foundry_web, :igaming_project_root,
+  Path.expand("reference_projects/igaming", __DIR__ |> Path.dirname())

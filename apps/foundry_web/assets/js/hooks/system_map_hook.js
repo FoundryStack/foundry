@@ -3,6 +3,19 @@ import { mountFoundryGraph } from '../foundry_graph'
 export const SystemMapHook = {
   mounted() {
     try {
+      // Ensure DOM is ready before accessing styles
+      if (document.readyState !== 'complete' && document.readyState !== 'interactive') {
+        setTimeout(() => this._initGraph(), 0)
+        return
+      }
+      this._initGraph()
+    } catch (error) {
+      console.error('SystemMapHook mount error:', error)
+    }
+  },
+
+  _initGraph() {
+    try {
       const contextJson = JSON.parse(this.el.dataset.context)
       this.graph = mountFoundryGraph(this.el, contextJson)
 
@@ -38,7 +51,7 @@ export const SystemMapHook = {
         }
       })
     } catch (error) {
-      console.error('SystemMapHook mount error:', error)
+      console.error('SystemMapHook init error:', error)
     }
   },
 

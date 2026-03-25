@@ -79,9 +79,9 @@ export class CytoscapeGraph {
     const edgeElements = (contextJson.edges || []).map(edge => ({
       group: 'edges',
       data: {
-        id: `${edge.source}->${edge.target}`,
-        source: edge.source,
-        target: edge.target,
+        id: `${edge.from}->${edge.to}`,
+        source: edge.from,
+        target: edge.to,
         ...edge
       }
     }))
@@ -136,9 +136,9 @@ export class CytoscapeGraph {
       const newEdges = delta.edges_added.map(edge => ({
         group: 'edges',
         data: {
-          id: `${edge.source}->${edge.target}`,
-          source: edge.source,
-          target: edge.target,
+          id: `${edge.from}->${edge.to}`,
+          source: edge.from,
+          target: edge.to,
           ...edge
         }
       }))
@@ -174,9 +174,9 @@ export class CytoscapeGraph {
     const phantomEdges = (delta.edges_added || []).map(edge => ({
       group: 'edges',
       data: {
-        id: `${edge.source}->${edge.target}`,
-        source: edge.source,
-        target: edge.target,
+        id: `${edge.from}->${edge.to}`,
+        source: edge.from,
+        target: edge.to,
         state: 'phantom',
         ...edge
       },
@@ -347,8 +347,6 @@ export class CytoscapeGraph {
         selector: 'node.domain-node',
         style: {
           'shape': 'round-rectangle',
-          'width': 'auto',
-          'height': 'auto',
           'border-width': 2,
           'text-margin-y': -10,
           'padding': '20px'
@@ -369,6 +367,13 @@ export class CytoscapeGraph {
           'target-arrow-shape': 'triangle',
           'curve-style': 'bezier',
           'width': 2
+        }
+      },
+      {
+        selector: 'edge:compound',
+        style: {
+          'source-endpoint': 'outside-to-node',
+          'target-endpoint': 'outside-to-node'
         }
       },
       {

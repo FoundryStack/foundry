@@ -1,7 +1,5 @@
 import { CytoscapeGraph } from './cytoscape_graph'
 
-const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-
 // Node type → style mapping
 const NODE_TYPE_STYLES = {
   resource:     { icon: '⬡', cssVar: '--color-info',      shape: 'diamond' },
@@ -24,7 +22,7 @@ const EDGE_RELATION_STYLES = {
   async:         { style: 'dashed', arrow: 'triangle', cssVar: '--color-accent' },
   message:       { style: 'dashed', arrow: 'triangle', cssVar: '--color-accent' },
   guards:        { style: 'dotted', arrow: 'triangle', cssVar: '--color-primary' },
-  compensation:  { style: 'double', arrow: 'triangle', cssVar: '--color-warning' },
+  compensation:  { style: 'dashed', arrow: 'triangle', cssVar: '--color-warning' },
   reads:         { style: 'solid',  arrow: 'diamond',  cssVar: '--color-primary' },
   writes:        { style: 'solid',  arrow: 'diamond',  cssVar: '--color-error' },
   renders:       { style: 'solid',  arrow: 'circle',   cssVar: '--color-success' },
@@ -112,8 +110,19 @@ export function computeIndicators(node) {
  * Returns edge style for a given edge
  */
 export function edgeStyle(edge) {
+  const colorMap = {
+    '--color-info':      '#06b6d4',
+    '--color-accent':    '#a78bfa',
+    '--color-warning':   '#f59e0b',
+    '--color-neutral':   '#6b7280',
+    '--color-success':   '#10b981',
+    '--color-secondary': '#64748b',
+    '--color-error':     '#ef4444',
+    '--color-primary':   '#3b82f6'
+  }
+
   const relationStyle = EDGE_RELATION_STYLES[edge.relation] || EDGE_RELATION_STYLES.reads
-  const color = css(relationStyle.cssVar)
+  const color = colorMap[relationStyle.cssVar] || '#000'
 
   return {
     selector: `edge[relation="${edge.relation}"]`,
@@ -149,61 +158,85 @@ function _baseColorStyles() {
     {
       selector: 'node',
       style: {
-        'background-color': css('--color-base-300'),
-        'color':            css('--color-base-content')
+        'background-color': '#d1d5db',
+        'color':            '#1f2937'
       }
     },
     {
       selector: 'node.domain-node',
       style: {
-        'background-color': css('--color-base-200'),
-        'border-color':     css('--color-base-300')
+        'background-color': '#e5e7eb',
+        'border-color':     '#d1d5db'
       }
     },
     {
       selector: 'node.phantom-node',
-      style: { 'border-color': css('--color-warning') }
+      style: { 'border-color': '#f59e0b' }
     },
     {
       selector: 'edge',
       style: {
-        'line-color':         css('--color-base-300'),
-        'target-arrow-color': css('--color-base-300')
+        'line-color':         '#d1d5db',
+        'target-arrow-color': '#d1d5db'
       }
     },
     {
       selector: 'edge.phantom-edge',
       style: {
-        'line-color':         css('--color-warning'),
-        'target-arrow-color': css('--color-warning')
+        'line-color':         '#f59e0b',
+        'target-arrow-color': '#f59e0b'
       }
     },
     {
       selector: 'node:selected',
-      style: { 'border-color': css('--color-info') }
+      style: { 'border-color': '#0ea5e9' }
     }
   ]
 }
 
 function _generateNodeStyles() {
+  // Color map: CSS variable name → hex fallback
+  const colorMap = {
+    '--color-info':      '#06b6d4',
+    '--color-accent':    '#a78bfa',
+    '--color-warning':   '#f59e0b',
+    '--color-neutral':   '#6b7280',
+    '--color-success':   '#10b981',
+    '--color-secondary': '#64748b',
+    '--color-error':     '#ef4444',
+    '--color-primary':   '#3b82f6'
+  }
+
   return Object.entries(NODE_TYPE_STYLES).map(([type, s]) => ({
     selector: `node[type="${type}"]`,
     style: {
-      'background-color': css(s.cssVar),
-      'color': css('--color-base-100'),
+      'background-color': colorMap[s.cssVar] || '#000',
+      'color': '#f3f4f6',
       'shape': s.shape
     }
   }))
 }
 
 function _generateEdgeStyles() {
+  // Color map: CSS variable name → hex fallback
+  const colorMap = {
+    '--color-info':      '#06b6d4',
+    '--color-accent':    '#a78bfa',
+    '--color-warning':   '#f59e0b',
+    '--color-neutral':   '#6b7280',
+    '--color-success':   '#10b981',
+    '--color-secondary': '#64748b',
+    '--color-error':     '#ef4444',
+    '--color-primary':   '#3b82f6'
+  }
+
   return Object.entries(EDGE_RELATION_STYLES).map(([relation, s]) => ({
     selector: `edge[relation="${relation}"]`,
     style: {
       'line-style': s.style,
       'target-arrow-shape': s.arrow,
-      'line-color':         css(s.cssVar),
-      'target-arrow-color': css(s.cssVar),
+      'line-color':         colorMap[s.cssVar] || '#000',
+      'target-arrow-color': colorMap[s.cssVar] || '#000',
       'width': 2,
       'curve-style': 'bezier'
     }

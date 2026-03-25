@@ -6,6 +6,12 @@ defmodule FoundryWeb.SystemMapLive do
     project_root = Application.get_env(:foundry_web, :igaming_project_root,
       Path.expand("../../reference_projects/igaming", __DIR__))
 
+    # Ensure igaming ebin path is in the code path so modules can be loaded
+    ebin_path = Path.join([project_root, "_build", "dev", "lib", "igaming_ref", "ebin"])
+    if File.dir?(ebin_path) do
+      Code.append_path(ebin_path)
+    end
+
     context_json = case Foundry.Context.ProjectContext.build(project_root) do
       {:ok, context} -> Jason.encode!(context)
       {:error, _reason} -> nil
