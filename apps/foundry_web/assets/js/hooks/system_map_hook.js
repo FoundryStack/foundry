@@ -18,9 +18,22 @@ const CONFIG = {
   searchDebounce: 150
 }
 
+const STORAGE_KEYS = {
+  sidebarWidth: 'foundry:sidebar-width',
+  drawerWidth: 'foundry:drawer-width'
+}
+
+const STORAGE_DEFAULTS = {
+  sidebarWidth: 240,
+  drawerWidth: 380
+}
+
 export const SystemMapHook = {
   mounted() {
     try {
+      // Restore saved sizes before initializing
+      this._restoreSizes()
+
       // Ensure DOM is ready before accessing styles
       if (document.readyState !== 'complete' && document.readyState !== 'interactive') {
         setTimeout(() => this._initGraph(), 0)
@@ -29,6 +42,22 @@ export const SystemMapHook = {
       this._initGraph()
     } catch (error) {
       console.error('SystemMapHook mount error:', error)
+    }
+  },
+
+  _restoreSizes() {
+    // Restore sidebar width
+    const layout = document.querySelector('.foundry-map-layout')
+    if (layout) {
+      const sidebarWidth = parseInt(localStorage.getItem('foundry:sidebar-width')) || 240
+      layout.style.gridTemplateColumns = `${sidebarWidth}px 1fr`
+    }
+
+    // Restore drawer width if it was open
+    const drawer = document.getElementById('fm-drawer')
+    if (drawer && drawer.offsetWidth > 0) {
+      const drawerWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
+      drawer.style.width = `${drawerWidth}px`
     }
   },
 
@@ -44,6 +73,8 @@ export const SystemMapHook = {
       this._initSidebar()
       this._initDrawer()
       this._initSearch()
+      this._initSidebarResize()
+      this._initDrawerResize()
 
       // Wire node click handler
       this.graph.onNodeClick = (nodeId, nodeData) => {
@@ -111,6 +142,100 @@ export const SystemMapHook = {
       }
     }
     list.addEventListener('click', this._sidebarClickHandler)
+  },
+
+  _initSidebarResize() {
+    const layout = document.querySelector('.foundry-map-layout')
+    const sidebar = document.getElementById('foundry-sidebar')
+    const handle = document.getElementById('sidebar-resize-handle')
+
+    if (!sidebar || !handle || !layout) return
+
+    // Load saved width
+    const savedWidth = localStorage.getItem('foundry:sidebar-width')
+    const initialWidth = savedWidth ? parseInt(savedWidth, 10) : 240
+    layout.style.gridTemplateColumns = `${initialWidth}px 1fr`
+
+    let isResizing = false
+    let startX = 0
+    let startWidth = 0
+
+    const onMouseDown = (e) => {
+      isResizing = true
+      startX = e.clientX
+      startWidth = sidebar.offsetWidth
+      document.addEventListener('mousemove', onMouseMove)
+      document.addEventListener('mouseup', onMouseUp)
+      document.body.style.userSelect = 'none'
+      document.body.style.cursor = 'col-resize'
+      e.preventDefault()
+    }
+
+    const onMouseMove = (e) => {
+      if (!isResizing) return
+      const delta = e.clientX - startX
+      const newWidth = Math.max(180, Math.min(600, startWidth + delta))
+      layout.style.gridTemplateColumns = `${newWidth}px 1fr`
+    }
+
+    const onMouseUp = () => {
+      isResizing = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      // Save width
+      localStorage.setItem('foundry:sidebar-width', sidebar.offsetWidth)
+    }
+
+    handle.addEventListener('mousedown', onMouseDown)
+
+    // Store cleanup handlers
+    this._sidebarResizeHandlers = { onMouseDown, onMouseMove, onMouseUp, handle }
+  },
+
+  _initDrawerResize() {
+    const drawer = document.getElementById('fm-drawer')
+    const handle = document.getElementById('drawer-resize-handle')
+
+    if (!drawer || !handle) return
+
+    let isResizing = false
+    let startX = 0
+    let startWidth = 0
+
+    const onMouseDown = (e) => {
+      isResizing = true
+      startX = e.clientX
+      startWidth = drawer.offsetWidth
+      document.addEventListener('mousemove', onMouseMove)
+      document.addEventListener('mouseup', onMouseUp)
+      document.body.style.userSelect = 'none'
+      document.body.style.cursor = 'col-resize'
+      e.preventDefault()
+    }
+
+    const onMouseMove = (e) => {
+      if (!isResizing) return
+      const delta = startX - e.clientX
+      const newWidth = Math.max(240, Math.min(800, startWidth + delta))
+      drawer.style.width = newWidth + 'px'
+    }
+
+    const onMouseUp = () => {
+      isResizing = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      // Save width
+      localStorage.setItem('foundry:drawer-width', drawer.offsetWidth)
+    }
+
+    handle.addEventListener('mousedown', onMouseDown)
+
+    // Store cleanup handlers
+    this._drawerResizeHandlers = { onMouseDown, onMouseMove, onMouseUp, handle }
   },
 
   _initSearch() {
@@ -202,10 +327,14 @@ export const SystemMapHook = {
       })
     }
 
-    // Open drawer
+    // Open drawer with saved width
     const drawer = document.getElementById(SELECTORS.drawer)
     if (drawer) {
-      drawer.style.width = CONFIG.drawerWidth
+      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
+      // Use setTimeout to allow transition to apply properly
+      setTimeout(() => {
+        drawer.style.width = `${savedWidth}px`
+      }, 0)
     }
 
     // Render panels
@@ -423,6 +552,15 @@ export const SystemMapHook = {
     return div.innerHTML
   },
 
+  updated() {
+    // Restore sizes after LiveView updates the DOM
+    try {
+      this._restoreSizes()
+    } catch (error) {
+      console.error('SystemMapHook update error:', error)
+    }
+  },
+
   destroyed() {
     // Remove event listeners
     const list = document.getElementById(SELECTORS.sidebarList)
@@ -439,6 +577,22 @@ export const SystemMapHook = {
     const closeBtn = document.getElementById(SELECTORS.drawerClose)
     if (closeBtn && this._closeHandler) {
       closeBtn.removeEventListener('click', this._closeHandler)
+    }
+
+    // Remove sidebar resize handlers
+    if (this._sidebarResizeHandlers) {
+      const { onMouseDown, handle } = this._sidebarResizeHandlers
+      if (handle && onMouseDown) {
+        handle.removeEventListener('mousedown', onMouseDown)
+      }
+    }
+
+    // Remove drawer resize handlers
+    if (this._drawerResizeHandlers) {
+      const { onMouseDown, handle } = this._drawerResizeHandlers
+      if (handle && onMouseDown) {
+        handle.removeEventListener('mousedown', onMouseDown)
+      }
     }
 
     if (this.graph) {

@@ -177,13 +177,34 @@
 
 /* Foundry system map layout utilities */
 .foundry-sidebar {
-  width: 214px;
-  flex: none;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+}
+
+#sidebar-resize-handle {
+  position: absolute;
+  right: -4px;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 50;
+}
+
+#sidebar-resize-handle:hover {
+  background-color: var(--color-primary);
 }
 
 .foundry-map-canvas {
   background: var(--fg-base);
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Cytoscape node HTML labels (cytoscape-node-html-label) */
@@ -363,9 +384,32 @@
 
 /* System Map layout container */
 .foundry-map-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: 1fr;
   background: var(--fg-base);
   overflow: hidden;
   height: 100vh;
+  gap: 0;
+  width: 100%;
+  position: relative;
+}
+
+#fm-drawer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  width: 0;
+}
+
+#drawer-resize-handle {
+  display: none;
+}
+
+#fm-drawer:not([style*="width:0"]) #drawer-resize-handle {
+  display: block;
 }
 
 .foundry-map-layout ::-webkit-scrollbar {

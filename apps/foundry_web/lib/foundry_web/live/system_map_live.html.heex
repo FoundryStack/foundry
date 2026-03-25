@@ -1,31 +1,39 @@
-<div class="foundry-map-layout flex" data-theme="dark">
-  <!-- Sidebar (214px) -->
-  <aside class="foundry-sidebar menu bg-base-200 border-r border-base-300">
-    <input id="fm-search" class="input input-sm w-full mb-2 mx-1" placeholder="Search…" />
-    <div class="flex flex-col gap-1 text-xs text-base-content/50 px-2 mb-2">
+<div class="foundry-map-layout" data-theme="dark">
+  <!-- Sidebar (resizable) -->
+  <aside id="foundry-sidebar" class="foundry-sidebar menu bg-base-200 border-r border-base-300">
+    <!-- Search input -->
+    <input id="fm-search" class="input input-sm w-full flex-none mb-2 mx-1" placeholder="Search…" />
+
+    <!-- Stats section -->
+    <div class="flex flex-col gap-0.5 text-[10px] text-base-content/50 px-2 mb-2 flex-none">
       <span><%= Enum.count(@all_nodes) %> modules</span>
       <span class="text-warning"><%= @gap_count %> gaps</span>
       <span class="text-info"><%= @migration_count %> migrations</span>
     </div>
-    <ul id="fm-sidebar-list">
+
+    <!-- Menu list (scrollable) -->
+    <ul id="fm-sidebar-list" class="flex-1 overflow-y-auto overflow-x-hidden">
       <%= for {domain, nodes} <- @nodes_by_domain do %>
-        <li class="menu-title"><%= domain %></li>
+        <li class="menu-title text-[11px] sticky top-0 bg-base-200 z-10"><%= domain %></li>
         <%= for node <- nodes do %>
           <li data-node-id={node["id"]}>
-            <a class="flex items-center gap-2 text-xs">
-              <span class="badge badge-xs"><%= abbr_type(node["type"]) %></span>
-              <span class="truncate flex-1"><%= node["id"] %></span>
+            <a class="flex items-center gap-1 text-[10px] py-1 px-2">
+              <span class="badge badge-xs text-[9px] px-1"><%= abbr_type(node["type"]) %></span>
+              <span class="truncate flex-1 min-w-0"><%= node["id"] %></span>
               <!-- Status pip: gap/sensitive/else -->
-              <span class={pip_class(node)}></span>
+              <span class={"flex-none flex-shrink-0 #{pip_class(node)}"}></span>
             </a>
           </li>
         <% end %>
       <% end %>
     </ul>
+
+    <!-- Resize handle (positioned absolutely) -->
+    <div id="sidebar-resize-handle" class="bg-base-300 hover:bg-primary/50 transition-colors" style="touch-action: none;"></div>
   </aside>
 
-  <!-- Canvas (flex-1) -->
-  <div class="flex-1 relative overflow-hidden foundry-map-canvas">
+  <!-- Canvas -->
+  <div class="relative overflow-hidden foundry-map-canvas">
     <%= if @context_json do %>
       <div id="foundry-graph"
            phx-hook="SystemMap"
@@ -43,7 +51,10 @@
   </div>
 
   <!-- Drawer (slides in from right) -->
-  <div id="fm-drawer" class="bg-base-200 border-l border-base-300 flex flex-col overflow-hidden transition-all" style="width:0">
+  <div id="fm-drawer" class="bg-base-200 border-l border-base-300 flex flex-col overflow-hidden transition-all" style="width:0;">
+    <!-- Resize handle (left edge) -->
+    <div id="drawer-resize-handle" class="absolute left-0 top-0 bottom-0 w-1 bg-base-300 hover:bg-primary/50 cursor-col-resize transition-colors" style="touch-action: none;"></div>
+
     <div class="tabs tabs-border flex-none px-2 pt-2">
       <button class="tab tab-active" data-tab="details">Details</button>
       <button class="tab" data-tab="flow">Flow</button>
