@@ -1,4 +1,22 @@
-import { mountFoundryGraph, covColor, domainCoverage } from '../foundry_graph'
+import { mountFoundryGraph, covColor, domainCoverage, searchMatch } from '../foundry_graph'
+
+const SELECTORS = {
+  sidebarList: 'fm-sidebar-list',
+  search: 'fm-search',
+  drawer: 'fm-drawer',
+  drawerClose: 'fm-drawer-close',
+  hoverCard: 'fm-hover-card',
+  panelDetails: 'fm-panel-details',
+  panelFlow: 'fm-panel-flow',
+  panelActions: 'fm-panel-actions',
+  panelAuth: 'fm-panel-auth'
+}
+
+const CONFIG = {
+  drawerWidth: '380px',
+  nodeThreshold: 200,
+  searchDebounce: 150
+}
 
 export const SystemMapHook = {
   mounted() {
@@ -29,8 +47,8 @@ export const SystemMapHook = {
 
       // Wire node click handler
       this.graph.onNodeClick = (nodeId, nodeData) => {
-        // Below 200-module threshold: data already available
-        if (contextJson.nodes.length <= 200) {
+        // Below threshold: data already available
+        if (contextJson.nodes.length <= CONFIG.nodeThreshold) {
           this.pushEvent('node_selected', { id: nodeId, data: nodeData })
           this._handleNodeSelected(nodeId)
         } else {
@@ -79,11 +97,11 @@ export const SystemMapHook = {
   },
 
   _initSidebar() {
-    const list = document.getElementById('fm-sidebar-list')
+    const list = document.getElementById(SELECTORS.sidebarList)
     if (!list) return
 
     // Sidebar item click delegation
-    list.addEventListener('click', (evt) => {
+    this._sidebarClickHandler = (evt) => {
       const item = evt.target.closest('[data-node-id]')
       if (item) {
         const nodeId = item.dataset.nodeId
@@ -91,20 +109,20 @@ export const SystemMapHook = {
         this.graph.centerOn(nodeId)
         this._handleNodeSelected(nodeId)
       }
-    })
+    }
+    list.addEventListener('click', this._sidebarClickHandler)
   },
 
   _initSearch() {
-    const searchInput = document.getElementById('fm-search')
+    const searchInput = document.getElementById(SELECTORS.search)
     if (!searchInput) return
 
-    let timeout
-    searchInput.addEventListener('input', (evt) => {
-      clearTimeout(timeout)
+    this._searchInputHandler = (evt) => {
+      clearTimeout(this._searchTimeout)
       const query = evt.target.value.trim()
 
-      timeout = setTimeout(() => {
-        const list = document.getElementById('fm-sidebar-list')
+      this._searchTimeout = setTimeout(() => {
+        const list = document.getElementById(SELECTORS.sidebarList)
         if (!list) return
 
         const items = list.querySelectorAll('[data-node-id]')
@@ -117,22 +135,24 @@ export const SystemMapHook = {
             return
           }
 
-          const match = this._searchMatch(node, query)
+          const match = searchMatch(node, query)
           item.style.display = match ? '' : 'none'
         })
-      }, 150)
-    })
+      }, CONFIG.searchDebounce)
+    }
+    searchInput.addEventListener('input', this._searchInputHandler)
   },
 
   _initDrawer() {
-    const drawer = document.getElementById('fm-drawer')
-    const closeBtn = document.getElementById('fm-drawer-close')
+    const drawer = document.getElementById(SELECTORS.drawer)
+    const closeBtn = document.getElementById(SELECTORS.drawerClose)
 
     if (!closeBtn) return
 
-    closeBtn.addEventListener('click', () => {
+    this._closeHandler = () => {
       drawer.style.width = '0'
-    })
+    }
+    closeBtn.addEventListener('click', this._closeHandler)
 
     // Tab click delegation
     const tabs = drawer.querySelectorAll('[data-tab]')
@@ -144,13 +164,13 @@ export const SystemMapHook = {
   },
 
   _switchTab(tabName) {
-    const drawer = document.getElementById('fm-drawer')
+    const drawer = document.getElementById(SELECTORS.drawer)
     const tabs = drawer.querySelectorAll('[data-tab]')
     const panels = {
-      details: document.getElementById('fm-panel-details'),
-      flow: document.getElementById('fm-panel-flow'),
-      actions: document.getElementById('fm-panel-actions'),
-      auth: document.getElementById('fm-panel-auth')
+      details: document.getElementById(SELECTORS.panelDetails),
+      flow: document.getElementById(SELECTORS.panelFlow),
+      actions: document.getElementById(SELECTORS.panelActions),
+      auth: document.getElementById(SELECTORS.panelAuth)
     }
 
     // Deactivate all tabs
@@ -175,7 +195,7 @@ export const SystemMapHook = {
     if (!node) return
 
     // Highlight sidebar item
-    const list = document.getElementById('fm-sidebar-list')
+    const list = document.getElementById(SELECTORS.sidebarList)
     if (list) {
       list.querySelectorAll('[data-node-id]').forEach(item => {
         item.classList.toggle('active', item.dataset.nodeId === nodeId)
@@ -183,9 +203,9 @@ export const SystemMapHook = {
     }
 
     // Open drawer
-    const drawer = document.getElementById('fm-drawer')
+    const drawer = document.getElementById(SELECTORS.drawer)
     if (drawer) {
-      drawer.style.width = '380px'
+      drawer.style.width = CONFIG.drawerWidth
     }
 
     // Render panels
@@ -199,7 +219,7 @@ export const SystemMapHook = {
   },
 
   _renderDetailsPanel(n) {
-    const panel = document.getElementById('fm-panel-details')
+    const panel = document.getElementById(SELECTORS.panelDetails)
     if (!panel) return
 
     const coverage = domainCoverage([n])
@@ -305,7 +325,7 @@ export const SystemMapHook = {
   },
 
   _renderFlowPanel(n) {
-    const panel = document.getElementById('fm-panel-flow')
+    const panel = document.getElementById(SELECTORS.panelFlow)
     if (!panel) return
 
     // Scenarios not yet tracked
@@ -317,7 +337,7 @@ export const SystemMapHook = {
   },
 
   _renderActionsPanel(n) {
-    const panel = document.getElementById('fm-panel-actions')
+    const panel = document.getElementById(SELECTORS.panelActions)
     if (!panel) return
 
     const shortcuts = {
@@ -343,7 +363,7 @@ export const SystemMapHook = {
   },
 
   _renderAuthPanel(node) {
-    const panel = document.getElementById('fm-panel-auth')
+    const panel = document.getElementById(SELECTORS.panelAuth)
     if (!panel) return
 
     // Only show for resource nodes
@@ -363,7 +383,7 @@ export const SystemMapHook = {
     const node = this.normalizedNodes.get(nodeId)
     if (!node) return
 
-    const card = document.getElementById('fm-hover-card')
+    const card = document.getElementById(SELECTORS.hoverCard)
     if (!card) return
 
     const coverage = domainCoverage([node])
@@ -391,19 +411,10 @@ export const SystemMapHook = {
   },
 
   _hideHoverCard() {
-    const card = document.getElementById('fm-hover-card')
+    const card = document.getElementById(SELECTORS.hoverCard)
     if (card) {
       card.classList.add('hidden')
     }
-  },
-
-  _searchMatch(node, query) {
-    const queryLower = query.toLowerCase()
-    const id = (node.id || '').toLowerCase()
-    const type = (node.type || '').toLowerCase()
-    const domain = (node.domain || '').toLowerCase()
-
-    return id.includes(queryLower) || type.includes(queryLower) || domain.includes(queryLower)
   },
 
   _esc(s) {
@@ -413,6 +424,23 @@ export const SystemMapHook = {
   },
 
   destroyed() {
+    // Remove event listeners
+    const list = document.getElementById(SELECTORS.sidebarList)
+    if (list && this._sidebarClickHandler) {
+      list.removeEventListener('click', this._sidebarClickHandler)
+    }
+
+    const searchInput = document.getElementById(SELECTORS.search)
+    if (searchInput && this._searchInputHandler) {
+      searchInput.removeEventListener('input', this._searchInputHandler)
+      clearTimeout(this._searchTimeout)
+    }
+
+    const closeBtn = document.getElementById(SELECTORS.drawerClose)
+    if (closeBtn && this._closeHandler) {
+      closeBtn.removeEventListener('click', this._closeHandler)
+    }
+
     if (this.graph) {
       this.graph.destroy()
       this.graph = null

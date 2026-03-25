@@ -1,63 +1,28 @@
 import cytoscape from 'cytoscape'
 import coseBilkent from 'cytoscape-cose-bilkent'
 import nodeHtmlLabel from 'cytoscape-node-html-label'
+import { searchMatch } from './foundry_graph'
 
-// WeakMap to prevent duplicate extension registration
-const extensionRegistry = new WeakMap()
+// Global flag to prevent duplicate extension registration
+let extensionsRegistered = false
 
-/**
- * Convert oklch or other non-hex colors to hex for Cytoscape compatibility
- */
-function _colorToHex(colorStr) {
-  if (!colorStr) return colorStr
-  if (colorStr.startsWith('#')) return colorStr
-
-  // Already a valid hex color
-  if (colorStr.match(/^#[0-9a-f]{6}$/i)) return colorStr
-
-  // Create temp element to convert color
-  const el = document.createElement('div')
-  el.style.color = colorStr
-  document.body.appendChild(el)
-  const computed = getComputedStyle(el).color
-  document.body.removeChild(el)
-
-  // Convert rgb(r, g, b) to hex
-  const match = computed.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-  if (match) {
-    const r = parseInt(match[1]).toString(16).padStart(2, '0')
-    const g = parseInt(match[2]).toString(16).padStart(2, '0')
-    const b = parseInt(match[3]).toString(16).padStart(2, '0')
-    return `#${r}${g}${b}`
-  }
-
-  // Fallback: if computed color failed, try applying to background-color
-  const el2 = document.createElement('div')
-  el2.style.backgroundColor = colorStr
-  document.body.appendChild(el2)
-  const computed2 = getComputedStyle(el2).backgroundColor
-  document.body.removeChild(el2)
-
-  const match2 = computed2.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-  if (match2) {
-    const r = parseInt(match2[1]).toString(16).padStart(2, '0')
-    const g = parseInt(match2[2]).toString(16).padStart(2, '0')
-    const b = parseInt(match2[3]).toString(16).padStart(2, '0')
-    return `#${r}${g}${b}`
-  }
-
-  console.warn(`Failed to convert color: ${colorStr}`)
-  return colorStr
+const LAYOUT_OPTIONS = {
+  name: 'cose-bilkent',
+  padding: 55,
+  nodeRepulsion: 6000,
+  idealEdgeLength: 80,
+  directed: false,
+  animate: true,
+  animationDuration: 500,
+  randomize: false
 }
 
 export class CytoscapeGraph {
   constructor(container, options = {}, colors = {}) {
     this.container = container
     this.options = options
-    // Convert all colors to hex for Cytoscape compatibility
-    this.colors = Object.fromEntries(
-      Object.entries(colors).map(([k, v]) => [k, _colorToHex(v)])
-    )
+    // Colors are already hex from foundry_graph.js
+    this.colors = colors
     this.cy = null
     this.currentLayout = null
 
@@ -67,13 +32,11 @@ export class CytoscapeGraph {
     this.onNodeUnhover = () => {}
     this.onReady = () => {}
 
-    // Register extensions
-    cytoscape.use(coseBilkent)
-
-    // Register nodeHtmlLabel only once per cy instance
-    if (!extensionRegistry.has(this)) {
+    // Register extensions once globally
+    if (!extensionsRegistered) {
+      cytoscape.use(coseBilkent)
       cytoscape.use(nodeHtmlLabel)
-      extensionRegistry.set(this, true)
+      extensionsRegistered = true
     }
 
     // Create cytoscape instance
@@ -290,7 +253,7 @@ export class CytoscapeGraph {
   search(query) {
     const matches = new Set()
     this.cy.nodes().forEach(node => {
-      const match = this._searchMatch(node.data(), query)
+      const match = searchMatch(node.data(), query)
       if (match) matches.add(node.id())
     })
 
@@ -348,28 +311,8 @@ export class CytoscapeGraph {
       this.currentLayout.stop()
     }
 
-    const layoutOptions = {
-      name: 'cose-bilkent',
-      padding: 55,
-      nodeRepulsion: 6000,
-      idealEdgeLength: 80,
-      directed: false,
-      animate: true,
-      animationDuration: 500,
-      randomize: false
-    }
-
-    this.currentLayout = this.cy.layout(layoutOptions)
+    this.currentLayout = this.cy.layout(LAYOUT_OPTIONS)
     this.currentLayout.run()
-  }
-
-  _searchMatch(nodeData, query) {
-    const queryLower = query.toLowerCase()
-    const id = (nodeData.id || '').toLowerCase()
-    const type = (nodeData.type || '').toLowerCase()
-    const domain = (nodeData.domain || '').toLowerCase()
-
-    return id.includes(queryLower) || type.includes(queryLower) || domain.includes(queryLower)
   }
 
   _applyModeStyles(mode) {
@@ -433,23 +376,6 @@ export class CytoscapeGraph {
       {
         selector: 'node[nodeKind="entity"], node[nodeKind="step"], node[nodeKind="state"], node[nodeKind="output"], node[nodeKind="cluster"]',
         style: { 'label': '' }
-      },
-      // Domain border stripes
-      {
-        selector: 'node[domain="Identity"]',
-        style: { 'border-color': c.gn || 'var(--fg-gn)' }
-      },
-      {
-        selector: 'node[domain="Finance"]',
-        style: { 'border-color': c.bl || 'var(--fg-bl)' }
-      },
-      {
-        selector: 'node[domain="Compliance"]',
-        style: { 'border-color': c.yw || 'var(--fg-yw)' }
-      },
-      {
-        selector: 'node[domain="Game"]',
-        style: { 'border-color': c.pu || 'var(--fg-pu)' }
       },
       // Gap (compliance)
       {

@@ -9,7 +9,7 @@ function _oklchToHex(oklchStr) {
   const match = oklchStr.match(/oklch\(([\d.]+)%?\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*([\d.]+))?\)/)
   if (!match) return null
 
-  const [, L, C, H] = match
+  const [, L, C, H] = match  // A (alpha) not used - oklch colors already in stylesheet
   let l = parseFloat(L)
   // If L > 1, it's in 0-100% format; convert to 0-1
   if (l > 1) l = l / 100
@@ -566,19 +566,3 @@ export function searchMatch(node, query) {
   )
 }
 
-/**
- * Compute indicators (legacy export for compatibility)
- */
-export function computeIndicators(node) {
-  return buildIndicators(node)
-}
-
-/**
- * Edge style (legacy export for compatibility)
- */
-export function edgeStyle(edge) {
-  return {
-    selector: `edge[relation="${edge.relation}"]`,
-    style: {}
-  }
-}

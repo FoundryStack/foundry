@@ -1,8 +1,8 @@
 <div class="foundry-map-layout flex" data-theme="dark">
   <!-- Sidebar (214px) -->
-  <aside class="menu bg-base-200 border-r border-base-300 flex-none overflow-y-auto" style="width:214px">
+  <aside class="foundry-sidebar menu bg-base-200 border-r border-base-300">
     <input id="fm-search" class="input input-sm w-full mb-2 mx-1" placeholder="Search…" />
-    <div class="flex gap-2 text-xs text-base-content/50 px-2 mb-2">
+    <div class="flex flex-col gap-1 text-xs text-base-content/50 px-2 mb-2">
       <span><%= Enum.count(@all_nodes) %> modules</span>
       <span class="text-warning"><%= @gap_count %> gaps</span>
       <span class="text-info"><%= @migration_count %> migrations</span>
@@ -25,7 +25,7 @@
   </aside>
 
   <!-- Canvas (flex-1) -->
-  <div class="flex-1 relative overflow-hidden" style="background:var(--fg-base)">
+  <div class="flex-1 relative overflow-hidden foundry-map-canvas">
     <%= if @context_json do %>
       <div id="foundry-graph"
            phx-hook="SystemMap"
@@ -57,33 +57,3 @@
     <div id="fm-panel-auth"    class="hidden flex-1 overflow-y-auto p-3 text-xs"></div>
   </div>
 </div>
-
-<!-- Helpers -->
-<script>
-  window.abbrType = function(type) {
-    const abbr = {
-      resource: 'res',
-      transfer: 'trx',
-      reactor: 'rct',
-      rule: 'rul',
-      job: 'job',
-      liveview: 'lv',
-      liveresource: 'lr',
-      blueprint: 'bp',
-      provider: 'pv',
-      trigger: 'tg',
-      terminal: 'tm'
-    }
-    return abbr[type] || type.slice(0, 3).toUpperCase()
-  }
-
-  window.pipClass = function(node) {
-    if ((node.compliance || []).length > 0 && !(node.test_coverage?.e2e_tests)) {
-      return 'w-2 h-2 rounded-full bg-warning'
-    }
-    if (node.sensitive) {
-      return 'w-2 h-2 rounded-full bg-error'
-    }
-    return 'w-2 h-2 rounded-full bg-success'
-  }
-</script>

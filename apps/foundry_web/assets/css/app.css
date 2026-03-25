@@ -175,6 +175,17 @@
   --fg-r:    var(--radius-box);
 }
 
+/* Foundry system map layout utilities */
+.foundry-sidebar {
+  width: 214px;
+  flex: none;
+  overflow-y: auto;
+}
+
+.foundry-map-canvas {
+  background: var(--fg-base);
+}
+
 /* Cytoscape node HTML labels (cytoscape-node-html-label) */
 .cy-node-html {
   position: relative;

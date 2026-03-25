@@ -20,7 +20,11 @@ defmodule FoundryWeb.SystemMapLive do
         # Organize nodes by domain
         nodes_by_domain = Enum.group_by(nodes, & &1.domain)
           |> Enum.map(fn {domain, ns} ->
-            {domain, Enum.map(ns, &Map.from_struct/1)}
+            {domain, Enum.map(ns, fn node ->
+              node
+              |> Map.from_struct()
+              |> Map.new(fn {k, v} -> {to_string(k), v} end)
+            end)}
           end)
           |> Enum.into(%{})
 
@@ -99,7 +103,7 @@ defmodule FoundryWeb.SystemMapLive do
     tc = node["test_coverage"] || %{}
     sensitive = node["sensitive"] || false
 
-    has_gap = Enum.any?(compliance) and not tc["e2e_tests"]
+    has_gap = is_list(compliance) and Enum.any?(compliance) and not Map.get(tc, "e2e_tests", false)
 
     cond do
       has_gap -> "w-2 h-2 rounded-full bg-warning"
