@@ -51,6 +51,7 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list = edge_list ++ derive_job_edges(nodes, node_map)
     edge_list = edge_list ++ derive_resource_edges(nodes, node_map)
     edge_list = edge_list ++ derive_auth_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_rule_edges(nodes, node_map)
 
     edge_list
   end
@@ -163,5 +164,15 @@ defmodule Foundry.Context.GraphBuilder do
         end
       end)
     end)
+  end
+
+  # Rule edges: detect which resources/steps a rule guards
+  # Three mechanisms:
+  # 1. Ash.Policy.Authorizer exposure (future: requires policy introspection)
+  # 2. "Applied by:" parsing in moduledoc (future: requires pattern matching)
+  # 3. Source file scan (fallback for common patterns)
+  # For now: stub implementation returns empty list
+  defp derive_rule_edges(_nodes, _node_map) do
+    []
   end
 end

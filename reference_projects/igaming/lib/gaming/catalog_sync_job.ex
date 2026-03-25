@@ -14,6 +14,8 @@ defmodule IgamingRef.Gaming.CatalogSyncJob do
 
   use Oban.Worker, queue: :default, max_attempts: 3
 
+  @performs IgamingRef.Gaming.ProviderSyncReactor
+
   @impl Oban.Worker
   def perform(%Oban.Job{args: _args}) do
     # Fetch all active providers and sync each one

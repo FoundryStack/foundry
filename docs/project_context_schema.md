@@ -171,6 +171,11 @@ per-module context into the graph.
 | `outputs` | OutputEntry[] | Terminal outcomes; empty for resources |
 | `agent_steps` | AgentStep[] | AshAI agent step declarations; `[]` if none |
 | `last_modified` | ISO 8601 date | File mtime |
+| `relationships` | RelationshipEntry[] | Ash resource relationships (belongs_to, has_many, etc.) |
+| `auth_strategies` | AuthStrategyEntry[] | AshAuthentication strategies on resource |
+| `provider_behaviour` | string\|null | Provider adapter behaviour name |
+| `provider_name` | string\|null | Provider adapter display name |
+| `rule_compliance_links` | RuleComplianceLink[] | Links from rules to compliance requirements |
 
 ### Node types
 
@@ -188,6 +193,63 @@ per-module context into the graph.
 | `trigger` | HTTP endpoint or scheduler entry point | `/api/register`, `cron 0 * * * *` |
 | `agent` | Standalone AshAI agent module | `MyApp.Risk.WithdrawalScorerAgent` |
 
+### StateMachine Schema
+
+```json
+{
+  "present": true,
+  "states": ["pending", "approved", "rejected", "expired"],
+  "transitions": [
+    { "from": "pending", "to": "approved", "action": "approve" },
+    { "from": "pending", "to": "rejected", "action": "reject" }
+  ],
+  "state_attribute": "status",
+  "initial_states": ["pending"],
+  "default_initial_state": "pending",
+  "terminal_states": ["approved", "rejected", "expired"]
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `present` | boolean | Whether AshStateMachine is present |
+| `states` | string[] | All state names |
+| `transitions` | TransitionEntry[] | State machine transitions |
+| `state_attribute` | string\|null | Ash attribute that stores state |
+| `initial_states` | string[] | States allowed as initial (from DSL) |
+| `default_initial_state` | string\|null | Default initial state (from DSL) |
+| `terminal_states` | string[] | Computed: states with no outgoing transitions |
+
+### StepEntry Schema
+
+```json
+{
+  "name": "load_request",
+  "type": "read",
+  "description": "Load and validate the withdrawal request",
+  "target_module": "IgamingRef.Finance.WithdrawalRequest",
+  "step_index": 0,
+  "wait_for": [],
+  "has_compensation": false,
+  "target_resource": "IgamingRef.Finance.WithdrawalRequest",
+  "target_action": "get",
+  "step_kind": "read"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | string | Step name in Reactor DSL |
+| `type` | string | Reactor step type (e.g., `"read"`, `"create"`) |
+| `description` | string\|null | Step description from DSL |
+| `target_module` | string\|null | Module implementing custom step |
+| `step_index` | integer | 0-based position in step list |
+| `wait_for` | string[] | Dependency step names (from `:wait_for` option) |
+| `has_compensation` | boolean | Whether step has compensation defined |
+| `target_resource` | string\|null | FQN of resource this step acts on |
+| `target_action` | string\|null | Action name called (from `:action` option) |
+| `step_kind` | enum | `:read`, `:write`, `:map`, `:run`, `:compensation`, `:custom` |
+
 ---
 
 ## EdgeEntry Schema
@@ -203,6 +265,38 @@ per-module context into the graph.
 ```
 
 Edges are ordered: `from` FQN ascending, then `to` FQN ascending.
+
+### EdgeEntry field definitions
+
+| Field | Type | Notes |
+|---|---|---|
+| `from` | string | Source node FQN |
+| `to` | string | Target node FQN |
+| `relation` | enum | Relationship type (see below) |
+| `cross_app` | boolean | Source and target in different apps (umbrella projects) |
+| `cross_project` | boolean | Source and target in different projects (monorepos) |
+| `step_name` | string\|null | Step name (for sequence/compensation edges) |
+| `step_index` | integer\|null | Step index (for ordering) |
+| `action_name` | string\|null | Action name (for operation edges) |
+| `compliance_ids` | string[] | Compliance requirement IDs associated with edge |
+
+### Edge relation types
+
+| Type | Source | Target | Notes |
+|---|---|---|---|
+| `references` | Resource | Resource | `belongs_to` relationship |
+| `referenced_by` | Resource | Resource | `has_one` / `has_many` relationship |
+| `writes` | Reactor/Transfer | Resource | Create/update step affects resource |
+| `reads` | Reactor/Transfer | Resource | Read step retrieves from resource |
+| `async` | Job | Reactor | Job performs reactor via `@performs` |
+| `guards` | Rule | Resource/Step | Policy/rule gates access |
+| `sequence` | Step | Step | Step ordering (`:wait_for`) |
+| `compensation` | Step | Step | Compensation relationship |
+| `configures` | Blueprint | Reactor | Blueprint configures reactor |
+| `authenticates` | User Resource | Token Resource | AshAuthentication flow |
+| `persists_to` | Resource | External | Resource persists to database (future) |
+| `queues_via` | Job | External | Job queues via external queue (future) |
+| `calls_provider` | Step | Provider | Step invokes provider (future) |
 
 ---
 
