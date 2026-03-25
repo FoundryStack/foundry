@@ -12,17 +12,55 @@ defmodule FoundryWeb.SystemMapLive do
       Code.append_path(ebin_path)
     end
 
-    context_json = case Foundry.Context.ProjectContext.build(project_root) do
-      {:ok, context} -> Jason.encode!(context)
-      {:error, _reason} -> nil
-    end
+    case Foundry.Context.ProjectContext.build(project_root) do
+      {:ok, context} ->
+        context_json = Jason.encode!(context)
+        nodes = context.nodes || []
 
-    {:ok, assign(socket, context_json: context_json, selected_node: nil, project_root: project_root)}
+        # Organize nodes by domain
+        nodes_by_domain = Enum.group_by(nodes, & &1.domain)
+          |> Enum.map(fn {domain, ns} ->
+            {domain, Enum.map(ns, &Map.from_struct/1)}
+          end)
+          |> Enum.into(%{})
+
+        # Count gaps: compliance reqs + no E2E tests
+        gap_count = Enum.count(nodes, fn n ->
+          (n.compliance || []) |> Enum.any?(fn _ -> true end) and
+            not n.test_coverage.e2e_tests
+        end)
+
+        # Count migrations
+        migration_count = Enum.count(nodes, fn n -> n.pending_migrations end)
+
+        {:ok, assign(socket,
+          context_json: context_json,
+          nodes_by_domain: nodes_by_domain,
+          all_nodes: nodes,
+          gap_count: gap_count,
+          migration_count: migration_count,
+          drawer_open: false,
+          selected_node: nil,
+          project_root: project_root
+        )}
+
+      {:error, _reason} ->
+        {:ok, assign(socket,
+          context_json: nil,
+          nodes_by_domain: %{},
+          all_nodes: [],
+          gap_count: 0,
+          migration_count: 0,
+          drawer_open: false,
+          selected_node: nil,
+          project_root: project_root
+        )}
+    end
   end
 
   @impl true
   def handle_event("node_selected", %{"id" => _id, "data" => node_data}, socket) do
-    {:noreply, assign(socket, selected_node: node_data)}
+    {:noreply, assign(socket, selected_node: node_data, drawer_open: true)}
   end
 
   @impl true
@@ -34,6 +72,39 @@ defmodule FoundryWeb.SystemMapLive do
         {:noreply, push_event(socket, "node_detail", %{node: node})}
       {:error, _} ->
         {:noreply, socket}
+    end
+  end
+
+  # Helpers for template
+  def abbr_type(nil), do: "unk"
+  def abbr_type(type) do
+    case type do
+      "resource" -> "res"
+      "transfer" -> "trx"
+      "reactor" -> "rct"
+      "rule" -> "rul"
+      "job" -> "job"
+      "liveview" -> "lv"
+      "liveresource" -> "lr"
+      "blueprint" -> "bp"
+      "provider" -> "pv"
+      "trigger" -> "tg"
+      "terminal" -> "tm"
+      _ -> String.slice(type, 0..2) |> String.upcase()
+    end
+  end
+
+  def pip_class(node) do
+    compliance = node["compliance"] || []
+    tc = node["test_coverage"] || %{}
+    sensitive = node["sensitive"] || false
+
+    has_gap = Enum.any?(compliance) and not tc["e2e_tests"]
+
+    cond do
+      has_gap -> "w-2 h-2 rounded-full bg-warning"
+      sensitive -> "w-2 h-2 rounded-full bg-error"
+      true -> "w-2 h-2 rounded-full bg-success"
     end
   end
 end

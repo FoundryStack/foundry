@@ -5,10 +5,59 @@ import nodeHtmlLabel from 'cytoscape-node-html-label'
 // WeakMap to prevent duplicate extension registration
 const extensionRegistry = new WeakMap()
 
+/**
+ * Convert oklch or other non-hex colors to hex for Cytoscape compatibility
+ */
+function _colorToHex(colorStr) {
+  if (!colorStr) return colorStr
+  if (colorStr.startsWith('#')) return colorStr
+
+  // Already a valid hex color
+  if (colorStr.match(/^#[0-9a-f]{6}$/i)) return colorStr
+
+  // Create temp element to convert color
+  const el = document.createElement('div')
+  el.style.color = colorStr
+  document.body.appendChild(el)
+  const computed = getComputedStyle(el).color
+  document.body.removeChild(el)
+
+  // Convert rgb(r, g, b) to hex
+  const match = computed.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
+  if (match) {
+    const r = parseInt(match[1]).toString(16).padStart(2, '0')
+    const g = parseInt(match[2]).toString(16).padStart(2, '0')
+    const b = parseInt(match[3]).toString(16).padStart(2, '0')
+    return `#${r}${g}${b}`
+  }
+
+  // Fallback: if computed color failed, try applying to background-color
+  const el2 = document.createElement('div')
+  el2.style.backgroundColor = colorStr
+  document.body.appendChild(el2)
+  const computed2 = getComputedStyle(el2).backgroundColor
+  document.body.removeChild(el2)
+
+  const match2 = computed2.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
+  if (match2) {
+    const r = parseInt(match2[1]).toString(16).padStart(2, '0')
+    const g = parseInt(match2[2]).toString(16).padStart(2, '0')
+    const b = parseInt(match2[3]).toString(16).padStart(2, '0')
+    return `#${r}${g}${b}`
+  }
+
+  console.warn(`Failed to convert color: ${colorStr}`)
+  return colorStr
+}
+
 export class CytoscapeGraph {
-  constructor(container, options = {}) {
+  constructor(container, options = {}, colors = {}) {
     this.container = container
     this.options = options
+    // Convert all colors to hex for Cytoscape compatibility
+    this.colors = Object.fromEntries(
+      Object.entries(colors).map(([k, v]) => [k, _colorToHex(v)])
+    )
     this.cy = null
     this.currentLayout = null
 
@@ -37,6 +86,30 @@ export class CytoscapeGraph {
 
     // Bind events
     this._bindEvents()
+  }
+
+  setupHtmlLabels(entityTpl, boundaryTpl) {
+    if (this._htmlLabelsSetup) return
+    this._htmlLabelsSetup = true
+
+    this.cy.nodeHtmlLabel([
+      {
+        query: 'node[nodeKind="entity"]',
+        halign: 'center',
+        valign: 'center',
+        halignBox: 'center',
+        valignBox: 'center',
+        tpl: entityTpl
+      },
+      {
+        query: 'node[nodeKind="cluster"]',
+        halign: 'left',
+        valign: 'top',
+        halignBox: 'left',
+        valignBox: 'top',
+        tpl: boundaryTpl
+      }
+    ])
   }
 
   load(contextJson) {
@@ -277,8 +350,9 @@ export class CytoscapeGraph {
 
     const layoutOptions = {
       name: 'cose-bilkent',
-      nodeSeparation: 50,
-      rankSeparation: 100,
+      padding: 55,
+      nodeRepulsion: 6000,
+      idealEdgeLength: 80,
       directed: false,
       animate: true,
       animationDuration: 500,
@@ -329,29 +403,120 @@ export class CytoscapeGraph {
   }
 
   _baseStyles() {
+    const c = this.colors
     return [
+      // Base node
       {
         selector: 'node',
         style: {
-          'content': 'data(label)',
+          'shape': 'round-rectangle',
+          'width': 170,
+          'height': 64,
+          'background-color': c.base || 'var(--fg-base)',
+          'border-width': 1,
+          'border-color': c.b1 || 'var(--fg-b1)',
+          'border-style': 'solid',
+          'border-opacity': 1,
+          'color': c.tx || 'var(--fg-tx)',
+          'font-size': 11,
+          'font-family': 'system-ui, -apple-system, sans-serif',
           'text-valign': 'center',
           'text-halign': 'center',
-          'width': '50px',
-          'height': '50px',
-          'font-size': '11px',
-          'text-opacity': 1,
-          'overlay-padding': '5px'
+          'text-margin-x': 0,
+          'text-margin-y': 0,
+          'text-wrap': 'none',
+          'padding': 6,
+          'label': 'data(label)'
         }
+      },
+      // Hide native label for HTML-labeled nodes
+      {
+        selector: 'node[nodeKind="entity"], node[nodeKind="step"], node[nodeKind="state"], node[nodeKind="output"], node[nodeKind="cluster"]',
+        style: { 'label': '' }
+      },
+      // Domain border stripes
+      {
+        selector: 'node[domain="Identity"]',
+        style: { 'border-color': c.gn || 'var(--fg-gn)' }
       },
       {
-        selector: 'node.domain-node',
+        selector: 'node[domain="Finance"]',
+        style: { 'border-color': c.bl || 'var(--fg-bl)' }
+      },
+      {
+        selector: 'node[domain="Compliance"]',
+        style: { 'border-color': c.yw || 'var(--fg-yw)' }
+      },
+      {
+        selector: 'node[domain="Game"]',
+        style: { 'border-color': c.pu || 'var(--fg-pu)' }
+      },
+      // Gap (compliance)
+      {
+        selector: 'node.gap',
         style: {
-          'shape': 'round-rectangle',
-          'border-width': 2,
-          'text-margin-y': -10,
-          'padding': '20px'
+          'border-width': 1,
+          'border-style': 'dashed',
+          'border-color': c.yw || 'var(--fg-yw)'
         }
       },
+      // Sensitive
+      {
+        selector: 'node.sensitive',
+        style: {
+          'border-width': 1,
+          'border-color': c.rd || 'var(--fg-rd)'
+        }
+      },
+      // Cluster/compound
+      {
+        selector: 'node[nodeKind="cluster"]',
+        style: {
+          'shape': 'round-rectangle',
+          'min-width': 120,
+          'min-height': 60,
+          'padding': 32,
+          'background-color': 'rgba(20,20,35,.6)',
+          'border-width': 1,
+          'border-color': 'rgba(80,80,110,.3)',
+          'border-style': 'dashed',
+          'text-valign': 'center',
+          'text-halign': 'center'
+        }
+      },
+      // Step/state nodes
+      {
+        selector: 'node[nodeKind="step"], node[nodeKind="state"]',
+        style: {
+          'width': 88,
+          'height': 40,
+          'font-size': 9,
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'text-wrap': 'none'
+        }
+      },
+      // Output nodes
+      {
+        selector: 'node[nodeKind="output"]',
+        style: {
+          'width': 76,
+          'height': 36,
+          'font-size': 8,
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'text-wrap': 'none'
+        }
+      },
+      // Selection
+      {
+        selector: 'node:selected',
+        style: {
+          'border-width': 1.5,
+          'border-color': c.ac || 'var(--fg-ac)'
+        }
+      },
+      // Phantom nodes
       {
         selector: 'node.phantom-node',
         style: {
@@ -361,14 +526,84 @@ export class CytoscapeGraph {
           'background-opacity': 0.5
         }
       },
+      // Edges - base
       {
         selector: 'edge',
         style: {
+          'width': 1.5,
+          'line-color': c.t2 || 'var(--fg-t2)',
+          'target-arrow-color': c.t2 || 'var(--fg-t2)',
           'target-arrow-shape': 'triangle',
           'curve-style': 'bezier',
-          'width': 2
+          'opacity': 0.8
         }
       },
+      // Edge relations
+      {
+        selector: 'edge[relation="sequence"]',
+        style: {
+          'line-color': c.t2 || 'var(--fg-t2)',
+          'target-arrow-shape': 'triangle'
+        }
+      },
+      {
+        selector: 'edge[relation="async"]',
+        style: {
+          'line-style': 'dashed',
+          'line-color': c.pu || 'var(--fg-pu)',
+          'target-arrow-color': c.pu || 'var(--fg-pu)'
+        }
+      },
+      {
+        selector: 'edge[relation="guard"], edge[relation="eligibleIf"]',
+        style: {
+          'line-style': 'dotted',
+          'line-color': c.yw || 'var(--fg-yw)',
+          'target-arrow-color': c.yw || 'var(--fg-yw)',
+          'width': 1.2
+        }
+      },
+      {
+        selector: 'edge[relation="compensation"]',
+        style: {
+          'width': 2,
+          'line-color': c.yw || 'var(--fg-yw)',
+          'target-arrow-color': c.yw || 'var(--fg-yw)'
+        }
+      },
+      {
+        selector: 'edge[relation="error"]',
+        style: {
+          'line-style': 'dashed',
+          'line-color': c.rd || 'var(--fg-rd)',
+          'target-arrow-color': c.rd || 'var(--fg-rd)'
+        }
+      },
+      {
+        selector: 'edge[relation="reads"]',
+        style: {
+          'line-color': c.bl || 'var(--fg-bl)',
+          'target-arrow-shape': 'diamond',
+          'target-arrow-fill': 'hollow'
+        }
+      },
+      {
+        selector: 'edge[relation="writes"]',
+        style: {
+          'line-color': c.gn || 'var(--fg-gn)',
+          'target-arrow-shape': 'diamond',
+          'target-arrow-fill': 'filled'
+        }
+      },
+      {
+        selector: 'edge[relation="triggers"]',
+        style: {
+          'line-color': c.pu || 'var(--fg-pu)',
+          'target-arrow-shape': 'circle',
+          'target-arrow-fill': 'filled'
+        }
+      },
+      // Compound edge endpoints
       {
         selector: 'edge:compound',
         style: {
@@ -376,10 +611,19 @@ export class CytoscapeGraph {
           'target-endpoint': 'outside-to-node'
         }
       },
+      // Trace
       {
-        selector: 'node:selected',
+        selector: '.trace',
         style: {
-          'border-width': 3
+          'border-width': 1,
+          'border-color': c.yw || 'var(--fg-yw)'
+        }
+      },
+      {
+        selector: '.trace-gap',
+        style: {
+          'border-width': 1,
+          'border-color': c.yw || 'var(--fg-yw)'
         }
       }
     ]

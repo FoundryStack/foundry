@@ -1,13 +1,36 @@
-<div class="flex h-screen bg-base-100">
-  <!-- Main map area -->
-  <div class="flex-1 relative">
+<div class="foundry-map-layout flex" data-theme="dark">
+  <!-- Sidebar (214px) -->
+  <aside class="menu bg-base-200 border-r border-base-300 flex-none overflow-y-auto" style="width:214px">
+    <input id="fm-search" class="input input-sm w-full mb-2 mx-1" placeholder="Search…" />
+    <div class="flex gap-2 text-xs text-base-content/50 px-2 mb-2">
+      <span><%= Enum.count(@all_nodes) %> modules</span>
+      <span class="text-warning"><%= @gap_count %> gaps</span>
+      <span class="text-info"><%= @migration_count %> migrations</span>
+    </div>
+    <ul id="fm-sidebar-list">
+      <%= for {domain, nodes} <- @nodes_by_domain do %>
+        <li class="menu-title"><%= domain %></li>
+        <%= for node <- nodes do %>
+          <li data-node-id={node["id"]}>
+            <a class="flex items-center gap-2 text-xs">
+              <span class="badge badge-xs"><%= abbr_type(node["type"]) %></span>
+              <span class="truncate flex-1"><%= node["id"] %></span>
+              <!-- Status pip: gap/sensitive/else -->
+              <span class={pip_class(node)}></span>
+            </a>
+          </li>
+        <% end %>
+      <% end %>
+    </ul>
+  </aside>
+
+  <!-- Canvas (flex-1) -->
+  <div class="flex-1 relative overflow-hidden" style="background:var(--fg-base)">
     <%= if @context_json do %>
-      <div
-        id="system-map"
-        phx-hook="SystemMap"
-        data-context={@context_json}
-        class="w-full h-full"
-      />
+      <div id="foundry-graph"
+           phx-hook="SystemMap"
+           data-context={@context_json}
+           style="width:100%;height:100%"></div>
     <% else %>
       <div class="flex items-center justify-center h-full">
         <p class="text-base-content/60">
@@ -15,14 +38,52 @@
         </p>
       </div>
     <% end %>
+    <!-- Hover card (hidden, positioned by JS) -->
+    <div id="fm-hover-card" class="hidden absolute z-50 bg-base-100 border border-base-300 rounded p-2 text-xs shadow-lg" style="pointer-events:none"></div>
   </div>
 
-  <!-- Detail drawer (left, slides over map) — Phase 2 minimal -->
-  <%= if @selected_node do %>
-    <div class="absolute left-0 top-0 h-full w-[360px] bg-base-200 shadow-lg z-10 overflow-y-auto p-4">
-      <h2 class="font-mono text-sm font-bold"><%= @selected_node["id"] %></h2>
-      <span class="badge badge-sm"><%= @selected_node["type"] %></span>
-      <p class="text-sm mt-2 text-base-content/70"><%= @selected_node["description"] %></p>
+  <!-- Drawer (slides in from right) -->
+  <div id="fm-drawer" class="bg-base-200 border-l border-base-300 flex flex-col overflow-hidden transition-all" style="width:0">
+    <div class="tabs tabs-border flex-none px-2 pt-2">
+      <button class="tab tab-active" data-tab="details">Details</button>
+      <button class="tab" data-tab="flow">Flow</button>
+      <button class="tab" data-tab="actions">Actions</button>
+      <button class="tab hidden" data-tab="auth">Authorization</button>
+      <button id="fm-drawer-close" class="ml-auto btn btn-xs btn-ghost">✕</button>
     </div>
-  <% end %>
+    <div id="fm-panel-details" class="flex-1 overflow-y-auto p-3 text-xs"></div>
+    <div id="fm-panel-flow"    class="hidden flex-1 overflow-y-auto p-3 text-xs"></div>
+    <div id="fm-panel-actions" class="hidden flex-1 overflow-y-auto p-3 text-xs"></div>
+    <div id="fm-panel-auth"    class="hidden flex-1 overflow-y-auto p-3 text-xs"></div>
+  </div>
 </div>
+
+<!-- Helpers -->
+<script>
+  window.abbrType = function(type) {
+    const abbr = {
+      resource: 'res',
+      transfer: 'trx',
+      reactor: 'rct',
+      rule: 'rul',
+      job: 'job',
+      liveview: 'lv',
+      liveresource: 'lr',
+      blueprint: 'bp',
+      provider: 'pv',
+      trigger: 'tg',
+      terminal: 'tm'
+    }
+    return abbr[type] || type.slice(0, 3).toUpperCase()
+  }
+
+  window.pipClass = function(node) {
+    if ((node.compliance || []).length > 0 && !(node.test_coverage?.e2e_tests)) {
+      return 'w-2 h-2 rounded-full bg-warning'
+    }
+    if (node.sensitive) {
+      return 'w-2 h-2 rounded-full bg-error'
+    }
+    return 'w-2 h-2 rounded-full bg-success'
+  }
+</script>
