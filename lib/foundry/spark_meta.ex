@@ -22,7 +22,7 @@ defmodule Foundry.SparkMeta.ModuleInfo do
     data_layer: nil,
     paper_trail: false,
     archival: false,
-    state_machine: %{present: false, states: [], transitions: [], state_attribute: nil},
+    state_machine: %{present: false, states: [], transitions: [], state_attribute: nil, initial_states: [], default_initial_state: nil, terminal_states: []},
     api_routes: [],
     telemetry_prefix: [],
     money_attributes: [],
@@ -34,7 +34,9 @@ defmodule Foundry.SparkMeta.ModuleInfo do
     outputs: [],
     agent_steps: [],
     performs: nil,
-    last_modified: nil
+    last_modified: nil,
+    relationships: [],
+    auth_strategies: []
   ]
 end
 
@@ -58,12 +60,36 @@ end
 
 defmodule Foundry.SparkMeta.StepEntry do
   @moduledoc "Structured representation of a Reactor step."
-  defstruct [:name, :type, :description, :target_module]
+  @derive Jason.Encoder
+  defstruct [
+    :name,
+    :type,
+    :description,
+    :target_module,
+    step_index: nil,
+    wait_for: [],
+    has_compensation: false,
+    target_resource: nil,
+    target_action: nil,
+    step_kind: nil
+  ]
 end
 
 defmodule Foundry.SparkMeta.MoneyAttr do
   @moduledoc "Structured representation of a monetary attribute."
   defstruct [:name, :type, :cldr_backend]
+end
+
+defmodule Foundry.SparkMeta.Relationship do
+  @moduledoc "Structured representation of an Ash resource relationship."
+  @derive Jason.Encoder
+  defstruct [:name, :type, :related_resource, :source_attribute, :destination_attribute, :description]
+end
+
+defmodule Foundry.SparkMeta.AuthStrategy do
+  @moduledoc "Structured representation of an AshAuthentication strategy."
+  @derive Jason.Encoder
+  defstruct [:strategy_name, :strategy_type, :identity_field, :token_resource, :has_sign_in_tokens, :has_password_reset]
 end
 
 defmodule Foundry.SparkMeta do
@@ -92,10 +118,14 @@ defmodule Foundry.SparkMeta do
     |> put_module_attributes()
     # attributes, actions, data_layer
     |> put_ash_resource_fields()
+    # relationships
+    |> put_relationships()
     # paper_trail, archival, auth_subject
     |> put_extension_fields()
     # AshStateMachine entities
     |> put_state_machine()
+    # AshAuthentication strategies
+    |> put_auth_strategies()
     # scan attributes for Ash.Type.Money
     |> put_money_attributes()
     # AshJsonApi entities
@@ -210,6 +240,24 @@ defmodule Foundry.SparkMeta do
     _ -> info
   end
 
+  defp put_relationships(%ModuleInfo{module: module} = info) do
+    if ash_resource?(module) do
+      relationships =
+        try do
+          Ash.Resource.Info.relationships(module)
+          |> Enum.map(&relationship_to_struct/1)
+        rescue
+          _ -> []
+        end
+
+      %{info | relationships: relationships}
+    else
+      info
+    end
+  rescue
+    _ -> info
+  end
+
   defp put_extension_fields(%ModuleInfo{module: module} = info) do
     extensions = safe_extensions(module)
 
@@ -252,15 +300,66 @@ defmodule Foundry.SparkMeta do
           _ -> nil
         end
 
+      initial_states =
+        try do
+          SparkMeta.get_opt(module, [:state_machine], :initial_states, [])
+          |> Enum.map(&to_string/1)
+        rescue
+          _ -> []
+        end
+
+      default_initial_state =
+        try do
+          SparkMeta.get_opt(module, [:state_machine], :default_initial_state, nil)
+          |> then(&if &1, do: to_string(&1), else: nil)
+        rescue
+          _ -> nil
+        end
+
+      terminal_states = compute_terminal_states(states, transitions)
+
       %{
         info
         | state_machine: %{
             present: true,
             states: states,
             transitions: transitions,
-            state_attribute: state_attr
+            state_attribute: state_attr,
+            initial_states: initial_states,
+            default_initial_state: default_initial_state,
+            terminal_states: terminal_states
           }
       }
+    else
+      info
+    end
+  rescue
+    _ -> info
+  end
+
+  defp compute_terminal_states(states, transitions) do
+    from_states = transitions |> Enum.map(& &1["from"]) |> MapSet.new()
+    states |> Enum.filter(&(&1 not in from_states))
+  end
+
+  defp put_auth_strategies(%ModuleInfo{module: module} = info) do
+    has_auth =
+      try do
+        AshAuthentication in safe_extensions(module)
+      rescue
+        _ -> false
+      end
+
+    if has_auth do
+      strategies =
+        try do
+          SparkMeta.entities(module, [:authentication, :strategies])
+          |> Enum.map(&auth_strategy_to_struct/1)
+        rescue
+          _ -> []
+        end
+
+      %{info | auth_strategies: strategies}
     else
       info
     end
@@ -314,8 +413,13 @@ defmodule Foundry.SparkMeta do
             is_struct(step) and
               step.__struct__ |> Atom.to_string() |> String.starts_with?("Elixir.Reactor.Dsl.Step")
           end)
-          |> Enum.map(fn step ->
-            %{
+          |> Enum.with_index()
+          |> Enum.map(fn {step, index} ->
+            step_kind = derive_step_kind(step)
+            target_resource = Map.get(step, :resource) || infer_target_resource_from_source(module, step)
+            target_action = Map.get(step, :action) |> then(&if &1, do: to_string(&1), else: nil)
+
+            %Foundry.SparkMeta.StepEntry{
               name: to_string(step.name),
               type:
                 step.__struct__
@@ -323,7 +427,13 @@ defmodule Foundry.SparkMeta do
                 |> List.last()
                 |> String.downcase(),
               description: Map.get(step, :description),
-              target_module: Map.get(step, :impl) || Map.get(step, :resource)
+              target_module: Map.get(step, :impl) || Map.get(step, :resource),
+              step_index: index,
+              wait_for: Map.get(step, :wait_for, []) |> Enum.map(&to_string/1),
+              has_compensation: Map.get(step, :compensate) != nil,
+              target_resource: format_module_fqn(target_resource),
+              target_action: target_action,
+              step_kind: step_kind
             }
           end)
         rescue
@@ -336,6 +446,59 @@ defmodule Foundry.SparkMeta do
     end
   rescue
     _ -> info
+  end
+
+  defp derive_step_kind(step) do
+    struct_name = step.__struct__ |> Module.split() |> List.last()
+    case struct_name do
+      "Create" -> :write
+      "Update" -> :write
+      "Read" -> :read
+      "ReadOne" -> :read
+      "Map" -> :map
+      _ -> :custom
+    end
+  rescue
+    _ -> :custom
+  end
+
+  defp format_module_fqn(nil), do: nil
+  defp format_module_fqn(module) when is_atom(module), do: Atom.to_string(module)
+  defp format_module_fqn(module) when is_binary(module), do: module
+  defp format_module_fqn(_), do: nil
+
+  defp infer_target_resource_from_source(module, step) do
+    # Heuristic: scan source file for Ash.create, Ash.update, Ash.get patterns
+    try do
+      case find_module_source_file(Atom.to_string(module)) do
+        nil -> nil
+        file -> extract_target_resource_from_step(file, to_string(step.name))
+      end
+    rescue
+      _ -> nil
+    end
+  end
+
+  defp extract_target_resource_from_step(file, _step_name) do
+    try do
+      content = File.read!(file)
+      # Simple regex to find resource references in Ash function calls for this step
+      # Pattern: Ash.create(ResourceModule, ...) or similar
+      patterns = [
+        ~r/Ash\.create\(([A-Z][A-Za-z0-9.]*)/,
+        ~r/Ash\.update\([^,]+,\s*([A-Z][A-Za-z0-9.]*)/,
+        ~r/Ash\.get\(([A-Z][A-Za-z0-9.]*)/
+      ]
+
+      Enum.find_value(patterns, fn pattern ->
+        case Regex.run(pattern, content) do
+          [_, resource] -> resource
+          _ -> nil
+        end
+      end)
+    rescue
+      _ -> nil
+    end
   end
 
   defp put_oban_fields(%ModuleInfo{module: module} = info) do
@@ -567,6 +730,100 @@ defmodule Foundry.SparkMeta do
       %Foundry.SparkMeta.Action{
         name: :unknown,
         type: :unknown
+      }
+  end
+
+  defp relationship_to_struct(rel) when is_map(rel) do
+    try do
+      %Foundry.SparkMeta.Relationship{
+        name: to_string(Map.get(rel, :name)),
+        type: Map.get(rel, :type),
+        related_resource: Map.get(rel, :destination) |> Atom.to_string(),
+        source_attribute: Map.get(rel, :source_attribute) |> then(&if &1, do: to_string(&1), else: nil),
+        destination_attribute: Map.get(rel, :destination_attribute) |> then(&if &1, do: to_string(&1), else: nil),
+        description: Map.get(rel, :description)
+      }
+    rescue
+      _ ->
+        %Foundry.SparkMeta.Relationship{
+          name: "unknown",
+          type: :unknown,
+          related_resource: "unknown"
+        }
+    end
+  end
+
+  defp relationship_to_struct(_) do
+    %Foundry.SparkMeta.Relationship{
+      name: "unknown",
+      type: :unknown,
+      related_resource: "unknown"
+    }
+  end
+
+  defp auth_strategy_to_struct(strategy) do
+    # Extract strategy type from struct name (e.g., AshAuthentication.Strategy.Password → :password)
+    strategy_type =
+      try do
+        strategy.__struct__
+        |> Module.split()
+        |> List.last()
+        |> String.downcase()
+        |> String.to_atom()
+      rescue
+        _ -> :other
+      end
+
+    # Extract identity field
+    identity_field =
+      try do
+        Map.get(strategy, :identity_field) |> then(&if &1, do: to_string(&1), else: nil)
+      rescue
+        _ -> nil
+      end
+
+    # Extract token resource FQN
+    token_resource =
+      try do
+        token_resource = Map.get(strategy, :token_resource)
+        if token_resource, do: Atom.to_string(token_resource), else: nil
+      rescue
+        _ -> nil
+      end
+
+    # Check for sign_in_tokens and password_reset options
+    has_sign_in_tokens =
+      try do
+        token_opts = Map.get(strategy, :sign_in_tokens_enabled)
+        token_opts == true
+      rescue
+        _ -> false
+      end
+
+    has_password_reset =
+      try do
+        Map.get(strategy, :password_reset_enabled) == true
+      rescue
+        _ -> false
+      end
+
+    %Foundry.SparkMeta.AuthStrategy{
+      strategy_name: to_string(Map.get(strategy, :name, :unknown)),
+      strategy_type: strategy_type,
+      identity_field: identity_field,
+      token_resource: token_resource,
+      has_sign_in_tokens: has_sign_in_tokens,
+      has_password_reset: has_password_reset
+    }
+  rescue
+    _ ->
+      %Foundry.SparkMeta.AuthStrategy{
+        strategy_name: "unknown",
+        strategy_type: :other,
+        identity_field: nil,
+        token_resource: nil,
+        has_sign_in_tokens: false,
+        has_password_reset: false
       }
   end
 

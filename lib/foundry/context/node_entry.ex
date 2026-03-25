@@ -11,7 +11,28 @@ defmodule Foundry.Context.NodeEntry do
           present: boolean(),
           states: [String.t()],
           transitions: [%{from: String.t(), to: String.t(), action: String.t()}],
-          state_attribute: String.t() | nil
+          state_attribute: String.t() | nil,
+          initial_states: [String.t()],
+          default_initial_state: String.t() | nil,
+          terminal_states: [String.t()]
+        }
+
+  @type relationship :: %{
+          name: String.t(),
+          type: :belongs_to | :has_many | :has_one | :many_to_many,
+          related_resource: String.t(),
+          source_attribute: String.t() | nil,
+          destination_attribute: String.t() | nil,
+          description: String.t() | nil
+        }
+
+  @type auth_strategy :: %{
+          strategy_name: String.t(),
+          strategy_type: :password | :magic_link | :oauth2 | :api_key | :other,
+          identity_field: String.t() | nil,
+          token_resource: String.t() | nil,
+          has_sign_in_tokens: boolean(),
+          has_password_reset: boolean()
         }
 
   @type money_attribute :: %{
@@ -70,7 +91,10 @@ defmodule Foundry.Context.NodeEntry do
       present: false,
       states: [],
       transitions: [],
-      state_attribute: nil
+      state_attribute: nil,
+      initial_states: [],
+      default_initial_state: nil,
+      terminal_states: []
     },
     api_routes: [],
     telemetry_prefix: [],
@@ -82,7 +106,12 @@ defmodule Foundry.Context.NodeEntry do
     performs: nil,
     outputs: [],
     agent_steps: [],
-    last_modified: nil
+    last_modified: nil,
+    relationships: [],
+    auth_strategies: [],
+    provider_behaviour: nil,
+    provider_name: nil,
+    rule_compliance_links: []
   ]
 end
 
@@ -91,7 +120,8 @@ defimpl Jason.Encoder, for: Foundry.Context.NodeEntry do
     rules compliance adrs runbook test_coverage data_layer pending_migrations
     paper_trail archival state_machine api_routes telemetry_prefix money_attributes
     authentication_subject oban_queues rate_limited feature_flags steps performs outputs
-    agent_steps last_modified]a
+    agent_steps last_modified relationships auth_strategies provider_behaviour
+    provider_name rule_compliance_links]a
 
   def encode(entry, opts) do
     @field_order
