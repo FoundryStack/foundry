@@ -401,10 +401,21 @@ export function domainClusterTpl(data) {
 }
 
 /**
- * Boundary (cluster) node HTML template
+ * Unified cluster template that handles both domain and transfer/reactor clusters
  */
-export function boundaryTpl(data) {
+export function clusterTpl(data) {
   const n = data
+
+  // Domain cluster: show prominent domain label
+  if (n.nodeKind === 'domain-cluster') {
+    return `
+      <div class="cy-node-html cy-domain-cluster">
+        <span class="domain-cluster-label" style="color:${n.typeColor}">${n.label}</span>
+      </div>
+    `
+  }
+
+  // Transfer/reactor/FSM cluster: show with icon
   let icon = '◈'
   let label = n.id
 
@@ -429,6 +440,13 @@ export function boundaryTpl(data) {
       </div>
     </div>
   `
+}
+
+/**
+ * Boundary (cluster) node HTML template - DEPRECATED, use clusterTpl instead
+ */
+export function boundaryTpl(data) {
+  return clusterTpl(data)
 }
 
 /**

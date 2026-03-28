@@ -73,11 +73,11 @@ export class CytoscapeGraph {
         tpl: domainClusterTpl
       },
       {
-        query: 'node[nodeKind="cluster"]:not(.domain-cluster)',
-        halign: 'left',
-        valign: 'top',
-        halignBox: 'left',
-        valignBox: 'top',
+        query: 'node[nodeKind="cluster"]',
+        halign: 'center',
+        valign: 'center',
+        halignBox: 'center',
+        valignBox: 'center',
         tpl: boundaryTpl
       }
     ]
@@ -94,21 +94,11 @@ export class CytoscapeGraph {
       return
     }
 
-    // Create domain compound parent nodes
-    const domains = new Set(contextJson.nodes.map(n => n.domain).filter(Boolean))
-    const domainElements = Array.from(domains).map(domain => ({
-      group: 'nodes',
-      data: {
-        id: `domain:${domain}`,
-        label: domain,
-        type: 'domain',
-        parent: null,
-        isDomain: true
-      },
-      classes: 'domain-node'
-    }))
+    // NOTE: foundry_graph.js:buildCytoscapeElements() creates all nodes and compounds
+    // with proper hierarchy. Elements are added directly via cy.add() in
+    // mountFoundryGraph(), so this method is not actively used in current flow.
 
-    // Create node elements
+    // Create node elements (without domain compounds - they're created in buildCytoscapeElements)
     const nodeElements = contextJson.nodes.map(node => ({
       group: 'nodes',
       data: {
@@ -116,7 +106,7 @@ export class CytoscapeGraph {
         label: node.id,
         type: node.type,
         domain: node.domain,
-        parent: node.domain ? `domain:${node.domain}` : null,
+        parent: null,
         ...node
       }
     }))
@@ -133,7 +123,7 @@ export class CytoscapeGraph {
     }))
 
     // Add all elements
-    this.cy.add([...domainElements, ...nodeElements, ...edgeElements])
+    this.cy.add([...nodeElements, ...edgeElements])
 
     // Run layout
     this._runLayout()
