@@ -625,8 +625,14 @@ export function buildCytoscapeElements(nodes, edges) {
     }
   })
 
-  // Create edges
+  // Create edges (filter out data-model relationship edges to reduce visual clutter)
   edges.forEach(edge => {
+    // Skip data-model relationship edges (references/referenced_by)
+    // These are belongs_to/has_many relationships, not process flow
+    if (edge.relation === 'references' || edge.relation === 'referenced_by') {
+      return
+    }
+
     elements.push({
       group: 'edges',
       data: {

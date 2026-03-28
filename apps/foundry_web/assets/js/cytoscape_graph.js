@@ -14,7 +14,11 @@ const LAYOUT_OPTIONS = {
   directed: false,
   animate: true,
   animationDuration: 500,
-  randomize: false
+  randomize: false,
+  // Handle compound nodes better
+  tile: true,
+  // Increase spacing between nodes to avoid overlaps
+  spacingFactor: 1.5
 }
 
 export class CytoscapeGraph {
