@@ -6,6 +6,7 @@ defmodule IgamingRef.Promotions.DepositMatchBlueprint do
   promotions (e.g., "100% match up to £500"). Used as a template when creating
   new BonusCampaign instances with consistent parameters.
 
+  Used by: IgamingRef.Promotions.BonusGrantTransfer
   Compliance: RG-MGA-005 (bonus terms transparency)
   """
 

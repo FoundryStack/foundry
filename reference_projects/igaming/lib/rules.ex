@@ -206,7 +206,7 @@ defmodule IgamingRef.Finance.Rules.PlayerKYCVerified do
   @moduledoc """
   Rule: the player must have verified KYC status before certain transactions.
 
-  Applied by: Deposit and withdrawal operations
+  Applied by: IgamingRef.Finance.WithdrawalTransfer
   Compliance: RG-MGA-003 (KYC requirements)
   """
 
@@ -238,7 +238,7 @@ defmodule IgamingRef.Gaming.Rules.ProviderActive do
   @moduledoc """
   Rule: the gaming provider must be in :active status.
 
-  Applied by: Game operations, catalog syncs
+  Applied by: IgamingRef.Gaming.ProviderSyncReactor
   Compliance: RG-MGA-006 (provider agreements)
   """
 
@@ -270,7 +270,7 @@ defmodule IgamingRef.Gaming.Rules.GameRTPCertified do
   @moduledoc """
   Rule: the game version must have RTP certification.
 
-  Applied by: Game launch operations
+  Applied by: IgamingRef.Gaming.ProviderSyncReactor
   Compliance: RG-UK-007 (game certification)
   """
 
