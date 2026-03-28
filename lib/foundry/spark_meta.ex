@@ -42,6 +42,7 @@ end
 
 defmodule Foundry.SparkMeta.Attribute do
   @moduledoc "Structured representation of an Ash resource attribute."
+  @derive Jason.Encoder
   defstruct [
     :name,
     :type,
@@ -55,6 +56,7 @@ end
 
 defmodule Foundry.SparkMeta.Action do
   @moduledoc "Structured representation of an Ash resource action."
+  @derive Jason.Encoder
   defstruct [:name, :type, :description]
 end
 
@@ -77,6 +79,7 @@ end
 
 defmodule Foundry.SparkMeta.MoneyAttr do
   @moduledoc "Structured representation of a monetary attribute."
+  @derive Jason.Encoder
   defstruct [:name, :type, :cldr_backend]
 end
 
@@ -149,16 +152,32 @@ defmodule Foundry.SparkMeta do
 
   defp put_description(%ModuleInfo{module: module} = info) do
     description =
+      # First try: moduledoc attribute (from @moduledoc)
       case module.__info__(:attributes)[:moduledoc] do
         [{_line, doc}] when is_binary(doc) ->
-          doc
-          |> String.split("\n\n")
-          |> Enum.reject(&(String.trim(&1) == ""))
-          |> List.first()
-          |> then(&if &1, do: String.trim(&1), else: nil)
+          # For rule modules, keep the full text so "Applied by:" can be parsed
+          # For other modules, keep just the first paragraph
+          if rule_module?(module) do
+            String.trim(doc)
+          else
+            doc
+            |> String.split("\n\n")
+            |> Enum.reject(&(String.trim(&1) == ""))
+            |> List.first()
+            |> then(&if &1, do: String.trim(&1), else: nil)
+          end
 
         _ ->
-          nil
+          # Fallback: try calling description/0 callback (e.g., for rules)
+          try do
+            if function_exported?(module, :description, 0) do
+              module.description()
+            else
+              nil
+            end
+          rescue
+            _ -> nil
+          end
       end
 
     %{info | description: description}
@@ -245,6 +264,10 @@ defmodule Foundry.SparkMeta do
       relationships =
         try do
           Ash.Resource.Info.relationships(module)
+          # Filter out private system relationships like paper_trail_versions
+          |> Enum.filter(fn rel ->
+            rel.public? || (rel.name && !String.starts_with?(to_string(rel.name), "paper_trail"))
+          end)
           |> Enum.map(&relationship_to_struct/1)
         rescue
           _ -> []
@@ -351,10 +374,14 @@ defmodule Foundry.SparkMeta do
       end
 
     if has_auth do
+      # Get the global token resource configured for this authentication extension
+      # Currently extracted from auth_strategies; global token_resource will be handled in Phase D
+      global_token_resource = nil
+
       strategies =
         try do
           SparkMeta.entities(module, [:authentication, :strategies])
-          |> Enum.map(&auth_strategy_to_struct/1)
+          |> Enum.map(&auth_strategy_to_struct(&1, global_token_resource))
         rescue
           _ -> []
         end
@@ -410,8 +437,11 @@ defmodule Foundry.SparkMeta do
         try do
           module.entities([:reactor])
           |> Enum.filter(fn step ->
-            is_struct(step) and
-              step.__struct__ |> Atom.to_string() |> String.starts_with?("Elixir.Reactor.Dsl.Step")
+            struct_str = step.__struct__ |> Atom.to_string()
+            is_struct(step) and (
+              String.starts_with?(struct_str, "Elixir.Reactor.Dsl.Step") or
+              String.starts_with?(struct_str, "Elixir.Ash.Reactor.Dsl")
+            )
           end)
           |> Enum.with_index()
           |> Enum.map(fn {step, index} ->
@@ -463,7 +493,11 @@ defmodule Foundry.SparkMeta do
   end
 
   defp format_module_fqn(nil), do: nil
-  defp format_module_fqn(module) when is_atom(module), do: Atom.to_string(module)
+
+  defp format_module_fqn(module) when is_atom(module) do
+    module |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
+  end
+
   defp format_module_fqn(module) when is_binary(module), do: module
   defp format_module_fqn(_), do: nil
 
@@ -479,26 +513,39 @@ defmodule Foundry.SparkMeta do
     end
   end
 
-  defp extract_target_resource_from_step(file, _step_name) do
+  defp extract_target_resource_from_step(file, step_name) do
     try do
       content = File.read!(file)
-      # Simple regex to find resource references in Ash function calls for this step
-      # Pattern: Ash.create(ResourceModule, ...) or similar
-      patterns = [
-        ~r/Ash\.create\(([A-Z][A-Za-z0-9.]*)/,
-        ~r/Ash\.update\([^,]+,\s*([A-Z][A-Za-z0-9.]*)/,
-        ~r/Ash\.get\(([A-Z][A-Za-z0-9.]*)/
-      ]
-
-      Enum.find_value(patterns, fn pattern ->
-        case Regex.run(pattern, content) do
-          [_, resource] -> resource
-          _ -> nil
-        end
-      end)
+      # Find step block by name, then scan only that block for Ash calls
+      step_pattern = ~r/step\s+:#{Regex.escape(step_name)}\b/
+      case Regex.run(step_pattern, content, return: :index) do
+        [{start, _}] ->
+          # Extract from step start to next top-level step or end
+          remaining = String.slice(content, start, String.length(content) - start)
+          extract_ash_resource_ref(remaining)
+        _ ->
+          # Fallback: scan entire file if step name not found
+          extract_ash_resource_ref(content)
+      end
     rescue
       _ -> nil
     end
+  end
+
+  defp extract_ash_resource_ref(content) do
+    patterns = [
+      ~r/Ash\.create\(([A-Z][A-Za-z0-9.]*)/,
+      ~r/Ash\.update\([^,]+,\s*([A-Z][A-Za-z0-9.]*)/,
+      ~r/Ash\.get\(([A-Z][A-Za-z0-9.]*)/,
+      ~r/Ash\.read\(([A-Z][A-Za-z0-9.]*)/,
+      ~r/Ash\.destroy\(([A-Z][A-Za-z0-9.]*)/
+    ]
+    Enum.find_value(patterns, fn pat ->
+      case Regex.run(pat, content) do
+        [_, resource] -> resource
+        _ -> nil
+      end
+    end)
   end
 
   defp put_oban_fields(%ModuleInfo{module: module} = info) do
@@ -540,16 +587,21 @@ defmodule Foundry.SparkMeta do
     if Oban.Worker in behaviours do
       performs =
         try do
-          foundry_config = get_attr_raw(module.__info__(:attributes), :foundry)
+          attrs = module.__info__(:attributes)
+          # Check direct @performs attribute (Foundry.Annotations registered)
+          direct = get_attr_raw(attrs, :performs)
+          # Fallback: @foundry %{performs: ...} map
+          from_foundry =
+            with cfg when is_map(cfg) <- get_attr_raw(attrs, :foundry),
+                 val when not is_nil(val) <- Map.get(cfg, :performs),
+                 do: val,
+                 else: (_ -> nil)
 
-          if is_map(foundry_config) do
-            case Map.get(foundry_config, :performs) do
-              atom when is_atom(atom) -> Atom.to_string(atom)
-              string when is_binary(string) -> string
-              _ -> nil
-            end
-          else
-            nil
+          case direct || from_foundry do
+            a when is_atom(a) and not is_nil(a) ->
+              a |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
+            s when is_binary(s) -> s
+            _ -> nil
           end
         rescue
           _ -> nil
@@ -598,9 +650,27 @@ defmodule Foundry.SparkMeta do
   # ---- Helper functions for type detection ----
 
   defp ash_resource?(module) do
-    function_exported?(module, :__ash_resource__, 0)
-  rescue
-    _ -> false
+    try do
+      # Try multiple ways to detect Ash resources
+      # Ash 3.x: __ash_resource__/0 function
+      function_exported?(module, :__ash_resource__, 0) ||
+        # Fallback: __ash_resource__/0 function exists (Ash 2.x style)
+        (try do
+          module.__ash_resource__()
+          true
+        rescue
+          _ -> false
+        end) ||
+        # Fallback: Check if Ash.Resource.Info functions work
+        (try do
+          _ = Ash.Resource.Info.relationships(module)
+          true
+        rescue
+          _ -> false
+        end)
+    rescue
+      _ -> false
+    end
   end
 
   defp reactor_module?(module) do
@@ -631,7 +701,11 @@ defmodule Foundry.SparkMeta do
     try do
       behaviours = module.__info__(:attributes) |> Keyword.get(:behaviour, [])
 
-      Enum.any?(behaviours, &(&1 in [Ash.Policy.Check, Ash.Policy.SimpleCheck]))
+      # Check for standard Ash policy checks or custom rule behaviours
+      Enum.any?(behaviours, fn behaviour ->
+        behaviour in [Ash.Policy.Check, Ash.Policy.SimpleCheck] or
+        (is_atom(behaviour) and String.ends_with?(Atom.to_string(behaviour), ".Rule"))
+      end)
     rescue
       _ -> false
     end
@@ -735,10 +809,21 @@ defmodule Foundry.SparkMeta do
 
   defp relationship_to_struct(rel) when is_map(rel) do
     try do
+      dest_atom = Map.get(rel, :destination)
+      related_resource =
+        case dest_atom do
+          a when is_atom(a) ->
+            a
+            |> Atom.to_string()
+            |> String.replace_prefix("Elixir.", "")
+          s when is_binary(s) -> s
+          _ -> "unknown"
+        end
+
       %Foundry.SparkMeta.Relationship{
         name: to_string(Map.get(rel, :name)),
         type: Map.get(rel, :type),
-        related_resource: Map.get(rel, :destination) |> Atom.to_string(),
+        related_resource: related_resource,
         source_attribute: Map.get(rel, :source_attribute) |> then(&if &1, do: to_string(&1), else: nil),
         destination_attribute: Map.get(rel, :destination_attribute) |> then(&if &1, do: to_string(&1), else: nil),
         description: Map.get(rel, :description)
@@ -761,7 +846,7 @@ defmodule Foundry.SparkMeta do
     }
   end
 
-  defp auth_strategy_to_struct(strategy) do
+  defp auth_strategy_to_struct(strategy, global_token_resource \\ nil) do
     # Extract strategy type from struct name (e.g., AshAuthentication.Strategy.Password → :password)
     strategy_type =
       try do
@@ -782,13 +867,17 @@ defmodule Foundry.SparkMeta do
         _ -> nil
       end
 
-    # Extract token resource FQN
+    # Extract token resource FQN - prefer strategy-level, fallback to global
     token_resource =
       try do
-        token_resource = Map.get(strategy, :token_resource)
-        if token_resource, do: Atom.to_string(token_resource), else: nil
+        strategy_token = Map.get(strategy, :token_resource)
+        if strategy_token do
+          strategy_token |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
+        else
+          global_token_resource
+        end
       rescue
-        _ -> nil
+        _ -> global_token_resource
       end
 
     # Check for sign_in_tokens and password_reset options

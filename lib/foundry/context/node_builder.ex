@@ -11,9 +11,11 @@ defmodule Foundry.Context.NodeBuilder do
   def build(%ModuleInfo{} = info, manifest, pending_migrations) do
     sensitive_modules = Keyword.get(manifest, :sensitive_resources, [])
 
+    module_str = format_module(info.module)
+
     %NodeEntry{
-      id: inspect(info.module),
-      module: inspect(info.module),
+      id: module_str,
+      module: module_str,
       type: to_string(info.type || :resource),
       domain: derive_domain(info.module),
       app: nil,
@@ -42,9 +44,17 @@ defmodule Foundry.Context.NodeBuilder do
       performs: info.performs,
       outputs: info.outputs,
       agent_steps: info.agent_steps,
+      relationships: info.relationships,
+      auth_strategies: info.auth_strategies,
       last_modified: format_mtime(info.last_modified)
     }
   end
+
+  defp format_module(module) when is_atom(module) do
+    module |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
+  end
+
+  defp format_module(module), do: module
 
   defp format_mtime(nil), do: nil
 

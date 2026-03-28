@@ -32,6 +32,7 @@ defmodule Foundry.Annotations do
       Module.register_attribute(__MODULE__, :telemetry_prefix, persist: true)
       Module.register_attribute(__MODULE__, :provider_name, persist: true)
       Module.register_attribute(__MODULE__, :foundry, persist: true)
+      Module.register_attribute(__MODULE__, :performs, persist: true)
       Module.register_attribute(__MODULE__, :runbook, persist: true)
       Module.register_attribute(__MODULE__, :adrs, persist: true)
       Module.register_attribute(__MODULE__, :idempotency_key, persist: true)
