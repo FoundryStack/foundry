@@ -11,7 +11,7 @@ defmodule Foundry.Context.GraphBuilder do
   - Resource `has_many`/`has_one` relationship: `referenced_by` edge
   """
 
-  alias Foundry.Context.{ModuleDiscovery, NodeBuilder, PendingMigrations, EdgeEntry}
+  alias Foundry.Context.{ModuleDiscovery, NodeBuilder, PendingMigrations, EdgeEntry, NodeEntry}
   alias Foundry.SparkMeta
 
   @spec build(String.t(), list()) :: {list(NodeEntry.t()), list(EdgeEntry.t())}
@@ -33,7 +33,12 @@ defmodule Foundry.Context.GraphBuilder do
       |> derive_edges()
       |> Enum.sort_by(&{&1.from, &1.to})
 
-    {nodes, edges}
+    # Add external infrastructure nodes and their edges (Phase C)
+    {external_nodes, external_edges} = derive_external_nodes_and_edges(nodes)
+    all_nodes = Enum.sort_by(nodes ++ external_nodes, & &1.id)
+    all_edges = Enum.sort_by(edges ++ external_edges, &{&1.from, &1.to})
+
+    {all_nodes, all_edges}
   end
 
   # ---------------------------------------------------------------------------
@@ -52,6 +57,7 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list = edge_list ++ derive_resource_edges(nodes, node_map)
     edge_list = edge_list ++ derive_auth_edges(nodes, node_map)
     edge_list = edge_list ++ derive_rule_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_provider_edges(nodes, node_map)
 
     edge_list
   end
@@ -88,11 +94,13 @@ defmodule Foundry.Context.GraphBuilder do
     nodes
     |> Enum.filter(&(&1.type == "job"))
     |> Enum.flat_map(fn job ->
-      # Phase 1: Look for a reactor in the same domain
-      # Phase 2+: Use @performs attribute if available
-      job_domain = job.domain
-      reactor = find_reactor_in_domain(node_map, job_domain)
-      if reactor, do: [EdgeEntry.new(job.module, reactor.module, :async)], else: []
+      cond do
+        job.performs ->
+          [EdgeEntry.new(job.module, job.performs, :async)]
+        true ->
+          reactor = find_reactor_in_domain(node_map, job.domain)
+          if reactor, do: [EdgeEntry.new(job.module, reactor.module, :async)], else: []
+      end
     end)
   end
 
@@ -154,25 +162,254 @@ defmodule Foundry.Context.GraphBuilder do
     nodes
     |> Enum.filter(&(&1.authentication_subject == true))
     |> Enum.flat_map(fn user_node ->
-      user_node.auth_strategies
-      |> Enum.flat_map(fn strategy ->
-        token_resource = Map.get(strategy, :token_resource) || Map.get(strategy, "token_resource")
-        if token_resource do
-          [EdgeEntry.new(user_node.module, token_resource, :authenticates)]
+      # Try to find token resource from auth_strategies or use heuristic
+      explicit_tokens =
+        user_node.auth_strategies
+        |> Enum.filter(&(&1.token_resource != nil))
+        |> Enum.map(& &1.token_resource)
+
+      implicit_tokens =
+        if Enum.empty?(explicit_tokens) do
+          # Fallback heuristic: token resource is usually {AppPrefix}.{Domain}.Token
+          app_prefix =
+            user_node.module
+            |> String.split(".")
+            |> List.first()
+
+          ["#{app_prefix}.#{user_node.domain}.Token"]
         else
           []
         end
-      end)
+
+      (explicit_tokens ++ implicit_tokens)
+      |> Enum.uniq()
+      |> Enum.map(&EdgeEntry.new(user_node.module, &1, :authenticates))
+    end)
+  end
+
+  # Provider edges: connect provider adapter modules to external provider systems
+  defp derive_provider_edges(nodes, _node_map) do
+    nodes
+    |> Enum.filter(&(&1.type == "provider"))
+    |> Enum.flat_map(fn provider ->
+      # Extract provider name from description or use module name as fallback
+      provider_name =
+        case Regex.run(~r/@provider_name\s+"([^"]+)"/, provider.description || "") do
+          [_, name] -> name
+          _ ->
+            # Fallback: use last segment of module name in snake_case
+            provider.module
+            |> String.split(".")
+            |> List.last()
+            |> String.downcase()
+        end
+
+      [EdgeEntry.new(provider.module, "external:#{provider_name}", :calls_provider)]
     end)
   end
 
   # Rule edges: detect which resources/steps a rule guards
-  # Three mechanisms:
-  # 1. Ash.Policy.Authorizer exposure (future: requires policy introspection)
-  # 2. "Applied by:" parsing in moduledoc (future: requires pattern matching)
-  # 3. Source file scan (fallback for common patterns)
-  # For now: stub implementation returns empty list
-  defp derive_rule_edges(_nodes, _node_map) do
-    []
+  # Parse "Applied by:" entries from rule source file (moduledoc)
+  defp derive_rule_edges(nodes, node_map) do
+    nodes
+    |> Enum.filter(&(&1.type == "rule"))
+    |> Enum.flat_map(fn rule ->
+      module_name = rule.module
+      # Always try to parse from source for rules (since description callback
+      # often contains only a short description, not the full moduledoc with "Applied by:")
+      applied_by_targets = parse_applied_by_from_source(module_name)
+
+      applied_by_targets
+      |> Enum.filter(&Map.has_key?(node_map, &1))
+      |> Enum.map(&EdgeEntry.new(rule.module, &1, :guards))
+    end)
   end
+
+  # Parse "Applied by: Module.A, Module.B" from rule description
+  # Matches pattern: "Applied by: " followed by comma/newline-separated modules
+  defp parse_applied_by_from_description(text) do
+    case Regex.run(~r/Applied by:\s*(.*?)(?:\n\n|\z)/s, text) do
+      [_, list] ->
+        list
+        |> String.split(~r/[,\n]/)
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+      _ ->
+        []
+    end
+  end
+
+  # Fallback: try to find "Applied by:" in the source file
+  defp parse_applied_by_from_source(module_name) do
+    # Convert module name to file path and try to read source
+    # Module paths like "IgamingRef.Finance.Rules.SufficientBalance" -> search in rules.ex
+    case find_module_source_section(module_name) do
+      {:ok, section} ->
+        parse_applied_by_from_description(section)
+      :error ->
+        []
+    end
+  rescue
+    _ -> []
+  end
+
+  # Helper: find module source section (the moduledoc for this specific rule)
+  defp find_module_source_section(module_name) do
+    try do
+      module_atom = String.to_existing_atom("Elixir." <> module_name)
+      case module_atom.__info__(:compile) do
+        compile_info when is_list(compile_info) ->
+          source = Keyword.get(compile_info, :source)
+          # Source may be a charlist or string
+          source_path =
+            if is_list(source) do
+              source |> to_string()
+            else
+              source
+            end
+
+          if source_path && File.exists?(source_path) do
+            content = File.read!(source_path)
+            # Extract just the module's section
+            # Find "defmodule <ModuleName>" and get the next ~25 lines
+            # (this covers the @moduledoc, @compliance, @spec_invariants comments)
+            module_short_name = module_name |> String.split(".") |> List.last()
+            pattern = "defmodule.*#{Regex.escape(module_short_name)} do"
+
+            case Regex.run(~r/#{pattern}/m, content, return: :index) do
+              [{start_pos, _length}] ->
+                # Extract ~30 lines starting from this position
+                rest = String.slice(content, start_pos..-1)
+                lines = String.split(rest, "\n") |> Enum.take(30) |> Enum.join("\n")
+                {:ok, lines}
+              _ ->
+                :error
+            end
+          else
+            :error
+          end
+        _ -> :error
+      end
+    rescue
+      _ -> :error
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # External node synthesis (Phase C)
+  # ---------------------------------------------------------------------------
+
+  defp derive_external_nodes_and_edges(nodes) do
+    # Collect edges to external systems, grouped by domain for postgres
+    postgres_by_domain =
+      for n <- nodes,
+          n.type == "resource",
+          n.data_layer && String.contains?(to_string(n.data_layer), "AshPostgres"),
+          reduce: %{} do
+        acc ->
+          domain = n.domain
+          edge = EdgeEntry.new(n.module, "external:postgres:#{domain}", :persists_to)
+          Map.update(acc, domain, [edge], fn edges -> edges ++ [edge] end)
+      end
+
+    postgres_edges = postgres_by_domain |> Map.values() |> Enum.concat()
+
+    oban_edges =
+      for n <- nodes,
+          n.type == "job",
+          n.oban_queues && length(n.oban_queues) > 0,
+          do: EdgeEntry.new(n.module, "external:oban_queue", :queues_via)
+
+    external_edges = postgres_edges ++ oban_edges
+
+    # Create external postgres nodes for each domain that has AshPostgres resources
+    postgres_nodes =
+      postgres_by_domain
+      |> Enum.map(fn {domain, _edges} ->
+        %NodeEntry{
+          module: "external:postgres:#{domain}",
+          id: "external:postgres:#{domain}",
+          type: "external",
+          domain: "Infrastructure",
+          description: "PostgreSQL database for #{domain} domain (AshPostgres)",
+          app: nil,
+          sensitive: false,
+          attributes: [],
+          actions: [],
+          rules: [],
+          compliance: [],
+          adrs: [],
+          runbook: nil,
+          test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
+          data_layer: nil,
+          pending_migrations: false,
+          paper_trail: false,
+          archival: false,
+          state_machine: nil,
+          api_routes: [],
+          telemetry_prefix: nil,
+          money_attributes: [],
+          authentication_subject: false,
+          oban_queues: [],
+          rate_limited: false,
+          feature_flags: [],
+          steps: [],
+          performs: nil,
+          outputs: [],
+          agent_steps: [],
+          relationships: [],
+          auth_strategies: [],
+          last_modified: nil
+        }
+      end)
+
+    # Oban external node (singleton)
+    oban_node =
+      if length(oban_edges) > 0 do
+        [%NodeEntry{
+          module: "external:oban_queue",
+          id: "external:oban_queue",
+          type: "external",
+          domain: "Infrastructure",
+          description: "Oban background job queue",
+          app: nil,
+          sensitive: false,
+          attributes: [],
+          actions: [],
+          rules: [],
+          compliance: [],
+          adrs: [],
+          runbook: nil,
+          test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
+          data_layer: nil,
+          pending_migrations: false,
+          paper_trail: false,
+          archival: false,
+          state_machine: nil,
+          api_routes: [],
+          telemetry_prefix: nil,
+          money_attributes: [],
+          authentication_subject: false,
+          oban_queues: [],
+          rate_limited: false,
+          feature_flags: [],
+          steps: [],
+          performs: nil,
+          outputs: [],
+          agent_steps: [],
+          relationships: [],
+          auth_strategies: [],
+          last_modified: nil
+        }]
+      else
+        []
+      end
+
+    external_nodes = postgres_nodes ++ oban_node
+
+    {external_nodes, external_edges}
+  end
+
+  defp add_if(list, true, item), do: list ++ [item]
+  defp add_if(list, false, _), do: list
 end

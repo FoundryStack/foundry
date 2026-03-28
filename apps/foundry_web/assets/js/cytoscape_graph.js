@@ -529,6 +529,92 @@ export class CytoscapeGraph {
           'target-arrow-fill': 'filled'
         }
       },
+      // New relation types from Phase A-B (data-driven edge derivation)
+      {
+        selector: 'edge[relation="references"]',
+        style: {
+          'line-color': c.b2 || 'var(--fg-b2)',
+          'target-arrow-color': c.b2 || 'var(--fg-b2)',
+          'target-arrow-shape': 'triangle',
+          'line-style': 'solid'
+        }
+      },
+      {
+        selector: 'edge[relation="referenced_by"]',
+        style: {
+          'line-color': c.t2 || 'var(--fg-t2)',
+          'target-arrow-color': c.t2 || 'var(--fg-t2)',
+          'target-arrow-shape': 'triangle',
+          'line-style': 'solid'
+        }
+      },
+      {
+        selector: 'edge[relation="authenticates"]',
+        style: {
+          'line-color': c.gn || 'var(--fg-gn)',
+          'target-arrow-color': c.gn || 'var(--fg-gn)',
+          'line-style': 'dashed',
+          'width': 1.8
+        }
+      },
+      {
+        selector: 'edge[relation="persists_to"]',
+        style: {
+          'line-color': c.t3 || 'var(--fg-t3)',
+          'target-arrow-color': c.t3 || 'var(--fg-t3)',
+          'line-style': 'dotted',
+          'width': 1
+        }
+      },
+      {
+        selector: 'edge[relation="queues_via"]',
+        style: {
+          'line-color': c.pu || 'var(--fg-pu)',
+          'target-arrow-color': c.pu || 'var(--fg-pu)',
+          'line-style': 'dotted',
+          'width': 1
+        }
+      },
+      // External node styling
+      {
+        selector: 'node[type="external"]',
+        style: {
+          'border-style': 'dashed',
+          'border-width': 1,
+          'opacity': 0.7,
+          'background-color': c.s3 || 'var(--bg-s3)',
+          'border-color': c.t3 || 'var(--fg-t3)'
+        }
+      },
+      // Step color coding by step_kind
+      {
+        selector: 'node[nodeKind="step"][step_kind="read"]',
+        style: {
+          'background-color': c.bl || 'var(--fg-bl)',
+          'border-color': c.bl || 'var(--fg-bl)'
+        }
+      },
+      {
+        selector: 'node[nodeKind="step"][step_kind="write"]',
+        style: {
+          'background-color': c.gn || 'var(--fg-gn)',
+          'border-color': c.gn || 'var(--fg-gn)'
+        }
+      },
+      {
+        selector: 'node[nodeKind="step"][step_kind="map"]',
+        style: {
+          'background-color': c.pu || 'var(--fg-pu)',
+          'border-color': c.pu || 'var(--fg-pu)'
+        }
+      },
+      {
+        selector: 'node[nodeKind="step"][step_kind="custom"]',
+        style: {
+          'background-color': c.t2 || 'var(--fg-t2)',
+          'border-color': c.t2 || 'var(--fg-t2)'
+        }
+      },
       // Compound edge endpoints
       {
         selector: 'edge:compound',

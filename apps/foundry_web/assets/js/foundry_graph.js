@@ -169,6 +169,7 @@ export function normalizeNode(raw) {
     name,
     nodeKind: 'state'
   }))
+  const smTransitions = sm.transitions || []
 
   // Merge agent steps via step_id lookup
   const steps = (raw.steps || []).map(s => ({
@@ -190,7 +191,7 @@ export function normalizeNode(raw) {
     arch: raw.archival,
     dl: raw.data_layer,
     rl: raw.rate_limited,
-    sm: states.length > 0 ? { states } : null,
+    sm: states.length > 0 ? { states, transitions: smTransitions } : null,
     steps,
     routes: raw.api_routes || [],
     money: raw.money_attributes || [],
