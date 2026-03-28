@@ -557,11 +557,15 @@ defmodule Foundry.SparkMeta do
       end
 
     if Oban.Worker in behaviours do
-      # Extract queue names from Oban DSL
+      # Extract queue names from Oban.Worker configuration
+      # Oban.Worker is NOT a Spark DSL module; queue is in use Oban.Worker, queue: :default
       queues =
         try do
-          SparkMeta.entities(module, [:oban])
-          |> Enum.map(&to_string(&1.queue))
+          opts = module.__oban_opts__()
+          case Keyword.get(opts, :queue) do
+            nil -> []
+            q -> [to_string(q)]
+          end
         rescue
           _ -> []
         end

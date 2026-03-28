@@ -58,6 +58,7 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list = edge_list ++ derive_auth_edges(nodes, node_map)
     edge_list = edge_list ++ derive_rule_edges(nodes, node_map)
     edge_list = edge_list ++ derive_provider_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_blueprint_edges(nodes, node_map)
 
     edge_list
   end
@@ -66,7 +67,7 @@ defmodule Foundry.Context.GraphBuilder do
   # Steps now carry step_kind (:read, :write, :map, :custom) and target_resource (FQN)
   defp derive_reactor_edges(nodes, _node_map) do
     nodes
-    |> Enum.filter(&(&1.type == "reactor"))
+    |> Enum.filter(&(&1.type in ["reactor", "transfer"]))
     |> Enum.flat_map(fn reactor ->
       reactor.steps
       |> Enum.flat_map(fn step ->
@@ -214,6 +215,35 @@ defmodule Foundry.Context.GraphBuilder do
     end)
   end
 
+  # Blueprint edges: detect which reactors/transfers a blueprint configures
+  # Parse "Used by:" entries from blueprint description
+  defp derive_blueprint_edges(nodes, node_map) do
+    nodes
+    |> Enum.filter(&(&1.type == "blueprint"))
+    |> Enum.flat_map(fn blueprint ->
+      used_by_targets = parse_used_by_from_description(blueprint.description)
+
+      used_by_targets
+      |> Enum.filter(&Map.has_key?(node_map, &1))
+      |> Enum.map(&EdgeEntry.new(blueprint.module, &1, :configures))
+    end)
+  end
+
+  # Parse "Used by: Module.A, Module.B" from blueprint description
+  # Matches pattern: "Used by: " followed by comma/newline-separated modules
+  defp parse_used_by_from_description(text) when is_nil(text), do: []
+  defp parse_used_by_from_description(text) do
+    case Regex.run(~r/Used by:\s*(.*?)(?:\n\n|\z)/s, text) do
+      [_, list] ->
+        list
+        |> String.split(~r/[,\n]/)
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+      _ ->
+        []
+    end
+  end
+
   # Parse "Applied by: Module.A, Module.B" from rule description
   # Matches pattern: "Applied by: " followed by comma/newline-separated modules
   defp parse_applied_by_from_description(text) do
@@ -331,7 +361,7 @@ defmodule Foundry.Context.GraphBuilder do
           id: "external:postgres:#{domain}",
           type: "external",
           domain: "Infrastructure",
-          description: "PostgreSQL database for #{domain} domain (AshPostgres)",
+          description: "PostgreSQL — #{domain} domain tables (AshPostgres)",
           app: nil,
           sensitive: false,
           attributes: [],
@@ -411,12 +441,13 @@ defmodule Foundry.Context.GraphBuilder do
       |> Enum.map(fn provider_id ->
         # Extract provider name from "external:provider_name"
         provider_name = String.replace(provider_id, "external:", "")
+        human_name = humanize_provider_name(provider_name)
         %NodeEntry{
           module: provider_id,
           id: provider_id,
           type: "external",
           domain: "Infrastructure",
-          description: "External provider: #{provider_name}",
+          description: "External API: #{human_name}",
           app: nil,
           sensitive: false,
           attributes: [],
@@ -464,6 +495,16 @@ defmodule Foundry.Context.GraphBuilder do
         |> List.last()
         |> String.downcase()
     end
+  end
+
+  # Humanize provider name for display in external node descriptions
+  # e.g. "pragmaticplayv1" -> "Pragmatic Play V1"
+  defp humanize_provider_name(provider_name) do
+    provider_name
+    |> String.split(~r/(?=[A-Z])|_/)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
   end
 
   defp add_if(list, true, item), do: list ++ [item]
