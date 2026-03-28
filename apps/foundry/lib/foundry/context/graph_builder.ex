@@ -279,7 +279,7 @@ defmodule Foundry.Context.GraphBuilder do
             case Regex.run(~r/#{pattern}/m, content, return: :index) do
               [{start_pos, _length}] ->
                 # Extract ~30 lines starting from this position
-                rest = String.slice(content, start_pos..-1)
+                rest = String.slice(content, start_pos..-1//1)
                 lines = String.split(rest, "\n") |> Enum.take(30) |> Enum.join("\n")
                 {:ok, lines}
               _ ->
