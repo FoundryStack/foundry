@@ -192,18 +192,7 @@ defmodule Foundry.Context.GraphBuilder do
     nodes
     |> Enum.filter(&(&1.type == "provider"))
     |> Enum.flat_map(fn provider ->
-      # Extract provider name from description or use module name as fallback
-      provider_name =
-        case Regex.run(~r/@provider_name\s+"([^"]+)"/, provider.description || "") do
-          [_, name] -> name
-          _ ->
-            # Fallback: use last segment of module name in snake_case
-            provider.module
-            |> String.split(".")
-            |> List.last()
-            |> String.downcase()
-        end
-
+      provider_name = extract_provider_name(provider)
       [EdgeEntry.new(provider.module, "external:#{provider_name}", :calls_provider)]
     end)
   end
@@ -320,7 +309,18 @@ defmodule Foundry.Context.GraphBuilder do
           n.oban_queues && length(n.oban_queues) > 0,
           do: EdgeEntry.new(n.module, "external:oban_queue", :queues_via)
 
-    external_edges = postgres_edges ++ oban_edges
+    # Collect provider edges and extract unique provider names
+    provider_edges =
+      for n <- nodes,
+          n.type == "provider",
+          do: EdgeEntry.new(n.module, "external:#{extract_provider_name(n)}", :calls_provider)
+
+    provider_names =
+      provider_edges
+      |> Enum.map(& &1.to)
+      |> Enum.uniq()
+
+    external_edges = postgres_edges ++ oban_edges ++ provider_edges
 
     # Create external postgres nodes for each domain that has AshPostgres resources
     postgres_nodes =
@@ -405,9 +405,65 @@ defmodule Foundry.Context.GraphBuilder do
         []
       end
 
-    external_nodes = postgres_nodes ++ oban_node
+    # Provider external nodes
+    provider_nodes =
+      provider_names
+      |> Enum.map(fn provider_id ->
+        # Extract provider name from "external:provider_name"
+        provider_name = String.replace(provider_id, "external:", "")
+        %NodeEntry{
+          module: provider_id,
+          id: provider_id,
+          type: "external",
+          domain: "Infrastructure",
+          description: "External provider: #{provider_name}",
+          app: nil,
+          sensitive: false,
+          attributes: [],
+          actions: [],
+          rules: [],
+          compliance: [],
+          adrs: [],
+          runbook: nil,
+          test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
+          data_layer: nil,
+          pending_migrations: false,
+          paper_trail: false,
+          archival: false,
+          state_machine: nil,
+          api_routes: [],
+          telemetry_prefix: nil,
+          money_attributes: [],
+          authentication_subject: false,
+          oban_queues: [],
+          rate_limited: false,
+          feature_flags: [],
+          steps: [],
+          performs: nil,
+          outputs: [],
+          agent_steps: [],
+          relationships: [],
+          auth_strategies: [],
+          last_modified: nil
+        }
+      end)
+
+    external_nodes = postgres_nodes ++ oban_node ++ provider_nodes
 
     {external_nodes, external_edges}
+  end
+
+  # Extract provider name from a provider node
+  defp extract_provider_name(provider) do
+    case Regex.run(~r/@provider_name\s+"([^"]+)"/, provider.description || "") do
+      [_, name] -> String.downcase(name)
+      _ ->
+        # Fallback: use last segment of module name in snake_case
+        provider.module
+        |> String.split(".")
+        |> List.last()
+        |> String.downcase()
+    end
   end
 
   defp add_if(list, true, item), do: list ++ [item]
