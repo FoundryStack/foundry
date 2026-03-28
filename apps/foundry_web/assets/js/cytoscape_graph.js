@@ -51,11 +51,11 @@ export class CytoscapeGraph {
     this._bindEvents()
   }
 
-  setupHtmlLabels(entityTpl, boundaryTpl) {
+  setupHtmlLabels(entityTpl, boundaryTpl, domainClusterTpl) {
     if (this._htmlLabelsSetup) return
     this._htmlLabelsSetup = true
 
-    this.cy.nodeHtmlLabel([
+    const templates = [
       {
         query: 'node[nodeKind="entity"]',
         halign: 'center',
@@ -65,14 +65,24 @@ export class CytoscapeGraph {
         tpl: entityTpl
       },
       {
-        query: 'node[nodeKind="cluster"]',
+        query: 'node.domain-cluster',
+        halign: 'left',
+        valign: 'top',
+        halignBox: 'left',
+        valignBox: 'top',
+        tpl: domainClusterTpl
+      },
+      {
+        query: 'node[nodeKind="cluster"]:not(.domain-cluster)',
         halign: 'left',
         valign: 'top',
         halignBox: 'left',
         valignBox: 'top',
         tpl: boundaryTpl
       }
-    ])
+    ]
+
+    this.cy.nodeHtmlLabel(templates)
   }
 
   load(contextJson) {
@@ -394,7 +404,7 @@ export class CytoscapeGraph {
           'border-color': c.rd || 'var(--fg-rd)'
         }
       },
-      // Cluster/compound
+      // Cluster/compound (base)
       {
         selector: 'node[nodeKind="cluster"]',
         style: {
@@ -408,6 +418,17 @@ export class CytoscapeGraph {
           'border-style': 'dashed',
           'text-valign': 'center',
           'text-halign': 'center'
+        }
+      },
+      // Domain cluster styling with colors
+      {
+        selector: 'node.domain-cluster',
+        style: {
+          'border-color': 'data(typeColor)',
+          'border-width': 2,
+          'background-color': c.base || 'var(--fg-base)',
+          'background-opacity': 0.3,
+          'padding': 24
         }
       },
       // Step/state nodes
@@ -481,7 +502,7 @@ export class CytoscapeGraph {
         }
       },
       {
-        selector: 'edge[relation="guard"], edge[relation="eligibleIf"]',
+        selector: 'edge[relation="guard"], edge[relation="eligibleIf"], edge[relation="guards"]',
         style: {
           'line-style': 'dotted',
           'line-color': c.yw || 'var(--fg-yw)',
@@ -573,6 +594,15 @@ export class CytoscapeGraph {
           'target-arrow-color': c.pu || 'var(--fg-pu)',
           'line-style': 'dotted',
           'width': 1
+        }
+      },
+      {
+        selector: 'edge[relation="calls_provider"]',
+        style: {
+          'line-color': c.yw || 'var(--fg-yw)',
+          'target-arrow-color': c.yw || 'var(--fg-yw)',
+          'line-style': 'dotted',
+          'width': 1.5
         }
       },
       // External node styling

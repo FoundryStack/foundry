@@ -426,6 +426,38 @@
   border-radius: 3px;
 }
 
+/* Domain cluster label styling */
+.cy-node-html.cy-domain-cluster {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.cy-domain-cluster .domain-cluster-label {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Step node styling with kind colors */
+.cy-node-html.cy-step-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+/* External node label styling */
+.cy-node-html.cy-external-node {
+  opacity: 0.75;
+  font-style: italic;
+}
+
 .foundry-map-layout ::-webkit-scrollbar-thumb:hover {
   background: var(--fg-b3);
 }

@@ -177,11 +177,14 @@ export function normalizeNode(raw) {
     agent: (raw.agent_steps || []).find(a => a.step_id === s.id)
   }))
 
+  // Description fallback: if no description, use "type in domain"
+  const description = raw.description || (raw.type && raw.domain ? `${raw.type} in ${raw.domain}` : raw.type || 'No description')
+
   return {
     id: raw.id,
     type: raw.type,
     domain: raw.domain,
-    description: raw.description,
+    description,
     nodeKind: 'entity',
     cov,
     reqs,
@@ -226,6 +229,21 @@ export function getTransferNodeIds(nodes) {
  */
 export function getFsmResourceIds(nodes) {
   return new Set(nodes.filter(n => n.type === 'resource' && n.sm).map(n => n.id))
+}
+
+/**
+ * Strip app prefix and return short label
+ * "IgamingRef.Finance.Wallet" → "Wallet"
+ * "external:postgres:Finance" → "postgres:Finance"
+ */
+export function shortLabel(id) {
+  if (!id) return id
+  // Don't strip external node prefixes, just the module FQN
+  if (id.startsWith('external:')) {
+    return id.replace('external:', '')
+  }
+  const parts = id.split('.')
+  return parts[parts.length - 1]
 }
 
 /**
@@ -285,6 +303,33 @@ export function covColor(c) {
 }
 
 /**
+ * Domain color mapping - distinct colors for each domain
+ */
+const DOMAIN_COLORS = {
+  'Finance': '#60a5fa',      // blue
+  'Players': '#34d399',      // green
+  'Promotions': '#f59e0b',   // amber
+  'Gaming': '#a78bfa',       // purple
+  'Accounts': '#06b6d4',     // cyan
+  'Infrastructure': '#6b7280' // gray
+}
+
+export function getDomainColor(domain) {
+  // Return specific color if defined, or generate a stable color based on domain hash
+  if (DOMAIN_COLORS[domain]) return DOMAIN_COLORS[domain]
+
+  // Fallback: generate stable color from domain name hash
+  let hash = 0
+  for (let i = 0; i < domain.length; i++) {
+    hash = ((hash << 5) - hash) + domain.charCodeAt(i)
+    hash = hash & hash // Convert to 32bit integer
+  }
+
+  const colors = Object.values(DOMAIN_COLORS)
+  return colors[Math.abs(hash) % colors.length]
+}
+
+/**
  * Domain coverage by type
  */
 export function domainCoverage(nodes) {
@@ -308,6 +353,17 @@ export function domainCoverage(nodes) {
 export function entityTpl(data) {
   const n = data
   const indicators = buildIndicators(n)
+  const classes = n.type === 'external' ? 'cy-external-node' : ''
+
+  // For external nodes, show simpler layout
+  if (n.type === 'external') {
+    return `
+      <div class="cy-node-html ${classes}">
+        <span class="title">${shortLabel(n.id)}</span>
+      </div>
+    `
+  }
+
   return `
     <div class="cy-node-html">
       ${indicators}
@@ -321,7 +377,7 @@ export function entityTpl(data) {
             <circle cx="12" cy="12" r="10"></circle>
           </svg>
         </span>
-        <span class="title">${n.id}</span>
+        <span class="title">${shortLabel(n.id)}</span>
       </div>
       ${n.cov > 0 ? `
         <div class="req-badges">
@@ -333,16 +389,43 @@ export function entityTpl(data) {
 }
 
 /**
+ * Domain cluster HTML template
+ */
+export function domainClusterTpl(data) {
+  const n = data
+  return `
+    <div class="cy-node-html cy-domain-cluster">
+      <span class="domain-cluster-label" style="color:${n.typeColor}">${n.label}</span>
+    </div>
+  `
+}
+
+/**
  * Boundary (cluster) node HTML template
  */
 export function boundaryTpl(data) {
   const n = data
-  const label = n.type === 'transfer' ? `Transfer: ${n.id}` : (n.sm ? `FSM: ${n.id}` : n.id)
+  let icon = '◈'
+  let label = n.id
+
+  if (n.type === 'transfer') {
+    icon = '⇄'
+    label = shortLabel(n.id)
+  } else if (n.type === 'reactor') {
+    icon = '◈'
+    label = shortLabel(n.id)
+  } else if (n.sm) {
+    icon = '◊'
+    label = shortLabel(n.id)
+  } else {
+    label = shortLabel(n.id)
+  }
+
   return `
     <div class="cy-node-html cy-node-boundary">
       <div class="domain-row">
         <span class="domain-dot" style="background: var(--fg-yw)"></span>
-        <span style="color: var(--fg-t2)">${label}</span>
+        <span style="color: var(--fg-t2)">${icon} ${label}</span>
       </div>
     </div>
   `
@@ -400,13 +483,15 @@ export function buildCytoscapeElements(nodes, edges) {
   // Create domain cluster compounds (one per unique domain)
   const domains = new Set(nodes.map(n => n.domain).filter(Boolean))
   domains.forEach(domain => {
+    const domainColor = getDomainColor(domain)
     elements.push({
       group: 'nodes',
       data: {
         id: `domain:${domain}`,
         label: domain,
         nodeKind: 'cluster',
-        domain
+        domain,
+        typeColor: domainColor
       },
       classes: 'domain-cluster'
     })
@@ -461,16 +546,49 @@ export function buildCytoscapeElements(nodes, edges) {
     // Transfer steps
     if (node.type === 'transfer' && node.steps) {
       node.steps.forEach((step, idx) => {
+        // Normalize step_kind (remove atom prefix if present)
+        const stepKind = (step.step_kind || '').toString().replace(/^:/, '')
+
+        // Build step label with kind icon
+        let stepIcon = '⚙'
+        if (stepKind === 'read') {
+          stepIcon = '📖'
+        } else if (stepKind === 'write') {
+          stepIcon = '✏'
+        } else if (stepKind === 'map') {
+          stepIcon = '◈'
+        }
+        const stepLabel = `${stepIcon} ${step.name || `Step ${idx}`}`
+
         elements.push({
           group: 'nodes',
           data: {
             id: `${node.id}:step:${idx}`,
-            label: step.name || `Step ${idx}`,
+            label: stepLabel,
             nodeKind: 'step',
-            parent: `compound:${node.id}`
+            parent: `compound:${node.id}`,
+            step_kind: stepKind,
+            description: step.description || ''
           }
         })
       })
+
+      // Add sequence edges between steps
+      if (node.steps && node.steps.length > 1) {
+        node.steps.forEach((step, idx) => {
+          if (idx > 0) {
+            elements.push({
+              group: 'edges',
+              data: {
+                id: `${node.id}:seq:${idx}`,
+                source: `${node.id}:step:${idx - 1}`,
+                target: `${node.id}:step:${idx}`,
+                relation: 'sequence'
+              }
+            })
+          }
+        })
+      }
     }
 
     // FSM states
@@ -526,7 +644,7 @@ export function mountFoundryGraph(container, contextJson) {
   graph.cy.add(elements)
 
   // Set up HTML labels
-  graph.setupHtmlLabels(entityTpl, boundaryTpl)
+  graph.setupHtmlLabels(entityTpl, boundaryTpl, domainClusterTpl)
 
   // Build canvas overlays
   buildCanvasOverlays(container, normalizedNodes)
