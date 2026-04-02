@@ -203,25 +203,28 @@ export function normalizeNode(raw) {
     adrs: raw.adrs || [],
     pending_migrations: raw.pending_migrations,
     last_modified: raw.last_modified,
+    schedule: raw.schedule || null,
+    oban_queues: raw.oban_queues || [],
+    performs: raw.performs || null,
     // Keep original for any missing fields
     ...raw
   }
 }
 
 /**
- * Get compound node IDs: transfers + FSM resources
+ * Get compound node IDs: transfers, reactors + FSM resources
  */
 export function getCompoundNodeIds(nodes) {
-  const transfers = nodes.filter(n => n.type === 'transfer').map(n => n.id)
+  const transfers = nodes.filter(n => n.type === 'transfer' || n.type === 'reactor').map(n => n.id)
   const fsms = nodes.filter(n => n.type === 'resource' && n.sm).map(n => n.id)
   return new Set([...transfers, ...fsms])
 }
 
 /**
- * Get transfer node IDs
+ * Get transfer/reactor node IDs (nodes that have steps)
  */
 export function getTransferNodeIds(nodes) {
-  return new Set(nodes.filter(n => n.type === 'transfer').map(n => n.id))
+  return new Set(nodes.filter(n => n.type === 'transfer' || n.type === 'reactor').map(n => n.id))
 }
 
 /**
@@ -270,9 +273,12 @@ export function buildIndicators(n) {
     indicators.push(`<span data-indicator="pm" title="Pending migrations">↻</span>`)
   }
 
-  // Oban queue
+  // Oban queue / job schedule
   if ((n.oban_queues || []).length > 0) {
     indicators.push(`<span data-indicator="oban" title="Oban queues">⚙</span>`)
+  }
+  if (n.schedule) {
+    indicators.push(`<span data-indicator="schedule" title="Schedule: ${n.schedule}">⏱</span>`)
   }
 
   // Rate limiting
@@ -364,6 +370,10 @@ export function entityTpl(data) {
     `
   }
 
+  const jobAnnotation = n.type === 'job' && (n.oban_queues?.length > 0 || n.schedule)
+    ? `<div style="font-size:9px;color:var(--fg-pu);margin-top:1px">⚙ ${n.oban_queues?.[0] || 'default'}${n.schedule ? ' · ' + n.schedule : ''}</div>`
+    : ''
+
   return `
     <div class="cy-node-html">
       ${indicators}
@@ -379,6 +389,7 @@ export function entityTpl(data) {
         </span>
         <span class="title">${shortLabel(n.id)}</span>
       </div>
+      ${jobAnnotation}
       ${n.cov > 0 ? `
         <div class="req-badges">
           <div style="width:${n.cov}%; height:3px; background:${covColor(n.cov)}; border-radius:1px"></div>
@@ -417,19 +428,18 @@ export function clusterTpl(data) {
 
   // Transfer/reactor/FSM cluster: show with icon
   let icon = '◈'
-  let label = n.id
+  let label = shortLabel(n.id)
 
   if (n.type === 'transfer') {
     icon = '⇄'
-    label = shortLabel(n.id)
   } else if (n.type === 'reactor') {
     icon = '◈'
-    label = shortLabel(n.id)
+  } else if (n.type === 'job') {
+    icon = '⚙'
+  } else if (n.type === 'blueprint') {
+    icon = '◇'
   } else if (n.sm) {
     icon = '◊'
-    label = shortLabel(n.id)
-  } else {
-    label = shortLabel(n.id)
   }
 
   return `
@@ -493,10 +503,44 @@ export function buildCanvasOverlays(container, nodes) {
 }
 
 /**
+ * Consolidate fragmented external nodes.
+ * e.g. "external:postgres:Finance" + "external:postgres:Players" → single "external:postgres"
+ * Returns { nodes: dedupedNodes, edgeMap: { originalId → collapsedId } }
+ */
+export function consolidateExternalNodes(nodes) {
+  const edgeMap = {}
+  const seen = new Set()
+  const result = []
+
+  for (const n of nodes) {
+    if (n.type === 'external') {
+      // Pattern: external:<provider>:<suffix> → collapse to external:<provider>
+      const match = n.id.match(/^(external:[^:]+):/)
+      if (match) {
+        const collapsedId = match[1]
+        edgeMap[n.id] = collapsedId
+        if (!seen.has(collapsedId)) {
+          seen.add(collapsedId)
+          result.push({ ...n, id: collapsedId, label: collapsedId.replace('external:', '') })
+        }
+        continue
+      }
+    }
+    result.push(n)
+  }
+
+  return { nodes: result, edgeMap }
+}
+
+/**
  * Build Cytoscape elements from normalized nodes/edges
  */
 export function buildCytoscapeElements(nodes, edges) {
   const elements = []
+
+  // Consolidate fragmented external nodes (e.g. external:postgres:Finance → external:postgres)
+  const { nodes: consolidatedNodes, edgeMap: externalEdgeMap } = consolidateExternalNodes(nodes)
+  nodes = consolidatedNodes
 
   // Create domain cluster compounds (one per unique domain)
   const domains = new Set(nodes.map(n => n.domain).filter(Boolean))
@@ -522,7 +566,7 @@ export function buildCytoscapeElements(nodes, edges) {
   compoundIds.forEach(id => {
     const node = nodes.find(n => n.id === id)
     if (!node) return
-    const label = node.type === 'transfer' ? `Transfer: ${id}` : `FSM: ${id}`
+    const label = shortLabel(id)
     elements.push({
       group: 'nodes',
       data: {
@@ -559,10 +603,10 @@ export function buildCytoscapeElements(nodes, edges) {
     })
   })
 
-  // Add step/state child nodes for transfers and FSMs
+  // Add step/state child nodes for transfers, reactors and FSMs
   nodes.forEach(node => {
-    // Transfer steps
-    if (node.type === 'transfer' && node.steps) {
+    // Transfer/reactor steps
+    if ((node.type === 'transfer' || node.type === 'reactor') && node.steps) {
       node.steps.forEach((step, idx) => {
         // Normalize step_kind (remove atom prefix if present)
         const stepKind = (step.step_kind || '').toString().replace(/^:/, '')
@@ -586,7 +630,9 @@ export function buildCytoscapeElements(nodes, edges) {
             nodeKind: 'step',
             parent: `compound:${node.id}`,
             step_kind: stepKind,
-            description: step.description || ''
+            description: step.description || step.name || `Step ${idx}`,
+            type: node.type,
+            domain: node.domain
           }
         })
       })
@@ -607,6 +653,23 @@ export function buildCytoscapeElements(nodes, edges) {
           }
         })
       }
+
+      // Guard edges: rule node → specific step (cross-compound, shows which rules each step uses)
+      node.steps.forEach((step, idx) => {
+        const stepNodeId = `${node.id}:step:${idx}`
+        const rulesApplied = step.rules_applied || []
+        rulesApplied.forEach(ruleId => {
+          elements.push({
+            group: 'edges',
+            data: {
+              id: `${ruleId}->guard->${stepNodeId}`,
+              source: ruleId,
+              target: stepNodeId,
+              relation: 'guard'
+            }
+          })
+        })
+      })
     }
 
     // FSM states
@@ -625,22 +688,24 @@ export function buildCytoscapeElements(nodes, edges) {
     }
   })
 
-  // Create edges (filter out data-model relationship edges to reduce visual clutter)
+  // Create edges — remap external node IDs through consolidation map
   edges.forEach(edge => {
-    // Skip data-model relationship edges (references/referenced_by)
-    // These are belongs_to/has_many relationships, not process flow
-    if (edge.relation === 'references' || edge.relation === 'referenced_by') {
-      return
-    }
+    const source = externalEdgeMap[edge.from] || edge.from
+    const target = externalEdgeMap[edge.to] || edge.to
+
+    // Skip self-edges that arise from consolidation (e.g. two postgres:X → postgres edges merged)
+    if (source === target) return
 
     elements.push({
       group: 'edges',
       data: {
-        id: `${edge.from}->${edge.to}`,
-        source: edge.from,
-        target: edge.to,
+        id: `${source}->${target}:${edge.relation}`,
+        source,
+        target,
         relation: edge.relation,
-        ...edge
+        ...edge,
+        from: source,
+        to: target
       }
     })
   })
@@ -668,7 +733,7 @@ export function mountFoundryGraph(container, contextJson) {
   graph.cy.add(elements)
 
   // Set up HTML labels
-  graph.setupHtmlLabels(entityTpl, boundaryTpl, domainClusterTpl)
+  graph.setupHtmlLabels(entityTpl, boundaryTpl, domainClusterTpl, stepTpl)
 
   // Build canvas overlays
   buildCanvasOverlays(container, normalizedNodes)
@@ -689,6 +754,19 @@ export function mountFoundryGraph(container, contextJson) {
   graph.onReady()
 
   return graph
+}
+
+/**
+ * HTML label template for step nodes
+ */
+export function stepTpl(data) {
+  const n = data
+  const icons = { read: '📖', write: '✏', map: '◈', custom: '⚙' }
+  const icon = icons[n.step_kind] || '⚙'
+  return `<div class="cy-node-html cy-step-node" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 4px">
+    <span>${icon}</span><br>
+    <span style="color:var(--fg-tx)">${n.label || n.id}</span>
+  </div>`
 }
 
 /**

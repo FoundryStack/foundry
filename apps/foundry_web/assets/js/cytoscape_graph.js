@@ -55,7 +55,7 @@ export class CytoscapeGraph {
     this._bindEvents()
   }
 
-  setupHtmlLabels(entityTpl, boundaryTpl, domainClusterTpl) {
+  setupHtmlLabels(entityTpl, boundaryTpl, domainClusterTpl, stepTpl) {
     if (this._htmlLabelsSetup) return
     this._htmlLabelsSetup = true
 
@@ -83,6 +83,14 @@ export class CytoscapeGraph {
         halignBox: 'center',
         valignBox: 'center',
         tpl: boundaryTpl
+      },
+      {
+        query: 'node[nodeKind="step"]',
+        halign: 'center',
+        valign: 'center',
+        halignBox: 'center',
+        valignBox: 'center',
+        tpl: stepTpl
       }
     ]
 
@@ -564,6 +572,16 @@ export class CytoscapeGraph {
         }
       },
       {
+        selector: 'edge[relation="configures"]',
+        style: {
+          'line-color': c.ac || 'var(--fg-ac)',
+          'target-arrow-color': c.ac || 'var(--fg-ac)',
+          'line-style': 'dashed',
+          'width': 1.5,
+          'opacity': 0.8
+        }
+      },
+      {
         selector: 'edge[relation="authenticates"]',
         style: {
           'line-color': c.gn || 'var(--fg-gn)',
@@ -610,7 +628,13 @@ export class CytoscapeGraph {
           'border-color': c.t3 || 'var(--fg-t3)'
         }
       },
-      // Step color coding by step_kind
+      // Step color coding by step_kind with white text for contrast
+      {
+        selector: 'node[nodeKind="step"]',
+        style: {
+          'color': '#ffffff'
+        }
+      },
       {
         selector: 'node[nodeKind="step"][step_kind="read"]',
         style: {
@@ -637,6 +661,54 @@ export class CytoscapeGraph {
         style: {
           'background-color': c.t2 || 'var(--fg-t2)',
           'border-color': c.t2 || 'var(--fg-t2)'
+        }
+      },
+      // Job node: dashed border to signal scheduled/async nature
+      {
+        selector: 'node[type="job"]',
+        style: {
+          'border-style': 'dashed',
+          'border-width': 1.5,
+          'border-color': c.pu || 'var(--fg-pu)'
+        }
+      },
+      // Blueprint node: diamond shape
+      {
+        selector: 'node[type="blueprint"]',
+        style: {
+          'shape': 'diamond',
+          'width': 110,
+          'height': 66,
+          'border-color': c.ac || 'var(--fg-ac)',
+          'border-width': 1
+        }
+      },
+      // Transfer compound cluster: green border
+      {
+        selector: 'node[nodeKind="cluster"][type="transfer"]',
+        style: {
+          'border-color': c.gn || 'var(--fg-gn)',
+          'border-width': 1.5
+        }
+      },
+      // Reactor compound cluster: purple border (distinct from transfer)
+      {
+        selector: 'node[nodeKind="cluster"][type="reactor"]',
+        style: {
+          'border-color': c.pu || 'var(--fg-pu)',
+          'border-width': 1.5
+        }
+      },
+      // audit_trail edges: dotted yellow, faded — AshPaperTrail write-through
+      {
+        selector: 'edge[relation="audit_trail"]',
+        style: {
+          'line-style': 'dotted',
+          'line-color': c.yw || 'var(--fg-yw)',
+          'target-arrow-color': c.yw || 'var(--fg-yw)',
+          'target-arrow-shape': 'triangle',
+          'opacity': 0.4,
+          'width': 1
         }
       },
       // Compound edge endpoints
