@@ -221,7 +221,7 @@
   padding: 6px 8px;
   box-sizing: border-box;
   pointer-events: none;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Segoe UI Symbol', 'Apple Symbols', 'Arial Unicode MS', sans-serif;
   font-size: 11px;
   line-height: 1.3;
   color: var(--fg-tx);

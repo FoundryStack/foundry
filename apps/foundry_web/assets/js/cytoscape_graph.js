@@ -8,17 +8,14 @@ let extensionsRegistered = false
 
 const LAYOUT_OPTIONS = {
   name: 'cose-bilkent',
+  randomize: false,
+  fit: true,
   padding: 55,
-  nodeRepulsion: 6000,
   idealEdgeLength: 80,
-  directed: false,
+  nodeRepulsion: 6000,
+  nodeDimensionsIncludeLabels: true,
   animate: true,
   animationDuration: 500,
-  randomize: false,
-  // Handle compound nodes better
-  tile: true,
-  // Increase spacing between nodes to avoid overlaps
-  spacingFactor: 1.5
 }
 
 export class CytoscapeGraph {
@@ -367,14 +364,14 @@ export class CytoscapeGraph {
           'shape': 'round-rectangle',
           'width': 170,
           'height': 64,
-          'background-color': c.base || 'var(--fg-base)',
+          'background-color': c.base,
           'border-width': 1,
-          'border-color': c.b1 || 'var(--fg-b1)',
+          'border-color': c.b1,
           'border-style': 'solid',
           'border-opacity': 1,
-          'color': c.tx || 'var(--fg-tx)',
+          'color': c.tx,
           'font-size': 11,
-          'font-family': 'system-ui, -apple-system, sans-serif',
+          'font-family': "'Segoe UI Symbol', 'Apple Symbols', 'Arial Unicode MS', sans-serif",
           'text-valign': 'center',
           'text-halign': 'center',
           'text-margin-x': 0,
@@ -395,7 +392,7 @@ export class CytoscapeGraph {
         style: {
           'border-width': 1,
           'border-style': 'dashed',
-          'border-color': c.yw || 'var(--fg-yw)'
+          'border-color': c.yw
         }
       },
       // Sensitive
@@ -403,7 +400,7 @@ export class CytoscapeGraph {
         selector: 'node.sensitive',
         style: {
           'border-width': 1,
-          'border-color': c.rd || 'var(--fg-rd)'
+          'border-color': c.rd
         }
       },
       // Cluster/compound (base)
@@ -426,13 +423,21 @@ export class CytoscapeGraph {
       {
         selector: 'node.domain-cluster',
         style: {
-          'border-color': 'data(typeColor)',
           'border-width': 2,
-          'background-color': c.base || 'var(--fg-base)',
-          'background-opacity': 0.3,
+          'background-color': c.base,
+          'background-opacity': 0.4,
           'padding': 24
         }
       },
+      { selector: 'node[domain="Finance"]',        style: { 'border-color': c.bl } },
+      { selector: 'node[domain="Players"]',        style: { 'border-color': c.gn } },
+      { selector: 'node[domain="Promotions"]',     style: { 'border-color': c.yw } },
+      { selector: 'node[domain="Gaming"]',         style: { 'border-color': c.pu } },
+      { selector: 'node[domain="Accounts"]',       style: { 'border-color': c.bl } },
+      { selector: 'node[domain="Infrastructure"]', style: { 'border-color': c.t2 } },
+      { selector: 'node[domain="Identity"]',       style: { 'border-color': c.gn } },
+      { selector: 'node[domain="Compliance"]',     style: { 'border-color': c.yw } },
+      { selector: 'node[domain="Game"]',           style: { 'border-color': c.pu } },
       // Step/state nodes
       {
         selector: 'node[nodeKind="step"], node[nodeKind="state"]',
@@ -440,6 +445,7 @@ export class CytoscapeGraph {
           'width': 88,
           'height': 40,
           'font-size': 9,
+          'font-family': "'Segoe UI Symbol', 'Apple Symbols', 'Arial Unicode MS', sans-serif",
           'text-valign': 'center',
           'text-halign': 'center',
           'text-wrap': 'none'
@@ -452,6 +458,7 @@ export class CytoscapeGraph {
           'width': 76,
           'height': 36,
           'font-size': 8,
+          'font-family': "'Segoe UI Symbol', 'Apple Symbols', 'Arial Unicode MS', sans-serif",
           'text-valign': 'center',
           'text-halign': 'center',
           'text-wrap': 'none'
@@ -462,7 +469,7 @@ export class CytoscapeGraph {
         selector: 'node:selected',
         style: {
           'border-width': 1.5,
-          'border-color': c.ac || 'var(--fg-ac)'
+          'border-color': c.ac
         }
       },
       // Phantom nodes
@@ -480,8 +487,8 @@ export class CytoscapeGraph {
         selector: 'edge',
         style: {
           'width': 1.5,
-          'line-color': c.t2 || 'var(--fg-t2)',
-          'target-arrow-color': c.t2 || 'var(--fg-t2)',
+          'line-color': c.t2,
+          'target-arrow-color': c.t2,
           'target-arrow-shape': 'triangle',
           'curve-style': 'bezier',
           'opacity': 0.8
@@ -491,7 +498,7 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="sequence"]',
         style: {
-          'line-color': c.t2 || 'var(--fg-t2)',
+          'line-color': c.t2,
           'target-arrow-shape': 'triangle'
         }
       },
@@ -499,16 +506,16 @@ export class CytoscapeGraph {
         selector: 'edge[relation="async"]',
         style: {
           'line-style': 'dashed',
-          'line-color': c.pu || 'var(--fg-pu)',
-          'target-arrow-color': c.pu || 'var(--fg-pu)'
+          'line-color': c.pu,
+          'target-arrow-color': c.pu
         }
       },
       {
         selector: 'edge[relation="guard"], edge[relation="eligibleIf"], edge[relation="guards"]',
         style: {
           'line-style': 'dotted',
-          'line-color': c.yw || 'var(--fg-yw)',
-          'target-arrow-color': c.yw || 'var(--fg-yw)',
+          'line-color': c.yw,
+          'target-arrow-color': c.yw,
           'width': 1.2
         }
       },
@@ -516,22 +523,22 @@ export class CytoscapeGraph {
         selector: 'edge[relation="compensation"]',
         style: {
           'width': 2,
-          'line-color': c.yw || 'var(--fg-yw)',
-          'target-arrow-color': c.yw || 'var(--fg-yw)'
+          'line-color': c.yw,
+          'target-arrow-color': c.yw
         }
       },
       {
         selector: 'edge[relation="error"]',
         style: {
           'line-style': 'dashed',
-          'line-color': c.rd || 'var(--fg-rd)',
-          'target-arrow-color': c.rd || 'var(--fg-rd)'
+          'line-color': c.rd,
+          'target-arrow-color': c.rd
         }
       },
       {
         selector: 'edge[relation="reads"]',
         style: {
-          'line-color': c.bl || 'var(--fg-bl)',
+          'line-color': c.bl,
           'target-arrow-shape': 'diamond',
           'target-arrow-fill': 'hollow'
         }
@@ -539,7 +546,7 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="writes"]',
         style: {
-          'line-color': c.gn || 'var(--fg-gn)',
+          'line-color': c.gn,
           'target-arrow-shape': 'diamond',
           'target-arrow-fill': 'filled'
         }
@@ -547,7 +554,7 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="triggers"]',
         style: {
-          'line-color': c.pu || 'var(--fg-pu)',
+          'line-color': c.pu,
           'target-arrow-shape': 'circle',
           'target-arrow-fill': 'filled'
         }
@@ -556,8 +563,8 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="references"]',
         style: {
-          'line-color': c.b2 || 'var(--fg-b2)',
-          'target-arrow-color': c.b2 || 'var(--fg-b2)',
+          'line-color': c.b2,
+          'target-arrow-color': c.b2,
           'target-arrow-shape': 'triangle',
           'line-style': 'solid'
         }
@@ -565,8 +572,8 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="referenced_by"]',
         style: {
-          'line-color': c.t2 || 'var(--fg-t2)',
-          'target-arrow-color': c.t2 || 'var(--fg-t2)',
+          'line-color': c.t2,
+          'target-arrow-color': c.t2,
           'target-arrow-shape': 'triangle',
           'line-style': 'solid'
         }
@@ -574,8 +581,8 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="configures"]',
         style: {
-          'line-color': c.ac || 'var(--fg-ac)',
-          'target-arrow-color': c.ac || 'var(--fg-ac)',
+          'line-color': c.ac,
+          'target-arrow-color': c.ac,
           'line-style': 'dashed',
           'width': 1.5,
           'opacity': 0.8
@@ -584,8 +591,8 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="authenticates"]',
         style: {
-          'line-color': c.gn || 'var(--fg-gn)',
-          'target-arrow-color': c.gn || 'var(--fg-gn)',
+          'line-color': c.gn,
+          'target-arrow-color': c.gn,
           'line-style': 'dashed',
           'width': 1.8
         }
@@ -593,8 +600,8 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="persists_to"]',
         style: {
-          'line-color': c.t3 || 'var(--fg-t3)',
-          'target-arrow-color': c.t3 || 'var(--fg-t3)',
+          'line-color': c.t3,
+          'target-arrow-color': c.t3,
           'line-style': 'dotted',
           'width': 1
         }
@@ -602,8 +609,8 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="queues_via"]',
         style: {
-          'line-color': c.pu || 'var(--fg-pu)',
-          'target-arrow-color': c.pu || 'var(--fg-pu)',
+          'line-color': c.pu,
+          'target-arrow-color': c.pu,
           'line-style': 'dotted',
           'width': 1
         }
@@ -611,8 +618,8 @@ export class CytoscapeGraph {
       {
         selector: 'edge[relation="calls_provider"]',
         style: {
-          'line-color': c.yw || 'var(--fg-yw)',
-          'target-arrow-color': c.yw || 'var(--fg-yw)',
+          'line-color': c.yw,
+          'target-arrow-color': c.yw,
           'line-style': 'dotted',
           'width': 1.5
         }
@@ -624,8 +631,8 @@ export class CytoscapeGraph {
           'border-style': 'dashed',
           'border-width': 1,
           'opacity': 0.7,
-          'background-color': c.s3 || 'var(--bg-s3)',
-          'border-color': c.t3 || 'var(--fg-t3)'
+          'background-color': c.s3,
+          'border-color': c.t3
         }
       },
       // Step color coding by step_kind with white text for contrast
@@ -638,29 +645,29 @@ export class CytoscapeGraph {
       {
         selector: 'node[nodeKind="step"][step_kind="read"]',
         style: {
-          'background-color': c.bl || 'var(--fg-bl)',
-          'border-color': c.bl || 'var(--fg-bl)'
+          'background-color': c.bl,
+          'border-color': c.bl
         }
       },
       {
         selector: 'node[nodeKind="step"][step_kind="write"]',
         style: {
-          'background-color': c.gn || 'var(--fg-gn)',
-          'border-color': c.gn || 'var(--fg-gn)'
+          'background-color': c.gn,
+          'border-color': c.gn
         }
       },
       {
         selector: 'node[nodeKind="step"][step_kind="map"]',
         style: {
-          'background-color': c.pu || 'var(--fg-pu)',
-          'border-color': c.pu || 'var(--fg-pu)'
+          'background-color': c.pu,
+          'border-color': c.pu
         }
       },
       {
         selector: 'node[nodeKind="step"][step_kind="custom"]',
         style: {
-          'background-color': c.t2 || 'var(--fg-t2)',
-          'border-color': c.t2 || 'var(--fg-t2)'
+          'background-color': c.t2,
+          'border-color': c.t2
         }
       },
       // Job node: dashed border to signal scheduled/async nature
@@ -669,7 +676,7 @@ export class CytoscapeGraph {
         style: {
           'border-style': 'dashed',
           'border-width': 1.5,
-          'border-color': c.pu || 'var(--fg-pu)'
+          'border-color': c.pu
         }
       },
       // Blueprint node: diamond shape
@@ -679,7 +686,7 @@ export class CytoscapeGraph {
           'shape': 'diamond',
           'width': 110,
           'height': 66,
-          'border-color': c.ac || 'var(--fg-ac)',
+          'border-color': c.ac,
           'border-width': 1
         }
       },
@@ -687,7 +694,7 @@ export class CytoscapeGraph {
       {
         selector: 'node[nodeKind="cluster"][type="transfer"]',
         style: {
-          'border-color': c.gn || 'var(--fg-gn)',
+          'border-color': c.gn,
           'border-width': 1.5
         }
       },
@@ -695,7 +702,7 @@ export class CytoscapeGraph {
       {
         selector: 'node[nodeKind="cluster"][type="reactor"]',
         style: {
-          'border-color': c.pu || 'var(--fg-pu)',
+          'border-color': c.pu,
           'border-width': 1.5
         }
       },
@@ -704,8 +711,8 @@ export class CytoscapeGraph {
         selector: 'edge[relation="audit_trail"]',
         style: {
           'line-style': 'dotted',
-          'line-color': c.yw || 'var(--fg-yw)',
-          'target-arrow-color': c.yw || 'var(--fg-yw)',
+          'line-color': c.yw,
+          'target-arrow-color': c.yw,
           'target-arrow-shape': 'triangle',
           'opacity': 0.4,
           'width': 1
@@ -724,14 +731,14 @@ export class CytoscapeGraph {
         selector: '.trace',
         style: {
           'border-width': 1,
-          'border-color': c.yw || 'var(--fg-yw)'
+          'border-color': c.yw
         }
       },
       {
         selector: '.trace-gap',
         style: {
           'border-width': 1,
-          'border-color': c.yw || 'var(--fg-yw)'
+          'border-color': c.yw
         }
       }
     ]

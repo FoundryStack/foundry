@@ -312,12 +312,15 @@ export function covColor(c) {
  * Domain color mapping - distinct colors for each domain
  */
 const DOMAIN_COLORS = {
-  'Finance': '#60a5fa',      // blue
-  'Players': '#34d399',      // green
-  'Promotions': '#f59e0b',   // amber
-  'Gaming': '#a78bfa',       // purple
-  'Accounts': '#06b6d4',     // cyan
-  'Infrastructure': '#6b7280' // gray
+  'Finance':        '#60a5fa',  // --fg-bl
+  'Players':        '#2dd4bf',  // --fg-gn
+  'Promotions':     '#f59e0b',  // --fg-yw
+  'Gaming':         '#a78bfa',  // --fg-pu
+  'Accounts':       '#60a5fa',  // --fg-bl
+  'Infrastructure': '#6b6b8a',  // --fg-t2
+  'Identity':       '#2dd4bf',  // --fg-gn
+  'Compliance':     '#f59e0b',  // --fg-yw
+  'Game':           '#a78bfa',  // --fg-pu
 }
 
 export function getDomainColor(domain) {
