@@ -1,153 +1,438 @@
 import { CytoscapeGraph } from './cytoscape_graph'
 
-/**
- * Convert oklch(L C H) or oklch(L C H / alpha) to hex
- * Handles both oklch(0-1 scale) and oklch(0-100% scale) formats
- */
-function _oklchToHex(oklchStr) {
-  // Parse oklch(L C H / A) or oklch(L C H) - with or without % sign
-  const match = oklchStr.match(/oklch\(([\d.]+)%?\s+([\d.]+)\s+([\d.]+)\s*(?:\/\s*([\d.]+))?\)/)
-  if (!match) return null
+// ─────────────────────────────────────────────────────────────────────────────
+// CSS → Cytoscape color bridge
+//
+// Cytoscape renders to Canvas and cannot read CSS variables directly. We
+// resolve each --fg-* token to a concrete RGB string by briefly setting it on
+// a probe element and reading back getComputedStyle. This handles oklch,
+// color-mix, and any other CSS color function the browser supports natively —
+// no manual conversion math needed.
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const [, L, C, H] = match  // A (alpha) not used - oklch colors already in stylesheet
-  let l = parseFloat(L)
-  // If L > 1, it's in 0-100% format; convert to 0-1
-  if (l > 1) l = l / 100
-  const c = parseFloat(C)
-  const h = parseFloat(H) * Math.PI / 180  // Convert degrees to radians
+// Single persistent probe element — created once, reused on every theme change.
+const _probe = (() => {
+  const el = document.createElement('div')
+  el.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden;pointer-events:none'
+  document.documentElement.appendChild(el)
+  return el
+})()
 
-  // OKLch to linear RGB conversion (via intermediate OKLab)
-  const a = c * Math.cos(h)
-  const b = c * Math.sin(h)
+function _resolveColor(varName) {
+  _probe.style.color = `var(${varName})`
+  return getComputedStyle(_probe).color   // browser always returns resolved rgb()
+}
 
-  // OKLab to linear RGB
-  const L_ = l + 0.3963377774 * a + 0.2158037573 * b
-  const M_ = l - 0.1055613458 * a - 0.0638541728 * b
-  const S_ = l - 0.0894841775 * a - 1.2914855480 * b
-
-  const L_3 = L_ * L_ * L_
-  const M_3 = M_ * M_ * M_
-  const S_3 = S_ * S_ * S_
-
-  const r = 4.0767416621 * L_3 - 3.3077363322 * M_3 + 0.2309101289 * S_3
-  const g = -1.2684380046 * L_3 + 2.6097574011 * M_3 - 0.3413193761 * S_3
-  const b_ = -0.0041960863 * L_3 - 0.7034186147 * M_3 + 1.7076147010 * S_3
-
-  // Linear RGB to sRGB (apply gamma)
-  const toSRGB = (x) => {
-    const abs = Math.abs(x)
-    return x >= 0
-      ? (abs <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(abs, 1 / 2.4) - 0.055)
-      : -(abs <= 0.0031308 ? 12.92 * abs : 1.055 * Math.pow(abs, 1 / 2.4) - 0.055)
-  }
-
-  const sr = Math.max(0, Math.min(1, toSRGB(r)))
-  const sg = Math.max(0, Math.min(1, toSRGB(g)))
-  const sb = Math.max(0, Math.min(1, toSRGB(b_)))
-
-  // Convert to 0-255 range
-  const ir = Math.round(sr * 255)
-  const ig = Math.round(sg * 255)
-  const ib = Math.round(sb * 255)
-
-  // Convert to hex
-  const hex = `#${ir.toString(16).padStart(2, '0')}${ig.toString(16).padStart(2, '0')}${ib.toString(16).padStart(2, '0')}`
-  return hex
+function _resolveBg(varName) {
+  _probe.style.backgroundColor = `var(${varName})`
+  return getComputedStyle(_probe).backgroundColor
 }
 
 /**
- * Convert color-mix(in oklch, colorA alpha%, colorB) with transparent to hex
- * Handles color-mix opacity blending
- */
-function _colorMixToHex(colorMixStr) {
-  // Parse color-mix(in oklch, var(...) X%, transparent)
-  const colorVarMatch = colorMixStr.match(/color-mix\([^,]*,\s*var\(([^)]+)\)\s+([\d.]+)%/)
-  if (!colorVarMatch) return null
-
-  const [, varName, opacity] = colorVarMatch
-  const opacityPercent = parseFloat(opacity) / 100
-
-  // Extract the variable value from document root
-  const rootEl = document.documentElement
-  const varValue = getComputedStyle(rootEl).getPropertyValue(varName).trim()
-
-  // Convert the variable value to hex (could be oklch or other format)
-  let baseHex = _oklchToHex(varValue)
-  if (!baseHex) return null
-
-  // Apply opacity by converting hex to RGB with alpha
-  const r = parseInt(baseHex.slice(1, 3), 16)
-  const g = parseInt(baseHex.slice(3, 5), 16)
-  const b = parseInt(baseHex.slice(5, 7), 16)
-
-  // Blend with white based on opacity (simulating color-mix with transparent)
-  const blendWithWhite = (channel) => Math.round(channel * opacityPercent + 255 * (1 - opacityPercent))
-
-  const blendedR = blendWithWhite(r)
-  const blendedG = blendWithWhite(g)
-  const blendedB = blendWithWhite(b)
-
-  return `#${blendedR.toString(16).padStart(2, '0')}${blendedG.toString(16).padStart(2, '0')}${blendedB.toString(16).padStart(2, '0')}`
-}
-
-/**
- * Extract CSS custom properties from document root and compute them to hex
- * Called once at mount, result cached for use in Cytoscape stylesheet
+ * Read all Foundry theme tokens from CSS into a plain object of resolved rgb()
+ * strings. Called once at mount and again whenever data-theme changes.
  */
 function _extractColors() {
-  const tok = (varName) => {
-    const rootEl = document.documentElement
-    const computed = getComputedStyle(rootEl).getPropertyValue(varName).trim()
-
-    // Try oklch conversion
-    const oklchHex = _oklchToHex(computed)
-    if (oklchHex) return oklchHex
-
-    // Try color-mix conversion
-    const colorMixHex = _colorMixToHex(computed)
-    if (colorMixHex) return colorMixHex
-
-    // Try hex format (simple colors like --fg-bl, --fg-gn, etc.)
-    if (computed.match(/^#[0-9a-f]{6}$/i)) return computed
-
-    // Fallback: try to convert via temporary element
-    const el = document.createElement('div')
-    el.style.backgroundColor = `var(${varName})`
-    document.body.appendChild(el)
-    const bgColor = getComputedStyle(el).backgroundColor
-    document.body.removeChild(el)
-
-    const rgbMatch = bgColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-    if (rgbMatch) {
-      const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0')
-      const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0')
-      const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0')
-      return `#${r}${g}${b}`
-    }
-
-    console.warn(`Could not convert color variable ${varName}=${computed}`)
-    return '#000000'  // Safe fallback to black
-  }
-
   return {
-    base: tok('--fg-base'),
-    tx: tok('--fg-tx'),
-    t2: tok('--fg-t2'),
-    t3: tok('--fg-t3'),
-    s2: tok('--fg-s2'),
-    s3: tok('--fg-s3'),
-    b1: tok('--fg-b1'),
-    b2: tok('--fg-b2'),
-    b3: tok('--fg-b3'),
-    bl: tok('--fg-bl'),
-    gn: tok('--fg-gn'),
-    yw: tok('--fg-yw'),
-    rd: tok('--fg-rd'),
-    pu: tok('--fg-pu'),
-    ac: tok('--fg-ac')
-    // Note: --fg-r is a radius value, not a color - excluded from color extraction
+    base: _resolveBg('--fg-base'),
+    s2:   _resolveBg('--fg-s2'),
+    s3:   _resolveBg('--fg-s3'),
+    tx:   _resolveColor('--fg-tx'),
+    t2:   _resolveColor('--fg-t2'),
+    t3:   _resolveColor('--fg-t3'),
+    b1:   _resolveColor('--fg-b1'),
+    b2:   _resolveColor('--fg-b2'),
+    b3:   _resolveColor('--fg-b3'),
+    bl:   _resolveColor('--fg-bl'),
+    gn:   _resolveColor('--fg-gn'),
+    yw:   _resolveColor('--fg-yw'),
+    rd:   _resolveColor('--fg-rd'),
+    pu:   _resolveColor('--fg-pu'),
+    ac:   _resolveColor('--fg-ac'),
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Foundry stylesheet
+//
+// Split into two layers:
+//   STATIC_STYLES  — geometry, shape, layout props. Never depend on theme.
+//                    Defined once as a module-level constant.
+//   _dynamicStyles — only the ~15 selectors that carry color values.
+//                    Rebuilt on mount and on every theme change.
+//
+// The full stylesheet passed to Cytoscape is [...STATIC_STYLES, ..._dynamicStyles(c)].
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FONT = "'Segoe UI Symbol', 'Apple Symbols', 'Arial Unicode MS', sans-serif"
+
+const STATIC_STYLES = [
+  // Base node geometry
+  {
+    selector: 'node',
+    style: {
+      'shape': 'round-rectangle',
+      'width': 170,
+      'height': 64,
+      'border-width': 1,
+      'border-style': 'solid',
+      'border-opacity': 1,
+      'font-size': 11,
+      'font-family': FONT,
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'text-margin-x': 0,
+      'text-margin-y': 0,
+      'text-wrap': 'none',
+      'padding': 6,
+      'label': 'data(label)',
+    },
+  },
+  // Hide Cytoscape's native label for nodes that use HTML labels
+  {
+    selector: 'node[nodeKind="entity"], node[nodeKind="step"], node[nodeKind="state"], node[nodeKind="output"], node[nodeKind="cluster"]',
+    style: { 'label': '' },
+  },
+  // Compliance gap: dashed border (color applied in dynamic styles)
+  {
+    selector: 'node.gap',
+    style: { 'border-width': 1, 'border-style': 'dashed' },
+  },
+  // Cluster / compound base geometry
+  {
+    selector: 'node[nodeKind="cluster"]',
+    style: {
+      'shape': 'round-rectangle',
+      'min-width': 120,
+      'min-height': 60,
+      'padding': 32,
+      'border-style': 'dashed',
+      'text-valign': 'center',
+      'text-halign': 'center',
+    },
+  },
+  // Domain cluster geometry
+  {
+    selector: 'node.domain-cluster',
+    style: { 'border-width': 2, 'background-opacity': 0.4, 'padding': 24 },
+  },
+  // Step / state node geometry
+  {
+    selector: 'node[nodeKind="step"], node[nodeKind="state"]',
+    style: {
+      'width': 88,
+      'height': 40,
+      'font-size': 9,
+      'font-family': FONT,
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'text-wrap': 'none',
+    },
+  },
+  // Step nodes: always white text (colored background, any theme)
+  {
+    selector: 'node[nodeKind="step"]',
+    style: { 'color': '#ffffff' },
+  },
+  // Output node geometry
+  {
+    selector: 'node[nodeKind="output"]',
+    style: {
+      'width': 76,
+      'height': 36,
+      'font-size': 8,
+      'font-family': FONT,
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'text-wrap': 'none',
+    },
+  },
+  // Selection ring geometry (color in dynamic styles)
+  {
+    selector: 'node:selected',
+    style: { 'border-width': 1.5 },
+  },
+  // Phantom / proposal overlay
+  {
+    selector: 'node.phantom-node',
+    style: {
+      'border-width': 2,
+      'border-style': 'dashed',
+      'opacity': 0.5,
+      'background-opacity': 0.5,
+    },
+  },
+  // External node geometry
+  {
+    selector: 'node[type="external"]',
+    style: { 'border-style': 'dashed', 'border-width': 1, 'opacity': 0.7 },
+  },
+  // Job node: dashed border signals async/scheduled nature
+  {
+    selector: 'node[type="job"]',
+    style: { 'border-style': 'dashed', 'border-width': 1.5 },
+  },
+  // Blueprint node: diamond shape
+  {
+    selector: 'node[type="blueprint"]',
+    style: { 'shape': 'diamond', 'width': 110, 'height': 66, 'border-width': 1 },
+  },
+  // Transfer / reactor compound cluster border width
+  {
+    selector: 'node[nodeKind="cluster"][type="transfer"], node[nodeKind="cluster"][type="reactor"]',
+    style: { 'border-width': 1.5 },
+  },
+  // Edge base geometry
+  {
+    selector: 'edge',
+    style: {
+      'width': 1.5,
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier',
+      'opacity': 0.8,
+    },
+  },
+  // Relation: reads — hollow diamond
+  {
+    selector: 'edge[relation="reads"]',
+    style: { 'target-arrow-shape': 'diamond', 'target-arrow-fill': 'hollow' },
+  },
+  // Relation: writes — filled diamond
+  {
+    selector: 'edge[relation="writes"]',
+    style: { 'target-arrow-shape': 'diamond', 'target-arrow-fill': 'filled' },
+  },
+  // Relation: triggers — filled circle
+  {
+    selector: 'edge[relation="triggers"]',
+    style: { 'target-arrow-shape': 'circle', 'target-arrow-fill': 'filled' },
+  },
+  // Relation: guard / eligibleIf / guards — dotted, narrower
+  {
+    selector: 'edge[relation="guard"], edge[relation="eligibleIf"], edge[relation="guards"]',
+    style: { 'line-style': 'dotted', 'width': 1.2 },
+  },
+  // Relation: async — dashed
+  {
+    selector: 'edge[relation="async"]',
+    style: { 'line-style': 'dashed' },
+  },
+  // Relation: error — dashed
+  {
+    selector: 'edge[relation="error"]',
+    style: { 'line-style': 'dashed' },
+  },
+  // Relation: compensation — wider
+  {
+    selector: 'edge[relation="compensation"]',
+    style: { 'width': 2 },
+  },
+  // Relation: references — solid triangle
+  {
+    selector: 'edge[relation="references"]',
+    style: { 'target-arrow-shape': 'triangle', 'line-style': 'solid' },
+  },
+  // Relation: referenced_by — solid triangle
+  {
+    selector: 'edge[relation="referenced_by"]',
+    style: { 'target-arrow-shape': 'triangle', 'line-style': 'solid' },
+  },
+  // Relation: configures — dashed
+  {
+    selector: 'edge[relation="configures"]',
+    style: { 'line-style': 'dashed', 'width': 1.5, 'opacity': 0.8 },
+  },
+  // Relation: authenticates — dashed, slightly wider
+  {
+    selector: 'edge[relation="authenticates"]',
+    style: { 'line-style': 'dashed', 'width': 1.8 },
+  },
+  // Relation: persists_to — dotted, thin
+  {
+    selector: 'edge[relation="persists_to"]',
+    style: { 'line-style': 'dotted', 'width': 1 },
+  },
+  // Relation: queues_via — dotted, thin
+  {
+    selector: 'edge[relation="queues_via"]',
+    style: { 'line-style': 'dotted', 'width': 1 },
+  },
+  // Relation: calls_provider — dotted
+  {
+    selector: 'edge[relation="calls_provider"]',
+    style: { 'line-style': 'dotted', 'width': 1.5 },
+  },
+  // Relation: audit_trail — dotted, faded
+  {
+    selector: 'edge[relation="audit_trail"]',
+    style: {
+      'line-style': 'dotted',
+      'target-arrow-shape': 'triangle',
+      'opacity': 0.4,
+      'width': 1,
+    },
+  },
+  // Compound edge endpoints
+  {
+    selector: 'edge:compound',
+    style: {
+      'source-endpoint': 'outside-to-node',
+      'target-endpoint': 'outside-to-node',
+    },
+  },
+  // Trace overlay geometry
+  {
+    selector: '.trace, .trace-gap',
+    style: { 'border-width': 1 },
+  },
+]
+
+// Domain → color token. Key is the domain name, value is a key into the
+// colors object returned by _extractColors(). Unknown domains fall back via
+// getDomainColor()'s hash-based picker.
+const DOMAIN_COLOR_TOKEN = {
+  Finance:        'bl',
+  Players:        'gn',
+  Promotions:     'yw',
+  Gaming:         'pu',
+  Accounts:       'bl',
+  Infrastructure: 't2',
+  Identity:       'gn',
+  Compliance:     'yw',
+  Game:           'pu',
+}
+
+// Step kind → color token
+const STEP_COLOR_TOKEN = {
+  read:   'bl',
+  write:  'gn',
+  map:    'pu',
+  custom: 't2',
+}
+
+/**
+ * Build the color-dependent portion of the Cytoscape stylesheet.
+ * Receives a colors object from _extractColors() — all values are resolved
+ * rgb() strings the browser and Cytoscape can both use directly.
+ */
+function _dynamicStyles(c) {
+  // Domain border-color selectors — one per known domain
+  const domainSelectors = Object.entries(DOMAIN_COLOR_TOKEN).map(([domain, token]) => ({
+    selector: `node[domain="${domain}"]`,
+    style: { 'border-color': c[token] },
+  }))
+
+  // Step kind background + border — one per step_kind
+  const stepKindSelectors = Object.entries(STEP_COLOR_TOKEN).map(([kind, token]) => ({
+    selector: `node[nodeKind="step"][step_kind="${kind}"]`,
+    style: { 'background-color': c[token], 'border-color': c[token] },
+  }))
+
+  return [
+    // Base node colors
+    {
+      selector: 'node',
+      style: {
+        'background-color': c.base,
+        'border-color': c.b1,
+        'color': c.tx,
+      },
+    },
+    // Compliance gap border color
+    { selector: 'node.gap',       style: { 'border-color': c.yw } },
+    // Sensitive border color
+    { selector: 'node.sensitive', style: { 'border-width': 1, 'border-color': c.rd } },
+    // Cluster base colors — rgba values promoted to CSS vars in app.css
+    {
+      selector: 'node[nodeKind="cluster"]',
+      style: {
+        'background-color': 'rgba(20,20,35,.6)',
+        'border-color': 'rgba(80,80,110,.3)',
+      },
+    },
+    // Domain cluster: surface background
+    {
+      selector: 'node.domain-cluster',
+      style: { 'background-color': c.base },
+    },
+    // Per-domain border colors
+    ...domainSelectors,
+    // Selection ring
+    { selector: 'node:selected', style: { 'border-color': c.ac } },
+    // External node colors
+    {
+      selector: 'node[type="external"]',
+      style: { 'background-color': c.s3, 'border-color': c.t3 },
+    },
+    // Step kind colors
+    ...stepKindSelectors,
+    // Job node border
+    { selector: 'node[type="job"]',       style: { 'border-color': c.pu } },
+    // Blueprint border
+    { selector: 'node[type="blueprint"]', style: { 'border-color': c.ac } },
+    // Transfer cluster border
+    {
+      selector: 'node[nodeKind="cluster"][type="transfer"]',
+      style: { 'border-color': c.gn },
+    },
+    // Reactor cluster border
+    {
+      selector: 'node[nodeKind="cluster"][type="reactor"]',
+      style: { 'border-color': c.pu },
+    },
+    // Edge base colors
+    {
+      selector: 'edge',
+      style: { 'line-color': c.t2, 'target-arrow-color': c.t2 },
+    },
+    // Relation colors — only entries that override the base edge color
+    { selector: 'edge[relation="sequence"]',
+      style: { 'line-color': c.t2, 'target-arrow-color': c.t2 } },
+    { selector: 'edge[relation="async"]',
+      style: { 'line-color': c.pu, 'target-arrow-color': c.pu } },
+    { selector: 'edge[relation="guard"], edge[relation="eligibleIf"], edge[relation="guards"]',
+      style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
+    { selector: 'edge[relation="compensation"]',
+      style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
+    { selector: 'edge[relation="error"]',
+      style: { 'line-color': c.rd, 'target-arrow-color': c.rd } },
+    { selector: 'edge[relation="reads"]',
+      style: { 'line-color': c.bl, 'target-arrow-color': c.bl } },
+    { selector: 'edge[relation="writes"]',
+      style: { 'line-color': c.gn, 'target-arrow-color': c.gn } },
+    { selector: 'edge[relation="triggers"]',
+      style: { 'line-color': c.pu, 'target-arrow-color': c.pu } },
+    { selector: 'edge[relation="references"]',
+      style: { 'line-color': c.b2, 'target-arrow-color': c.b2 } },
+    { selector: 'edge[relation="referenced_by"]',
+      style: { 'line-color': c.t2, 'target-arrow-color': c.t2 } },
+    { selector: 'edge[relation="configures"]',
+      style: { 'line-color': c.ac, 'target-arrow-color': c.ac } },
+    { selector: 'edge[relation="authenticates"]',
+      style: { 'line-color': c.gn, 'target-arrow-color': c.gn } },
+    { selector: 'edge[relation="persists_to"]',
+      style: { 'line-color': c.t3, 'target-arrow-color': c.t3 } },
+    { selector: 'edge[relation="queues_via"]',
+      style: { 'line-color': c.pu, 'target-arrow-color': c.pu } },
+    { selector: 'edge[relation="calls_provider"]',
+      style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
+    { selector: 'edge[relation="audit_trail"]',
+      style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
+    // Trace overlays
+    { selector: '.trace, .trace-gap', style: { 'border-color': c.yw } },
+  ]
+}
+
+/**
+ * Full Foundry stylesheet: static geometry + dynamic colors.
+ */
+function _buildFoundryStyles(colors) {
+  return [...STATIC_STYLES, ..._dynamicStyles(colors)]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Node normalization
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Normalize Elixir NodeEntry → GraphNode field mapping
@@ -167,18 +452,19 @@ export function normalizeNode(raw) {
   const states = (sm.states || []).map(name => ({
     id: `${raw.id}:state:${name}`,
     name,
-    nodeKind: 'state'
+    nodeKind: 'state',
   }))
   const smTransitions = sm.transitions || []
 
   // Merge agent steps via step_id lookup
   const steps = (raw.steps || []).map(s => ({
     ...s,
-    agent: (raw.agent_steps || []).find(a => a.step_id === s.id)
+    agent: (raw.agent_steps || []).find(a => a.step_id === s.id),
   }))
 
-  // Description fallback: if no description, use "type in domain"
-  const description = raw.description || (raw.type && raw.domain ? `${raw.type} in ${raw.domain}` : raw.type || 'No description')
+  const description = raw.description || (raw.type && raw.domain
+    ? `${raw.type} in ${raw.domain}`
+    : raw.type || 'No description')
 
   return {
     id: raw.id,
@@ -207,146 +493,86 @@ export function normalizeNode(raw) {
     oban_queues: raw.oban_queues || [],
     performs: raw.performs || null,
     // Keep original for any missing fields
-    ...raw
+    ...raw,
   }
 }
 
-/**
- * Get compound node IDs: transfers, reactors + FSM resources
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Graph structure helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function getCompoundNodeIds(nodes) {
   const transfers = nodes.filter(n => n.type === 'transfer' || n.type === 'reactor').map(n => n.id)
   const fsms = nodes.filter(n => n.type === 'resource' && n.sm).map(n => n.id)
   return new Set([...transfers, ...fsms])
 }
 
-/**
- * Get transfer/reactor node IDs (nodes that have steps)
- */
 export function getTransferNodeIds(nodes) {
   return new Set(nodes.filter(n => n.type === 'transfer' || n.type === 'reactor').map(n => n.id))
 }
 
-/**
- * Get FSM resource IDs
- */
 export function getFsmResourceIds(nodes) {
   return new Set(nodes.filter(n => n.type === 'resource' && n.sm).map(n => n.id))
 }
 
 /**
- * Strip app prefix and return short label
+ * Strip app prefix and return short label.
  * "IgamingRef.Finance.Wallet" → "Wallet"
  * "external:postgres:Finance" → "postgres:Finance"
  */
 export function shortLabel(id) {
   if (!id) return id
-  // Don't strip external node prefixes, just the module FQN
-  if (id.startsWith('external:')) {
-    return id.replace('external:', '')
-  }
+  if (id.startsWith('external:')) return id.replace('external:', '')
   const parts = id.split('.')
   return parts[parts.length - 1]
 }
 
-/**
- * Build indicator span HTML
- */
-export function buildIndicators(n) {
-  const indicators = []
+// ─────────────────────────────────────────────────────────────────────────────
+// Domain colors
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // Coverage indicator
-  if (n.cov >= 80) {
-    indicators.push(`<span data-indicator="covered" title="Test coverage ≥80%">✓</span>`)
-  } else if (n.gap) {
-    indicators.push(`<span data-indicator="gap" title="Compliance gap">⊘</span>`)
-  }
-
-  // Sensitive indicators
-  if (n.sensitive) {
-    if (n.pt) indicators.push(`<span data-indicator="paper_trail" title="Paper Trail">≣</span>`)
-    if (n.arch) indicators.push(`<span data-indicator="archival" title="Archival">⊟</span>`)
-  }
-
-  // Pending migrations
-  if (n.pending_migrations) {
-    indicators.push(`<span data-indicator="pm" title="Pending migrations">↻</span>`)
-  }
-
-  // Oban queue / job schedule
-  if ((n.oban_queues || []).length > 0) {
-    indicators.push(`<span data-indicator="oban" title="Oban queues">⚙</span>`)
-  }
-  if (n.schedule) {
-    indicators.push(`<span data-indicator="schedule" title="Schedule: ${n.schedule}">⏱</span>`)
-  }
-
-  // Rate limiting
-  if (n.rl) {
-    indicators.push(`<span data-indicator="rl" title="Rate limited">⬅</span>`)
-  }
-
-  // FSM
-  if (n.sm && n.sm.states) {
-    indicators.push(`<span data-indicator="fsm" title="State machine">◊</span>`)
-  }
-
-  // Runbook
-  if (n.runbook) {
-    indicators.push(`<span data-indicator="runbook" title="Runbook">📖</span>`)
-  }
-
-  return `<div class="status-icons">${indicators.join('')}</div>`
+// Hardcoded hex values mirror the dark-theme --fg-* defaults.
+// These are used for HTML label coloring (domainClusterTpl) where CSS vars
+// work fine. The Cytoscape stylesheet uses _extractColors() tokens instead.
+const DOMAIN_COLORS = {
+  Finance:        '#60a5fa',  // --fg-bl
+  Players:        '#2dd4bf',  // --fg-gn
+  Promotions:     '#f59e0b',  // --fg-yw
+  Gaming:         '#a78bfa',  // --fg-pu
+  Accounts:       '#60a5fa',  // --fg-bl
+  Infrastructure: '#6b6b8a',  // --fg-t2
+  Identity:       '#2dd4bf',  // --fg-gn
+  Compliance:     '#f59e0b',  // --fg-yw
+  Game:           '#a78bfa',  // --fg-pu
 }
 
-/**
- * Coverage color → CSS var
- */
+export function getDomainColor(domain) {
+  if (DOMAIN_COLORS[domain]) return DOMAIN_COLORS[domain]
+
+  // Stable hash-based fallback for unknown domains
+  let hash = 0
+  for (let i = 0; i < domain.length; i++) {
+    hash = ((hash << 5) - hash) + domain.charCodeAt(i)
+    hash = hash & hash
+  }
+  const colors = Object.values(DOMAIN_COLORS)
+  return colors[Math.abs(hash) % colors.length]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utility functions
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function covColor(c) {
   if (c >= 80) return 'var(--fg-gn)'
   if (c >= 50) return 'var(--fg-yw)'
   return 'var(--fg-rd)'
 }
 
-/**
- * Domain color mapping - distinct colors for each domain
- */
-const DOMAIN_COLORS = {
-  'Finance':        '#60a5fa',  // --fg-bl
-  'Players':        '#2dd4bf',  // --fg-gn
-  'Promotions':     '#f59e0b',  // --fg-yw
-  'Gaming':         '#a78bfa',  // --fg-pu
-  'Accounts':       '#60a5fa',  // --fg-bl
-  'Infrastructure': '#6b6b8a',  // --fg-t2
-  'Identity':       '#2dd4bf',  // --fg-gn
-  'Compliance':     '#f59e0b',  // --fg-yw
-  'Game':           '#a78bfa',  // --fg-pu
-}
-
-export function getDomainColor(domain) {
-  // Return specific color if defined, or generate a stable color based on domain hash
-  if (DOMAIN_COLORS[domain]) return DOMAIN_COLORS[domain]
-
-  // Fallback: generate stable color from domain name hash
-  let hash = 0
-  for (let i = 0; i < domain.length; i++) {
-    hash = ((hash << 5) - hash) + domain.charCodeAt(i)
-    hash = hash & hash // Convert to 32bit integer
-  }
-
-  const colors = Object.values(DOMAIN_COLORS)
-  return colors[Math.abs(hash) % colors.length]
-}
-
-/**
- * Domain coverage by type
- */
 export function domainCoverage(nodes) {
   const byDomain = {}
   nodes.forEach(n => {
-    if (!byDomain[n.domain]) {
-      byDomain[n.domain] = []
-    }
+    if (!byDomain[n.domain]) byDomain[n.domain] = []
     byDomain[n.domain].push(n.cov)
   })
 
@@ -357,17 +583,73 @@ export function domainCoverage(nodes) {
 }
 
 /**
- * Entity node HTML template
+ * Search match — used by callers to build the matchingIds set passed to
+ * graph.applySearchFilter(). Kept here because it knows Foundry's data fields.
  */
+export function searchMatch(node, query) {
+  const q = query.toLowerCase()
+  return (
+    (node.id          || '').toLowerCase().includes(q) ||
+    (node.type        || '').toLowerCase().includes(q) ||
+    (node.domain      || '').toLowerCase().includes(q) ||
+    (node.description || '').toLowerCase().includes(q)
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTML label templates
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function buildIndicators(n) {
+  const indicators = []
+
+  if (n.cov >= 80) {
+    indicators.push(`<span data-indicator="covered" title="Test coverage ≥80%">✓</span>`)
+  } else if (n.gap) {
+    indicators.push(`<span data-indicator="gap" title="Compliance gap">⊘</span>`)
+  }
+
+  if (n.sensitive) {
+    indicators.push(`<span data-indicator="sensitive" title="Sensitive data">⚠</span>`)
+  }
+
+  if (n.pt || n.arch) {
+    if (n.pt)   indicators.push(`<span data-indicator="paper_trail" title="Paper Trail">≣</span>`)
+    if (n.arch) indicators.push(`<span data-indicator="archival" title="Archival">⊟</span>`)
+  }
+
+  if (n.pending_migrations) {
+    indicators.push(`<span data-indicator="pm" title="Pending migrations">↻</span>`)
+  }
+
+  if ((n.oban_queues || []).length > 0) {
+    indicators.push(`<span data-indicator="oban" title="Oban queues">⚙</span>`)
+  }
+  if (n.schedule) {
+    indicators.push(`<span data-indicator="schedule" title="Schedule: ${n.schedule}">⏱</span>`)
+  }
+
+  if (n.rl) {
+    indicators.push(`<span data-indicator="rl" title="Rate limited">⬅</span>`)
+  }
+
+  if (n.sm?.states) {
+    indicators.push(`<span data-indicator="fsm" title="State machine">◊</span>`)
+  }
+
+  if (n.runbook) {
+    indicators.push(`<span data-indicator="runbook" title="Runbook">📖</span>`)
+  }
+
+  return `<div class="status-icons">${indicators.join('')}</div>`
+}
+
 export function entityTpl(data) {
   const n = data
-  const indicators = buildIndicators(n)
-  const classes = n.type === 'external' ? 'cy-external-node' : ''
 
-  // For external nodes, show simpler layout
   if (n.type === 'external') {
     return `
-      <div class="cy-node-html ${classes}">
+      <div class="cy-node-html cy-external-node">
         <span class="title">${shortLabel(n.id)}</span>
       </div>
     `
@@ -379,7 +661,7 @@ export function entityTpl(data) {
 
   return `
     <div class="cy-node-html">
-      ${indicators}
+      ${buildIndicators(n)}
       <div class="domain-row">
         <span class="domain-dot" style="background: ${covColor(n.cov)}"></span>
         <span style="color: var(--fg-t2)">${n.domain || 'N/A'}</span>
@@ -402,25 +684,17 @@ export function entityTpl(data) {
   `
 }
 
-/**
- * Domain cluster HTML template
- */
 export function domainClusterTpl(data) {
-  const n = data
   return `
     <div class="cy-node-html cy-domain-cluster">
-      <span class="domain-cluster-label" style="color:${n.typeColor}">${n.label}</span>
+      <span class="domain-cluster-label" style="color:${data.typeColor}">${data.label}</span>
     </div>
   `
 }
 
-/**
- * Unified cluster template that handles both domain and transfer/reactor clusters
- */
 export function clusterTpl(data) {
   const n = data
 
-  // Domain cluster: show prominent domain label
   if (n.nodeKind === 'domain-cluster') {
     return `
       <div class="cy-node-html cy-domain-cluster">
@@ -429,21 +703,9 @@ export function clusterTpl(data) {
     `
   }
 
-  // Transfer/reactor/FSM cluster: show with icon
-  let icon = '◈'
-  let label = shortLabel(n.id)
-
-  if (n.type === 'transfer') {
-    icon = '⇄'
-  } else if (n.type === 'reactor') {
-    icon = '◈'
-  } else if (n.type === 'job') {
-    icon = '⚙'
-  } else if (n.type === 'blueprint') {
-    icon = '◇'
-  } else if (n.sm) {
-    icon = '◊'
-  }
+  const icons = { transfer: '⇄', reactor: '◈', job: '⚙', blueprint: '◇' }
+  const icon = icons[n.type] || (n.sm ? '◊' : '◈')
+  const label = shortLabel(n.id)
 
   return `
     <div class="cy-node-html cy-node-boundary">
@@ -455,61 +717,26 @@ export function clusterTpl(data) {
   `
 }
 
-/**
- * Boundary (cluster) node HTML template - DEPRECATED, use clusterTpl instead
- */
+/** @deprecated Use clusterTpl instead */
 export function boundaryTpl(data) {
   return clusterTpl(data)
 }
 
-/**
- * Build canvas overlays: grid, gradient, edge legend, domain coverage
- */
-export function buildCanvasOverlays(container, nodes) {
-  const overlays = document.createElement('div')
-  overlays.id = 'foundry-canvas-overlays'
-  overlays.style.cssText = `
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 1;
+export function stepTpl(data) {
+  const icons = { read: '📖', write: '✏', map: '◈', custom: '⚙' }
+  const icon = icons[data.step_kind] || '⚙'
+  return `
+    <div class="cy-node-html cy-step-node" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 4px">
+      <span>${icon}</span><br>
+      <span style="color:var(--fg-tx)">${data.label || data.id}</span>
+    </div>
   `
-
-  // Domain coverage header (top-left, clickable)
-  const coverage = domainCoverage(nodes)
-  const coverageHtml = coverage
-    .map(
-      ({ domain, avg }) =>
-        `<span style="color:${covColor(avg)}; margin-right:12px">${domain} ${avg}%</span>`
-    )
-    .join('')
-
-  const header = document.createElement('div')
-  header.style.cssText = `
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    padding: 8px 12px;
-    background: rgba(30,30,45,0.8);
-    border: 1px solid var(--fg-b1);
-    border-radius: 4px;
-    font-size: 11px;
-    color: var(--fg-t2);
-  `
-  header.innerHTML = coverageHtml
-  overlays.appendChild(header)
-
-  container.parentElement.appendChild(overlays)
 }
 
-/**
- * Consolidate fragmented external nodes.
- * e.g. "external:postgres:Finance" + "external:postgres:Players" → single "external:postgres"
- * Returns { nodes: dedupedNodes, edgeMap: { originalId → collapsedId } }
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Element builders
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function consolidateExternalNodes(nodes) {
   const edgeMap = {}
   const seen = new Set()
@@ -517,7 +744,6 @@ export function consolidateExternalNodes(nodes) {
 
   for (const n of nodes) {
     if (n.type === 'external') {
-      // Pattern: external:<provider>:<suffix> → collapse to external:<provider>
       const match = n.id.match(/^(external:[^:]+):/)
       if (match) {
         const collapsedId = match[1]
@@ -535,20 +761,15 @@ export function consolidateExternalNodes(nodes) {
   return { nodes: result, edgeMap }
 }
 
-/**
- * Build Cytoscape elements from normalized nodes/edges
- */
 export function buildCytoscapeElements(nodes, edges) {
   const elements = []
 
-  // Consolidate fragmented external nodes (e.g. external:postgres:Finance → external:postgres)
   const { nodes: consolidatedNodes, edgeMap: externalEdgeMap } = consolidateExternalNodes(nodes)
   nodes = consolidatedNodes
 
-  // Create domain cluster compounds (one per unique domain)
+  // Domain cluster compounds
   const domains = new Set(nodes.map(n => n.domain).filter(Boolean))
   domains.forEach(domain => {
-    const domainColor = getDomainColor(domain)
     elements.push({
       group: 'nodes',
       data: {
@@ -556,74 +777,56 @@ export function buildCytoscapeElements(nodes, edges) {
         label: domain,
         nodeKind: 'cluster',
         domain,
-        typeColor: domainColor
+        typeColor: getDomainColor(domain),
       },
-      classes: 'domain-cluster'
+      classes: 'domain-cluster',
     })
   })
 
-  // Get compound node IDs
   const compoundIds = getCompoundNodeIds(nodes)
 
-  // Create transfer/FSM compound nodes
+  // Transfer / FSM compound nodes
   compoundIds.forEach(id => {
     const node = nodes.find(n => n.id === id)
     if (!node) return
-    const label = shortLabel(id)
     elements.push({
       group: 'nodes',
       data: {
         id: `compound:${id}`,
-        label,
+        label: shortLabel(id),
         nodeKind: 'cluster',
         type: node.type,
-        parent: node.domain ? `domain:${node.domain}` : null
+        parent: node.domain ? `domain:${node.domain}` : null,
       },
-      classes: 'transfer-cluster fsm-cluster'
+      classes: 'transfer-cluster fsm-cluster',
     })
   })
 
-  // Create entity nodes
+  // Entity nodes
   nodes.forEach(node => {
-    // Determine parent: either domain cluster or transfer/FSM compound
     const parent = compoundIds.has(node.id)
       ? `compound:${node.id}`
       : (node.domain ? `domain:${node.domain}` : null)
 
-    const classes = []
-    if (node.gap) classes.push('gap')
-    if (node.sensitive) classes.push('sensitive')
+    const classes = [
+      node.gap       ? 'gap'       : null,
+      node.sensitive ? 'sensitive' : null,
+    ].filter(Boolean).join(' ')
 
     elements.push({
       group: 'nodes',
-      data: {
-        id: node.id,
-        nodeKind: 'entity',
-        parent,
-        ...node
-      },
-      classes: classes.join(' ')
+      data: { id: node.id, nodeKind: 'entity', parent, ...node },
+      classes,
     })
   })
 
-  // Add step/state child nodes for transfers, reactors and FSMs
+  // Step / state child nodes
   nodes.forEach(node => {
-    // Transfer/reactor steps
     if ((node.type === 'transfer' || node.type === 'reactor') && node.steps) {
       node.steps.forEach((step, idx) => {
-        // Normalize step_kind (remove atom prefix if present)
         const stepKind = (step.step_kind || '').toString().replace(/^:/, '')
-
-        // Build step label with kind icon
-        let stepIcon = '⚙'
-        if (stepKind === 'read') {
-          stepIcon = '📖'
-        } else if (stepKind === 'write') {
-          stepIcon = '✏'
-        } else if (stepKind === 'map') {
-          stepIcon = '◈'
-        }
-        const stepLabel = `${stepIcon} ${step.name || `Step ${idx}`}`
+        const icons = { read: '📖', write: '✏', map: '◈' }
+        const stepLabel = `${icons[stepKind] || '⚙'} ${step.name || `Step ${idx}`}`
 
         elements.push({
           group: 'nodes',
@@ -635,48 +838,43 @@ export function buildCytoscapeElements(nodes, edges) {
             step_kind: stepKind,
             description: step.description || step.name || `Step ${idx}`,
             type: node.type,
-            domain: node.domain
-          }
+            domain: node.domain,
+          },
         })
       })
 
-      // Add sequence edges between steps
-      if (node.steps && node.steps.length > 1) {
-        node.steps.forEach((step, idx) => {
-          if (idx > 0) {
-            elements.push({
-              group: 'edges',
-              data: {
-                id: `${node.id}:seq:${idx}`,
-                source: `${node.id}:step:${idx - 1}`,
-                target: `${node.id}:step:${idx}`,
-                relation: 'sequence'
-              }
-            })
-          }
+      if (node.steps.length > 1) {
+        node.steps.forEach((_, idx) => {
+          if (idx === 0) return
+          elements.push({
+            group: 'edges',
+            data: {
+              id: `${node.id}:seq:${idx}`,
+              source: `${node.id}:step:${idx - 1}`,
+              target: `${node.id}:step:${idx}`,
+              relation: 'sequence',
+            },
+          })
         })
       }
 
-      // Guard edges: rule node → specific step (cross-compound, shows which rules each step uses)
       node.steps.forEach((step, idx) => {
-        const stepNodeId = `${node.id}:step:${idx}`
-        const rulesApplied = step.rules_applied || []
-        rulesApplied.forEach(ruleId => {
+        const stepNodeId = `${node.id}:step:${idx}`;
+        (step.rules_applied || []).forEach(ruleId => {
           elements.push({
             group: 'edges',
             data: {
               id: `${ruleId}->guard->${stepNodeId}`,
               source: ruleId,
               target: stepNodeId,
-              relation: 'guard'
-            }
+              relation: 'guard',
+            },
           })
         })
       })
     }
 
-    // FSM states
-    if (node.sm && node.sm.states) {
+    if (node.sm?.states) {
       node.sm.states.forEach(state => {
         elements.push({
           group: 'nodes',
@@ -684,19 +882,17 @@ export function buildCytoscapeElements(nodes, edges) {
             id: state.id,
             label: state.name,
             nodeKind: 'state',
-            parent: `compound:${node.id}`
-          }
+            parent: `compound:${node.id}`,
+          },
         })
       })
     }
   })
 
-  // Create edges — remap external node IDs through consolidation map
+  // Edges
   edges.forEach(edge => {
     const source = externalEdgeMap[edge.from] || edge.from
     const target = externalEdgeMap[edge.to] || edge.to
-
-    // Skip self-edges that arise from consolidation (e.g. two postgres:X → postgres edges merged)
     if (source === target) return
 
     elements.push({
@@ -708,85 +904,97 @@ export function buildCytoscapeElements(nodes, edges) {
         relation: edge.relation,
         ...edge,
         from: source,
-        to: target
-      }
+        to: target,
+      },
     })
   })
 
   return elements
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Canvas overlays
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function buildCanvasOverlays(container, nodes) {
+  const overlays = document.createElement('div')
+  overlays.id = 'foundry-canvas-overlays'
+  overlays.style.cssText = `
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none; z-index: 1;
+  `
+
+  const coverage = domainCoverage(nodes)
+  const coverageHtml = coverage
+    .map(({ domain, avg }) =>
+      `<span style="color:${covColor(avg)};margin-right:12px">${domain} ${avg}%</span>`)
+    .join('')
+
+  const header = document.createElement('div')
+  header.style.cssText = `
+    position: absolute; top: 8px; left: 8px;
+    padding: 8px 12px;
+    background: rgba(30,30,45,0.8);
+    border: 1px solid var(--fg-b1);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--fg-t2);
+  `
+  header.innerHTML = coverageHtml
+  overlays.appendChild(header)
+  container.parentElement.appendChild(overlays)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mount
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Factory function: creates and configures a CytoscapeGraph with Foundry-specific styling
+ * Factory: creates and fully configures a CytoscapeGraph for Foundry.
+ * Owns the stylesheet, theme watching, HTML label templates, and event wiring.
  */
 export function mountFoundryGraph(container, contextJson) {
-  // Extract colors from CSS once
   const colors = _extractColors()
 
-  // Create graph with color injection
-  const graph = new CytoscapeGraph(container, {}, colors)
+  const graph = new CytoscapeGraph(container, {
+    style: _buildFoundryStyles(colors),
+  })
 
-  // Normalize all nodes
+  // Rebuild only the color-dependent stylesheet slice when the theme changes.
+  // STATIC_STYLES never needs to rebuild.
+  new MutationObserver(() => {
+    graph.cy.style(_buildFoundryStyles(_extractColors())).update()
+  }).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  })
+
   const normalizedNodes = (contextJson.nodes || []).map(normalizeNode)
-
-  // Build Cytoscape elements
   const elements = buildCytoscapeElements(normalizedNodes, contextJson.edges || [])
 
-  // Load elements into graph
   graph.cy.add(elements)
 
-  // Set up HTML labels
-  graph.setupHtmlLabels(entityTpl, boundaryTpl, domainClusterTpl, stepTpl)
+  graph.setupHtmlLabels([
+    { query: 'node[nodeKind="entity"]',  halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: entityTpl },
+    { query: 'node.domain-cluster',      halign: 'left',   valign: 'top',    halignBox: 'left',   valignBox: 'top',    tpl: domainClusterTpl },
+    { query: 'node[nodeKind="cluster"]', halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: boundaryTpl },
+    { query: 'node[nodeKind="step"]',    halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: stepTpl },
+  ])
 
-  // Build canvas overlays
   buildCanvasOverlays(container, normalizedNodes)
 
-  // Attach normalized nodes map for hook use
   graph.normalizedNodes = new Map(normalizedNodes.map(n => [n.id, n]))
 
-  // Wire up click handler
   graph.onNodeClick = (nodeId, nodeData) => {
     container.dispatchEvent(new CustomEvent('foundry:node-selected', {
       detail: { id: nodeId, data: nodeData },
-      bubbles: true
+      bubbles: true,
     }))
   }
 
-  // Run layout
   graph._runLayout()
   graph.onReady()
 
   return graph
 }
-
-/**
- * HTML label template for step nodes
- */
-export function stepTpl(data) {
-  const n = data
-  const icons = { read: '📖', write: '✏', map: '◈', custom: '⚙' }
-  const icon = icons[n.step_kind] || '⚙'
-  return `<div class="cy-node-html cy-step-node" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 4px">
-    <span>${icon}</span><br>
-    <span style="color:var(--fg-tx)">${n.label || n.id}</span>
-  </div>`
-}
-
-/**
- * Search match function
- */
-export function searchMatch(node, query) {
-  const queryLower = query.toLowerCase()
-  const id = (node.id || '').toLowerCase()
-  const type = (node.type || '').toLowerCase()
-  const domain = (node.domain || '').toLowerCase()
-  const description = (node.description || '').toLowerCase()
-
-  return (
-    id.includes(queryLower) ||
-    type.includes(queryLower) ||
-    domain.includes(queryLower) ||
-    description.includes(queryLower)
-  )
-}
-
