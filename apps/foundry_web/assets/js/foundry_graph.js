@@ -7,6 +7,8 @@ import { _probe, _resolveColor, _resolveBg } from './css_utils'
  */
 function _extractColors() {
   return {
+    nodeBase:     _resolveBg('--graph-node-bg'),
+    clusterBase:  _resolveBg('--graph-cluster-bg'),
     base: _resolveBg('--fg-base'),
     s2:   _resolveBg('--fg-s2'),
     s3:   _resolveBg('--fg-s3'),
@@ -306,7 +308,7 @@ function _dynamicStyles(c) {
     {
       selector: 'node',
       style: {
-        'background-color': c.base,
+        'background-color': c.nodeBase,
         'border-color': c.b1,
         'color': c.tx,
       },
@@ -315,18 +317,18 @@ function _dynamicStyles(c) {
     { selector: 'node.gap',       style: { 'border-color': c.yw } },
     // Sensitive border color
     { selector: 'node.sensitive', style: { 'border-width': 1, 'border-color': c.rd } },
-    // Cluster base colors — rgba values promoted to CSS vars in app.css
+    // Cluster base colors — use darker than node background
     {
       selector: 'node[nodeKind="cluster"]',
       style: {
-        'background-color': 'rgba(20,20,35,.6)',
-        'border-color': 'rgba(80,80,110,.3)',
+        'background-color': c.clusterBase,
+        'border-color': c.b1,
       },
     },
-    // Domain cluster: surface background
+    // Domain cluster: darker background
     {
       selector: 'node.domain-cluster',
-      style: { 'background-color': c.base },
+      style: { 'background-color': c.clusterBase },
     },
     // Per-domain border colors
     ...domainSelectors,

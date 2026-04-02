@@ -107,6 +107,10 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 :root, [data-theme=dark] {
+  /* Graph node backgrounds (always dark, not theme-inverted like UI) */
+  --graph-node-bg:    rgba(30,30,45,0.95);
+  --graph-cluster-bg: rgba(20,20,35,0.6);
+
   /* Domain / status accent colors (not in DaisyUI palette) */
   --fg-bl:   #60a5fa;
   --fg-blb:  rgba(96, 165, 250, 0.1);
@@ -142,6 +146,10 @@
 }
 
 [data-theme=light] {
+  /* Graph node backgrounds (always dark, not theme-inverted like UI) */
+  --graph-node-bg:    rgba(30,30,45,0.95);
+  --graph-cluster-bg: rgba(20,20,35,0.6);
+
   --fg-bl:   #0ea5e9;
   --fg-blb:  rgba(14, 165, 233, 0.1);
   --fg-blbd: rgba(14, 165, 233, 0.25);
