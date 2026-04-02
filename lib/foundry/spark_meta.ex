@@ -73,7 +73,8 @@ defmodule Foundry.SparkMeta.StepEntry do
     has_compensation: false,
     target_resource: nil,
     target_action: nil,
-    step_kind: nil
+    step_kind: nil,
+    rules_applied: []
   ]
 end
 
@@ -449,6 +450,8 @@ defmodule Foundry.SparkMeta do
             target_resource = Map.get(step, :resource) || infer_target_resource_from_source(module, step)
             target_action = Map.get(step, :action) |> then(&if &1, do: to_string(&1), else: nil)
 
+            rules_applied = extract_rules_from_step(module, step)
+
             %Foundry.SparkMeta.StepEntry{
               name: to_string(step.name),
               type:
@@ -463,7 +466,8 @@ defmodule Foundry.SparkMeta do
               has_compensation: Map.get(step, :compensate) != nil,
               target_resource: format_module_fqn(target_resource),
               target_action: target_action,
-              step_kind: step_kind
+              step_kind: step_kind,
+              rules_applied: rules_applied
             }
           end)
         rescue
@@ -546,6 +550,44 @@ defmodule Foundry.SparkMeta do
         _ -> nil
       end
     end)
+  end
+
+  defp extract_rules_from_step(module, step) do
+    try do
+      case find_module_source_file(Atom.to_string(module)) do
+        nil -> []
+        file -> extract_rule_refs_from_step(file, to_string(step.name))
+      end
+    rescue
+      _ -> []
+    end
+  end
+
+  defp extract_rule_refs_from_step(file, step_name) do
+    try do
+      content = File.read!(file)
+      # Find step block by name, then scan that block for Rules.X.evaluate calls
+      step_pattern = ~r/step\s+:#{Regex.escape(step_name)}\b/
+      case Regex.run(step_pattern, content, return: :index) do
+        [{start, _}] ->
+          # Extract from step start to next top-level step or end (scan ~800 chars)
+          remaining = String.slice(content, start, min(String.length(content) - start, 800))
+          find_rule_evaluations(remaining)
+        _ ->
+          # Fallback: scan entire file if step name not found
+          find_rule_evaluations(content)
+      end
+    rescue
+      _ -> []
+    end
+  end
+
+  defp find_rule_evaluations(content) do
+    # Pattern: SomeModule.Rules.RuleName.evaluate
+    pattern = ~r/([A-Z][A-Za-z0-9._]*\.Rules\.[A-Z][A-Za-z0-9._]*)/
+    Regex.scan(pattern, content)
+    |> Enum.map(&List.first/1)
+    |> Enum.uniq()
   end
 
   defp put_oban_fields(%ModuleInfo{module: module} = info) do
