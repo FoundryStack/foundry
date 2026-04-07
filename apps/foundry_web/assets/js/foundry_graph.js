@@ -4,11 +4,12 @@ import { _probe, _resolveColor, _resolveBg } from './css_utils'
 /**
  * Read all Foundry theme tokens from CSS into a plain object of resolved rgb()
  * strings. Called once at mount and again whenever data-theme changes.
+ * Properties suffixed with `Bg` use _resolveBg(); text-color properties use _resolveColor().
  */
 function _extractColors() {
   return {
-    nodeBase:     _resolveBg('--graph-node-bg'),
-    clusterBase:  _resolveBg('--graph-cluster-bg'),
+    nodeBg:    _resolveBg('--graph-node-bg'),
+    clusterBg: _resolveBg('--graph-cluster-bg'),
     base: _resolveBg('--fg-base'),
     s2:   _resolveBg('--fg-s2'),
     s3:   _resolveBg('--fg-s3'),
@@ -146,6 +147,11 @@ const STATIC_STYLES = [
   {
     selector: 'node[type="job"]',
     style: { 'border-style': 'dashed', 'border-width': 1.5 },
+  },
+  // Trigger node: inbox/chevron shape signals entry point (HTTP endpoint or webhook)
+  {
+    selector: 'node[type="trigger"]',
+    style: { 'shape': 'barrel', 'border-style': 'dotted', 'border-width': 1.5 },
   },
   // Blueprint node: diamond shape
   {
@@ -308,7 +314,7 @@ function _dynamicStyles(c) {
     {
       selector: 'node',
       style: {
-        'background-color': c.nodeBase,
+        'background-color': c.nodeBg,
         'border-color': c.b1,
         'color': c.tx,
       },
@@ -317,18 +323,18 @@ function _dynamicStyles(c) {
     { selector: 'node.gap',       style: { 'border-color': c.yw } },
     // Sensitive border color
     { selector: 'node.sensitive', style: { 'border-width': 1, 'border-color': c.rd } },
-    // Cluster base colors — use darker than node background
+    // Cluster base colors (darker than regular nodes)
     {
       selector: 'node[nodeKind="cluster"]',
       style: {
-        'background-color': c.clusterBase,
+        'background-color': c.clusterBg,
         'border-color': c.b1,
       },
     },
-    // Domain cluster: darker background
+    // Domain cluster background
     {
       selector: 'node.domain-cluster',
-      style: { 'background-color': c.clusterBase },
+      style: { 'background-color': c.clusterBg },
     },
     // Per-domain border colors
     ...domainSelectors,
@@ -343,6 +349,8 @@ function _dynamicStyles(c) {
     ...stepKindSelectors,
     // Job node border
     { selector: 'node[type="job"]',       style: { 'border-color': c.pu } },
+    // Trigger node border (webhook, HTTP endpoint)
+    { selector: 'node[type="trigger"]',   style: { 'border-color': c.ac } },
     // Blueprint border
     { selector: 'node[type="blueprint"]', style: { 'border-color': c.ac } },
     // Transfer cluster border
@@ -510,15 +518,15 @@ export function shortLabel(id) {
 // These are used for HTML label coloring (domainClusterTpl) where CSS vars
 // work fine. The Cytoscape stylesheet uses _extractColors() tokens instead.
 const DOMAIN_COLORS = {
-  Finance:        '#60a5fa',  // --fg-bl
-  Players:        '#2dd4bf',  // --fg-gn
-  Promotions:     '#f59e0b',  // --fg-yw
-  Gaming:         '#a78bfa',  // --fg-pu
-  Accounts:       '#60a5fa',  // --fg-bl
-  Infrastructure: '#6b6b8a',  // --fg-t2
-  Identity:       '#2dd4bf',  // --fg-gn
-  Compliance:     '#f59e0b',  // --fg-yw
-  Game:           '#a78bfa',  // --fg-pu
+  Finance:        'var(--fg-bl)',
+  Players:        'var(--fg-gn)',
+  Promotions:     'var(--fg-yw)',
+  Gaming:         'var(--fg-pu)',
+  Accounts:       'var(--fg-bl)',
+  Infrastructure: 'var(--fg-t2)',
+  Identity:       'var(--fg-gn)',
+  Compliance:     'var(--fg-yw)',
+  Game:           'var(--fg-pu)',
 }
 
 export function getDomainColor(domain) {
@@ -634,6 +642,11 @@ export function entityTpl(data) {
     ? `<div style="font-size:9px;color:var(--fg-pu);margin-top:1px">⚙ ${n.oban_queues?.[0] || 'default'}${n.schedule ? ' · ' + n.schedule : ''}</div>`
     : ''
 
+  // Trigger annotation: show HTTP endpoint or webhook route
+  const triggerAnnotation = n.type === 'trigger' && (n.routes?.length > 0)
+    ? `<div style="font-size:8px;color:var(--fg-ac);margin-top:2px;font-family:var(--font-mono)">${n.routes[0].r}</div>`
+    : ''
+
   return `
     <div class="cy-node-html">
       ${buildIndicators(n)}
@@ -650,6 +663,7 @@ export function entityTpl(data) {
         <span class="title">${shortLabel(n.id)}</span>
       </div>
       ${jobAnnotation}
+      ${triggerAnnotation}
       ${n.cov > 0 ? `
         <div class="req-badges">
           <div style="width:${n.cov}%; height:3px; background:${covColor(n.cov)}; border-radius:1px"></div>
