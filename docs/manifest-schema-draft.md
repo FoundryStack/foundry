@@ -1,6 +1,6 @@
 # docs/manifest-schema-draft.md — Foundry Project Manifest Schema
 
-> **Status:** Pre-ADR draft — consolidated from implicit references across ADR-001 through ADR-015.
+> **Status:** Pre-ADR draft — amended 2026-04: MCP fields, Tidewave scaffold flag, ash_ai agent step model, domain_category rename
 > This document exists to give `Foundry.Manifest` Ash resource design a complete target.
 > It will be superseded by ADR-011 once the Ash resource is defined.
 > Do not treat this as a frozen contract. Treat it as the authoritative candidate schema.
@@ -35,8 +35,11 @@ The schema is identical regardless of whether the project is Foundry itself or a
 
   # The target domain type. Informational only — does not change enforcement behaviour.
   # Used in bootstrap mode to select template defaults.
-  # Values: :igaming | :fintech | :healthcare | :legal | :insurance | :other
-  domain_type: :igaming,
+  # Values: :igaming | :fintech | :healthcare | :legal | :insurance | :itsm |
+  #         :sdlc | :logistics | :enterprise_internal | :other
+  # Renamed from domain_type to domain_category in ADR-023; both are accepted.
+  # domain_category informs the copilot's reasoning posture (ADR-023).
+  domain_type: :igaming,  # alias for domain_category
 
   # ── Sensitive Resources ────────────────────────────────────────────────────
   # Source: ADR-005, INV-001, INV-011, INV-012
@@ -113,6 +116,28 @@ The schema is identical regardless of whether the project is Foundry itself or a
   # primary mechanism; this manifest field enables per-project override.
   change_generation_enabled: true,
 
+  # ── MCP Server ────────────────────────────────────────────────────────────
+  # Source: ADR-024
+
+  # Enables the Foundry MCP server at /foundry/mcp.
+  # When true, mix foundry.spec_kit.init generates a .foundry/mcp_config.json
+  # for Claude Code / Cursor integration.
+  mcp_enabled: true,
+
+  # Whether to scaffold Tidewave into the target project endpoint (dev mode only).
+  # When true, mix foundry.spec_kit.init adds {:tidewave, "~> 0.5", only: :dev}
+  # and plug Tidewave to the endpoint's dev block.
+  # Set false if the team uses a different dev-time MCP tool.
+  tidewave_scaffold: true,
+
+  # ── Agent Model ──────────────────────────────────────────────────────────
+  # Source: ADR-024
+
+  # Default model for internal LLM calls (contradiction check, speckit draft).
+  # Only used when copilot.model is set and no external agent is attached.
+  # Set to nil to disable all internal LLM calls (pure MCP server mode).
+  agent_model: "anthropic:claude-sonnet-4-6",
+
   # ── Copilot Agentic Loop ──────────────────────────────────────────────────
   # Source: ADR-010 §Agentic Loop Specification
 
@@ -121,7 +146,12 @@ The schema is identical regardless of whether the project is Foundry itself or a
     # Circuit breaker — not a quality knob. Normal operations never hit this.
     # Increase if complex multi-module operations routinely hit the limit.
     # Decrease to 4–5 for faster average response at the cost of depth.
-    max_tool_calls: 8
+    max_tool_calls: 8,
+    # Optional internal LLM for contradiction check, ADR draft assist.
+    # Only used when no external agent is attached (cloud mode without editor).
+    # Defaults to "anthropic:claude-sonnet-4-6" if not set.
+    # Set to nil to disable all internal LLM calls (pure MCP server mode).
+    model: "anthropic:claude-sonnet-4-6"
   ],
 
   # ── Notifications ─────────────────────────────────────────────────────────
@@ -208,6 +238,11 @@ The following are enforced by `mix foundry.lint.all` against the manifest:
 4. `coverage_weights` values must sum to 1.0 ± 0.001 — lint error.
 5. `context_exclusions` entries should have a comment with an issue reference — lint warning if absent.
 6. If `conditional_libraries` includes `:ash_money`, a CLDR backend module must be discoverable — lint error.
+7. `mcp_enabled: true` requires `approvers.sensitive_lead` to be present — an MCP server
+   without approval routing for sensitive resources is a governance gap. Lint error if absent.
+8. If `conditional_libraries` includes `:ash_ai` (or ash_ai is present in mix.lock), the
+   manifest must declare at least one approver capable of approving `:behavioral` changes —
+   agent steps are always `:behavioral` or higher. Lint warning if absent.
 
 ---
 

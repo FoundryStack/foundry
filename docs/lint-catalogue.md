@@ -7,6 +7,8 @@
 > **Rule:** When a new lint rule is added to `Foundry.LintRules.*`, it must be
 > catalogued here first (status: `planned`) before implementation begins.
 > This is how the linter's coverage is tracked without duplicating what the code says.
+>
+> **Amendment 2026-04:** Added rules for AshOban trigger audit, AshGraphql mutation security, ash_ai agent step compliance. Updated INV-014..017 to reference ash_ai v0.5 syntax instead of reactor_agent_step DSL.
 
 ---
 
@@ -113,7 +115,7 @@ field of `mix foundry.project.status`.
 |---|---|---|---|---|
 | `:ash_version_outdated` | `:error` | The resolved `ash` version in `mix.lock` is below the minimum supported version (3.x). Ash 2.x is not supported — mixing 2.x and 3.x patterns produces incorrect code generation. | `Foundry.LintRules.VersionRule` | planned |
 | `:elixir_version_unsupported` | `:error` | The Elixir version in `.tool-versions` or `mix.exs` `elixir:` constraint is below the minimum required for Ash 3.x compatibility. | `Foundry.LintRules.VersionRule` | planned |
-| `:ashai_version_outdated` | `:warning` | Agent steps are declared but the resolved `ash_ai` version is below 2.x. Fires only when `agent_steps` are present in the project. | `Foundry.LintRules.VersionRule` | planned |
+| `:ashai_version_outdated` | `:warning` | Agent steps are declared but the resolved `ash_ai` version is below 0.5.x. Fires only when `agent_steps` are present in the project. A version below 0.5 does not support `run prompt(...)` syntax and will cause subtle failures. | `Foundry.LintRules.VersionRule` | planned |
 
 `Foundry.LintRules.VersionRule` reads `mix.lock` directly. Git-sourced dependencies
 are identified by their commit SHA; version rules are skipped for them (warning logged).
@@ -137,6 +139,38 @@ are identified by their commit SHA; version rules are skipped for them (warning 
 | Rule ID | Severity | Description | Implementation module | Status |
 |---|---|---|---|---|
 | `:admin_route_unauthenticated` | `:error` | A route for `oban_web`, `phoenix_live_dashboard`, or `fun_with_flags_ui` is not behind an `ash_authentication` session check. The rule inspects the router module for pipeline assignments on these paths. | `Foundry.LintRules.AdminRouteRule` | planned |
+
+---
+
+### AshOban Trigger Audit
+
+| Rule ID | Severity | Description | Implementation module | Status |
+|---|---|---|---|---|
+| `:oban_trigger_on_sensitive_unaudited` | `:error` | An `AshOban` trigger or scheduled action on a `:sensitive` resource does not have `paper_trail` enabled on the resource it fires against. An Oban trigger that mutates a sensitive resource without an audit trail creates an untracked mutation path. | `Foundry.LintRules.ObanTriggerRule` | planned |
+
+---
+
+### AshGraphql Mutation Security
+
+| Rule ID | Severity | Description | Implementation module | Status |
+|---|---|---|---|---|
+| `:graphql_mutation_unsecured` | `:error` | An `AshGraphql` mutation on a `:sensitive` resource does not pass through a declared policy. Mutations on sensitive resources must have explicit `Ash.Policy.Authorizer` policies — implicit authorization is not sufficient. The rule inspects `AshGraphql.Resource.Info.mutations/1` cross-referenced with `Ash.Resource.Info.authorizers/1`. | `Foundry.LintRules.GraphqlMutationRule` | planned |
+| `:graphql_mutation_unauthenticated` | `:error` | An `AshGraphql` mutation route is reachable without authentication. All GraphQL mutations (not just queries) must be behind `ash_authentication` session or API key checks. The rule inspects the Phoenix router pipeline assignments for the `AshGraphql.Router` mount point. | `Foundry.LintRules.GraphqlMutationRule` | planned |
+
+---
+
+### ash_ai Agent Step Compliance (replaces reactor_agent_step rules)
+
+*These rules replace the previous reactor_agent_step DSL checks. INV-014..017 now apply
+to `ash_ai` v0.5 `run prompt(...)` configuration in Reactor steps.*
+
+| Rule ID | Severity | Description | Implementation module | Status |
+|---|---|---|---|---|
+| `:ash_ai_step_missing_confidence_threshold` | `:error` | A Reactor step with `step_kind: :agent` and `ai_model` set (i.e., using `run prompt(...)`) but `agent_type` of `:decision` or `:scorer` does not declare `confidence_threshold`. Maps to INV-014. | `Foundry.LintRules.AshAiStepRule` | planned |
+| `:ash_ai_step_missing_on_low_confidence` | `:error` | A decision/scorer agent step does not declare `on_low_confidence`. The only permitted value in v1 is `:escalate_human`. Maps to INV-014. | `Foundry.LintRules.AshAiStepRule` | planned |
+| `:ash_ai_step_missing_human_gate` | `:error` | A Reactor step using `run prompt(...)` that gates a compliance-controlled action does not declare `on_low_confidence: :escalate_human`. Maps to INV-015. The rule infers compliance control from whether the step's `target_resource` is in `manifest.sensitive_resources` and the action is classified `:compliance`. | `Foundry.LintRules.AshAiStepRule` | planned |
+| `:ash_ai_step_undeclared_tools` | `:error` | A `run prompt(...)` step does not explicitly declare `tools:`. The implicit `tools: true` (all tools) is forbidden on compliance-gated resources. Maps to INV-016. | `Foundry.LintRules.AshAiStepRule` | planned |
+| `:ash_ai_step_missing_telemetry_prefix` | `:warning` | A `run prompt(...)` step does not declare `telemetry_prefix:`. Maps to INV-017. Severity is warning not error because telemetry is observable — missing it degrades the Agent Health panel but does not break correctness. | `Foundry.LintRules.AshAiStepRule` | planned |
 
 ---
 

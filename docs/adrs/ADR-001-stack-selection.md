@@ -1,7 +1,7 @@
 # ADR-001: Stack Selection — Elixir/Ash 3.x/Phoenix/Spark
 
-**Status:** Accepted  
-**Date:** 2026-03  
+**Status:** Accepted — amended 2026-04 (ash_ai, ash_diagram, req_llm, MCP server role)
+**Date:** 2026-03
 **Deciders:** Platform team
 
 ---
@@ -58,10 +58,21 @@ its own process.
 | spark_lint | current stable | Lint rule runner engine. `Foundry.LintRules.*` provides the actual INV-011..017 rule modules. See ADR-019. |
 | Sourceror | current stable | Elixir AST parsing for diff classification (`Foundry.Diff`). Used by `mix foundry.lint.all` and the change classifier. |
 | MDEx | current stable | Markdown parsing for spec-kit documents (`Foundry.SpecKit`). Used by `mix foundry.context` spec-kit reader. |
+| ash_ai | 0.5.x+ | MCP server (AshAi.Mcp.Router), prompt-backed actions for internal LLM calls (intent classification, ADR draft assist), tool declaration DSL for Foundry.Context domain. See §MCP Server Role. |
+| ash_diagram | current stable | Ash DSL data extraction for ERD, C4, and policy flowcharts. Used by `mix foundry.project.context` via AshDiagram.Data.Extension to populate NodeEntry relationships, auth strategies, and policy graphs. See ADR-021. |
+| req_llm | 1.x | Composable LLM HTTP client (Req plugin). Used by ash_ai's ToolLoop internally. Direct use only when Foundry's own optional internal LLM calls need provider-specific configuration. 10 providers / 130+ models. |
 
 **Foundry does not depend on `ash_postgres`, `ecto_sql`, or `postgrex`.** Foundry's own
 persistent state uses git-backed files under `.foundry/` (ADR-015). There is no Foundry
 database to provision. `mix foundry.studio` requires only Elixir and git.
+
+**Foundry is an MCP server, not an LLM client.** External AI agents (Claude Code, Cursor,
+Codex CLI, Zed) connect to Foundry's `AshAi.Mcp.Router` endpoint and call governed tools.
+Those agents bring their own model and API key. Foundry does not initiate LLM calls to
+serve external agents — it executes governed Elixir operations (Igniter, Mix tasks, lint)
+in response to MCP tool calls. `req_llm` / `ash_ai` prompt actions are used only for
+Foundry's optional internal reasoning (contradiction check, speckit draft generation) in
+cloud mode or when no external agent is attached. See ADR-024.
 
 ### Target platform dependencies (required in every target platform)
 
@@ -83,7 +94,8 @@ database to provision. `mix foundry.studio` requires only Elixir and git.
 | telemetry_metrics | current stable | Metrics aggregation |
 | telemetry_poller | current stable | VM and process metrics |
 | reactor_human_gate | current stable | Human-in-the-loop gate for Reactor agent steps. Scaffolded into target platforms by `Op.AddAgentStep` (Phase 8, opt-in). See ADR-019. |
-| reactor_agent_step | current stable | Spark DSL extension for Reactor agent step declarations. Depends on `reactor_human_gate`. Phase 8 opt-in. See ADR-019. |
+| ash_ai | 0.5.x+ | AI/vector/tool integration for target platforms. `run prompt(model, tools: [...])` inside Reactor steps replaces the `reactor_agent_step` package (ADR-019 amended). AshOban `:ash_oban` vectorization strategy available. See ADR-017. |
+| tidewave | 0.5.x, only: :dev | Dev-mode MCP server plug. Scaffolded into target project endpoint by `mix foundry.spec_kit.init`. Provides Claude Code / Cursor with `get_docs`, `get_ash_resources`, `project_eval`, `execute_sql_query`. Dev-only — not present in production builds. |
 
 ---
 
@@ -97,6 +109,7 @@ database to provision. `mix foundry.studio` requires only Elixir and git.
 | `ash_state_machine` | Lifecycle-bearing resource states | Transitions are `:behavioral` class changes (ADR-005) |
 | `ash_oban` | Background job integration | New workers are `:behavioral`; queue config is infrastructure (ADR-006) |
 | `ash_double_entry` | Financial ledger resources | Resources are always `:sensitive` (ADR-005) |
+| `ash_graphql` | GraphQL API layer | Mutations are `:behavioral`; mutations on `:sensitive` resources are `:sensitive`. Route nodes appear in Scenario perspective as API entry points. |
 | `ash_json_api` | JSON API routes | Route additions are `:behavioral`; auth-bearing routes may be `:sensitive` |
 | `ash_paper_trail` | Change history / audit trail | Required on all `:sensitive` resources — see INV-011 |
 | `ash_archival` | Soft delete | Required on all `:sensitive` resources — see INV-012 |
@@ -111,7 +124,7 @@ database to provision. `mix foundry.studio` requires only Elixir and git.
 | `AshStateMachine` | Already listed above — present when lifecycle resources exist |
 | `AshPyro` | Back-office LiveView component library (DaisyUI/Tailwind-based) |
 | `Beacon` | CMS integration — explicitly out of scope for Foundry v1 (see below) |
-| `AshAI` | AI/vector integration on Ash resources — Foundry v1 does not introspect AshAI DSL declarations; see below |
+| `AshAI` | AI/vector integration on Ash resources — Foundry v1 introspects `ash_ai` DSL declarations for agent steps (INV-014..017), vectorize blocks (surfaced as `vectorized: true` in NodeEntry), and tool declarations. `ash_ai` is no longer excluded — it is a standard target platform dependency. |
 
 ---
 
@@ -205,6 +218,27 @@ regulated platforms.
 
 The `mix foundry.context` schema includes `telemetry_prefix` for each module so the
 Operations Board can correlate runbook events with live traces.
+
+---
+
+## MCP Server Role
+
+Foundry exposes its governed tools as an MCP server endpoint via `AshAi.Mcp.Router`.
+External agents (Claude Code, Cursor, Codex CLI, Zed AI) connect to this endpoint
+using their own API keys and LLM providers. The MCP surface includes:
+
+- `get_project_status` — `mix foundry.project.status` JSON (Tier 2 health data)
+- `get_module_context` — `mix foundry.context <Module>` NodeEntry JSON
+- `get_graph` — full system map as NodeEntry + EdgeEntry list
+- `run_bash` — constrained shell (ADR-010 permitted command list)
+- `submit_proposal` — Igniter → branch → compile → diff → proposal created
+- `get_proposal` — read proposal state and diff by ID
+- `lint_check` — `mix foundry.lint.all` structured violations
+- `read_spec_kit_doc` — `Foundry.FileSystem.read/2` for ADRs/runbooks (INV-018)
+
+Each tool call is authorized via `Ash.can?/3` with the authenticated developer as actor.
+`submit_proposal` respects INV-001 — sensitive resource changes are blocked until
+the appropriate approval class is obtained. See ADR-024 for the full MCP server spec.
 
 ---
 
@@ -315,7 +349,7 @@ The following are explicitly excluded. Exclusion is a decision, not an oversight
 | Library / Feature | Reason for exclusion |
 |---|---|
 | `Beacon` CMS | Requires a separate content management governance model; deferred to v2 |
-| `AshAI` DSL introspection | AshAI DSL is not yet stable enough to freeze in `mix foundry.context` schema; Foundry v1 will not fail on `AshAI` declarations — it will ignore them and warn |
+| `AshAI` DSL introspection | REMOVED FROM OUT-OF-SCOPE. `ash_ai` v0.5 is stable. Foundry v1 introspects agent steps, vectorize blocks, and tool declarations. See §Conditionally Present. |
 | Ash 2.x projects | APIs differ significantly; mixing 2.x and 3.x patterns is a lint error |
 | Raw Ecto resources | No Spark introspection surface; these get no automation value |
 | Non-Elixir target stacks | Automation leverage requires Spark DSL |
@@ -332,6 +366,8 @@ The following are explicitly excluded. Exclusion is a decision, not an oversight
 - `ash_paper_trail` and `ash_archival` are required on `:sensitive` resources (INV-011, INV-012)
 - The forbidden dependency list in ADR-004 applies to direct application dependencies; `ecto_sql` and `postgrex` as transitive dependencies of `ash_postgres` are permitted
 - Admin dashboards (`oban_web`, `phoenix_live_dashboard`, `fun_with_flags_ui`) require authentication — the linter checks route configuration
+- `reactor_agent_step` and `reactor_human_gate` are no longer separate packages (ADR-019 amended). `ash_ai` v0.5 `run prompt(model, tools: [...])` is the canonical agent step mechanism.
+- `ash_diagram` is a Foundry meta-platform dependency, not a target platform dependency. It is used during `mix foundry.project.context` generation, not deployed into target platforms.
 
 ## What This Is Not
 

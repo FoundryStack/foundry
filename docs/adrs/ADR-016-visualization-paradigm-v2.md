@@ -1,6 +1,6 @@
 # ADR-016: Visualization Paradigm v2
 
-**Status:** Accepted — §Data Source and §Diagram JSON Contract amended by ADR-020
+**Status:** Accepted — §Data Source amended by ADR-020; §Zoom/C4, §Compound Nodes, §Scenario Perspective, §Clarity Patterns amended 2026-04
 **Date:** 2026-03
 **Deciders:** Platform team
 **Supersedes:** ADR-008 (retained for historical record)
@@ -21,6 +21,121 @@ The design was arrived at through explicit rejection of two failure modes:
 The right model is: Cytoscape.js canvas consuming the `mix foundry.project.context`
 NodeEntry JSON directly, with Foundry-specific styling applied via a direct `switch`
 on node type. No framework. No registry. A well-organized frontend module.
+
+---
+
+## Zoom ↔ C4 Level Mapping
+
+Cytoscape's zoom level maps directly to C4 abstraction depth. This is the primary
+mechanism for the "progressive detail" UX — no separate panels, no mode button, just zoom.
+
+| Zoom threshold | C4 equivalent | What becomes visible |
+|---|---|---|
+| < 0.4× | Context | Domain compound node labels only — no resources shown |
+| 0.4–0.8× | Container | Resources appear as children inside domain compounds; FSM state nodes visible |
+| 0.8–1.5× | Component (default) | Reactor steps, Transfer rules, action nodes; all status badges visible |
+| > 1.5× | Code | Individual conditions, attribute names with types, Elixir function signatures |
+
+Implementation: `cy.on('zoom', fn)` computes the current threshold and toggles CSS
+classes on node groups. All data is already in the Cytoscape instance — no server round-trip.
+Higher zoom simply reveals detail that was rendered but hidden at coarser levels.
+
+---
+
+## Compound Node Expand/Collapse
+
+Cytoscape's compound node API is used for two purposes:
+
+**1. Domain groups** — Each Ash domain is a Cytoscape compound parent node. Resources are
+child nodes. At zoom < 0.4×, children are collapsed and the domain node shows only the
+domain name, sensitivity badge count, and coverage percentage. At zoom ≥ 0.4×, children
+expand in place using the `expandCollapse` extension.
+
+**2. Reactor/Transfer step sub-graphs** — On zoom reached, a Reactor or Transfer node
+expands it to reveal its step sub-graph. Each step appears as a child node with its
+`step_kind` badge (`:read`, `:write`, `:map`, `:compensation`, `:agent`). `wait_for`
+edges connect dependent steps. The sub-graph uses `dagre` layout (top-to-bottom DAG)
+within the expanded compound bounds. Collapsing returns to the resource-level view.
+
+Step sub-graph data comes from `NodeEntry.steps[]` with the extended fields from ADR-021:
+`step_index`, `wait_for`, `step_kind`, `target_resource`, `target_action`.
+
+---
+
+## Scenario Perspective
+
+A dedicated canvas perspective (selectable from the toolbar alongside Default, Authorization,
+Config) that re-layouts the graph as a flow view with scenario origin nodes at the periphery.
+
+**Scenario origin node types** (subset of the Trigger taxonomy, surfaced at canvas periphery):
+
+| Origin type | Data source | Example label |
+|---|---|---|
+| Cron job | `NodeEntry.oban_triggers[].schedule` | `"0 0 * * *" → DeleteExpiredPosts` |
+| Condition trigger | `NodeEntry.oban_triggers[].where` | `status == :pending → ProcessVideo` |
+| API route (JSON:API) | `NodeEntry.json_api_routes[]` | `POST /wallets/:id/withdraw` |
+| GraphQL mutation | `NodeEntry.graphql_mutations[]` | `mutation depositFunds` |
+| Authentication event | `NodeEntry.authentication_strategies[]` | `password login → session` |
+
+Each origin node has directed edges to the first Reactor or Transfer it initiates, which
+then chains into downstream resource nodes. This answers "what runs and when" — the
+complement to the Default view's "what exists".
+
+**Layout**: Origin nodes arranged around the canvas periphery using a force-directed
+radial layout. Domain compounds are de-emphasized (lower opacity) in this mode — the
+flow path is the primary visual.
+
+This perspective requires `ScenarioEntry` data in NodeEntry — see ADR-021 amendments.
+
+---
+
+## Clarity Protocol Patterns (learned, not adopted)
+
+The Clarity introspection framework (team-alembic/clarity) uses a protocol-based vertex
+model that Foundry's NodeEntry design has learned from. The following patterns are adopted:
+
+**`Clarity.Vertex` protocol → `Foundry.Graph.Vertex` protocol**
+NodeEntry implements three required callbacks (`id/1`, `name/1`, `type_label/1`) plus
+optional secondary protocols:
+- `Foundry.Graph.Vertex.GovernanceProvider` — returns sensitivity class, change class, compliance IDs
+- `Foundry.Graph.Vertex.SourceLocationProvider` — returns `{file, line}` for "go to source" navigation
+- `Foundry.Graph.Vertex.ProposalProvider` — returns active proposal preview if one exists
+
+**Incremental introspection (Clarity subscription pattern)**
+`Foundry.Graph.Server` uses the same subscription model as Clarity:
+- `:full` introspection on initial load
+- `{:incremental, app, modules_diff}` on file save events (inotify watcher)
+- Events emitted: `:work_started`, `{:work_progress, queue_info}`, `:work_completed`
+- Only changed modules are re-introspected — response time target <500ms per file save
+
+**`graph_delta` contract**
+When introspection runs, the diff between previous and new graph is computed as
+`{added_vertices, removed_vertices, changed_vertices, changed_edges}` and emitted as a
+structured delta. The LiveView calls `cy.add()`, `cy.remove()`, `cy.style()` on the
+existing canvas rather than replacing the full graph.
+
+**`SourceLocationProvider`** — clicking any resource node navigates directly to its
+source file and line. Sourceror extracts `__ENV__.line` from the Ash DSL `do` block
+during introspection and stores it in NodeEntry as `source_location: {file, line}`.
+
+---
+
+## Policy Flowchart (ash_diagram integration)
+
+The detail drawer for any Resource node includes a "Policies" tab alongside
+"Compliance Links" and "Test Coverage". This tab renders the authorization policy
+flowchart produced by `AshDiagram.Data.Policy.for_resource/1`.
+
+The flowchart shows: policy conditions, bypass paths, action-level authorization
+decisions, and which actor roles are permitted or forbidden. It is derived from
+`Ash.Resource.Info.authorizers/1` — always current, never a separate diagram to maintain.
+
+This closes the audit gap: an auditor can follow
+`RG-UK-014 node → Wallet resource → Policies tab → authorization flowchart`
+and verify that the authorization conditions match the regulatory requirement.
+The demonstrable claim standard (ADR-022) gains a new demo path for this flow.
+
+Foundry should add all possible DSL blocks including actions and manual code.
 
 ---
 
@@ -118,6 +233,11 @@ and `scenarios`.
 
 The drawer tab also shows policy test coverage: which actor/action combinations have
 corresponding test cases in the test suite, and which are untested.
+
+**Policy flowchart tab** — The detail drawer also renders an `ash_diagram` policy
+flowchart for any Resource node that has declared authorizers. See §Policy Flowchart above.
+The tab is rendered lazily — `AshDiagram.Data.Policy.for_resource/1` is called on first
+tab open, not at graph load time.
 
 An "Authorization Trace" scenario mode (accessible from the canvas toolbar) draws
 authorization edges between the actor-identity Resource and the Resources it can access,

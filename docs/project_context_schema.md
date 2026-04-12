@@ -133,7 +133,26 @@ per-module context into the graph.
   "steps": [ ...StepEntry... ],
   "outputs": [ ...OutputEntry... ],
   "agent_steps": [],
-  "last_modified": "2026-03-02"
+  "last_modified": "2026-03-02",
+  "scenario_origins": [
+    {
+      "trigger_type": "cron",
+      "schedule": "0 0 * * *",
+      "condition_expr": null,
+      "route_method": null,
+      "route_path": null,
+      "mutation_name": null,
+      "initiates_module": "IgamingRef.Finance.DailySettlement",
+      "description": "Triggers daily settlement Reactor at midnight"
+    }
+  ],
+  "graphql_mutations": [
+    { "name": "depositFunds", "action": "deposit", "description": "..." }
+  ],
+  "json_api_routes": [
+    { "method": "post", "path": "/wallets/:id/withdraw", "action": "withdraw" }
+  ],
+  "vectorized": false
 }
 ```
 
@@ -176,6 +195,10 @@ per-module context into the graph.
 | `provider_behaviour` | string\|null | Provider adapter behaviour name |
 | `provider_name` | string\|null | Provider adapter display name |
 | `rule_compliance_links` | RuleComplianceLink[] | Links from rules to compliance requirements |
+| `scenario_origins` | ScenarioEntry[] | Trigger/API route origins for Scenario perspective |
+| `graphql_mutations` | GraphqlMutation[] | AshGraphql mutation declarations |
+| `json_api_routes` | JsonApiRoute[] | AshJsonApi route declarations |
+| `vectorized` | boolean | Whether resource has `ash_ai` vectorize block declared |
 
 ### Node types
 
@@ -248,7 +271,12 @@ per-module context into the graph.
 | `has_compensation` | boolean | Whether step has compensation defined |
 | `target_resource` | string\|null | FQN of resource this step acts on |
 | `target_action` | string\|null | Action name called (from `:action` option) |
-| `step_kind` | enum | `:read`, `:write`, `:map`, `:run`, `:compensation`, `:custom` |
+| `step_kind` | enum | `:read`, `:write`, `:map`, `:run`, `:compensation`, `:custom`, `:agent` |
+| `ai_model` | string\|null | Model identifier for `:agent` steps, e.g. `"anthropic:claude-sonnet-4-6"` |
+| `confidence_threshold` | number\|null | INV-014 enforcement for `:agent` steps |
+| `on_low_confidence` | string\|null | INV-015 enforcement (`:escalate_human`) |
+| `ai_tools` | string[] | INV-016: explicitly declared tool list for `:agent` steps |
+| `ai_telemetry_prefix` | string[] | INV-017: telemetry prefix for `:agent` steps |
 
 ---
 
@@ -297,6 +325,41 @@ Edges are ordered: `from` FQN ascending, then `to` FQN ascending.
 | `persists_to` | Resource | External | Resource persists to database (future) |
 | `queues_via` | Job | External | Job queues via external queue (future) |
 | `calls_provider` | Step | Provider | Step invokes provider (future) |
+
+---
+
+## ScenarioEntry Schema
+
+Each entry in `NodeEntry.scenario_origins[]`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `trigger_type` | `"cron" \| "condition" \| "json_api_route" \| "graphql_mutation" \| "auth_event"` | Origin classification |
+| `schedule` | string \| null | Cron expression for `:cron` triggers |
+| `condition_expr` | string \| null | AshOban `where` expression string for `:condition` triggers |
+| `route_method` | `"get" \| "post" \| "patch" \| "delete"` \| null | HTTP method for `:json_api_route` |
+| `route_path` | string \| null | Route path template, e.g. `"/wallets/:id/withdraw"` |
+| `mutation_name` | string \| null | GraphQL mutation name for `:graphql_mutation` |
+| `initiates_module` | string \| null | FQN of the first Reactor/Transfer this scenario triggers |
+| `description` | string \| null | Human-readable description |
+
+`scenario_origins` is `[]` (empty list) when a resource has no scenario-origin declarations.
+This field is non-breaking — existing renderers that do not read it ignore it.
+
+---
+
+## Visualization Perspective — Scenario Data Flow
+
+The Scenario perspective in Foundry Studio (ADR-016) reads `scenario_origins` to place
+trigger nodes at the canvas periphery. The data flow:
+
+1. `AshOban.Info.oban_triggers(resource)` → `:cron` / `:condition` ScenarioEntry
+2. `AshJsonApi.Resource.Info.routes(resource)` → `:json_api_route` ScenarioEntry
+3. `AshGraphql.Resource.Info.mutations(resource)` → `:graphql_mutation` ScenarioEntry
+4. AshAuthentication strategy declarations → `:auth_event` ScenarioEntry
+
+Each ScenarioEntry with a non-null `initiates_module` produces a directed edge in the
+Scenario perspective from the trigger node to the Reactor/Transfer it initiates.
 
 ---
 

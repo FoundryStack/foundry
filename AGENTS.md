@@ -3,6 +3,8 @@
 > This file is the primary context document for any AI agent working on the Foundry codebase.
 > Read this before reading any other file. It tells you what this system is, what it must never do,
 > and where to find authoritative answers to specific questions.
+> 
+> **Amendment 2026-04:** MCP server role, Tidewave, ash_ai agent steps, Igniter discovery API, policy self-audit
 
 ---
 
@@ -56,8 +58,9 @@ that Foundry depends on. Rationale for each extraction decision is in ADR-019.
 |---|---|---|
 | `spark_meta` | Generic Spark DSL walker → struct tree. Opt-in `SparkMeta.Extension` hook for richer output; unknown extensions get a raw key-value fallback. | `Foundry.Context.*` Mix tasks — powers `mix foundry.context` |
 | `spark_lint` | Rule runner engine only: `SparkLint.Rule` behaviour, `SparkLint.Violation` struct, `mix spark_lint.check` task. Ships zero rules. | `Foundry.LintRules.*` plugs Foundry's INV-011..017 rule modules into it |
-| `reactor_human_gate` | Human-in-the-loop gate primitive for any Ash Reactor. Ships `HumanGateTask` resource scaffold and `WaitForHumanStep`. Usable independently of agents. | `Op.AddAgentStep` scaffolds it into target platforms (Phase 8) |
-| `reactor_agent_step` | Spark DSL extension for Reactor steps: declares `agent_type`, `model`, `confidence_threshold`, `on_low_confidence`, `tools`, `telemetry_prefix`. Depends on `reactor_human_gate`. | Phase 8 agent injection; extraction confirmed alongside `reactor_human_gate` |
+| `ash_ai` | MCP server (`AshAi.Mcp.Router`), tool declarations (`Foundry.Context` domain), optional prompt-backed internal reasoning actions. See ADR-024. | Target platforms use `ash_ai` directly; Foundry uses MCP server endpoint for external agent integration |
+| `ash_diagram` | Ash DSL data extraction for ERD + policy flowcharts in `mix foundry.project.context`. Foundry implements `AshDiagram.Data.Extension`. See ADR-021. | `Foundry.AshDiagramExtension` annotates diagrams with governance metadata |
+| `req_llm` | LLM HTTP client used by `ash_ai` internally. Foundry configures a dedicated Finch pool. See ADR-001. | Transitive via `ash_ai` |
 | `Foundry.Copilot.Tools` | Declares the bash tool with shell constraint enforcement
   (permitted/blocked command list per ADR-010 §Shell Constraints). No other tool
   schemas — the agent uses Mix tasks directly via bash for all retrieval. Internal
@@ -79,6 +82,8 @@ that Foundry depends on. Rationale for each extraction decision is in ADR-019.
   second tool needs the same wrapper protocol.
 - `Foundry.Proposals` — proposal state machine (ADR-014). Coupled to git-backed storage
   (ADR-015) and git-branch stale detection (ADR-009). Extract when a second use case appears.
+- `reactor_human_gate` and `reactor_agent_step` — **removed**. See ADR-019.
+  Target platforms use `ash_ai` v0.5 `run prompt(model, tools: [...])` directly.
 - A DSL annotation extension for sensitive resources (`ash_governed`) — not needed for v1.
   `manifest.sensitive_resources` list is sufficient. Future enhancement only.
 
@@ -300,6 +305,8 @@ reasoning obligation. The agent runs it internally before constructing the sessi
 □ @description drafted for all new attributes
 □ @moduledoc drafted for the new module
 □ @description fields on touched attributes are consistent with proposed change
+□ Policy compatibility verified for all generated UI actions via Ash.Resource.Info.policies/1
+   (do not generate UI actions the current actor cannot authorize — check before generating)
 ```
 
 The final item is critical: the agent treats existing `@description` fields as
@@ -389,6 +396,73 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 
 ---
 
+## Project Discovery — Igniter API
+
+When the agent needs to discover all resources and domains in the project (e.g., for
+generating a new resource that must be registered in its domain), use the Igniter API:
+
+```elixir
+# Programmatic — inside Igniter.Mix.Task callback
+{igniter, resource_modules} = Ash.Resource.Igniter.list_resources(igniter)
+{igniter, domain_modules}   = Ash.Domain.Igniter.list_domains(igniter)
+
+# Duplicate check before generating a new relationship
+{igniter, exists?} = Ash.Resource.Igniter.defines_relationship(igniter, TargetMod, :name)
+```
+
+`mix igniter.list_resources` does NOT exist as a standalone command. The API is
+programmatic only. `Ash.Resource.Info` (compiled DSL runtime) provides semantic truth
+(relationships, actions, policies) after compilation. `Ash.Resource.Igniter` provides
+project traversal (finding resource modules) before compilation.
+
+---
+
+## Tidewave — Dev-Time Runtime Intelligence
+
+Target projects scaffolded by `mix foundry.spec_kit.init` include Tidewave as a
+`:dev` dependency. This gives external agents (Claude Code, Cursor) runtime intelligence
+about the target project without Foundry providing it:
+
+| Tidewave tool | What it provides | Relationship to Foundry |
+|---|---|---|
+| `get_docs` | Version-exact documentation for any module/function | Supplements `mix foundry.exdoc` for interactive sessions |
+| `get_ash_resources` | Text list of Ash resources with their domains | Complements `get_module_context` (text vs structured JSON) |
+| `project_eval` | Live code evaluation in app runtime | Lets agents validate Igniter output before submitting proposals |
+| `execute_sql_query` | Direct database queries | Lets agents verify migration results post-approval |
+| `get_logs` | Application logs | Lets agents diagnose runtime errors in context |
+
+Tidewave is dev-only. It is not present in production. It is not Foundry's MCP server.
+The two MCP surfaces are additive and non-overlapping (ADR-024).
+
+---
+
+## Agent Steps (ash_ai v0.5)
+
+Target platform agent steps use `ash_ai` v0.5 `run prompt(...)` syntax directly.
+`reactor_agent_step` DSL is no longer used. The INV-014..017 lint rules check for
+`ash_ai` prompt action configuration on `step_kind: :agent` steps in NodeEntry.
+
+```elixir
+# In a target platform Reactor — the 2026 canonical form
+step :risk_score, MyApp.AI.RiskScorer do
+  run prompt(
+    fn _input, _context -> ReqLLM.model!("anthropic:claude-sonnet-4-6") end,
+    tools: [:read_player_history, :check_velocity],
+    confidence_threshold: 0.7,
+    on_low_confidence: :escalate_human,
+    telemetry_prefix: [:my_app, :risk, :withdrawal, :risk_score]
+  )
+end
+```
+
+The pre-generation checklist items INV-014..017 apply to this syntax:
+- INV-014: `confidence_threshold` required on `:decision` and `:scorer` steps
+- INV-015: `human_gate` or `on_low_confidence: :escalate_human` required on compliance-gated flows
+- INV-016: `tools:` list must be explicitly declared
+- INV-017: `telemetry_prefix:` must follow `[app_name, domain_name, reactor_name, step_name]` convention
+
+---
+
 ## ADR Index
 
 | ID | Slug | Decision summary |
@@ -411,6 +485,7 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 | ADR-016 | visualization-paradigm-v2 | Four C4 levels, 11 node types, 8 edge types, authorization matrix view, agent node type (⊕). Data source: `mix foundry.project.context` (amended by ADR-020). JS architecture: `CytoscapeGraph` (pure wrapper) + `FoundryGraph` (Foundry config layer). |
 | ADR-017 | agent-injection-governance | AshAI integration model, 10 agent types, human-in-the-loop gate spec, change classification for agent constructs |
 | ADR-020 | project-context-filesystem-umbrella | Unified `mix foundry.project.context` command, `Foundry.FileSystem` read boundary, umbrella and related-project support, `snapshot` → `status` rename |
+| ADR-024 | mcp-server-architecture | Foundry IS the MCP server; external agents connect to it; AshAi.Mcp.Router; Tidewave complement; optional internal LLM |
 
 ---
 

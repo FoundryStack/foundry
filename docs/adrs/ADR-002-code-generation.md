@@ -1,7 +1,7 @@
 # ADR-002: Code Generation — Igniter for All Code, No String Interpolation
 
-**Status:** Accepted  
-**Date:** 2026-03  
+**Status:** Accepted — amended 2026-04 (Ash.Resource.Igniter discovery API, pre-proposal checks)
+**Date:** 2026-03
 **Deciders:** Platform team
 
 ---
@@ -28,7 +28,31 @@ For every new construct, the agent:
 1. Fetches the closest existing project example: `mix foundry.pattern.find <type> --domain <D>`
 2. Reads Foundry conventions: `cat .foundry/usage_rules/foundry_conventions.md`
 3. Reads exact DSL API if needed: `mix foundry.exdoc <Module>`
+   *(In interactive sessions, `get_docs` via Tidewave MCP returns the same data
+   without a subprocess, consulting the exact locked versions. `mix foundry.exdoc`
+   is used on the proposal branch where Tidewave is not running.)*
 4. Generates via raw Igniter API, copying the pattern and applying conventions
+
+**Before generating**, the agent runs two structured pre-checks using Ash's Igniter API
+(programmatic, inside the `Igniter.Mix.Task` callback — not shell commands):
+
+```elixir
+# 1. Discover: confirm which resources exist and their domains
+{igniter, resource_modules} = Ash.Resource.Igniter.list_resources(igniter)
+{igniter, domain_modules}   = Ash.Domain.Igniter.list_domains(igniter)
+
+# 2. Duplicate check: verify the relationship/attribute does not already exist
+{igniter, exists?} = Ash.Resource.Igniter.defines_relationship(igniter, TargetModule, :name)
+# → if exists?, abort with "relationship :name already declared on TargetModule"
+```
+
+`Ash.Resource.Igniter.list_resources/1` and `Ash.Domain.Igniter.list_domains/1` are the
+authoritative project discovery functions (confirmed in Ash changelog; recently optimized
+for large codebases). They crawl the lib directory AST-level, find `use Ash.Resource` and
+`use Ash.Domain` declarations, and return module lists without requiring compilation.
+These replace the generic `Application.spec(:modules)` scan in `mix foundry.project.context`
+for the discovery step. Note: `mix igniter.list_resources` does NOT exist as a standalone
+mix task. The API is programmatic: `Ash.Resource.Igniter.list_resources(igniter)`.
 
 For new files: `Igniter.create_new_file/3` or `Igniter.Project.Module.create_module/3`.
 For modifying existing files: `Igniter.Project.Module.find_and_update_module/3` with `Sourceror.Zipper`.
@@ -86,6 +110,26 @@ files since the branch was cut, the proposal is STALE.
 
 For `:sensitive` resources: the migration is classified at the same level as the code change.
 A migration touching a sensitive resource's table requires dual approval (ADR-005, INV-001).
+
+## Policy Self-Audit Before UI Generation
+
+Before generating any LiveView component or UI action, the agent checks policy
+compatibility using compiled DSL runtime introspection:
+
+```elixir
+# Get the semantic truth about who can do what — not text search
+authorizers = Ash.Resource.Info.authorizers(MyApp.Finance.Wallet)
+policies    = Ash.Resource.Info.policies(MyApp.Finance.Wallet)
+actions     = Ash.Resource.Info.actions(MyApp.Finance.Wallet)
+```
+
+This is the "self-audit" pattern: before generating an "Approve" button for a regular
+user, the agent inspects the policy manifest to confirm the `:approve` action is
+accessible to that actor. If it is not, the button is either omitted or rendered as
+disabled with the correct role requirement shown.
+
+This check is added to the pre-generation checklist in AGENTS.md:
+`□ Policy compatibility verified for all generated UI actions (Ash.Resource.Info.policies/1)`
 
 ## Authentication Scaffold
 

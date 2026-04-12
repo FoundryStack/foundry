@@ -20,3 +20,5 @@ erl_crash.dump
 .elixir_ls
 .specify
 .DS_Store
+.hex-docs
+.hex-packages
