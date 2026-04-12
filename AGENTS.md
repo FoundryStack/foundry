@@ -117,6 +117,108 @@ Layer 3: Domain Builder (form-driven scaffold, developer review required)
 
 ---
 
+## Copilot Sub-Agent Architecture
+
+The copilot orchestrator delegates bounded tasks to typed sub-agents. The orchestrator
+owns intent classification, contradiction check, change classification, and plan
+presentation. Sub-agents own scoped, tool-constrained retrieval and generation tasks.
+
+### SpecKitNavigator
+
+**Purpose:** Deep-read the constraint graph rooted at the affected NodeEntry and produce
+a compact constraint summary.
+**Spawned:** Always for `change` intent. For `question` when ADR citation is needed.
+**Inputs:** NodeEntry (from CodeContextGatherer) + Tier 1 spec-kit index tag match.
+**Tools:** `bash` (cat, grep) — read-only.
+**Execution:**
+1. Read each ADR identified by Tier 1 tag match + NodeEntry `adrs` field
+2. Follow `Extends:` headers — read those ADRs too
+3. Read regulation files from NodeEntry `compliance` field; follow requirement → ADR links
+4. Read runbook from NodeEntry `runbook` field if a Reactor is in scope
+5. Check all INV-001..INV-018 against the proposed change
+**Returns:** Applicable constraints, contradiction result (`blocked: bool, rule: string`),
+spec-kit gap list.
+
+---
+
+### CodeContextGatherer
+
+**Purpose:** Gather live code-level facts about affected modules.
+**Spawned:** In parallel with SpecKitNavigator for all `change` intents.
+**Inputs:** Target module names (inferred from message), inferred construct type.
+**Tools:** `bash` (mix foundry.project.context, mix foundry.pattern.find, mix foundry.exdoc).
+**Execution:**
+1. `mix foundry.project.context <Module>` — live NodeEntry (source of truth)
+2. `mix foundry.pattern.find <type> --domain <D>` — closest existing example
+3. `mix foundry.exdoc <Module> --function <fn>` — only when a specific DSL option
+   is unresolved after reading the pattern
+**Returns:** NodeEntry struct, pattern example source, current `@description` field values,
+`pending_migrations` status.
+
+---
+
+### PlanArchitect
+
+**Purpose:** Construct the ordered session plan given gathered context.
+**Spawned:** After SpecKitNavigator and CodeContextGatherer both complete, contradiction
+check passes.
+**Inputs:** Change class, constraint summary, code context, spec-kit gap list.
+**Tools:** None — pure reasoning from inputs.
+**Returns:** Ordered plan (spec → tests → code → migration) with per-step rationale.
+
+---
+
+### SpecKitDrafter
+
+**Purpose:** Draft ADR / runbook / regulation stubs as the first committed files in the
+proposal branch.
+**Spawned:** During generation, before CodeGenerator, when change class requires it.
+**Inputs:** Change class, plan, related existing docs for format reference.
+**Tools:** `bash` (cat existing spec-kit docs), branch write.
+**Returns:** Markdown stubs committed on `foundry/prop_<id>` — before any code file.
+
+---
+
+### CodeGenerator
+
+**Purpose:** Execute Igniter operations and run the verification sequence on the proposal
+branch.
+**Spawned:** After SpecKitDrafter completes (or immediately if no spec-kit required).
+**Inputs:** Confirmed plan, prop_id, pattern example from CodeContextGatherer.
+**Tools:** `bash` (Igniter raw API, mix ash.codegen, mix compile, mix test).
+**Returns:** Diff, compile result, test result, lint violations.
+
+---
+
+### Parallel Execution Map
+
+```
+classify(intent) [orchestrator — inline, from Tier 1]
+         │
+         ├────────────────────────────────────┐
+         ▼                                    ▼
+  SpecKitNavigator                  CodeContextGatherer
+  reads ADR graph from              reads live NodeEntry
+  NodeEntry entry points            finds pattern example
+  checks INV-001..018               collects @description fields
+         │                                    │
+         └────────────────────────────────────┘
+                          │
+                  orchestrator synthesizes:
+                  contradiction check → BLOCKED or proceed
+                  change classification
+                          │
+                          ▼  [sequential from here — each step depends on previous]
+                    PlanArchitect
+                          │
+                          ▼  [human confirmation]
+                    SpecKitDrafter → CodeGenerator → mix compile → mix test → diff
+```
+
+Parallelism ends at synthesis. Nothing in the generation phase runs concurrently.
+
+---
+
 ## Hard Invariants — Never Violate These
 
 These are constraints the system enforces and agents must respect. Not guidelines.
@@ -355,10 +457,30 @@ The complete sequence the agent follows before emitting any proposal:
       :structural with new concept → ADR draft offered, not required
       :structural modification → no spec-kit step
 9.  Construct ordered session plan:
-      [spec]  ADR / runbook stub (if required by step 8)
+      [spec]  ADR / runbook stub (if required by step 8) — always first
       [tests] Test skeletons from DSL declarations + ADR boundary conditions
       [code]  Implementation constrained by test structure
       [migration] mix ash.codegen if schema changes
+
+    Ordering rationale — why spec before tests before code:
+
+    Spec first: A reviewer reading code cannot govern what they do not understand.
+    The ADR records why this approach was chosen over alternatives. Without it,
+    approval is a rubber stamp on implementation, not a governance decision.
+    The runbook records what happens when this Reactor fails. Without it, the
+    reviewer cannot assess operational risk. Spec-kit files and code are reviewed
+    together in one diff — the spec makes the code legible to a non-author.
+    This is an epistemology requirement, not a workflow preference.
+
+    Tests before code: Test skeletons are derived from DSL declarations and ADR
+    boundary conditions — they define what "correct" means before any implementation
+    exists. Code written before the tests know what to assert may satisfy its author
+    but cannot satisfy the spec. The tests constrain the implementation, not the
+    reverse.
+
+    Migration last: Schema changes require a compiled Ash resource to generate
+    correct migration SQL. `mix ash.codegen` must run after all code is written
+    and compiles. It is always the final generation step.
 10. Present plan for human confirmation
       Human refines via conversation until satisfied — plan only, not code
 11. On confirmation: single generation pass on foundry/prop_<id> branch
@@ -393,6 +515,22 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 | Operation parameter schema? | `bash("cat .foundry/usage_rules/foundry_operations.md")` or `bash("mix foundry.operation.schema <Op>")` |
 | Read a source file or spec-kit document? | `Foundry.FileSystem.read/2` via FoundryChannel `fetch_file` / `fetch_document` |
 | Spec-kit task postures? | §Spec-Kit Tasks above |
+
+### Tier 1 vs Bash — The Decision Rule
+
+**Tier 1 answers "which?" — bash answers "what?"**
+
+| Answer comes from Tier 1 (already in system prompt) | Answer requires bash |
+|---|---|
+| Which ADRs are relevant to this topic? | What does ADR-013 §Confidence actually say? |
+| Which modules exist in the Finance domain? | What attributes does Wallet currently have? |
+| Which INV rules apply to `:sensitive` resources? | Full text of a specific regulation requirement |
+| Does a pattern exist for `transfer` type? | The actual pattern source code |
+| Which spec-kit files exist? | Contents of a specific spec-kit file |
+
+Never run bash to answer a question Tier 1 already resolves. Never trust a Tier 1
+summary as the full constraint text for a contradiction check — always fetch the full
+document. Fetching a document the Tier 1 index says doesn't exist is always wrong.
 
 ---
 
@@ -600,6 +738,23 @@ They are not a server. They are idempotent commands.
 
 Use this schema exactly. Do not invent fields. The full schema is defined in ADR-003.
 
+### Constraint Graph Traversal
+
+The NodeEntry fields `compliance`, `adrs`, and `runbook` are not metadata — they are
+the constraint graph entry points. The SpecKitNavigator sub-agent must follow them:
+
+```
+NodeEntry.compliance → docs/regulations/*.md  → requirement IDs → linked ADRs
+NodeEntry.adrs       → docs/adrs/ADR-XXX.md   → Extends: headers → more ADRs
+NodeEntry.runbook    → docs/runbooks/*.md      → referenced Reactor steps
+NodeEntry.sensitive  → INV-001, INV-011, INV-012 always apply
+```
+
+Traversal is deterministic and bounded: read exactly the documents the module declares,
+follow `Extends:` headers in ADRs one level, follow requirement IDs in regulation files
+to their linked ADRs. Stop when no new documents are referenced. The orchestrator never
+reads ADRs speculatively — only those reachable from the affected NodeEntry.
+
 `agent_steps` is an empty list `[]` when the module has no AshAI agent step declarations.
 A non-empty list requires AshAI v2 or later (see ADR-017). The `mix foundry.context` task
 will warn (not fail) if AshAI is present but the version cannot be determined — this
@@ -609,6 +764,68 @@ by ADR-017 for projects that opt in to agent support.
 The per-module schema above is also the NodeEntry schema within `mix foundry.project.context`
 output — the project context is a bulk projection of per-module context into a single graph
 document. The two schemas are kept in sync. See `docs/project_context_schema.md`.
+
+---
+
+## Spec-Kit Skill Orchestration
+
+The copilot internally orchestrates a set of spec-kit skills. These are transparent to
+the user — they interact only with the copilot conversation and the review panel.
+The copilot decides which skills to invoke, in what order, synthesizes results, and
+surfaces only the finished output: a confirmed plan, a review diff, or a BLOCKED message.
+
+### Skill invocation map
+
+| Skill | When copilot invokes | What it produces | Feeds into |
+|---|---|---|---|
+| `speckit.specify` | `change` intent describes a feature without an existing spec | Feature spec from natural language | `speckit.plan` |
+| `speckit.clarify` | Intent confidence below threshold — before the one permitted question | Up to 5 targeted gaps identified | Copilot distills to the single most critical (INV-005) |
+| `speckit.plan` | After spec exists; before session plan is presented to human | Design artifacts: approach, alternatives, trade-offs | PlanArchitect sub-agent |
+| `speckit.tasks` | After plan is confirmed by human | Dependency-ordered task list | CodeGenerator execution queue |
+| `speckit.analyze` | After task list is generated; before plan is shown to human | Cross-artifact consistency report (spec ↔ plan ↔ tasks) | Copilot resolves conflicts before surfacing plan |
+| `speckit.implement` | On human confirmation (Phase 4+) | Executes tasks in dependency order | Igniter + branch operations |
+| `speckit.constitution` | When AGENTS.md or a project constitution would change | Keeps all dependent templates in sync | SpecKitDrafter (constitution update is first file on branch) |
+| `speckit.taskstoissues` | When user requests GitHub issue creation from a confirmed proposal | Dependency-ordered GitHub issues from tasks.md | External (GitHub) |
+
+### Invocation rules
+
+**`speckit.specify` is a prerequisite for `speckit.plan`.** A plan without a spec is a
+solution without a problem statement. The copilot runs `speckit.specify` whenever the
+intent describes what to build but no written spec exists. Plan generation is blocked
+until the spec is produced.
+
+**`speckit.clarify` feeds the single permitted question.** The skill may identify up to
+5 underspecified areas. The copilot distills this to the one most critical ambiguity and
+presents it per INV-005 UX (binary buttons, not free text). Remaining gaps are resolved
+after clarification or surfaced in `speckit.analyze`.
+
+**`speckit.analyze` always runs before the plan is presented to the human.** The human
+never sees a plan with cross-artifact inconsistencies. If `speckit.analyze` finds
+conflicts (spec says X, tasks say Y), the copilot resolves them silently and runs
+`speckit.analyze` again. It never surfaces an analysis failure to the user as-is.
+
+**`speckit.constitution` is never user-invoked.** It runs automatically on the proposal
+branch when a change would modify AGENTS.md, a project constitution, or a template that
+dependent docs reference. The constitution sync is the first file SpecKitDrafter commits
+— before any ADR, runbook, or code. This ensures dependent templates are in sync before
+the rest of the spec-kit is written against them.
+
+**`speckit.implement` drives CodeGenerator.** It processes `tasks.md` in dependency
+order, invoking Igniter for each task. Failures follow the existing max-3-retry
+compile-level correction rule. It does not iterate on assertion values.
+
+### What the user never sees
+
+Between a user message and the copilot response, any number of spec-kit skills may
+have run: specify, clarify, analyze, plan, tasks. Their intermediate outputs are not
+surfaced. The user sees:
+
+- The session plan (built by `speckit.plan` + `speckit.tasks`, confirmed before generation)
+- The review diff (code + spec-kit files together in the review panel)
+- Source citations in question answers ("Source: ADR-013 §Confidence")
+- The BLOCKED message if a contradiction was found
+
+The Activity Feed shows the proposal card and approval status. Not skill traces.
 
 ---
 
