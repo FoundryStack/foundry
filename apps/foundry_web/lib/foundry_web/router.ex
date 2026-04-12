@@ -14,11 +14,60 @@ defmodule FoundryWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # MCP server pipeline — authenticated via API key (AshAuthentication)
+  # TODO: Replace with proper AshAuthentication API key strategy once
+  # Foundry.Accounts.User resource is scaffolded. For now, uses BasicAuth
+  # with a configurable env var for dev testing.
+  pipeline :mcp do
+    plug :accepts, ["json"]
+    plug :mcp_auth
+  end
+
+  defp mcp_auth(conn, _opts) do
+    case System.get_env("FOUNDRY_MCP_API_KEY") do
+      nil ->
+        # No key configured — allow all requests (dev mode only)
+        conn
+
+      expected_key ->
+        with ["Bearer " <> token] <- get_req_header(conn, "authorization"),
+             true <- token == expected_key do
+          conn
+        else
+          _ ->
+            conn
+            |> put_resp_header("www-authenticate", "Bearer")
+            |> send_resp(401, Jason.encode!(%{error: "Unauthorized"}))
+            |> halt()
+        end
+    end
+  end
+
   scope "/", FoundryWeb do
     pipe_through :browser
 
     get "/", PageController, :home
     live "/studio", SystemMapLive
+    live "/chat", ChatLive
+  end
+
+  # MCP server — exposes Foundry.Context tools to external agents
+  # (Claude Code, Cursor, Codex CLI, etc.)
+  scope "/foundry/mcp" do
+    pipe_through :mcp
+
+    forward "/", AshAi.Mcp.Router,
+      tools: [
+        :project_status,
+        :module_context,
+        :system_graph,
+        :submit_proposal,
+        :proposal_status,
+        :run_lint,
+        :read_doc
+      ],
+      protocol_version_statement: "2024-11-05",
+      otp_app: :foundry
   end
 
   # Other scopes may use custom stacks.

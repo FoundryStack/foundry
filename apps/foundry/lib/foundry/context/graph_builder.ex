@@ -506,7 +506,4 @@ defmodule Foundry.Context.GraphBuilder do
     |> Enum.map(&String.capitalize/1)
     |> Enum.join(" ")
   end
-
-  defp add_if(list, true, item), do: list ++ [item]
-  defp add_if(list, false, _), do: list
 end

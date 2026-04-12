@@ -11,7 +11,7 @@ import Config
 
 # Configure Mix tasks and generators
 config :foundry,
-  ash_domains: [Foundry.Audit, Foundry.Config, Foundry.Proposals]
+  ash_domains: [Foundry.Audit, Foundry.Config, Foundry.Proposals, Foundry.Context, Foundry.Chat]
 
 # Configure the mailer
 #

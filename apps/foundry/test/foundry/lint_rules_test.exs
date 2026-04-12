@@ -236,7 +236,7 @@ defmodule Foundry.LintRulesTest do
     test "module_rules returns all registered rules" do
       rules = Foundry.LintRules.Registry.module_rules()
       assert is_list(rules)
-      assert length(rules) == 7
+      assert length(rules) == 10
       assert Foundry.LintRules.PaperTrailRule in rules
       assert Foundry.LintRules.ArchivalRule in rules
       assert Foundry.LintRules.RunbookRule in rules
@@ -244,6 +244,9 @@ defmodule Foundry.LintRulesTest do
       assert Foundry.LintRules.DescriptionRule in rules
       assert Foundry.LintRules.VersionRule in rules
       assert Foundry.LintRules.AdapterVersionRule in rules
+      assert Foundry.LintRules.ObanTriggerRule in rules
+      assert Foundry.LintRules.GraphqlMutationRule in rules
+      assert Foundry.LintRules.AshAiStepRule in rules
     end
 
     test "manifest_validators returns ManifestValidator" do

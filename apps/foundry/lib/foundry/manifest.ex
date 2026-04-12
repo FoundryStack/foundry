@@ -67,11 +67,51 @@ defmodule Foundry.Manifest do
 
     attribute :domain_type, :atom do
       description(
-        "Target domain category. Used for bootstrap template selection. One of: :igaming, :fintech, :healthcare, :legal, :insurance, :other."
+        "Target domain category. Used for bootstrap template selection. One of: :igaming, :fintech, :healthcare, :legal, :insurance, :itsm, :sdlc, :logistics, :enterprise_internal, :other."
       )
 
-      constraints(one_of: [:igaming, :fintech, :healthcare, :legal, :insurance, :other])
+      constraints(
+        one_of: [
+          :igaming,
+          :fintech,
+          :healthcare,
+          :legal,
+          :insurance,
+          :itsm,
+          :sdlc,
+          :logistics,
+          :enterprise_internal,
+          :other
+        ]
+      )
+
       default(:other)
+    end
+
+    # ── MCP / Agent Configuration ─────────────────────────────────────────────
+
+    attribute :mcp_enabled, :boolean do
+      description(
+        "When true, the Foundry MCP server is enabled and exposes project context tools to external agents (Claude Code, Cursor, etc.)."
+      )
+
+      default(false)
+    end
+
+    attribute :tidewave_scaffold, :boolean do
+      description(
+        "When true, Tidewave dev-time runtime intelligence tools are scaffolded and available."
+      )
+
+      default(false)
+    end
+
+    attribute :copilot_model, :string do
+      description(
+        "Default LLM model string for the copilot agent. Passed to ReqLLM.model!/1. E.g. 'anthropic:claude-sonnet-4-6'."
+      )
+
+      default("anthropic:claude-sonnet-4-6")
     end
 
     # ── Sensitive Resources ────────────────────────────────────────────────────
@@ -221,7 +261,11 @@ defmodule Foundry.Manifest do
         :coverage_weights,
         :data_retention,
         :context_exclusions,
-        :conditional_libraries
+        :conditional_libraries,
+        # Phase D — MCP / Agent config
+        :mcp_enabled,
+        :tidewave_scaffold,
+        :copilot_model
       ])
     end
   end

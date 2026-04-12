@@ -20,7 +20,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       # when context building fails
       {:ok, _live, html} = live(Phoenix.ConnTest.build_conn(), "/studio")
       # Should render without crashing
-      assert html =~ "system-map"
+      assert html =~ "foundry-map-layout"
     end
   end
 

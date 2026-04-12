@@ -111,7 +111,12 @@ defmodule Foundry.Context.NodeEntry do
     auth_strategies: [],
     provider_behaviour: nil,
     provider_name: nil,
-    rule_compliance_links: []
+    rule_compliance_links: [],
+    # Phase B extensions
+    scenario_origins: [],
+    graphql_mutations: [],
+    json_api_routes: [],
+    vectorized: false
   ]
 end
 
@@ -121,7 +126,8 @@ defimpl Jason.Encoder, for: Foundry.Context.NodeEntry do
     paper_trail archival state_machine api_routes telemetry_prefix money_attributes
     authentication_subject oban_queues rate_limited feature_flags steps performs outputs
     agent_steps last_modified relationships auth_strategies provider_behaviour
-    provider_name rule_compliance_links]a
+    provider_name rule_compliance_links scenario_origins graphql_mutations
+    json_api_routes vectorized]a
 
   def encode(entry, opts) do
     @field_order

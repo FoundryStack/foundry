@@ -12,7 +12,11 @@ defmodule Foundry.LintRules.Registry do
     Foundry.LintRules.IdempotencyRule,
     Foundry.LintRules.DescriptionRule,
     Foundry.LintRules.VersionRule,
-    Foundry.LintRules.AdapterVersionRule
+    Foundry.LintRules.AdapterVersionRule,
+    # Phase C — new rules
+    Foundry.LintRules.ObanTriggerRule,
+    Foundry.LintRules.GraphqlMutationRule,
+    Foundry.LintRules.AshAiStepRule
   ]
 
   def module_rules, do: @module_rules
