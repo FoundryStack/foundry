@@ -61,7 +61,17 @@ defmodule Foundry.SparkMeta.Action do
 end
 
 defmodule Foundry.SparkMeta.StepEntry do
-  @moduledoc "Structured representation of a Reactor step."
+  @moduledoc """
+  Structured representation of a Reactor step.
+
+  For `:agent` steps (ash_ai v0.6 `run prompt(...)` syntax), the following
+  additional fields are populated:
+  - `step_model` — LLM model string (e.g. "anthropic:claude-sonnet-4-6")
+  - `confidence_threshold` — float e.g. 0.8
+  - `on_low_confidence` — atom: `:escalate_human`, `:abort`, `:retry`
+  - `step_tools` — list of tool atoms passed to `run prompt(...)`
+  - `step_telemetry_prefix` — list of atoms for telemetry prefix
+  """
   @derive Jason.Encoder
   defstruct [
     :name,
@@ -74,7 +84,13 @@ defmodule Foundry.SparkMeta.StepEntry do
     target_resource: nil,
     target_action: nil,
     step_kind: nil,
-    rules_applied: []
+    rules_applied: [],
+    # ash_ai v0.6 agent step fields (INV-014..017)
+    step_model: nil,
+    confidence_threshold: nil,
+    on_low_confidence: nil,
+    step_tools: [],
+    step_telemetry_prefix: []
   ]
 end
 
@@ -892,7 +908,7 @@ defmodule Foundry.SparkMeta do
     }
   end
 
-  defp auth_strategy_to_struct(strategy, global_token_resource \\ nil) do
+  defp auth_strategy_to_struct(strategy, global_token_resource) do
     # Extract strategy type from struct name (e.g., AshAuthentication.Strategy.Password → :password)
     strategy_type =
       try do
@@ -1160,4 +1176,3 @@ defmodule Foundry.SparkMeta do
     _ -> false
   end
 end
-

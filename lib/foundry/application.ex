@@ -7,6 +7,9 @@ defmodule Foundry.Application do
 
   @impl true
   def start(_type, _args) do
+    # Initialize Mnesia schema and tables before starting the supervisor
+    init_mnesia()
+
     children = [
       {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Foundry.PubSub}
@@ -15,5 +18,51 @@ defmodule Foundry.Application do
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Foundry.Supervisor)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Mnesia initialization
+  # ---------------------------------------------------------------------------
+
+  defp init_mnesia do
+    # Create and start Mnesia on the local node
+    :mnesia.create_schema([node()])
+    :mnesia.start()
+
+    # Determine table type based on node configuration
+    table_config =
+      if node() == :nonode@nohost do
+        [ram_copies: [node()]]
+      else
+        [disc_copies: [node()]]
+      end
+
+    # Create the chat sessions table if it doesn't exist
+    case :mnesia.create_table(:foundry_chat_sessions,
+           Keyword.merge(
+             [
+               attributes: [
+                 :id,
+                 :session_id,
+                 :messages,
+                 :title,
+                 :model,
+                 :created_at,
+                 :updated_at
+               ]
+             ],
+             table_config
+           )
+         ) do
+      {:aborted, {:already_exists, _}} ->
+        :ok
+
+      {:atomic, :ok} ->
+        :ok
+
+      error ->
+        require Logger
+        Logger.warning("Failed to create Mnesia table: #{inspect(error)}")
+    end
   end
 end

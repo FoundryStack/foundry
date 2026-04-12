@@ -37,15 +37,19 @@ defmodule Foundry.MixProject do
   defp deps do
     [
       {:ash, "~> 3.20"},
+      {:ash_ai, "~> 0.6"},
       {:ash_state_machine, "~> 0.2"},
       {:ash_paper_trail, "~> 0.5"},
       {:ash_archival, "~> 2.0"},
+      {:ash_diagram, "~> 0.1"},
+      {:ash_json_api, "~> 1.6", override: true},
       {:picosat_elixir, "~> 0.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:phoenix_pubsub, "~> 2.1"},
       {:jason, "~> 1.4"},
       {:swoosh, "~> 1.23"},
       {:req, "~> 0.5"},
+      {:req_llm, "~> 1.0"},
       {:spark_meta, path: "../../packages/spark_meta"},
       {:spark_lint, path: "../../packages/spark_lint"}
     ]
