@@ -361,7 +361,7 @@ defmodule Foundry.Context.GraphBuilder do
           id: "external:postgres:#{domain}",
           type: "external",
           domain: "Infrastructure",
-          description: "PostgreSQL — #{domain} domain tables (AshPostgres)",
+          description: "PostgreSQL - #{domain} domain tables (AshPostgres)",
           app: nil,
           sensitive: false,
           attributes: [],
