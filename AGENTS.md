@@ -32,10 +32,10 @@ Foundry has two modes:
 - *Target platform* — a platform built using Foundry (e.g., an iGaming back office, a fintech ledger system)
 - *Spec-kit* — the four document types that capture what code cannot: ADRs, Regulations, Runbooks, AGENTS.md
 - *Project context* — the full system map produced by `mix foundry.project.context`:
-  all nodes, edges, and spec-kit index metadata for the current project. Studio data only —
-  not included in LLM context tiers directly.
+  all nodes, edges, and spec-kit index metadata for the current project. **Included in Tier 2 LLM context**
+  for agent discovery, governance validation, and change impact analysis.
 - *Project status* — the health summary produced by `mix foundry.project.status`:
-  lint, migrations, proposals, compliance gaps. Tier 2 LLM context. Replaces "project snapshot".
+  lint, migrations, proposals, compliance gaps. Also in Tier 2 LLM context. Replaces "project snapshot".
 
 ---
 
@@ -507,7 +507,7 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 | What does resource X do? | `mix foundry.context MyApp.Domain.Resource` |
 | What compliance requirements affect feature Y? | `mix foundry.compliance.check --filter=Y` |
 | What changed in the system recently? | `git log` + `mix foundry.diagram.diff` |
-| Full system map (all nodes + edges)? | `mix foundry.project.context` — studio data source |
+| Full system map (all nodes + edges)? | `mix foundry.project.context` — Tier 2 LLM context (always available to agents) |
 | Current project health (lint, proposals, gaps)? | `mix foundry.project.status` — Tier 2 context |
 | Which spec-kit document covers a concept? | Spec-kit index in Tier 1 context — agent reads summaries and tags, then `bash("cat <path>")` |
 | Correct DSL syntax for X? | `bash("mix foundry.exdoc <Module>")` or `bash("cat .foundry/usage_rules/<lib>.md")` |

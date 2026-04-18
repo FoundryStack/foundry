@@ -62,16 +62,21 @@ defmodule Mix.Tasks.Foundry.Project.Context do
     spec_kit = Foundry.Context.SpecKitIndexBuilder.build(project_root)
 
     # Assemble the bulk context output
-    context = %{
-      generated_at: DateTime.utc_now() |> DateTime.to_iso8601(),
-      project: Keyword.get(manifest, :project_name, ""),
-      project_type: Keyword.get(manifest, :project_type, "standard"),
-      domain_type: Keyword.get(manifest, :domain_type, ""),
-      nodes: Enum.map(nodes, &to_json_node/1),
-      edges: Enum.map(edges, &to_json_edge/1),
-      spec_kit: spec_kit,
-      graph_delta: nil
-    }
+    context =
+      %{
+        generated_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+        project: Keyword.get(manifest, :project_name, ""),
+        project_type: Keyword.get(manifest, :project_type, "standard"),
+        nodes: Enum.map(nodes, &to_json_node/1),
+        edges: Enum.map(edges, &to_json_edge/1),
+        spec_kit: spec_kit
+      }
+      |> then(fn m ->
+        case Keyword.get(manifest, :domain_type, "") do
+          "" -> m
+          dt -> Map.put(m, :domain_type, dt)
+        end
+      end)
 
     IO.puts(Jason.encode!(context, pretty: true))
 

@@ -18,13 +18,35 @@ defmodule Foundry.Copilot.ContextBuilder do
     [agents_md, mix_versions] |> Enum.reject(&(&1 == "")) |> Enum.join("\n\n")
   end
 
-  # Tier 2: Dynamic status — run mix foundry.project.status if available, else skip
+  # Tier 2: Dynamic status + system architecture
+  # Runs mix foundry.project.status (health) and mix foundry.project.context (full system map)
   defp tier_2_status(project_root) do
+    status = get_project_status(project_root)
+    context_map = get_system_context(project_root)
+    [status, context_map] |> Enum.reject(&(&1 == "")) |> Enum.join("\n\n")
+  end
+
+  defp get_project_status(project_root) do
     case System.cmd("mix", ["foundry.project.status", "--json"],
-           cd: project_root, stderr_to_stdout: true) do
+           cd: project_root, stderr_to_stdout: false) do
       {output, 0} -> "## Project Status\n\n```json\n#{output}\n```"
       _ -> ""
     end
+  end
+
+  defp get_system_context(project_root) do
+    case System.cmd("mix", ["foundry.project.context"],
+           cd: project_root, stderr_to_stdout: false) do
+      {output, 0} ->
+        "## System Architecture (Full Project Context)\n\nAll nodes, edges, and governance metadata. Required for agent discovery, scope validation, and impact analysis.\n\n```json\n#{output}\n```"
+      {_output, exit_code} ->
+        IO.warn("⚠️  System Architecture context failed (exit #{exit_code})")
+        ""
+    end
+  rescue
+    e ->
+      IO.warn("⚠️  System Architecture context error: #{inspect(e)}")
+      ""
   end
 
   defp extract_mix_versions(project_root) do

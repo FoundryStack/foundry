@@ -13,6 +13,8 @@ defmodule IgamingRef.Accounts do
 
   resources do
     resource IgamingRef.Accounts.User
+    resource IgamingRef.Accounts.User.Version
     resource IgamingRef.Accounts.Token
+    resource IgamingRef.Accounts.Token.Version
   end
 end

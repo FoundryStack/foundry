@@ -33,7 +33,6 @@ defmodule Foundry.Context.EdgeEntry do
     compliance_ids: [String.t()]
   }
 
-  @derive Jason.Encoder
   @enforce_keys [:from, :to, :relation]
   defstruct [
     :from,
@@ -50,5 +49,14 @@ defmodule Foundry.Context.EdgeEntry do
   @spec new(from :: String.t(), to :: String.t(), relation :: relation()) :: t()
   def new(from, to, relation) when is_binary(from) and is_binary(to) and is_atom(relation) do
     %__MODULE__{from: from, to: to, relation: relation}
+  end
+end
+
+defimpl Jason.Encoder, for: Foundry.Context.EdgeEntry do
+  def encode(entry, opts) do
+    entry
+    |> Map.from_struct()
+    |> Foundry.Context.Compact.compact()
+    |> Jason.Encode.map(opts)
   end
 end

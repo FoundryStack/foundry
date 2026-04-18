@@ -82,7 +82,13 @@ defmodule IgamingRef.MixProject do
       {:stream_data, "~> 1.0"},
       {:bypass, "~> 2.1", only: :test},
       {:mox, "~> 1.1", only: :test},
-      {:ex_machina, "~> 2.7", only: :test}
+      {:ex_machina, "~> 2.7", only: :test},
+
+      # Dependency conflict resolution
+      {:plug, "~> 1.7", override: true},
+
+      # Transitive dependencies for Swoosh email client
+      {:hackney, "~> 1.9"}
     ]
   end
 

@@ -42,7 +42,6 @@ end
 
 defmodule Foundry.SparkMeta.Attribute do
   @moduledoc "Structured representation of an Ash resource attribute."
-  @derive Jason.Encoder
   defstruct [
     :name,
     :type,
@@ -52,6 +51,15 @@ defmodule Foundry.SparkMeta.Attribute do
     money: false,
     cldr_backend: nil
   ]
+end
+
+defimpl Jason.Encoder, for: Foundry.SparkMeta.Attribute do
+  def encode(entry, opts) do
+    entry
+    |> Map.from_struct()
+    |> Foundry.Context.Compact.compact()
+    |> Jason.Encode.map(opts)
+  end
 end
 
 defmodule Foundry.SparkMeta.Action do
@@ -72,7 +80,6 @@ defmodule Foundry.SparkMeta.StepEntry do
   - `step_tools` — list of tool atoms passed to `run prompt(...)`
   - `step_telemetry_prefix` — list of atoms for telemetry prefix
   """
-  @derive Jason.Encoder
   defstruct [
     :name,
     :type,
@@ -92,6 +99,15 @@ defmodule Foundry.SparkMeta.StepEntry do
     step_tools: [],
     step_telemetry_prefix: []
   ]
+end
+
+defimpl Jason.Encoder, for: Foundry.SparkMeta.StepEntry do
+  def encode(entry, opts) do
+    entry
+    |> Map.from_struct()
+    |> Foundry.Context.Compact.compact()
+    |> Jason.Encode.map(opts)
+  end
 end
 
 defmodule Foundry.SparkMeta.MoneyAttr do
