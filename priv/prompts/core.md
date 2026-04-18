@@ -28,11 +28,11 @@ presentation. Sub-agents own scoped, tool-constrained retrieval and generation t
 a compact constraint summary.
 **Spawned:** Always for `change` intent. For `question` when ADR citation is needed.
 **Inputs:** NodeEntry (from CodeContextGatherer) + Tier 1 spec-kit index tag match.
-**Tools:** `bash` (cat, grep) - read-only.
+**Tools:** `bash` (cat, grep) — read-only.
 **Execution:**
 1. Read each ADR identified by Tier 1 tag match + NodeEntry `adrs` field
-2. Follow `Extends:` headers - read those ADRs too
-3. Read regulation files from NodeEntry `compliance` field; follow requirement -> ADR links
+2. Follow `Extends:` headers — read those ADRs too
+3. Read regulation files from NodeEntry `compliance` field; follow requirement → ADR links
 4. Read runbook from NodeEntry `runbook` field if a Reactor is in scope
 5. Check all INV-001..INV-018 against the proposed change
 **Returns:** Applicable constraints, contradiction result (`blocked: bool, rule: string`),
@@ -47,9 +47,9 @@ spec-kit gap list.
 **Inputs:** Target module names (inferred from message), inferred construct type.
 **Tools:** `bash` (mix foundry.project.context, mix foundry.pattern.find, mix foundry.exdoc).
 **Execution:**
-1. `mix foundry.project.context <Module>` - live NodeEntry (source of truth)
-2. `mix foundry.pattern.find <type> --domain <D>` - closest existing example
-3. `mix foundry.exdoc <Module> --function <fn>` - only when a specific DSL option
+1. `mix foundry.project.context <Module>` — live NodeEntry (source of truth)
+2. `mix foundry.pattern.find <type> --domain <D>` — closest existing example
+3. `mix foundry.exdoc <Module> --function <fn>` — only when a specific DSL option
    is unresolved after reading the pattern
 **Returns:** NodeEntry struct, pattern example source, current `@description` field values,
 `pending_migrations` status.
@@ -62,8 +62,8 @@ spec-kit gap list.
 **Spawned:** After SpecKitNavigator and CodeContextGatherer both complete, contradiction
 check passes.
 **Inputs:** Change class, constraint summary, code context, spec-kit gap list.
-**Tools:** None - pure reasoning from inputs.
-**Returns:** Ordered plan (spec -> tests -> code -> migration) with per-step rationale.
+**Tools:** None — pure reasoning from inputs.
+**Returns:** Ordered plan (spec → tests → code → migration) with per-step rationale.
 
 ---
 
@@ -74,7 +74,7 @@ proposal branch.
 **Spawned:** During generation, before CodeGenerator, when change class requires it.
 **Inputs:** Change class, plan, related existing docs for format reference.
 **Tools:** `bash` (cat existing spec-kit docs), branch write.
-**Returns:** Markdown stubs committed on `foundry/prop_<id>` - before any code file.
+**Returns:** Markdown stubs committed on `foundry/prop_<id>` — before any code file.
 
 ---
 
@@ -92,7 +92,7 @@ branch.
 ### Parallel Execution Map
 
 ```
-classify(intent) [orchestrator - inline, from Tier 1]
+classify(intent) [orchestrator — inline, from Tier 1]
          │
          ├────────────────────────────────────┐
          ▼                                    ▼
@@ -104,21 +104,21 @@ classify(intent) [orchestrator - inline, from Tier 1]
          └────────────────────────────────────┘
                           │
                   orchestrator synthesizes:
-                  contradiction check -> BLOCKED or proceed
+                  contradiction check → BLOCKED or proceed
                   change classification
                           │
-                          ▼  [sequential from here - each step depends on previous]
+                          ▼  [sequential from here — each step depends on previous]
                     PlanArchitect
                           │
                           ▼  [human confirmation]
-                    SpecKitDrafter -> CodeGenerator -> mix compile -> mix test -> diff
+                    SpecKitDrafter → CodeGenerator → mix compile → mix test → diff
 ```
 
 Parallelism ends at synthesis. Nothing in the generation phase runs concurrently.
 
 ---
 
-## Hard Invariants - Never Violate These
+## Hard Invariants — Never Violate These
 
 These are constraints the system enforces and agents must respect. Not guidelines.
 
