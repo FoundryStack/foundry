@@ -38,7 +38,14 @@ defmodule Foundry.Copilot.ContextBuilder do
     case System.cmd("mix", ["foundry.project.context"],
            cd: project_root, stderr_to_stdout: false) do
       {output, 0} ->
-        "## System Architecture (Full Project Context)\n\nAll nodes, edges, and governance metadata. Required for agent discovery, scope validation, and impact analysis.\n\n```json\n#{output}\n```"
+        case Jason.decode(output) do
+          {:ok, context} ->
+            formatted = Foundry.Context.LLMFormatter.format(context)
+            "## System Architecture (Full Project Context)\n\n#{formatted}"
+          {:error, decode_error} ->
+            IO.warn("⚠️  System Architecture decode error: #{inspect(decode_error)}")
+            ""
+        end
       {_output, exit_code} ->
         IO.warn("⚠️  System Architecture context failed (exit #{exit_code})")
         ""
