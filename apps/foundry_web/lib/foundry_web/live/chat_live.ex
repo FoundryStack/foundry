@@ -114,6 +114,79 @@ defmodule FoundryWeb.ChatLive do
   end
 
   defp call_llm(messages) do
+    provider = Application.get_env(:foundry, :llm_provider, :claude_code)
+
+    case provider do
+      :claude_code ->
+        call_claude_code(messages)
+
+      :req_llm ->
+        call_req_llm(messages)
+
+      _ ->
+        {:error, {:unknown_provider, provider}}
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Claude Code CLI provider (default for dev — no API key needed)
+  # ---------------------------------------------------------------------------
+
+  defp call_claude_code(messages) do
+    opts = [
+      system_prompt: build_system_prompt(),
+      timeout_ms: Application.get_env(:foundry, :claude_code, [])[:timeout_ms] || 120_000,
+      model: Application.get_env(:foundry, :claude_code, [])[:model],
+      project_root: File.cwd!()
+    ]
+
+    case Foundry.ClaudeCodeProvider.chat(messages, opts) do
+      {:ok, text, _metadata} ->
+        {:ok, text}
+
+      {:error, :not_installed} ->
+        {:ok, claude_not_installed_message()}
+
+      {:error, {:timeout, partial_text}} ->
+        if String.length(partial_text) > 0 do
+          {:ok, partial_text <> "\n\n[Response timed out — partial response above]"}
+        else
+          {:error, :timeout}
+        end
+
+      {:error, {:exit_code, code, output}} ->
+        {:error, {:claude_exit, code, String.slice(output, 0, 500)}}
+
+      {:error, {:parse_error, reason, _output}} ->
+        {:error, {:parse_error, reason}}
+    end
+  end
+
+  defp build_system_prompt do
+    Foundry.Copilot.ContextBuilder.build(project_root: File.cwd!())
+  end
+
+  defp claude_not_installed_message do
+    """
+    Claude Code is not installed. To enable chat:
+
+    1. Install Claude Code: npm install -g @anthropic-ai/claude-code
+    2. Authenticate: claude auth login
+    3. Restart Foundry Studio
+
+    Or configure an API key for req_llm instead:
+      export ANTHROPIC_API_KEY="sk-ant-..."
+      # Then set config :foundry, :llm_provider, :req_llm in config/dev.exs
+
+    See: docs/runbooks/claude_code_unavailable.md
+    """
+  end
+
+  # ---------------------------------------------------------------------------
+  # req_llm + AshAi.ToolLoop provider (production path — needs API key)
+  # ---------------------------------------------------------------------------
+
+  defp call_req_llm(messages) do
     prompt =
       messages
       |> Enum.map(fn %{"content" => c, "role" => r} -> "#{r}: #{c}" end)
@@ -132,7 +205,7 @@ defmodule FoundryWeb.ChatLive do
               fallback_response(model, prompt)
           end
         rescue
-          e ->
+          _e ->
             {:ok,
              "Chat UI works! LLM call would use model: #{model}\n\nPrompt preview: #{String.slice(prompt, 0, 200)}...\n\nConfigure an LLM API key or use a local model to get actual responses."}
         end
@@ -160,7 +233,6 @@ defmodule FoundryWeb.ChatLive do
         {:ok, extract_assistant_message(result)}
 
       {:error, reason} ->
-        # If API key is missing or invalid, return a helpful fallback
         reason_str = inspect(reason)
 
         if String.contains?(reason_str, ["api_key", "API_KEY", "Failed to build"]) do
