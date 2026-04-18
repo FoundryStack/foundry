@@ -64,8 +64,16 @@ end
 
 defmodule Foundry.SparkMeta.Action do
   @moduledoc "Structured representation of an Ash resource action."
-  @derive Jason.Encoder
   defstruct [:name, :type, :description]
+end
+
+defimpl Jason.Encoder, for: Foundry.SparkMeta.Action do
+  def encode(entry, opts) do
+    entry
+    |> Map.from_struct()
+    |> Foundry.Context.Compact.compact()
+    |> Jason.Encode.map(opts)
+  end
 end
 
 defmodule Foundry.SparkMeta.StepEntry do
@@ -112,20 +120,44 @@ end
 
 defmodule Foundry.SparkMeta.MoneyAttr do
   @moduledoc "Structured representation of a monetary attribute."
-  @derive Jason.Encoder
   defstruct [:name, :type, :cldr_backend]
+end
+
+defimpl Jason.Encoder, for: Foundry.SparkMeta.MoneyAttr do
+  def encode(entry, opts) do
+    entry
+    |> Map.from_struct()
+    |> Foundry.Context.Compact.compact()
+    |> Jason.Encode.map(opts)
+  end
 end
 
 defmodule Foundry.SparkMeta.Relationship do
   @moduledoc "Structured representation of an Ash resource relationship."
-  @derive Jason.Encoder
   defstruct [:name, :type, :related_resource, :source_attribute, :destination_attribute, :description]
+end
+
+defimpl Jason.Encoder, for: Foundry.SparkMeta.Relationship do
+  def encode(entry, opts) do
+    entry
+    |> Map.from_struct()
+    |> Foundry.Context.Compact.compact()
+    |> Jason.Encode.map(opts)
+  end
 end
 
 defmodule Foundry.SparkMeta.AuthStrategy do
   @moduledoc "Structured representation of an AshAuthentication strategy."
-  @derive Jason.Encoder
   defstruct [:strategy_name, :strategy_type, :identity_field, :token_resource, :has_sign_in_tokens, :has_password_reset]
+end
+
+defimpl Jason.Encoder, for: Foundry.SparkMeta.AuthStrategy do
+  def encode(entry, opts) do
+    entry
+    |> Map.from_struct()
+    |> Foundry.Context.Compact.compact()
+    |> Jason.Encode.map(opts)
+  end
 end
 
 defmodule Foundry.SparkMeta do

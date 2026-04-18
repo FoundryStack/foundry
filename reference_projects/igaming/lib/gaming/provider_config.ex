@@ -3,7 +3,7 @@ defmodule IgamingRef.Gaming.ProviderConfig do
   Configuration for a gaming provider integration.
 
   Stores API credentials, endpoints, and runtime configuration for providers
-  like Pragmatic Play, NetEnt, etc. Sensitive resource — credentials are encrypted at rest.
+  like Pragmatic Play, NetEnt, etc. Sensitive resource - credentials are encrypted at rest.
 
   Compliance: RG-MGA-006 (provider agreements and certifications)
   """

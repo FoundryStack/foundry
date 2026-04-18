@@ -3,7 +3,7 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
   Processes an approved withdrawal request through to provider submission.
 
   Handles balance debit, ledger recording, and provider API call.
-  Fully idempotent via withdrawal_request_id as the idempotency key — safe
+  Fully idempotent via withdrawal_request_id as the idempotency key - safe
   to retry on network failure or process crash at any step.
 
   Steps run in order. On failure, completed steps are compensated:
@@ -55,7 +55,7 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
   end
 
   step :evaluate_rules do
-    description "Run all three rules. Fails fast on first rejection — no partial application."
+    description "Run all three rules. Fails fast on first rejection - no partial application."
     argument :request, result(:load_request)
     argument :context, result(:load_player_and_wallet)
 
@@ -80,7 +80,7 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
   end
 
   step :debit_wallet do
-    description "Debit the wallet. Atomic with the rule evaluation — if this fails, no funds move."
+    description "Debit the wallet. Atomic with the rule evaluation - if this fails, no funds move."
     argument :request, result(:load_request)
     argument :wallet,  result(:load_player_and_wallet, [:wallet])
     wait_for :evaluate_rules
@@ -142,7 +142,7 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
     since = DateTime.add(DateTime.utc_now(), -86_400, :second)
 
     # Sum completed withdrawal amounts in the last 24 hours
-    # Full implementation queries LedgerEntry — stubbed for reference project
+    # Full implementation queries LedgerEntry - stubbed for reference project
     case Ash.read(LedgerEntry, filter: [
       wallet_id: {:in, player_wallet_ids(player_id)},
       kind: :withdrawal,
@@ -171,7 +171,7 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   Awards a bonus to a player when campaign eligibility is confirmed.
   Credits the player's wallet and creates the BonusGrant record.
 
-  Idempotent via {player_id, campaign_id} — retrying a failed grant is safe.
+  Idempotent via {player_id, campaign_id} - retrying a failed grant is safe.
 
   Compliance: RG-MGA-005 (bonus terms must be enforced)
   """

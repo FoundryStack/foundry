@@ -2,7 +2,7 @@ defmodule IgamingRef.Finance.Wallet do
   @moduledoc """
   Holds a player's current balance across a single currency denomination.
 
-  Sensitive resource — requires dual approval for all changes (INV-001).
+  Sensitive resource - requires dual approval for all changes (INV-001).
   State machine enforces that frozen wallets block debits.
   Balance is stored as Ash.Type.Money; all monetary arithmetic uses the
   ex_money library with the IgamingRef.Cldr backend.
@@ -60,7 +60,7 @@ defmodule IgamingRef.Finance.Wallet do
 
     attribute :balance, :money do
       description(
-        "Current balance. Must never go negative — enforced by the SufficientBalance rule on all debit Transfers (RG-MGA-001)."
+        "Current balance. Must never go negative - enforced by the SufficientBalance rule on all debit Transfers (RG-MGA-001)."
       )
 
       allow_nil?(false)
@@ -203,7 +203,7 @@ defmodule IgamingRef.Finance.Wallet do
 
     policy action(:debit) do
       description(
-        "Debit requires the wallet to be active. Enforced in the action validate — policy layer ensures actor is authorised."
+        "Debit requires the wallet to be active. Enforced in the action validate - policy layer ensures actor is authorised."
       )
 
       authorize_if(IgamingRef.Policies.AuthenticatedSubject)

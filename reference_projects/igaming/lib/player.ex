@@ -2,7 +2,7 @@ defmodule IgamingRef.Players.Player do
   @moduledoc """
   A registered player account. The root of all player-scoped data.
 
-  PII-bearing sensitive resource — requires dual approval and full paper trail.
+  PII-bearing sensitive resource - requires dual approval and full paper trail.
   Self-exclusion transitions are irreversible until the exclusion period ends
   (RG-UK-008).
 
@@ -153,7 +153,7 @@ defmodule IgamingRef.Players.Player do
       change(fn changeset, context ->
         # Create the SelfExclusionRecord as a side effect
         # Full implementation: call IgamingRef.Players.SelfExclusionRecord |> Ash.create
-        # Stubbed here — the Transfer layer handles this atomically
+        # Stubbed here - the Transfer layer handles this atomically
         changeset
       end)
     end
@@ -199,7 +199,7 @@ defmodule IgamingRef.Players.SelfExclusionRecord do
   @moduledoc """
   Immutable record of a self-exclusion event. Append-only.
 
-  Self-exclusion records must never be deleted — they are regulatory evidence
+  Self-exclusion records must never be deleted - they are regulatory evidence
   (RG-MGA-009). The only permitted mutation is recording a reinstatement date
   after a temporary exclusion period expires.
 
@@ -300,7 +300,7 @@ defmodule IgamingRef.Players.SelfExclusionRecord do
       end)
     end
 
-    # No destroy action — records are permanent regulatory evidence (RG-MGA-009)
+    # No destroy action - records are permanent regulatory evidence (RG-MGA-009)
   end
 
   policies do

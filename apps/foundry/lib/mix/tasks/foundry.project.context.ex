@@ -67,8 +67,8 @@ defmodule Mix.Tasks.Foundry.Project.Context do
         generated_at: DateTime.utc_now() |> DateTime.to_iso8601(),
         project: Keyword.get(manifest, :project_name, ""),
         project_type: Keyword.get(manifest, :project_type, "standard"),
-        nodes: Enum.map(nodes, &to_json_node/1),
-        edges: Enum.map(edges, &to_json_edge/1),
+        nodes: nodes,
+        edges: edges,
         spec_kit: spec_kit
       }
       |> then(fn m ->
@@ -78,7 +78,10 @@ defmodule Mix.Tasks.Foundry.Project.Context do
         end
       end)
 
-    IO.puts(Jason.encode!(context, pretty: true))
+    json_str = Jason.encode!(context, pretty: true)
+
+    clean_json = sanitize_json_string(json_str)
+    IO.puts(clean_json)
 
     # Write lock file for --check to use
     Foundry.Context.LockFile.write(project_root)
@@ -98,13 +101,22 @@ defmodule Mix.Tasks.Foundry.Project.Context do
     end
   end
 
-  # Convert NodeEntry struct to JSON-serializable map
-  defp to_json_node(node) do
-    Jason.decode!(Jason.encode!(node))
-  end
-
-  # Convert EdgeEntry struct to JSON-serializable map
-  defp to_json_edge(edge) do
-    Jason.decode!(Jason.encode!(edge))
+  defp sanitize_json_string(json_str) do
+    # Replace all Elixir escape sequences (\x{...}) with safe equivalents
+    Regex.replace(~r/\\x\{([0-9a-f]+)\}/, json_str, fn _match, code ->
+      code
+      |> String.to_integer(16)
+      |> case do
+        0x2014 -> "-"
+        0x2013 -> "-"
+        0x00D7 -> "*"
+        0x201C -> "\""
+        0x201D -> "\""
+        0x2018 -> "'"
+        0x2019 -> "'"
+        0x2026 -> "..."
+        unicode -> "#{<<unicode::utf8>>}"
+      end
+    end)
   end
 end

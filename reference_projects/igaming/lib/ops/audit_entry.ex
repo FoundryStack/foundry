@@ -2,7 +2,7 @@ defmodule IgamingRef.Ops.AuditEntry do
   @moduledoc """
   Immutable audit trail entry.
 
-  Records all privileged actions on sensitive resources. Never deleted —
+  Records all privileged actions on sensitive resources. Never deleted -
   required for compliance evidence. Includes actor, action, timestamp, and
   affected resource information.
 

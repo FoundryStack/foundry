@@ -3,7 +3,7 @@ defmodule IgamingRef.Finance.Rules.SufficientBalance do
   Rule: the wallet balance must be sufficient to cover the requested debit amount.
 
   Applied by: IgamingRef.Finance.WithdrawalTransfer
-  Compliance: RG-MGA-001 (wallet balance integrity — balance never goes negative)
+  Compliance: RG-MGA-001 (wallet balance integrity - balance never goes negative)
   """
 
   use Foundry.Annotations
@@ -81,7 +81,7 @@ defmodule IgamingRef.Players.Rules.PlayerNotSelfExcluded do
   Applied by: IgamingRef.Finance.WithdrawalTransfer,
               IgamingRef.Promotions.BonusGrantTransfer
 
-  This rule is cross-domain — it belongs to the Players domain but is applied
+  This rule is cross-domain - it belongs to the Players domain but is applied
   in Finance and Promotions Transfers. Self-exclusion must block ALL financial
   transactions immediately (RG-UK-008).
 
@@ -161,7 +161,7 @@ defmodule IgamingRef.Promotions.Rules.CampaignNotExpired do
   @moduledoc """
   Rule: the campaign's expires_at has not passed.
 
-  Evaluated at Transfer time, not at campaign read time — a campaign could
+  Evaluated at Transfer time, not at campaign read time - a campaign could
   expire between when the user sees it and when they claim it.
 
   Applied by: IgamingRef.Promotions.BonusGrantTransfer
@@ -306,7 +306,7 @@ defmodule IgamingRef.Rule do
   @moduledoc """
   Behaviour for all IgamingRef domain rules.
 
-  Rules are pure functions — no side effects, no database calls.
+  Rules are pure functions - no side effects, no database calls.
   All data needed for evaluation is passed in the context map.
   """
 

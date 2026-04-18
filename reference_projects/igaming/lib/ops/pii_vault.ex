@@ -6,7 +6,7 @@ defmodule IgamingRef.Ops.PIIVault do
   to a PIIVault entry is stored, and the actual PII is retrieved on demand with
   decryption. Access is audited.
 
-  Sensitive resource — encryption at rest, access logging, and restricted read permissions.
+  Sensitive resource - encryption at rest, access logging, and restricted read permissions.
 
   Compliance: RG-MGA-002 (data protection), RG-UK-002 (player verification)
   """

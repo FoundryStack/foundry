@@ -3,7 +3,7 @@ defmodule IgamingRef.Accounts.User do
   Authentication subject for the platform. Linked to a Player record
   post-registration.
 
-  Always treated as sensitive by Foundry — auth resources are added to the
+  Always treated as sensitive by Foundry - auth resources are added to the
   sensitive resource set automatically by the classifier regardless of manifest
   configuration. AshPaperTrail and AshArchival are required (INV-011, INV-012).
 
@@ -88,7 +88,7 @@ end
 
 defmodule IgamingRef.Accounts.Token do
   @moduledoc """
-  Authentication tokens — session, magic link, and password reset tokens.
+  Authentication tokens - session, magic link, and password reset tokens.
 
   Always treated as sensitive. Tokens have short TTLs and are pruned
   automatically by AshAuthentication's token pruning job.

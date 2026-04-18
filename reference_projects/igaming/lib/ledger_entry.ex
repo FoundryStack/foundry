@@ -2,7 +2,7 @@ defmodule IgamingRef.Finance.LedgerEntry do
   @moduledoc """
   Immutable record of every financial movement against a wallet.
 
-  Append-only by policy — no update or destroy actions exist.
+  Append-only by policy - no update or destroy actions exist.
   Every credit, debit, bonus, wager, win, and reversal is recorded here.
   The sum of all LedgerEntry amounts for a wallet must always equal
   Wallet.balance (RG-UK-003).
@@ -39,7 +39,7 @@ defmodule IgamingRef.Finance.LedgerEntry do
 
     attribute :amount, :money do
       description(
-        "The monetary amount of this movement. Always positive — direction is conveyed by the :direction attribute."
+        "The monetary amount of this movement. Always positive - direction is conveyed by the :direction attribute."
       )
 
       allow_nil?(false)
@@ -71,7 +71,7 @@ defmodule IgamingRef.Finance.LedgerEntry do
 
     attribute :reference_id, :string do
       description(
-        "External reference identifier — e.g. the WithdrawalRequest ID or provider transaction reference."
+        "External reference identifier - e.g. the WithdrawalRequest ID or provider transaction reference."
       )
 
       allow_nil?(true)
@@ -98,12 +98,12 @@ defmodule IgamingRef.Finance.LedgerEntry do
   end
 
   actions do
-    # :read only — no update, no destroy. Append-only enforced by action absence.
+    # :read only - no update, no destroy. Append-only enforced by action absence.
     defaults([:read])
 
     create :record do
       description(
-        "Append a new ledger entry. Called exclusively by Transfer modules — never called directly by application code."
+        "Append a new ledger entry. Called exclusively by Transfer modules - never called directly by application code."
       )
 
       accept([:wallet_id, :amount, :direction, :kind, :idempotency_key, :reference_id])

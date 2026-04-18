@@ -77,7 +77,7 @@ defmodule IgamingRef.Promotions.BonusCampaign do
 
     attribute :wagering_multiplier, :decimal do
       description(
-        "Wagering requirement multiplier. A player must wager bonus_amount × wagering_multiplier before withdrawal (RG-UK-011)."
+        "Wagering requirement multiplier. A player must wager bonus_amount * wagering_multiplier before withdrawal (RG-UK-011)."
       )
 
       allow_nil?(false)
@@ -177,7 +177,7 @@ defmodule IgamingRef.Promotions.BonusCampaign do
   policies do
     policy action_type(:read) do
       description(
-        "All authenticated users may read campaign details (terms must be transparent — RG-MGA-005)."
+        "All authenticated users may read campaign details (terms must be transparent - RG-MGA-005)."
       )
 
       authorize_if(IgamingRef.Policies.AuthenticatedSubject)
