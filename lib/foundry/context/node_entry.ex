@@ -3,8 +3,9 @@ defmodule Foundry.Context.NodeEntry do
   The core typed output struct for per-module context queries.
   Mirrors the ModuleContext schema but with extended metadata.
 
-  All fields must be present in every output — use nil or empty collections
-  for absent values. Consumers depend on key presence, not existence checks.
+  Serialized with compact encoding: nil, false, [], and "" values are filtered out
+  at any nesting depth. This optimizes LLM context while future-proofing stub fields
+  (Phase B/D features appear automatically when populated).
   """
 
   @type state_machine :: %{
@@ -121,18 +122,10 @@ defmodule Foundry.Context.NodeEntry do
 end
 
 defimpl Jason.Encoder, for: Foundry.Context.NodeEntry do
-  @field_order ~w[id module type domain app sensitive description attributes actions
-    rules compliance adrs runbook test_coverage data_layer pending_migrations
-    paper_trail archival state_machine api_routes telemetry_prefix money_attributes
-    authentication_subject oban_queues rate_limited feature_flags steps performs outputs
-    agent_steps last_modified relationships auth_strategies provider_behaviour
-    provider_name rule_compliance_links scenario_origins graphql_mutations
-    json_api_routes vectorized]a
-
   def encode(entry, opts) do
-    @field_order
-    |> Enum.map(fn key -> {to_string(key), Map.get(entry, key)} end)
-    |> Map.new()
+    entry
+    |> Map.from_struct()
+    |> Foundry.Context.Compact.compact()
     |> Jason.Encode.map(opts)
   end
 end
