@@ -28,11 +28,11 @@ presentation. Sub-agents own scoped, tool-constrained retrieval and generation t
 a compact constraint summary.
 **Spawned:** Always for `change` intent. For `question` when ADR citation is needed.
 **Inputs:** NodeEntry (from CodeContextGatherer) + Tier 1 spec-kit index tag match.
-**Tools:** `bash` (cat, grep) — read-only.
+**Tools:** `bash` (cat, grep) - read-only.
 **Execution:**
 1. Read each ADR identified by Tier 1 tag match + NodeEntry `adrs` field
-2. Follow `Extends:` headers — read those ADRs too
-3. Read regulation files from NodeEntry `compliance` field; follow requirement → ADR links
+2. Follow `Extends:` headers - read those ADRs too
+3. Read regulation files from NodeEntry `compliance` field; follow requirement -> ADR links
 4. Read runbook from NodeEntry `runbook` field if a Reactor is in scope
 5. Check all INV-001..INV-018 against the proposed change
 **Returns:** Applicable constraints, contradiction result (`blocked: bool, rule: string`),
@@ -47,9 +47,9 @@ spec-kit gap list.
 **Inputs:** Target module names (inferred from message), inferred construct type.
 **Tools:** `bash` (mix foundry.project.context, mix foundry.pattern.find, mix foundry.exdoc).
 **Execution:**
-1. `mix foundry.project.context <Module>` — live NodeEntry (source of truth)
-2. `mix foundry.pattern.find <type> --domain <D>` — closest existing example
-3. `mix foundry.exdoc <Module> --function <fn>` — only when a specific DSL option
+1. `mix foundry.project.context <Module>` - live NodeEntry (source of truth)
+2. `mix foundry.pattern.find <type> --domain <D>` - closest existing example
+3. `mix foundry.exdoc <Module> --function <fn>` - only when a specific DSL option
    is unresolved after reading the pattern
 **Returns:** NodeEntry struct, pattern example source, current `@description` field values,
 `pending_migrations` status.
@@ -62,8 +62,8 @@ spec-kit gap list.
 **Spawned:** After SpecKitNavigator and CodeContextGatherer both complete, contradiction
 check passes.
 **Inputs:** Change class, constraint summary, code context, spec-kit gap list.
-**Tools:** None — pure reasoning from inputs.
-**Returns:** Ordered plan (spec → tests → code → migration) with per-step rationale.
+**Tools:** None - pure reasoning from inputs.
+**Returns:** Ordered plan (spec -> tests -> code -> migration) with per-step rationale.
 
 ---
 
@@ -74,7 +74,7 @@ proposal branch.
 **Spawned:** During generation, before CodeGenerator, when change class requires it.
 **Inputs:** Change class, plan, related existing docs for format reference.
 **Tools:** `bash` (cat existing spec-kit docs), branch write.
-**Returns:** Markdown stubs committed on `foundry/prop_<id>` — before any code file.
+**Returns:** Markdown stubs committed on `foundry/prop_<id>` - before any code file.
 
 ---
 
@@ -92,7 +92,7 @@ branch.
 ### Parallel Execution Map
 
 ```
-classify(intent) [orchestrator — inline, from Tier 1]
+classify(intent) [orchestrator - inline, from Tier 1]
          │
          ├────────────────────────────────────┐
          ▼                                    ▼
@@ -104,21 +104,21 @@ classify(intent) [orchestrator — inline, from Tier 1]
          └────────────────────────────────────┘
                           │
                   orchestrator synthesizes:
-                  contradiction check → BLOCKED or proceed
+                  contradiction check -> BLOCKED or proceed
                   change classification
                           │
-                          ▼  [sequential from here — each step depends on previous]
+                          ▼  [sequential from here - each step depends on previous]
                     PlanArchitect
                           │
                           ▼  [human confirmation]
-                    SpecKitDrafter → CodeGenerator → mix compile → mix test → diff
+                    SpecKitDrafter -> CodeGenerator -> mix compile -> mix test -> diff
 ```
 
 Parallelism ends at synthesis. Nothing in the generation phase runs concurrently.
 
 ---
 
-## Hard Invariants — Never Violate These
+## Hard Invariants - Never Violate These
 
 These are constraints the system enforces and agents must respect. Not guidelines.
 
@@ -138,7 +138,7 @@ For `:behavioral` and `:compliance` changes, the agent drafts required spec-kit 
 the code they govern. Spec-kit files and Elixir source files are reviewed and committed
 together in one proposal. The human never touches git manually for governed changes.
 The one exception is standalone `speckit` intent requests (documenting an already-made
-decision with no associated code change) — those produce an Activity Feed card for human
+decision with no associated code change) - those produce an Activity Feed card for human
 review and manual commit, as no proposal branch is warranted.
 
 **INV-003: All writes go through Igniter. The agent generates Elixir source for everything.**
@@ -157,23 +157,23 @@ cascade). All other generation uses raw Igniter directly.
 **The prohibition is on the mechanism, not the capability:**
 - Never: `File.write!/2`, `File.stream!/2`, or any direct IO on source files
 - Never: string interpolation assembled into source and written to disk directly
-- Always: content → Igniter pipeline → formatted, AST-valid output → git branch → diff → review
+- Always: content -> Igniter pipeline -> formatted, AST-valid output -> git branch -> diff -> review
 
 All generation writes to a `foundry/prop_<id>` git branch, not the working tree.
 The branch is merged on approval and discarded on rejection or failure.
 
 Igniter ensures formatting and AST correctness. The compiler and linter are the
-verification layer — not any catalogue boundary.
+verification layer - not any catalogue boundary.
 
 **INV-004: Infrastructure is proposal-only**
-Kubernetes, Postgres config, GitHub Actions base pipelines — agents produce structured
+Kubernetes, Postgres config, GitHub Actions base pipelines - agents produce structured
 proposals rendered as diffs in the review panel. A human with infrastructure context applies them.
 There is no `Op.ApplyInfrastructure` operation and there never will be.
 
-**INV-005: One clarifying question maximum — grounded in spec-kit quality**
+**INV-005: One clarifying question maximum - grounded in spec-kit quality**
 Before generating a proposal for ambiguous intent, ask at most one clarifying question.
 The rationale is not just UX. If the spec-kit (AGENTS.md, ADRs, DSL declarations) is
-complete, the agent should rarely need to ask at all — context should resolve ambiguity.
+complete, the agent should rarely need to ask at all - context should resolve ambiguity.
 Frequent clarifying questions are a symptom of an incomplete spec-kit or thin `@description`
 coverage, not a normal operating condition. When a clarifying question is necessary, it
 exposes a gap that should be closed in the spec-kit or DSL declarations.
@@ -183,9 +183,9 @@ The clarifying question UX (binary-choice buttons, not free-text) is specified i
 
 **INV-006: Stack versions always in system prompt**
 Every agent session includes the current `mix.exs` dependency versions in the Tier 1
-system prompt — injected by `Foundry.Copilot.ContextBuilder` before the agent loop
+system prompt - injected by `Foundry.Copilot.ContextBuilder` before the agent loop
 starts. Structurally impossible to start the agent loop without them. This prevents
-Ash 2.x vs 3.x confusion — the most common and most damaging hallucination class.
+Ash 2.x vs 3.x confusion - the most common and most damaging hallucination class.
 When in doubt about a DSL option: `bash("mix foundry.exdoc <Module> --function <fn>")`.
 When in doubt about a pattern: `bash("mix foundry.pattern.find <type>")`.
 When in doubt about an operation: `bash("cat .foundry/usage_rules/foundry_operations.md")`.
@@ -198,7 +198,7 @@ direct application-level usage; `ecto_sql` and `postgrex` as transitive dependen
 
 **INV-008: Project context must not be stale at CI**
 `.foundry/context.lock` must match the current source file hash at CI time. CI runs
-`mix foundry.project.context --check` — exits 1 if the lock is absent or stale.
+`mix foundry.project.context --check` - exits 1 if the lock is absent or stale.
 Update the lock locally by running `mix foundry.project.context` and committing
 `.foundry/context.lock`. `mix foundry.diagram.generate` is a deprecated alias.
 See ADR-020 and `docs/regulations/platform_invariants.md`.
@@ -258,7 +258,7 @@ which enforces the permitted root boundary for the current project context. The 
 roots are: `lib/`, `test/`, `config/`, `priv/repo/migrations/`, `docs/adrs/`,
 `docs/runbooks/`, `docs/regulations/`, `AGENTS.md`, `mix.exs`, `.foundry/manifest.exs`,
 `.foundry/usage_rules/`. In umbrella projects the `lib/` root expands to `apps/*/lib/`.
-Paths outside these roots return `{:error, :outside_boundary}` — they are never surfaced
+Paths outside these roots return `{:error, :outside_boundary}` - they are never surfaced
 to the client. `project_root` is always resolved server-side from the session context;
 the client cannot supply or influence it.
 
@@ -266,20 +266,20 @@ the client cannot supply or influence it.
 
 ## Change Classification
 
-Every proposed change must be classified. The four classes are **domain-agnostic** —
+Every proposed change must be classified. The four classes are **domain-agnostic** -
 the examples use a fintech/iGaming context but the model applies to any regulated domain.
 
 | Class | Trigger pattern | Approver | Auto-apply | Audit logged |
 |---|---|---|---|---|
 | `:structural` | New resource, attribute, relationship, description updates, test skeletons | Any developer | Configurable | No |
 | `:behavioral` | New Rule, Transfer step, Blueprint, Reactor, Oban job, state machine transition | Domain lead | Never | Yes |
-| `:sensitive` | Resources/attributes marked `:sensitive` in the manifest — ledger entries, PII, audit records, access control | Sensitive lead + one other (dual) | Never | Yes, mandatory |
+| `:sensitive` | Resources/attributes marked `:sensitive` in the manifest - ledger entries, PII, audit records, access control | Sensitive lead + one other (dual) | Never | Yes, mandatory |
 | `:compliance` | Changes to `compliance:` declarations, policy modules, requirement links | Compliance officer | Never | Yes, ADR required |
 
 **The `:sensitive` class is configured per project, not hardcoded.**
 A healthcare platform marks `:phi` resources as sensitive. A legal platform marks `:privileged`
 documents. The classification engine reads the manifest's `sensitive_resources:` list.
-iGaming uses ledger and wallet resources — that is a project-level configuration, not a
+iGaming uses ledger and wallet resources - that is a project-level configuration, not a
 Foundry-level assumption.
 
 **When in doubt, classify upward.** A `:behavioral` change misclassified as `:structural`
@@ -292,7 +292,7 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 `copilot.max_tool_calls` in the manifest controls the circuit breaker (default 20).
 
 The pre-generation checklist below governs how the agent interacts with the spec-kit
-before writing any code. It is not a separate mode — it is the agent's default
+before writing any code. It is not a separate mode - it is the agent's default
 reasoning obligation. The agent runs it internally before constructing the session plan.
 
 ### Pre-generation checklist
@@ -307,7 +307,7 @@ reasoning obligation. The agent runs it internally before constructing the sessi
 □ @moduledoc drafted for the new module
 □ @description fields on touched attributes are consistent with proposed change
 □ Policy compatibility verified for all generated UI actions via Ash.Resource.Info.policies/1
-   (do not generate UI actions the current actor cannot authorize — check before generating)
+   (do not generate UI actions the current actor cannot authorize - check before generating)
 ```
 
 The final item is critical: the agent treats existing `@description` fields as
@@ -343,36 +343,36 @@ consuming the one permitted clarifying question (INV-005):
 The complete sequence the agent follows before emitting any proposal:
 
 ```
-1.  Read spec-kit index (Tier 1) — identify relevant ADRs/INVs/regulations by tag
-2.  Read those documents via bash — follow cross-references
-3.  Run pre-generation checklist — identify missing spec-kit items
+1.  Read spec-kit index (Tier 1) - identify relevant ADRs/INVs/regulations by tag
+2.  Read those documents via bash - follow cross-references
+3.  Run pre-generation checklist - identify missing spec-kit items
 4.  Read module context: mix foundry.context <Module> --json
 5.  Fetch closest pattern example: mix foundry.pattern.find <type> --domain <D>
 6.  Check @description fields on all touched attributes against proposed change
-7.  Run contradiction check — BLOCKED if violated, else proceed
+7.  Run contradiction check - BLOCKED if violated, else proceed
 8.  Classify whether spec-kit drafting is required:
-      :behavioral or :compliance → ADR draft required, included as first file
+      :behavioral or :compliance -> ADR draft required, included as first file
                                     in the proposal branch
-      :structural with new concept → ADR draft offered, not required
-      :structural modification → no spec-kit step
+      :structural with new concept -> ADR draft offered, not required
+      :structural modification -> no spec-kit step
 9.  Construct ordered session plan:
-      [spec]  ADR / runbook stub (if required by step 8) — always first
+      [spec]  ADR / runbook stub (if required by step 8) - always first
       [tests] Test skeletons from DSL declarations + ADR boundary conditions
       [code]  Implementation constrained by test structure
       [migration] mix ash.codegen if schema changes
 
-    Ordering rationale — why spec before tests before code:
+    Ordering rationale - why spec before tests before code:
 
     Spec first: A reviewer reading code cannot govern what they do not understand.
     The ADR records why this approach was chosen over alternatives. Without it,
     approval is a rubber stamp on implementation, not a governance decision.
     The runbook records what happens when this Reactor fails. Without it, the
     reviewer cannot assess operational risk. Spec-kit files and code are reviewed
-    together in one diff — the spec makes the code legible to a non-author.
+    together in one diff - the spec makes the code legible to a non-author.
     This is an epistemology requirement, not a workflow preference.
 
     Tests before code: Test skeletons are derived from DSL declarations and ADR
-    boundary conditions — they define what "correct" means before any implementation
+    boundary conditions - they define what "correct" means before any implementation
     exists. Code written before the tests know what to assert may satisfy its author
     but cannot satisfy the spec. The tests constrain the implementation, not the
     reverse.
@@ -381,17 +381,17 @@ The complete sequence the agent follows before emitting any proposal:
     correct migration SQL. `mix ash.codegen` must run after all code is written
     and compiles. It is always the final generation step.
 10. Present plan for human confirmation
-      Human refines via conversation until satisfied — plan only, not code
+      Human refines via conversation until satisfied - plan only, not code
 11. On confirmation: single generation pass on foundry/prop_<id> branch
-      → Write spec-kit files first (Markdown, direct branch write)
-      → Generate test skeletons
-      → Generate implementation
-      → Run mix ash.codegen (if migration needed)
-      → Run mix compile (must pass)
-      → Run mix test <new-test-file> — pre-surface quality gate;
+      -> Write spec-kit files first (Markdown, direct branch write)
+      -> Generate test skeletons
+      -> Generate implementation
+      -> Run mix ash.codegen (if migration needed)
+      -> Run mix compile (must pass)
+      -> Run mix test <new-test-file> - pre-surface quality gate;
         max 3 self-corrections at compile level; never iterates on assertion values
-      → Compute graph_delta from operation parameters
-12. Surface diff to review panel — human reviews, approves, or requests changes
+      -> Compute graph_delta from operation parameters
+12. Surface diff to review panel - human reviews, approves, or requests changes
 ```
 
 This sequence applies to all `change` intents. When `change_generation_enabled: false`
@@ -402,7 +402,7 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 ## Spec-Kit Skill Orchestration
 
 The copilot internally orchestrates a set of spec-kit skills. These are transparent to
-the user — they interact only with the copilot conversation and the review panel.
+the user - they interact only with the copilot conversation and the review panel.
 The copilot decides which skills to invoke, in what order, synthesizes results, and
 surfaces only the finished output: a confirmed plan, a review diff, or a BLOCKED message.
 
@@ -411,7 +411,7 @@ surfaces only the finished output: a confirmed plan, a review diff, or a BLOCKED
 | Skill | When copilot invokes | What it produces | Feeds into |
 |---|---|---|---|
 | `speckit.specify` | `change` intent describes a feature without an existing spec | Feature spec from natural language | `speckit.plan` |
-| `speckit.clarify` | Intent confidence below threshold — before the one permitted question | Up to 5 targeted gaps identified | Copilot distills to the single most critical (INV-005) |
+| `speckit.clarify` | Intent confidence below threshold - before the one permitted question | Up to 5 targeted gaps identified | Copilot distills to the single most critical (INV-005) |
 | `speckit.plan` | After spec exists; before session plan is presented to human | Design artifacts: approach, alternatives, trade-offs | PlanArchitect sub-agent |
 | `speckit.tasks` | After plan is confirmed by human | Dependency-ordered task list | CodeGenerator execution queue |
 | `speckit.analyze` | After task list is generated; before plan is shown to human | Cross-artifact consistency report (spec ↔ plan ↔ tasks) | Copilot resolves conflicts before surfacing plan |
@@ -439,7 +439,7 @@ conflicts (spec says X, tasks say Y), the copilot resolves them silently and run
 **`speckit.constitution` is never user-invoked.** It runs automatically on the proposal
 branch when a change would modify AGENTS.md, a project constitution, or a template that
 dependent docs reference. The constitution sync is the first file SpecKitDrafter commits
-— before any ADR, runbook, or code. This ensures dependent templates are in sync before
+- before any ADR, runbook, or code. This ensures dependent templates are in sync before
 the rest of the spec-kit is written against them.
 
 **`speckit.implement` drives CodeGenerator.** It processes `tasks.md` in dependency
@@ -461,9 +461,9 @@ The Activity Feed shows the proposal card and approval status. Not skill traces.
 
 ---
 
-### Tier 1 vs Bash — The Decision Rule
+### Tier 1 vs Bash - The Decision Rule
 
-**Tier 1 answers "which?" — bash answers "what?"**
+**Tier 1 answers "which?" - bash answers "what?"**
 
 | Answer comes from Tier 1 (already in system prompt) | Answer requires bash |
 |---|---|
@@ -474,5 +474,5 @@ The Activity Feed shows the proposal card and approval status. Not skill traces.
 | Which spec-kit files exist? | Contents of a specific spec-kit file |
 
 Never run bash to answer a question Tier 1 already resolves. Never trust a Tier 1
-summary as the full constraint text for a contradiction check — always fetch the full
+summary as the full constraint text for a contradiction check - always fetch the full
 document. Fetching a document the Tier 1 index says doesn't exist is always wrong.
