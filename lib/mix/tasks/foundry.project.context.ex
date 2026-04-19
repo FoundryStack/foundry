@@ -80,7 +80,7 @@ defmodule Mix.Tasks.Foundry.Project.Context do
 
     json_str = Jason.encode!(context, pretty: true)
 
-    clean_json = sanitize_json_string(json_str)
+    clean_json = Foundry.Context.Compact.sanitize_json(json_str)
     IO.puts(clean_json)
 
     # Write lock file for --check to use
@@ -99,24 +99,5 @@ defmodule Mix.Tasks.Foundry.Project.Context do
         IO.puts(:stderr, "error: context.lock is stale. Run: mix foundry.project.context")
         exit({:shutdown, 1})
     end
-  end
-
-  defp sanitize_json_string(json_str) do
-    # Replace all Elixir escape sequences (\x{...}) with safe equivalents
-    Regex.replace(~r/\\x\{([0-9a-f]+)\}/, json_str, fn _match, code ->
-      code
-      |> String.to_integer(16)
-      |> case do
-        0x2014 -> "-"
-        0x2013 -> "-"
-        0x00D7 -> "*"
-        0x201C -> "\""
-        0x201D -> "\""
-        0x2018 -> "'"
-        0x2019 -> "'"
-        0x2026 -> "..."
-        unicode -> "#{<<unicode::utf8>>}"
-      end
-    end)
   end
 end

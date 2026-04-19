@@ -7,6 +7,19 @@ defmodule Foundry.Context.Compact do
   and will appear automatically when populated in future phases — no code changes needed.
   """
 
+  defmacro __using__(_opts) do
+    quote do
+      defimpl Jason.Encoder do
+        def encode(entry, opts) do
+          entry
+          |> Map.from_struct()
+          |> Foundry.Context.Compact.compact()
+          |> Jason.Encode.map(opts)
+        end
+      end
+    end
+  end
+
   def compact(struct) when is_struct(struct) do
     struct |> Map.from_struct() |> compact()
   end
@@ -22,6 +35,25 @@ defmodule Foundry.Context.Compact do
   def compact(list) when is_list(list), do: Enum.map(list, &compact/1)
 
   def compact(v), do: v
+
+  def sanitize_json(json_str) do
+    # Replace all Elixir escape sequences (\x{...}) with safe equivalents
+    Regex.replace(~r/\\x\{([0-9a-f]+)\}/, json_str, fn _match, code ->
+      code
+      |> String.to_integer(16)
+      |> case do
+        0x2014 -> "-"
+        0x2013 -> "-"
+        0x00D7 -> "*"
+        0x201C -> "\\\""
+        0x201D -> "\\\""
+        0x2018 -> "'"
+        0x2019 -> "'"
+        0x2026 -> "..."
+        unicode -> "#{<<unicode::utf8>>}"
+      end
+    end)
+  end
 
   defp empty?(nil), do: true
   defp empty?(false), do: true

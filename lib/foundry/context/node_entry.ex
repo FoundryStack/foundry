@@ -119,13 +119,6 @@ defmodule Foundry.Context.NodeEntry do
     json_api_routes: [],
     vectorized: false
   ]
-end
 
-defimpl Jason.Encoder, for: Foundry.Context.NodeEntry do
-  def encode(entry, opts) do
-    entry
-    |> Map.from_struct()
-    |> Foundry.Context.Compact.compact()
-    |> Jason.Encode.map(opts)
-  end
+  use Foundry.Context.Compact
 end
