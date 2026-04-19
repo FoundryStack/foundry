@@ -21,11 +21,16 @@ defmodule Foundry.Context.GraphBuilder do
 
     nodes =
       ModuleDiscovery.all_project_modules(project_root, root_name)
-      |> Enum.map(fn mod ->
-        info = SparkMeta.walk(mod)
-        pending = PendingMigrations.pending?(mod, pending_set)
-        NodeBuilder.build(info, manifest, pending)
-      end)
+      |> Task.async_stream(
+        fn mod ->
+          info = SparkMeta.walk(mod)
+          pending = PendingMigrations.pending?(mod, pending_set)
+          NodeBuilder.build(info, manifest, pending)
+        end,
+        max_concurrency: System.schedulers_online(),
+        timeout: 30_000
+      )
+      |> Enum.map(fn {:ok, node} -> node end)
       |> Enum.sort_by(& &1.id)
 
     edges =
@@ -361,7 +366,7 @@ defmodule Foundry.Context.GraphBuilder do
           id: "external:postgres:#{domain}",
           type: "external",
           domain: "Infrastructure",
-          description: "PostgreSQL — #{domain} domain tables (AshPostgres)",
+          description: "PostgreSQL - #{domain} domain tables (AshPostgres)",
           app: nil,
           sensitive: false,
           attributes: [],

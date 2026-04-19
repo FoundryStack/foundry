@@ -17,6 +17,8 @@ defmodule Foundry.Context.PendingMigrations do
       {output, _nonzero} ->
         {:ok, MapSet.new(parse_pending_modules(output))}
     end
+  rescue
+    _ -> {:ok, MapSet.new()}
   end
 
   @spec pending?(module :: module(), pending_set :: MapSet.t()) :: boolean()

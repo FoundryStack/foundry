@@ -52,14 +52,12 @@ defmodule Foundry.SparkMeta.Attribute do
     cldr_backend: nil
   ]
 
-  use Foundry.Context.Compact
 end
 
 defmodule Foundry.SparkMeta.Action do
   @moduledoc "Structured representation of an Ash resource action."
   defstruct [:name, :type, :description]
 
-  use Foundry.Context.Compact
 end
 
 defmodule Foundry.SparkMeta.StepEntry do
@@ -94,28 +92,24 @@ defmodule Foundry.SparkMeta.StepEntry do
     step_telemetry_prefix: []
   ]
 
-  use Foundry.Context.Compact
 end
 
 defmodule Foundry.SparkMeta.MoneyAttr do
   @moduledoc "Structured representation of a monetary attribute."
   defstruct [:name, :type, :cldr_backend]
 
-  use Foundry.Context.Compact
 end
 
 defmodule Foundry.SparkMeta.Relationship do
   @moduledoc "Structured representation of an Ash resource relationship."
   defstruct [:name, :type, :related_resource, :source_attribute, :destination_attribute, :description]
 
-  use Foundry.Context.Compact
 end
 
 defmodule Foundry.SparkMeta.AuthStrategy do
   @moduledoc "Structured representation of an AshAuthentication strategy."
   defstruct [:strategy_name, :strategy_type, :identity_field, :token_resource, :has_sign_in_tokens, :has_password_reset]
 
-  use Foundry.Context.Compact
 end
 
 defmodule Foundry.SparkMeta do

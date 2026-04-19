@@ -48,6 +48,7 @@ defmodule IgamingRef.Accounts.User do
       enabled?(true)
       token_resource(IgamingRef.Accounts.Token)
       signing_secret(IgamingRef.Secrets)
+      require_token_presence_for_authentication?(true)
     end
   end
 
