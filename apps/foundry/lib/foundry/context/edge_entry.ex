@@ -18,20 +18,32 @@ defmodule Foundry.Context.EdgeEntry do
   - `calls_provider`: transfer step calls provider
   """
 
-  @type relation :: :references | :referenced_by | :writes | :reads | :async | :guards | :sequence |
-    :compensation | :configures | :authenticates | :persists_to | :queues_via | :calls_provider
+  @type relation ::
+          :references
+          | :referenced_by
+          | :writes
+          | :reads
+          | :async
+          | :guards
+          | :sequence
+          | :compensation
+          | :configures
+          | :authenticates
+          | :persists_to
+          | :queues_via
+          | :calls_provider
 
   @type t :: %__MODULE__{
-    from: String.t(),
-    to: String.t(),
-    relation: relation(),
-    cross_app: boolean(),
-    cross_project: boolean(),
-    step_name: String.t() | nil,
-    step_index: integer() | nil,
-    action_name: String.t() | nil,
-    compliance_ids: [String.t()]
-  }
+          from: String.t(),
+          to: String.t(),
+          relation: relation(),
+          cross_app: boolean(),
+          cross_project: boolean(),
+          step_name: String.t() | nil,
+          step_index: integer() | nil,
+          action_name: String.t() | nil,
+          compliance_ids: [String.t()]
+        }
 
   @enforce_keys [:from, :to, :relation]
   defstruct [
@@ -50,13 +62,6 @@ defmodule Foundry.Context.EdgeEntry do
   def new(from, to, relation) when is_binary(from) and is_binary(to) and is_atom(relation) do
     %__MODULE__{from: from, to: to, relation: relation}
   end
-end
 
-defimpl Jason.Encoder, for: Foundry.Context.EdgeEntry do
-  def encode(entry, opts) do
-    entry
-    |> Map.from_struct()
-    |> Foundry.Context.Compact.compact()
-    |> Jason.Encode.map(opts)
-  end
+  use Foundry.Context.Compact
 end
