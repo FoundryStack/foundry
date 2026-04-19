@@ -48,7 +48,13 @@ defmodule Foundry.Context.LLMFormatter do
     "calls_provider" => "cp"
   }
 
-  def format(%{"nodes" => nodes, "edges" => edges} = context) do
+  def format(context) do
+    # Ensure all keys are strings for consistent processing,
+    # as context can come from internal assembly (atoms) or JSON decode (strings).
+    context = stringify_keys(context)
+    nodes = context["nodes"] || []
+    edges = context["edges"] || []
+
     aliases = build_aliases(nodes)
     reverse = Map.new(aliases, fn {k, v} -> {v, k} end)
 
@@ -63,6 +69,14 @@ defmodule Foundry.Context.LLMFormatter do
     |> Enum.reject(&(&1 == ""))
     |> Enum.join("\n\n")
   end
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} -> {to_string(k), stringify_keys(v)} end)
+  end
+
+  defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
+  defp stringify_keys(v) when is_atom(v) and v not in [true, false, nil], do: Atom.to_string(v)
+  defp stringify_keys(v), do: v
 
   defp format_header(context) do
     project = context["project"] || ""
@@ -131,8 +145,11 @@ defmodule Foundry.Context.LLMFormatter do
 
     rel_section =
       case node["relationships"] || [] do
-        [] -> []
-        rels -> ["rels: #{rels |> Enum.map(&format_relationship(&1, reverse)) |> Enum.join(", ")}"]
+        [] ->
+          []
+
+        rels ->
+          ["rels: #{rels |> Enum.map(&format_relationship(&1, reverse)) |> Enum.join(", ")}"]
       end
 
     comp_section =
@@ -149,23 +166,25 @@ defmodule Foundry.Context.LLMFormatter do
 
     flag_section =
       []
-      |> then(&(if node["data_layer"], do: &1 ++ ["dl=#{short_data_layer(node["data_layer"])}"], else: &1))
-      |> then(&(if node["paper_trail"], do: &1 ++ ["paper_trail"], else: &1))
-      |> then(&(if node["archival"], do: &1 ++ ["archival"], else: &1))
-      |> then(&(if node["pending_migrations"], do: &1 ++ ["pending!"], else: &1))
-      |> then(&(if node["authentication_subject"], do: &1 ++ ["auth_subject"], else: &1))
-      |> then(&(if node["rate_limited"], do: &1 ++ ["rate_limited"], else: &1))
+      |> then(
+        &if node["data_layer"], do: &1 ++ ["dl=#{short_data_layer(node["data_layer"])}"], else: &1
+      )
+      |> then(&if node["paper_trail"], do: &1 ++ ["paper_trail"], else: &1)
+      |> then(&if node["archival"], do: &1 ++ ["archival"], else: &1)
+      |> then(&if node["pending_migrations"], do: &1 ++ ["pending!"], else: &1)
+      |> then(&if node["authentication_subject"], do: &1 ++ ["auth_subject"], else: &1)
+      |> then(&if node["rate_limited"], do: &1 ++ ["rate_limited"], else: &1)
       |> then(fn flags ->
         if flags == [], do: [], else: [Enum.join(flags, " · ")]
       end)
 
-    initial_lines ++
-      attr_section ++
-      action_section ++
-      rel_section ++
-      comp_section ++
-      adr_section ++
-      flag_section
+    (initial_lines ++
+       attr_section ++
+       action_section ++
+       rel_section ++
+       comp_section ++
+       adr_section ++
+       flag_section)
     |> Enum.reject(&(&1 == ""))
     |> Enum.join("\n  ")
   end
@@ -200,13 +219,14 @@ defmodule Foundry.Context.LLMFormatter do
   end
 
   defp format_relationship(rel, reverse) do
-    type = case rel["type"] do
-      "has_many" -> "has_many"
-      "belongs_to" -> "belongs_to"
-      "has_one" -> "has_one"
-      "many_to_many" -> "m2m"
-      t -> t
-    end
+    type =
+      case rel["type"] do
+        "has_many" -> "has_many"
+        "belongs_to" -> "belongs_to"
+        "has_one" -> "has_one"
+        "many_to_many" -> "m2m"
+        t -> t
+      end
 
     target = Map.get(reverse, rel["related_resource"], rel["related_resource"])
 
@@ -293,6 +313,7 @@ defmodule Foundry.Context.LLMFormatter do
     |> Enum.sort_by(& &1["module"])
     |> Enum.group_by(fn node ->
       parts = String.split(node["module"], ".")
+
       case parts do
         [_, domain | _] -> domain
         [_] -> "Root"

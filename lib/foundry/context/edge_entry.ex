@@ -63,5 +63,4 @@ defmodule Foundry.Context.EdgeEntry do
     %__MODULE__{from: from, to: to, relation: relation}
   end
 
-  use Foundry.Context.Compact
 end

@@ -34,15 +34,19 @@ defmodule Foundry.Status do
 
   def build(project_root) do
     {:ok, manifest} = Foundry.Manifest.Parser.read(project_root)
+    {nodes, _edges} = Foundry.Context.GraphBuilder.build(project_root, manifest)
 
+    build_from_nodes(project_root, manifest, nodes)
+  end
+
+  def build_from_nodes(project_root, manifest, nodes) do
     domain_type = Keyword.get(manifest, :domain_type, "")
     domain_type_str = if is_atom(domain_type), do: Atom.to_string(domain_type), else: domain_type
 
     project_name = Keyword.get(manifest, :project_name, "")
     project_type = Keyword.get(manifest, :project_type, "standard")
 
-    # Fetch all components
-    {nodes, _edges} = Foundry.Context.GraphBuilder.build(project_root, manifest)
+    # Fetch remaining components
     lint_report = Foundry.Lint.Runner.run(project_root)
     stack_versions = Foundry.Status.StackVersions.read(project_root)
     compiled_at = compiled_at(project_root)

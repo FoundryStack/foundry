@@ -120,5 +120,4 @@ defmodule Foundry.Context.NodeEntry do
     vectorized: false
   ]
 
-  use Foundry.Context.Compact
 end

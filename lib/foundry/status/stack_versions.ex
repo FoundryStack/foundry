@@ -15,31 +15,18 @@ defmodule Foundry.Status.StackVersions do
         end)
 
       {:ok, content} ->
-        {lock, _} = Code.eval_string(content)
-
+        # Use regex to extract versions directly without evaluating the file.
+        # This avoids thousands of "quoted keyword" warnings from Code.eval_string.
         Map.new(@tracked, fn lib ->
-          {to_string(lib), extract_version(lock, lib)}
+          pattern = ~r/"#{to_string(lib)}":\s*\{:hex,\s*:[^,]+,\s*"([^"]+)"/
+          version =
+            case Regex.run(pattern, content) do
+              [_, v] -> v
+              _ -> nil
+            end
+          {to_string(lib), version}
         end)
     end
   end
 
-  defp extract_version(lock, lib) do
-    # Code.eval_string creates atom keys from the mix.lock file
-    case Map.get(lock, lib) do
-      nil ->
-        nil
-
-      {:hex, _pkg, version, _, _, _, _, _} ->
-        version
-
-      {:hex, _pkg, version, _, _, _, _} ->
-        version
-
-      {:git, _url, ref, _opts} ->
-        ref
-
-      _other ->
-        nil
-    end
-  end
 end
