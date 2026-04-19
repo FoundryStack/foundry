@@ -29,6 +29,7 @@ defmodule Foundry.Context.ScenarioEntry do
   @type status :: :missing | :partial | :implemented
   @type trigger_type :: :cron | :oban_condition | :json_api | :graphql | :auth_event | nil
 
+  @derive Jason.Encoder
   defstruct [
     # Compliance test scenario (from compliance-tagged ExUnit tests)
     :requirement_id,

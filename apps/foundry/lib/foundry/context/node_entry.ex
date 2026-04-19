@@ -8,6 +8,8 @@ defmodule Foundry.Context.NodeEntry do
   (Phase B/D features appear automatically when populated).
   """
 
+  @derive Jason.Encoder
+
   @type state_machine :: %{
           present: boolean(),
           states: [String.t()],

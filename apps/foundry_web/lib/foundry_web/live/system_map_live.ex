@@ -14,7 +14,7 @@ defmodule FoundryWeb.SystemMapLive do
 
     case Foundry.Context.ProjectContext.build(project_root) do
       {:ok, context} ->
-        context_json = Jason.encode!(context)
+        context_json = Jason.encode!(Foundry.Context.Compact.compact(context))
         nodes = context.nodes || []
 
         # Organize nodes by domain

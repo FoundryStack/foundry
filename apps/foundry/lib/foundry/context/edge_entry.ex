@@ -18,6 +18,8 @@ defmodule Foundry.Context.EdgeEntry do
   - `calls_provider`: transfer step calls provider
   """
 
+  @derive Jason.Encoder
+
   @type relation ::
           :references
           | :referenced_by
