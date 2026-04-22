@@ -46,6 +46,7 @@ defmodule Foundry.Context.NodeBuilder do
       agent_steps: info.agent_steps,
       relationships: info.relationships,
       auth_strategies: info.auth_strategies,
+      side_effects: info.side_effects,
       last_modified: format_mtime(info.last_modified)
     }
   end

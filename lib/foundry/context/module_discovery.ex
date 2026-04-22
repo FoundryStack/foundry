@@ -22,6 +22,7 @@ defmodule Foundry.Context.ModuleDiscovery do
         []
 
       path ->
+        Code.append_path(path)
         Path.wildcard(Path.join(path, "*.beam"))
         |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
         |> Enum.filter(&(Atom.to_string(&1) |> String.starts_with?(prefix)))

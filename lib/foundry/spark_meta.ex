@@ -36,7 +36,8 @@ defmodule Foundry.SparkMeta.ModuleInfo do
     performs: nil,
     last_modified: nil,
     relationships: [],
-    auth_strategies: []
+    auth_strategies: [],
+    side_effects: []
   ]
 end
 
@@ -90,9 +91,33 @@ defmodule Foundry.SparkMeta.StepEntry do
     confidence_threshold: nil,
     on_low_confidence: nil,
     step_tools: [],
-    step_telemetry_prefix: []
+    step_telemetry_prefix: [],
+    side_effects: []
   ]
 
+end
+
+defmodule Foundry.SparkMeta.SideEffectEntry do
+  @moduledoc """
+  Structured representation of a side effect.
+
+  Corresponds to SideEffectEntry in ADR-022.
+  """
+  defstruct [
+    :type,
+    :name,
+    :declared_on,
+    :idempotency_key_from,
+    :step_name,
+    :action,
+    :job_module,
+    :module,
+    :queue,
+    :trigger,
+    idempotent: false,
+    declared: false,
+    epistemic: "VERIFIED"
+  ]
 end
 
 defmodule Foundry.SparkMeta.MoneyAttr do
@@ -159,6 +184,8 @@ defmodule Foundry.SparkMeta do
     |> put_oban_performs()
     # AshAI DSL entities if present
     |> put_agent_steps()
+    # extract side effects from annotations and DSL
+    |> put_side_effects()
     # source file mtime
     |> put_last_modified()
   rescue
@@ -458,6 +485,7 @@ defmodule Foundry.SparkMeta do
             struct_str = step.__struct__ |> Atom.to_string()
             is_struct(step) and (
               String.starts_with?(struct_str, "Elixir.Reactor.Dsl.Step") or
+              String.starts_with?(struct_str, "Elixir.Reactor.Dsl.Reactor.Step") or
               String.starts_with?(struct_str, "Elixir.Ash.Reactor.Dsl")
             )
           end)
@@ -466,25 +494,21 @@ defmodule Foundry.SparkMeta do
             step_kind = derive_step_kind(step)
             target_resource = Map.get(step, :resource) || infer_target_resource_from_source(module, step)
             target_action = Map.get(step, :action) |> then(&if &1, do: to_string(&1), else: nil)
-
             rules_applied = extract_rules_from_step(module, step)
 
             %Foundry.SparkMeta.StepEntry{
-              name: to_string(step.name),
-              type:
-                step.__struct__
-                |> Module.split()
-                |> List.last()
-                |> String.downcase(),
+              name: step.name,
+              type: Map.get(step, :type) |> then(&if &1, do: to_string(&1), else: step.__struct__ |> Module.split() |> List.last() |> String.downcase()),
               description: Map.get(step, :description),
               target_module: Map.get(step, :impl) || Map.get(step, :resource),
               step_index: index,
               wait_for: Map.get(step, :wait_for, []) |> Enum.map(&to_string/1),
-              has_compensation: Map.get(step, :compensate) != nil,
+              has_compensation: Map.get(step, :compensate) != nil || Map.get(step, :undo_action) != nil,
               target_resource: format_module_fqn(target_resource),
               target_action: target_action,
               step_kind: step_kind,
-              rules_applied: rules_applied
+              rules_applied: rules_applied,
+              side_effects: []
             }
           end)
         rescue
@@ -492,7 +516,7 @@ defmodule Foundry.SparkMeta do
         end
 
       source_text =
-        case find_module_source_file(Atom.to_string(module)) do
+        case module_source_path(module) do
           path when is_binary(path) -> File.read!(path)
           _ -> nil
         end
@@ -500,7 +524,39 @@ defmodule Foundry.SparkMeta do
       steps =
         Enum.map(steps, fn step ->
           snippet = source_text && extract_step_source(source_text, step.name)
-          %{step | source_snippet: snippet}
+
+          # Read declared side effects from @step_side_effects module attribute (primary source)
+          declared_se_map =
+            case module.__info__(:attributes)[:step_side_effects] do
+              [map] when is_map(map) -> map
+              _ -> %{}
+            end
+
+          # Per step, build declared SEs from module attribute
+          step_se_declared = Map.get(declared_se_map, step.name, [])
+            |> Enum.map(fn se ->
+              %Foundry.SparkMeta.SideEffectEntry{
+                type: se.type,
+                name: to_string(se[:name] || ""),
+                declared: true,
+                declared_on: :module_attribute,
+                idempotent: se[:idempotent],
+                epistemic: "DECLARED",
+                step_name: to_string(step.name)
+              }
+            end)
+
+          # Merge with inferred (heuristic) side effects from source if no declared ones exist
+          inferred_se =
+            if Enum.empty?(step_se_declared) and snippet do
+              extract_side_effects_from_step(snippet, step.name)
+            else
+              []
+            end
+
+          side_effects = step_se_declared ++ inferred_se
+
+          %{step | source_snippet: snippet, side_effects: side_effects}
         end)
 
       %{info | steps: steps}
@@ -537,7 +593,7 @@ defmodule Foundry.SparkMeta do
   defp infer_target_resource_from_source(module, step) do
     # Heuristic: scan source file for Ash.create, Ash.update, Ash.get patterns
     try do
-      case find_module_source_file(Atom.to_string(module)) do
+      case module_source_path(module) do
         nil -> nil
         file -> extract_target_resource_from_step(file, to_string(step.name))
       end
@@ -555,13 +611,27 @@ defmodule Foundry.SparkMeta do
         [{start, _}] ->
           # Extract from step start to next top-level step or end
           remaining = String.slice(content, start, String.length(content) - start)
-          extract_ash_resource_ref(remaining)
+          case extract_ash_resource_ref(remaining) do
+            nil -> nil
+            short -> resolve_alias(short, content)
+          end
         _ ->
           # Fallback: scan entire file if step name not found
-          extract_ash_resource_ref(content)
+          case extract_ash_resource_ref(content) do
+            nil -> nil
+            short -> resolve_alias(short, content)
+          end
       end
     rescue
       _ -> nil
+    end
+  end
+
+  defp resolve_alias(short_name, file_content) do
+    pattern = ~r/alias\s+([\w.]+\.#{Regex.escape(short_name)})\b/
+    case Regex.run(pattern, file_content) do
+      [_, full] -> full
+      _ -> short_name
     end
   end
 
@@ -583,7 +653,7 @@ defmodule Foundry.SparkMeta do
 
   defp extract_rules_from_step(module, step) do
     try do
-      case find_module_source_file(Atom.to_string(module)) do
+      case module_source_path(module) do
         nil -> []
         file -> extract_rule_refs_from_step(file, to_string(step.name))
       end
@@ -595,28 +665,45 @@ defmodule Foundry.SparkMeta do
   defp extract_rule_refs_from_step(file, step_name) do
     try do
       content = File.read!(file)
+      alias_map = extract_rule_aliases(content)
       # Find step block by name, then scan that block for Rules.X.evaluate calls
       step_pattern = ~r/step\s+:#{Regex.escape(step_name)}\b/
       case Regex.run(step_pattern, content, return: :index) do
         [{start, _}] ->
           # Extract from step start to next top-level step or end (scan ~800 chars)
           remaining = String.slice(content, start, min(String.length(content) - start, 800))
-          find_rule_evaluations(remaining)
+          find_rule_evaluations(remaining, alias_map)
         _ ->
           # Fallback: scan entire file if step name not found
-          find_rule_evaluations(content)
+          find_rule_evaluations(content, alias_map)
       end
     rescue
       _ -> []
     end
   end
 
-  defp find_rule_evaluations(content) do
-    # Pattern: SomeModule.Rules.RuleName.evaluate
-    pattern = ~r/([A-Z][A-Za-z0-9._]*\.Rules\.[A-Z][A-Za-z0-9._]*)/
-    Regex.scan(pattern, content)
-    |> Enum.map(&List.first/1)
-    |> Enum.uniq()
+  defp extract_rule_aliases(content) do
+    ~r/alias\s+([\w.]+\.Rules\.(\w+))/
+    |> Regex.scan(content)
+    |> Enum.map(fn [_, full, short] -> {short, full} end)
+    |> Map.new()
+  end
+
+  defp find_rule_evaluations(content, alias_map) do
+    # Full FQN patterns already in text (explicit calls like Module.Rules.Name.evaluate)
+    explicit = ~r/([A-Z][A-Za-z0-9._]*\.Rules\.[A-Z][A-Za-z0-9._]*)/
+      |> Regex.scan(content)
+      |> Enum.map(&List.first/1)
+      |> Enum.uniq()
+
+    # Aliased short names — detect ShortName.evaluate( or ShortName.check( in snippet
+    aliased = alias_map
+      |> Enum.filter(fn {short, _} ->
+        String.contains?(content, short <> ".evaluate(") or String.contains?(content, short <> ".check(")
+      end)
+      |> Enum.map(fn {_, full} -> full end)
+
+    Enum.uniq(explicit ++ aliased)
   end
 
   defp extract_step_source(source_text, step_name) when is_binary(source_text) do
@@ -750,6 +837,147 @@ defmodule Foundry.SparkMeta do
     end
   rescue
     _ -> info
+  end
+
+  defp put_side_effects(%ModuleInfo{module: module} = info) do
+    if ash_resource?(module) do
+      actions_side_effects =
+        try do
+          Ash.Resource.Info.actions(module)
+          |> Enum.flat_map(fn action ->
+            # Extract notifiers
+            notifiers = Map.get(action, :notifiers, [])
+            # Extract changes that might have side effects (heuristic: any custom change)
+            changes = Map.get(action, :changes, [])
+
+            entries = []
+            entries = entries ++ Enum.map(notifiers, fn n ->
+              %Foundry.SparkMeta.SideEffectEntry{
+                type: :ash_notifier,
+                name: format_module_fqn(n),
+                declared_on: :resource_action,
+                action: to_string(action.name),
+                declared: true,
+                epistemic: "VERIFIED"
+              }
+            end)
+
+            entries = entries ++ Enum.filter(changes, fn
+              %{change: {change_mod, _opts}} -> trigger_change?(change_mod)
+              %{change: change_mod} -> trigger_change?(change_mod)
+              _ -> false
+            end)
+            |> Enum.map(fn
+              %{change: {change_mod, _opts}} -> change_mod
+              %{change: change_mod} -> change_mod
+            end)
+            |> Enum.map(fn mod ->
+              %Foundry.SparkMeta.SideEffectEntry{
+                type: :ash_change,
+                name: format_module_fqn(mod),
+                declared_on: :resource_action,
+                action: to_string(action.name),
+                declared: true,
+                epistemic: "VERIFIED"
+              }
+            end)
+
+            entries
+          end)
+        rescue
+          _ -> []
+        end
+
+      %{info | side_effects: actions_side_effects}
+    else
+      info
+    end
+  rescue
+    _ -> info
+  end
+
+  defp trigger_change?(module) do
+    # Heuristic: changes in a .Changes or .Notifiers namespace likely have side effects
+    mod_str = to_string(module)
+    String.contains?(mod_str, [".Changes.", ".Notifiers."])
+  end
+
+  defp extract_side_effects_from_step(snippet, step_name) do
+    # 1. Parse @side_effect annotations
+    # Format: # @side_effect type: name, key: value
+    annotated =
+      Regex.scan(~r/#\s*@side_effect\s+([^:\n]+):\s*([^,\n]+)(.*)/, snippet)
+      |> Enum.map(fn [_, type_str, name_str, rest] ->
+        opts = parse_side_effect_opts(rest)
+        %Foundry.SparkMeta.SideEffectEntry{
+          type: String.trim(type_str) |> String.to_atom(),
+          name: String.trim(name_str),
+          declared_on: :step,
+          step_name: to_string(step_name),
+          queue: Map.get(opts, "queue"),
+          idempotent: Map.get(opts, "idempotent") == "true",
+          idempotency_key_from: Map.get(opts, "key_from") |> parse_list(),
+          declared: true,
+          epistemic: "VERIFIED"
+        }
+      end)
+
+    # 2. Heuristics for undeclared side effects
+    inferred = []
+
+    inferred = if String.contains?(snippet, ["Oban.insert", "Oban.insert!"]) and not has_side_effect_type?(annotated, :oban_emit) do
+      oban_job_name =
+        case Regex.run(~r/Oban\.insert[!]?\(\s*([A-Z][A-Za-z0-9.]+)\.new/, snippet) do
+          [_, mod] -> mod
+          _ -> "unnamed_oban_job"
+        end
+
+      inferred ++ [%Foundry.SparkMeta.SideEffectEntry{
+        type: :oban_emit,
+        name: oban_job_name,
+        declared_on: :step,
+        step_name: to_string(step_name),
+        declared: false,
+        epistemic: "INFERRED"
+      }]
+    else
+      inferred
+    end
+
+    inferred = if String.contains?(snippet, ["Req.", "Finch.", "HTTPoison", "Tesla"]) and not has_side_effect_type?(annotated, :external_http) do
+      inferred ++ [%Foundry.SparkMeta.SideEffectEntry{
+        type: :external_http,
+        name: "external_call",
+        declared_on: :step,
+        step_name: to_string(step_name),
+        declared: false,
+        epistemic: "INFERRED"
+      }]
+    else
+      inferred
+    end
+
+    annotated ++ inferred
+  end
+
+  defp has_side_effect_type?(entries, type) do
+    Enum.any?(entries, &(&1.type == type))
+  end
+
+  defp parse_side_effect_opts(rest) do
+    Regex.scan(~r/,\s*([^:\s]+):\s*([^,\s]+)/, rest)
+    |> Enum.into(%{}, fn [_, k, v] -> {k, v} end)
+  end
+
+  defp parse_list(nil), do: []
+  defp parse_list(str) do
+    str
+    |> String.trim_leading("[")
+    |> String.trim_trailing("]")
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.map(&String.trim_leading(&1, ":"))
+    |> Enum.reject(&(&1 == ""))
   end
 
   defp put_last_modified(%ModuleInfo{module: module} = info) do
@@ -1100,12 +1328,25 @@ defmodule Foundry.SparkMeta do
     try do
       module_str = Atom.to_string(module)
       # Look for the source file by searching in lib/
-      case find_module_source_file(module_str) do
+      case module_source_path(module) do
         nil -> nil
         file -> extract_runbook_from_file(file, module_str)
       end
     rescue
       _ -> nil
+    end
+  end
+
+  defp module_source_path(module) when is_atom(module) do
+    try do
+      case module.__info__(:compile)[:source] do
+        nil -> find_module_source_file(Atom.to_string(module))
+        charlist ->
+          path = to_string(charlist)
+          if File.exists?(path), do: path, else: find_module_source_file(Atom.to_string(module))
+      end
+    rescue
+      _ -> find_module_source_file(Atom.to_string(module))
     end
   end
 
