@@ -1,6 +1,7 @@
 # ADR-016: Visualization Paradigm v2
 
 **Status:** Accepted — §Data Source amended by ADR-020; §Zoom/C4, §Compound Nodes, §Scenario Perspective, §Clarity Patterns amended 2026-04
+**Amended:** 2026-04 by ADR-022 (step sub-graph side-effect pills, status indicator for undeclared side effects)
 **Date:** 2026-03
 **Deciders:** Platform team
 **Supersedes:** ADR-008 (retained for historical record)
@@ -59,6 +60,27 @@ within the expanded compound bounds. Collapsing returns to the resource-level vi
 
 Step sub-graph data comes from `NodeEntry.steps[]` with the extended fields from ADR-021:
 `step_index`, `wait_for`, `step_kind`, `target_resource`, `target_action`.
+
+**Step-level side-effect pills (ADR-022)**
+Each expanded step node renders its `side_effects[]` as subordinate pill nodes attached
+below the step box. Pill rendering rules:
+
+- `declared: true` side effects render in the **teal ramp** (teal-100 fill, teal-600 stroke)
+- `declared: false` side effects render in the **coral ramp** (coral-100 fill, coral-600 stroke)
+  and also carry the `⚠` lint violation badge inline
+- Pill label: `{type}:{name}` truncated to 24 chars (e.g. `oban_emit:FraudCheck`)
+- Clicking a pill opens the `SideEffectEntry` detail in the right detail drawer, showing:
+  type, declaration status, idempotency, epistemic marker, and — if `declared: false` —
+  the INV violation text and a "Declare this side effect ↗" copilot action button
+- External system connections: a dashed `async/message` edge (ADR-016 edge taxonomy:
+  `- - -▶`) runs from undeclared `external_http` pill nodes to the relevant Provider node
+  when one exists in the graph. This makes the ungoverned external boundary crossing
+  visible at the topology level without manual navigation.
+
+**Compensation path display:** Steps with `compensation` set render a `══════▶`
+compensation edge to the named compensation step. Compensation steps are styled with
+the gray ramp and a `↩` prefix on the label. This answers "what rolls back if this
+fails?" directly on the expanded canvas without opening the detail drawer.
 
 ---
 
@@ -170,7 +192,7 @@ from the graph load) is the data source — no additional server fetch needed fo
 projects ≤200 modules. Beyond that threshold, the drawer fetches the single NodeEntry
 on demand via `mix foundry.project.context <Module>`.
 
-### Node Taxonomy — Final, 11 Types
+### Node Taxonomy — 11 Types + Side-Effect Pills
 
 | Type | Icon | Source | Represents |
 |---|---|---|---|
@@ -186,12 +208,17 @@ on demand via `mix foundry.project.context <Module>`.
 | Trigger | ▶ | api_routes / webhook / scheduler | Entry point — how flow starts |
 | Terminal | ⟐ | Reactor return / error path | How flow ends (success / error / compensated) |
 
-Agent steps are NOT a top-level node type on the canvas. They are rendered as inline step
-nodes (⊕ icon, `agent` kind) inside the swimlane of the containing Transfer or Reactor.
-See ADR-017 for the agent step visual specification.
+Agent steps are NOT a top-level node type. They are rendered as inline step nodes (⊕
+icon, `agent` kind) inside the step sub-graph of the containing Transfer or Reactor.
 
-No additional node types will be added without an ADR. The 11 above are sufficient for
-the complete surface of a Foundry-built Elixir/Ash/Phoenix system.
+**Side-effect pills are not a 12th node type.** They are sub-elements rendered inside
+expanded step compound nodes. They do not appear in the ambient canvas at zoom < 0.8×
+(Component level). They are only visible in the expanded step sub-graph at Code level
+zoom (> 1.5×) or when a step is explicitly expanded via click. This preserves the
+ambient canvas readability — governance detail is progressive, not ambient noise.
+
+No additional top-level node types will be added without an ADR. The 11 above are
+sufficient for the complete surface of a Foundry-built Elixir/Ash/Phoenix system.
 
 ### Edge Taxonomy — Final, 8 Types
 
@@ -220,6 +247,7 @@ Every node carries a compact status badge row. The exact indicators:
 | 📖 | Has ADR linked |
 | ↻ | Has pending migration |
 | ⚠ | Active lint violation |
+| ◉⚠ | Has undeclared side effects — shown on Transfer/Reactor nodes when any `steps[].side_effects[].declared == false`. Clicking navigates to the first undeclared side-effect pill in the step sub-graph. |
 
 ### Authorization Layer — Detail View Only
 

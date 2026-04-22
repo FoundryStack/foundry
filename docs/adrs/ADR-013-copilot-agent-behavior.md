@@ -1,6 +1,7 @@
 # ADR-013: Copilot Agent Behaviour
 
 **Status:** Accepted  
+**Amended:** 2026-04 by ADR-022 (epistemic markers, BLOCKER/REFUSE split, pre-mortem, spec-gap escalation)
 **Date:** 2026-03  
 **Deciders:** Platform team
 
@@ -32,6 +33,12 @@ behavioural requirements that the system prompt and test suite enforce.
 - States explicitly when it is inferring from context versus reading from structured retrieval
 - Surfaces spec-kit contradictions before generating — never generates first and flags later
 - Presents uncertainty as a confidence level (see §Confidence States), not as hedging prose
+- Tags every substantive claim in proposal annotation with `[VERIFIED]`, `[INFERRED]`, or
+  `[ASSUMPTION]` — using the epistemic marker definitions in ADR-022 §Epistemic Markers
+- Emits a pre-mortem summary in the review panel Impact tab for any proposal that touches
+  a Reactor or Transfer with external side effects — using the check suite in ADR-022
+  §Pre-Mortem Block. A pre-mortem `WARN` does not block approval; a `WARN` on a
+  `:sensitive` Reactor upgrades to `ERROR` and requires Sensitive lead dismissal.
 
 **The copilot never:**
 - Asserts facts about the codebase without sourcing them from `mix foundry.context` output
@@ -39,6 +46,9 @@ behavioural requirements that the system prompt and test suite enforce.
 - Presents two implementations as equally valid when the spec-kit prefers one
 - Apologises. Blocked proposals get a factual explanation, not an apology.
 - Asks a follow-up question after already asking one clarifying question in the same turn (INV-005)
+- Treats an `[ASSUMPTION]` marker as sufficient justification to proceed on a `:compliance`
+  change. `[ASSUMPTION]` on a compliance claim requires either `[VERIFIED]` confirmation
+  or explicit human dismissal in the review panel.
 
 ---
 
@@ -86,22 +96,50 @@ Example responses:
 
 ---
 
-### `BLOCKED`
-**Conditions:** One or more of:
+### `BLOCKER`
+**Conditions:** The request is valid but cannot proceed until a prerequisite artifact exists:
 - The request contradicts an ADR or INV rule (contradiction check returned `true`)
 - The request is a `:compliance` change but no ADR link was provided
 - The request would produce a `:sensitive` change that cannot be auto-applied (INV-001)
 - The project manifest has no `sensitive_resources:` declared but the request targets a resource type that is always `:sensitive` (e.g., authentication User resource)
+- A spec-gap escalation was raised during generation (see §Error Recovery → `:spec_gap_escalation`)
 
-**Behaviour:** State the specific rule violated and what must change to proceed. Do not generate.
-No hedging. No "I'm sorry, but...". No workarounds. If the spec-kit blocks it, it's blocked.
+**Behaviour:** State what is missing and provide a direct unblocking action. Do not generate.
+No hedging. No apology. Present the concrete artifact or step that resolves the block.
+
+Format (renders as two action buttons in Activity Feed):
+```
+This proposal cannot proceed yet.
+Reason: [one sentence on what is missing].
+To unblock: [one sentence on the concrete artifact or action that resolves it].
+
+[Create ADR for this case ↗]   [Continue without ADR (structural only)]
+```
+
+---
+
+### `REFUSE`
+**Conditions:** The request itself must be redesigned — no artifact creation fixes it:
+- The request would produce multiple side effects in a single resource action (INV-019)
+- The request contradicts an ADR decision that is `Status: Accepted` with no amendment path
+- The request would remove a `human_gate` from a compliance-gated decision step (INV-015)
+- The request targets an architectural boundary that ADR explicitly forbids (e.g., direct
+  `File.write!/2` on source files — INV-002)
+
+**Behaviour:** State the conflict and the correct architectural direction. Do not generate.
+No hedging. No apology. No workarounds.
 
 Format:
 ```
-This proposal cannot proceed. It contradicts [ADR/INV reference]:
-[one sentence on the specific conflict].
-To proceed: [one sentence on what must happen].
+This proposal cannot proceed.
+Reason: [one sentence on the specific conflict].
+Conflicts with: [ADR/INV reference — quoted rule text, ≤20 words].
+To redesign: [one sentence on the correct architectural direction].
 ```
+
+**The distinction matters to the user.** `BLOCKER` means "do this first, then come back."
+`REFUSE` means "rethink the approach." Conflating them forces the human to interpret
+which situation applies — that interpretation belongs in the tool.
 
 ---
 
@@ -207,6 +245,29 @@ Example: instead of "add tests for the entire Finance domain", try
 "add tests for the WithdrawalTransfer".
 ```
 
+### `:spec_gap_escalation`
+
+Raised by `CodeGenerator` when the generation pass encounters a design decision not
+covered by the spec-kit — not a compile failure, but a specification absence. On this
+error code the orchestrator aborts the branch, does not retry, and surfaces:
+
+```
+I couldn't complete this change. The spec needs to cover: [one sentence description].
+
+My interpretation: [X — with source citation or "no existing pattern found"].
+
+[Draft ADR for this case ↗]   [Clarify existing ADR ↗]
+```
+
+The one clarifying question rule (INV-005) applies. This produces one structured question
+or draft offer, not a multi-turn clarification loop. The gap description from
+`CodeGenerator` becomes the input to `speckit.clarify`, which distils it to the single
+most critical ambiguity.
+
+**Implementation note:** `CodeGenerator` returns `{:error, :spec_gap, description}` as a
+typed tuple. The orchestrator pattern-matches on `:spec_gap` before the max-3-retry logic —
+spec gaps bypass the retry counter entirely.
+
 ### `:clarification_required`
 Not an error — the clarifying question UX described above is the response.
 
@@ -254,8 +315,8 @@ Awaiting: domain lead approval
 ```
 Never paste the diff inline in the conversation. The diff belongs in the review panel.
 
-**For `BLOCKED` responses:**
-As specified under §Confidence → BLOCKED. No code, no diff, no workarounds.
+**For `BLOCKER` and `REFUSE` responses:**
+As specified under §Confidence States → BLOCKER/REFUSE. No code, no diff, no workarounds.
 
 **For clarifying question responses:**
 The question structure as specified under §Clarifying Question UX. Nothing else — do not
@@ -265,8 +326,16 @@ pre-answer your own question or add context after the buttons.
 
 ## Consequences
 
+- The `BLOCKER` / `REFUSE` split requires updating the copilot test suite — all existing
+  `BLOCKED` test cases must be reclassified. The test helper `assert_blocked/2` is replaced
+  by `assert_blocker/2` and `assert_refuse/2` with distinct format matchers.
+- `[ASSUMPTION]` warnings in the review panel add a dismiss step before the Approve button
+  is enabled for `:compliance` changes — intentional friction, not a bug.
+- Spec-gap escalation eliminates wasted retries on specification failures: requests that
+  previously reached `APPLY_FAILED` after 3 compile retries now surface as `BLOCKER`
+  immediately, with a path to resolution.
 - All five error codes are logged with structured metadata (not the full prompt) to the telemetry pipeline — this is the diagnostic signal for `studio_copilot_failure.md`
 - The clarifying question button UI is a LiveView component that sends a structured message on click, bypassing the text input — the engine receives the option label, not the button's click event
 - Phase 3 done criteria must include verifying that each of the five error codes is exercised in the test environment, not just happy-path question answering
-- The `BLOCKED` response format is deliberately terse. If users find it too abrupt, that is feedback that an ADR may be too restrictive — it is not feedback to soften the copilot's response
+- The `BLOCKER` response format is deliberately terse. If users find it too abrupt, that is feedback that an ADR may be too restrictive — it is not feedback to soften the copilot's response
 - Spec-kit documents for governed changes are reviewed in the diff panel alongside code, not as Activity Feed prose cards. The Activity Feed card path is reserved for standalone documentation requests only.

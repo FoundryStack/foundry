@@ -316,6 +316,18 @@ export const SystemMapHook = {
   },
 
   _handleNodeSelected(nodeId) {
+    // Check if this is a step node (format: "ReactorId:step:N")
+    const stepMatch = nodeId.match(/^(.+):step:(\d+)$/)
+    if (stepMatch) {
+      const [, parentId, stepIdx] = stepMatch
+      const parentNode = this.normalizedNodes.get(parentId)
+      if (!parentNode) return
+      const step = parentNode.steps?.[parseInt(stepIdx)]
+      if (!step) return
+      this._openDrawerWithStep(step, parentNode)
+      return
+    }
+
     const node = this.normalizedNodes.get(nodeId)
     if (!node) return
 
@@ -345,6 +357,86 @@ export const SystemMapHook = {
 
     // Switch to Details tab
     this._switchTab('details')
+  },
+
+  _openDrawerWithStep(step, parentNode) {
+    const drawer = document.getElementById(SELECTORS.drawer)
+    if (drawer) {
+      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
+      setTimeout(() => { drawer.style.width = `${savedWidth}px` }, 0)
+    }
+    this._renderStepDetailsPanel(step, parentNode)
+    this._switchTab('details')
+  },
+
+  _renderStepDetailsPanel(step, parentNode) {
+    const panel = document.getElementById(SELECTORS.panelDetails)
+    if (!panel) return
+
+    const kindColors = { read: 'var(--fg-bl)', write: 'var(--fg-gn)', map: 'var(--fg-pu)', custom: 'var(--fg-t2)' }
+    const kindColor = kindColors[step.step_kind] || 'var(--fg-t2)'
+
+    let html = `
+      <div class="space-y-3">
+        <div>
+          <p class="text-xs text-base-content/50">Step in</p>
+          <h4 class="font-mono text-xs text-base-content/70">${this._esc(parentNode.id)}</h4>
+        </div>
+        <div>
+          <h3 class="font-mono font-semibold text-sm">${this._esc(step.name || 'unnamed')}</h3>
+          <span style="color:${kindColor};font-size:10px">${this._esc(step.step_kind || step.type || 'custom')}</span>
+        </div>
+    `
+
+    if (step.description) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Description</div>
+          <p class="text-xs">${this._esc(step.description)}</p>
+        </div>
+      `
+    }
+
+    if (step.target_resource) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Resource</div>
+          <p class="text-xs font-mono">${this._esc(step.target_resource)}</p>
+        </div>
+      `
+    }
+
+    if (step.target_action) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Action</div>
+          <p class="text-xs font-mono">${this._esc(step.target_action)}</p>
+        </div>
+      `
+    }
+
+    if (step.wait_for?.length > 0) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Wait for</div>
+          <div class="flex flex-wrap gap-1">
+            ${step.wait_for.map(w => `<span class="text-xs font-mono bg-base-200 px-1 rounded">${this._esc(w)}</span>`).join('')}
+          </div>
+        </div>
+      `
+    }
+
+    if (step.source_snippet) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Source</div>
+          <pre style="font-size:10px;overflow-x:auto;background:var(--b2);padding:8px;border-radius:4px;white-space:pre-wrap;word-break:break-word">${this._esc(step.source_snippet)}</pre>
+        </div>
+      `
+    }
+
+    html += `</div>`
+    panel.innerHTML = html
   },
 
   _renderDetailsPanel(n) {

@@ -683,25 +683,24 @@ export function domainClusterTpl(data) {
 
 export function clusterTpl(data) {
   const n = data
-
-  if (n.nodeKind === 'domain-cluster') {
-    return `
-      <div class="cy-node-html cy-domain-cluster">
-        <span class="domain-cluster-label" style="color:${n.typeColor}">${n.label}</span>
-      </div>
-    `
-  }
+  if (data.nodeKind === 'domain-cluster' || data.classes?.includes('domain-cluster')) return domainClusterTpl(data)
 
   const icons = { transfer: '⇄', reactor: '◈', job: '⚙', blueprint: '◇' }
   const icon = icons[n.type] || (n.sm ? '◊' : '◈')
-  const label = shortLabel(n.id)
+  const cov = n.cov ?? 0
 
   return `
-    <div class="cy-node-html cy-node-boundary">
+    <div class="cy-node-html cy-node-boundary" style="margin-left: 12px; margin-top: 12px">
+      ${buildIndicators(n)}
       <div class="domain-row">
-        <span class="domain-dot" style="background: var(--fg-yw)"></span>
-        <span style="color: var(--fg-t2)">${icon} ${label}</span>
+        <span class="domain-dot" style="background: ${covColor(cov)}"></span>
+        <span style="color: var(--fg-t2)">${n.domain || ''}</span>
       </div>
+      <div class="title-row">
+        <span class="type-icon">${icon}</span>
+        <span class="title">${shortLabel(n.id)}</span>
+      </div>
+      ${cov > 0 ? `<div class="req-badges"><div style="width:${cov}%; height:3px; background:${covColor(cov)}; border-radius:1px"></div></div>` : ''}
     </div>
   `
 }
@@ -774,28 +773,36 @@ export function buildCytoscapeElements(nodes, edges) {
 
   const compoundIds = getCompoundNodeIds(nodes)
 
-  // Transfer / FSM compound nodes
+  // Transfer / FSM compound nodes (now IS the entity)
   compoundIds.forEach(id => {
     const node = nodes.find(n => n.id === id)
     if (!node) return
+    const classes = [
+      node.type === 'transfer' ? 'transfer-cluster' : null,
+      node.type === 'reactor' ? 'transfer-cluster' : null,
+      node.sm ? 'fsm-cluster' : null,
+      node.gap ? 'gap' : null,
+      node.sensitive ? 'sensitive' : null,
+    ].filter(Boolean).join(' ')
+
     elements.push({
       group: 'nodes',
       data: {
-        id: `compound:${id}`,
-        label: shortLabel(id),
+        ...node,           // all entity data (cov, steps, reqs, etc.)
+        id: node.id,       // original ID — edges already use this
+        label: shortLabel(node.id),
         nodeKind: 'cluster',
-        type: node.type,
         parent: node.domain ? `domain:${node.domain}` : null,
       },
-      classes: 'transfer-cluster fsm-cluster',
+      classes,
     })
   })
 
-  // Entity nodes
+  // Entity nodes — only for non-compound nodes
   nodes.forEach(node => {
-    const parent = compoundIds.has(node.id)
-      ? `compound:${node.id}`
-      : (node.domain ? `domain:${node.domain}` : null)
+    if (compoundIds.has(node.id)) return // already added as compound above
+
+    const parent = node.domain ? `domain:${node.domain}` : null
 
     const classes = [
       node.gap       ? 'gap'       : null,
@@ -823,7 +830,7 @@ export function buildCytoscapeElements(nodes, edges) {
             id: `${node.id}:step:${idx}`,
             label: stepLabel,
             nodeKind: 'step',
-            parent: `compound:${node.id}`,
+            parent: node.id,
             step_kind: stepKind,
             description: step.description || step.name || `Step ${idx}`,
             type: node.type,
@@ -871,7 +878,7 @@ export function buildCytoscapeElements(nodes, edges) {
             id: state.id,
             label: state.name,
             nodeKind: 'state',
-            parent: `compound:${node.id}`,
+            parent: node.id,
           },
         })
       })
@@ -967,7 +974,7 @@ export function mountFoundryGraph(container, contextJson) {
   graph.setupHtmlLabels([
     { query: 'node[nodeKind="entity"]',  halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: entityTpl },
     { query: 'node.domain-cluster',      halign: 'left',   valign: 'top',    halignBox: 'left',   valignBox: 'top',    tpl: domainClusterTpl },
-    { query: 'node[nodeKind="cluster"]', halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: boundaryTpl },
+    { query: 'node[nodeKind="cluster"]:not(.domain-cluster)', halign: 'left', valign: 'top', halignBox: 'left', valignBox: 'top', tpl: clusterTpl },
     { query: 'node[nodeKind="step"]',    halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: stepTpl },
   ])
 

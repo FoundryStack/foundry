@@ -1,6 +1,7 @@
 # ADR-003: Agent Context — Structured Retrieval, Not RAG Over Code
 
 **Status:** Accepted
+**Amended:** 2026-04 by ADR-022 (SideEffectEntry added to NodeEntry and StepEntry)
 **Date:** 2026-03
 **Deciders:** Platform team
 
@@ -196,9 +197,52 @@ marked `(new)` were added in the post-review pass to cover the full ecosystem.
 
   "feature_flags": [],
 
-  "agent_steps": []
+  "agent_steps": [],
+  "side_effects": []
 }
 ```
+
+### `side_effects` — SideEffectEntry list
+
+Added by ADR-022. Both `NodeEntry.side_effects` and `StepEntry.side_effects` use this
+struct. Default `[]` — non-breaking.
+
+```json
+"side_effects": [
+  {
+    "type": "oban_emit",
+    "name": "EnqueueFraudCheck",
+    "declared_on": "step",
+    "step_name": "enqueue_report",
+    "action": null,
+    "job_module": "MyApp.Workers.FraudCheck",
+    "module": null,
+    "queue": "risk",
+    "trigger": null,
+    "idempotent": true,
+    "idempotency_key_from": ["transfer_id"],
+    "declared": true,
+    "epistemic": "VERIFIED"
+  }
+]
+```
+
+**`type`** — one of `"oban_emit"`, `"ash_notifier"`, `"external_http"`.
+
+**`declared_on`** — `"step"` if declared via annotation on a Reactor step module;
+`"resource_action"` if declared via Ash `notifier`/`change` DSL, introspectable via `spark_meta`.
+
+**`declared`** — `true` when an annotation or DSL entry exists. `false` when detected
+heuristically (import/alias scan). A `false` entry is a lint violation (INV-019 warning;
+INV-020 error on `:sensitive` Reactors with external_http).
+
+**`epistemic`** — `"VERIFIED"` when sourced from annotation or live DSL introspection.
+`"INFERRED"` when detected by heuristic. The copilot must not treat `"INFERRED"` entries
+as reliable — it must surface them as `[ASSUMPTION]` in proposal annotations.
+
+**StepEntry amendment:** `StepEntry` (within `steps[]`) gains `"side_effects": [SideEffectEntry]`.
+Default `[]`. Fields `step_name` and `action` are populated from the step's own context
+and may be omitted when the SideEffectEntry is nested inside a StepEntry.
 
 **`app`** — `null` for standard projects; umbrella app short name (e.g. `"igaming_core"`)
 for umbrella projects.

@@ -1,6 +1,7 @@
 # ADR-021: Rich Graph Visualization — Schema Extensions and Data Derivation
 
 **Status:** Implemented — amended 2026-04 (ash_diagram delegation, ScenarioEntry, API route nodes)
+**Amended:** 2026-04 by ADR-022 (SideEffectEntry added to StepEntry; extraction pipeline extended)
 **Date:** 2026-03-25
 **Extends:** ADR-016 (visualization paradigm), ADR-020 (data source), ADR-012 (UX spec)
 
@@ -42,6 +43,7 @@ All additions are non-breaking (nil/empty defaults).
 - `target_resource`: FQN of resource this step acts on
 - `target_action`: Action name called
 - `step_kind`: :read, :write, :run, :map, :compensation, :custom
+- `side_effects`: List of SideEffectEntry structs (ADR-022). Empty list default. Declared side effects sourced from annotations and Ash notifier/change entries promoted by `spark_meta`; undeclared entries detected by linter import/alias scan.
 
 **Extended state_machine map**:
 - `initial_states`: From initial_states/1 DSL
@@ -107,6 +109,21 @@ end
 The extracted relationship and auth strategy data flows back into NodeEntry via the
 diagram struct, not via a separate `spark_meta` pipeline stage.
 
+### `put_side_effects/1` (new pipeline stage)
+
+A new `spark_meta` pipeline stage runs after `put_reactor_steps/1`. For each step in
+`steps[]`:
+
+1. Walk the step module for annotation comments (`# @side_effect ...`) → `declared: true` entries
+2. Walk the resource's Ash DSL for `notifier` and `change` declarations on actions →
+   promoted to `SideEffectEntry` with `declared_on: "resource_action"`, `declared: true`
+3. Scan step module imports/aliases for `Oban`, `Req`, `Finch`, `HTTPoison`, `Tesla` →
+   if found without a corresponding annotation comment, emit `declared: false`,
+   `epistemic: "INFERRED"` entry and queue a lint violation
+
+Top-level `NodeEntry.side_effects` is the union of all step-level side effects plus all
+resource-action-level side effects for the module.
+
 ### 4. GraphBuilder Edge Derivation
 
 **Data-driven derivation** (replaces hardcoded rules):
@@ -115,6 +132,8 @@ diagram struct, not via a separate `spark_meta` pipeline stage.
 - **Resource edges**: Use `relationships` list instead of attribute scanning
 - **Auth edges**: User resource with `auth_strategies` → token resources
 - **External edges**: From `persists_to`, `queues_via`, `calls_provider` patterns
+- **Side-effect edges (new)**: From step nodes to Provider nodes where `side_effects[].type == "external_http"` and a matching Provider node exists. Edge type: `calls_provider`. Undeclared external_http entries also emit a `⚠ undeclared` edge annotation visible at Code zoom level.
+- **Oban emit edges (new)**: From step nodes to Job nodes where `side_effects[].type == "oban_emit"` and a corresponding `Oban.Worker` NodeEntry exists. Edge type: async/message (`- - -▶`).
 
 ### 5. Frontend Compound Node Rendering
 
@@ -183,6 +202,8 @@ rather than looking for a custom `reactor_agent_step` DSL.
 - **Auth flows visible**: AshAuthentication strategies and token resources connected
 - **Extensible metadata**: New edge fields (step_name, action_name, compliance_ids) enable future features
 - **Supports sagas**: Compensation edges enable visualization of saga patterns
+- **Side effects visible in graph**: `declared: false` side effects render as ⚠ pill nodes in the step sub-graph (ADR-016 amendment); change-impact analysis can now trace which external systems a Reactor touches; lint enforcement gains a programmatic surface.
+- **Blast-radius analysis**: The new oban-emit and external-http edges mean "what does touching `FraudCheck` worker affect?" is answerable by graph traversal, not manual grep.
 
 ### Negative
 
@@ -212,6 +233,10 @@ rather than looking for a custom `reactor_agent_step` DSL.
 5. ⏳ Expand reactor step sub-graph (Phase D frontend) — verify agent step shows model+tools
 6. ⏳ Verify FSM transitions rendered (Phase D frontend)
 7. ⏳ Policy flowchart tab renders in detail drawer for Wallet resource
+8. ⏳ Verify `side_effects[]` populated on WithdrawalTransfer steps in `mix foundry.project.context` output
+9. ⏳ Verify `declared: false` entry emitted for `ReportingAPICall` (undeclared external_http) on `enqueue_report` step
+10. ⏳ Verify coral pill rendered for undeclared side-effect in step sub-graph at Code zoom level
+11. ⏳ Verify INV-019 lint error fires when `Wallet.debit` action declares two `governance.side_effect` entries
 
 ## References
 

@@ -4,6 +4,7 @@
 > Read this before reading any other file. It tells you what this system is, what it must never do,
 > and where to find authoritative answers to specific questions.
 > 
+> **Amendment 2026-04 (b):** Side-effect governance (INV-019, INV-020), epistemic markers on proposals, BLOCKER/REFUSE distinction, spec-gap escalation. See ADR-022.
 > **Amendment 2026-04:** MCP server role, Tidewave, ash_ai agent steps, Igniter discovery API, policy self-audit
 
 ---
@@ -363,6 +364,24 @@ Paths outside these roots return `{:error, :outside_boundary}` — they are neve
 to the client. `project_root` is always resolved server-side from the session context;
 the client cannot supply or influence it.
 
+**INV-019: Resource actions may have at most one side effect**
+An Ash resource action may declare at most one `governance.side_effect` entry. If an
+operation produces multiple side effects, it must be modelled as a Reactor. Lint error
+on `:sensitive` resources; lint warning elsewhere. Partial-failure uncompensatability
+is the technical rationale: multiple side effects in one action have no rollback path.
+A Reactor gives each side effect a named step, a telemetry span, and `compensate/4`.
+
+**INV-020: External HTTP calls on sensitive Reactors must declare idempotency**
+Any `side_effect` with `type: external_http` on a Reactor or Transfer whose containing
+resource is `:sensitive` must declare `idempotency_key_from`. Lint error.
+Idempotency is a correctness requirement on sensitive financial flows, not optional.
+
+**INV-021: Copilot proposal annotations must carry epistemic markers**
+Every substantive claim in a copilot proposal annotation (review panel Impact tab) must
+be tagged `[VERIFIED]`, `[INFERRED]`, or `[ASSUMPTION]`. An `[ASSUMPTION]` on a
+`:compliance`-class claim blocks the Approve button until explicitly dismissed by the
+Compliance officer. This is enforced in the review panel UI, not by the lint system.
+
 ---
 
 ## Change Classification
@@ -406,6 +425,8 @@ reasoning obligation. The agent runs it internally before constructing the sessi
 □ New Reactors with external side effects declare idempotency keys
 □ @description drafted for all new attributes
 □ @moduledoc drafted for the new module
+□ All side effects on new Reactor steps declared via annotation (INV-019/INV-020)
+□ No resource action introduces more than one side effect (INV-019)
 □ @description fields on touched attributes are consistent with proposed change
 □ Policy compatibility verified for all generated UI actions via Ash.Resource.Info.policies/1
    (do not generate UI actions the current actor cannot authorize — check before generating)
@@ -487,12 +508,23 @@ The complete sequence the agent follows before emitting any proposal:
       → Write spec-kit files first (Markdown, direct branch write)
       → Generate test skeletons
       → Generate implementation
+         → if {:error, :spec_gap, description} raised during generation:
+             abort branch (git branch -D foundry/prop_<id>)
+             do NOT retry — spec gaps do not resolve by regenerating
+             surface BLOCKER response (ADR-013 §spec_gap_escalation format)
+             route to speckit.clarify with gap description as input
+             apply INV-005: one clarifying question maximum
       → Run mix ash.codegen (if migration needed)
       → Run mix compile (must pass)
       → Run mix test <new-test-file> — pre-surface quality gate;
         max 3 self-corrections at compile level; never iterates on assertion values
       → Compute graph_delta from operation parameters
-12. Surface diff to review panel — human reviews, approves, or requests changes
+12. Surface diff to review panel — review panel Impact tab includes:
+      → Epistemic marker annotations on all substantive claims (INV-021)
+      → Pre-mortem block if proposal touches Reactor/Transfer with external side effects
+         (ADR-022 §Pre-Mortem Block — RaceConditionCheck, IdempotencyCheck,
+          PolicyContradictionCheck, CompensationCheck)
+      → human reviews, approves, or requests changes
 ```
 
 This sequence applies to all `change` intents. When `change_generation_enabled: false`
@@ -623,6 +655,7 @@ The pre-generation checklist items INV-014..017 apply to this syntax:
 | ADR-016 | visualization-paradigm-v2 | Four C4 levels, 11 node types, 8 edge types, authorization matrix view, agent node type (⊕). Data source: `mix foundry.project.context` (amended by ADR-020). JS architecture: `CytoscapeGraph` (pure wrapper) + `FoundryGraph` (Foundry config layer). |
 | ADR-017 | agent-injection-governance | AshAI integration model, 10 agent types, human-in-the-loop gate spec, change classification for agent constructs |
 | ADR-020 | project-context-filesystem-umbrella | Unified `mix foundry.project.context` command, `Foundry.FileSystem` read boundary, umbrella and related-project support, `snapshot` → `status` rename |
+| ADR-022 | side-effect-governance-and-copilot-precision | `SideEffectEntry` in NodeEntry/StepEntry; INV-019/020/021; BLOCKER/REFUSE distinction; epistemic markers; pre-mortem block; spec-gap escalation |
 | ADR-024 | mcp-server-architecture | Foundry IS the MCP server; external agents connect to it; AshAi.Mcp.Router; Tidewave complement; optional internal LLM |
 
 ---
