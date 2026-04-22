@@ -12,7 +12,7 @@ defmodule Foundry.Context.GraphBuilder do
   """
 
   alias Foundry.Context.{ModuleDiscovery, NodeBuilder, PendingMigrations, EdgeEntry, NodeEntry}
-  alias Foundry.SparkMeta
+  alias Foundry.SparkMeta, as: FoundrySparkMeta
 
   @spec build(String.t(), list()) :: {list(NodeEntry.t()), list(EdgeEntry.t())}
   def build(project_root, manifest) do
@@ -23,7 +23,7 @@ defmodule Foundry.Context.GraphBuilder do
       ModuleDiscovery.all_project_modules(project_root, root_name)
       |> Task.async_stream(
         fn mod ->
-          info = SparkMeta.walk(mod)
+          info = FoundrySparkMeta.walk(mod)
           pending = PendingMigrations.pending?(mod, pending_set)
           NodeBuilder.build(info, manifest, pending)
         end,
@@ -121,76 +121,35 @@ defmodule Foundry.Context.GraphBuilder do
     |> then(&if &1, do: elem(&1, 1), else: nil)
   end
 
-  # Resource relationships: driven by relationship data from SparkMeta
-  defp derive_resource_edges(nodes, _node_map) do
+  # Resource relationships: derived directly from live resource structure.
+  defp derive_resource_edges(nodes, node_map) do
+    known_modules = Map.keys(node_map) |> MapSet.new()
+
     nodes
     |> Enum.filter(&(&1.type == "resource"))
     |> Enum.flat_map(fn resource ->
-      resource.relationships
-      |> Enum.flat_map(fn rel ->
-        rel_type = Map.get(rel, :type) || Map.get(rel, "type")
-        related = Map.get(rel, :related_resource) || Map.get(rel, "related_resource")
-
-        if related do
-          case rel_type do
-            :belongs_to ->
-              [EdgeEntry.new(resource.module, related, :references)]
-            "belongs_to" ->
-              [EdgeEntry.new(resource.module, related, :references)]
-            :has_many ->
-              [EdgeEntry.new(resource.module, related, :referenced_by)]
-            "has_many" ->
-              [EdgeEntry.new(resource.module, related, :referenced_by)]
-            :has_one ->
-              [EdgeEntry.new(resource.module, related, :referenced_by)]
-            "has_one" ->
-              [EdgeEntry.new(resource.module, related, :referenced_by)]
-            :many_to_many ->
-              [
-                EdgeEntry.new(resource.module, related, :references),
-                EdgeEntry.new(resource.module, related, :referenced_by)
-              ]
-            "many_to_many" ->
-              [
-                EdgeEntry.new(resource.module, related, :references),
-                EdgeEntry.new(resource.module, related, :referenced_by)
-              ]
-            _ ->
-              []
-          end
-        else
-          []
-        end
-      end)
+      resource.module
+      |> to_existing_module()
+      |> relationship_edges_for(known_modules)
+      |> Enum.map(&EdgeEntry.new(resource.module, &1.to, &1.relation))
     end)
   end
 
-  # Authentication edges: User resource with auth_strategies → token resources
-  defp derive_auth_edges(nodes, _node_map) do
+  # Authentication edges: authentication subjects connect to token resources.
+  defp derive_auth_edges(nodes, node_map) do
+    known_modules = Map.keys(node_map) |> MapSet.new()
+
     nodes
     |> Enum.filter(&(&1.authentication_subject == true))
     |> Enum.flat_map(fn user_node ->
-      # Try to find token resource from auth_strategies or use heuristic
       explicit_tokens =
-        user_node.auth_strategies
-        |> Enum.filter(&(&1.token_resource != nil))
-        |> Enum.map(& &1.token_resource)
+        user_node.module
+        |> to_existing_module()
+        |> auth_token_resources()
 
-      implicit_tokens =
-        if Enum.empty?(explicit_tokens) do
-          # Fallback heuristic: token resource is usually {AppPrefix}.{Domain}.Token
-          app_prefix =
-            user_node.module
-            |> String.split(".")
-            |> List.first()
-
-          ["#{app_prefix}.#{user_node.domain}.Token"]
-        else
-          []
-        end
-
-      (explicit_tokens ++ implicit_tokens)
+      (explicit_tokens ++ implicit_auth_targets(user_node, explicit_tokens))
       |> Enum.uniq()
+      |> Enum.filter(&MapSet.member?(known_modules, &1))
       |> Enum.map(&EdgeEntry.new(user_node.module, &1, :authenticates))
     end)
   end
@@ -313,12 +272,99 @@ defmodule Foundry.Context.GraphBuilder do
     _ -> nil
   end
 
+  defp format_module(nil), do: nil
+
   defp format_module(module) when is_atom(module) do
     module |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
   end
 
   defp format_module(module) when is_binary(module), do: module
   defp format_module(_), do: nil
+
+  defp relationship_edges_for(nil, _known_modules), do: []
+
+  defp relationship_edges_for(module, known_modules) do
+    module
+    |> Ash.Resource.Info.relationships()
+    |> Enum.filter(fn relationship ->
+      Map.get(relationship, :public?, true) ||
+        not String.starts_with?(to_string(Map.get(relationship, :name, "")), "paper_trail")
+    end)
+    |> Enum.flat_map(fn relationship ->
+      related = format_module(Map.get(relationship, :destination))
+
+      if is_binary(related) and MapSet.member?(known_modules, related) do
+        case relationship_type(relationship) do
+          :belongs_to ->
+            [%{to: related, relation: :references}]
+
+          :has_many ->
+            [%{to: related, relation: :referenced_by}]
+
+          :has_one ->
+            [%{to: related, relation: :referenced_by}]
+
+          :many_to_many ->
+            [%{to: related, relation: :references}, %{to: related, relation: :referenced_by}]
+
+          _ ->
+            []
+        end
+      else
+        []
+      end
+    end)
+  rescue
+    _ -> []
+  end
+
+  defp relationship_type(%{__struct__: struct_module}) do
+    case struct_module do
+      Ash.Resource.Relationships.BelongsTo -> :belongs_to
+      Ash.Resource.Relationships.HasMany -> :has_many
+      Ash.Resource.Relationships.HasOne -> :has_one
+      Ash.Resource.Relationships.ManyToMany -> :many_to_many
+      _ -> :unknown
+    end
+  end
+
+  defp relationship_type(_relationship), do: :unknown
+
+  defp auth_token_resources(nil), do: []
+
+  defp auth_token_resources(module) do
+    if SparkMeta.spark_module?(module) do
+      global_token_resource =
+        module
+        |> SparkMeta.get_opt([:authentication, :tokens], :token_resource, nil)
+        |> format_module()
+
+      module
+      |> SparkMeta.entities([:authentication, :strategies])
+      |> Enum.map(fn strategy ->
+        token_resource =
+          strategy
+          |> Map.get(:token_resource)
+          |> format_module()
+
+        token_resource || global_token_resource
+      end)
+      |> Enum.reject(&is_nil/1)
+    else
+      []
+    end
+  rescue
+    _ -> []
+  end
+
+  defp implicit_auth_targets(user_node, []), do: ["#{user_app_prefix(user_node)}.#{user_node.domain}.Token"]
+  defp implicit_auth_targets(_user_node, _explicit_tokens), do: []
+
+  defp user_app_prefix(user_node) do
+    user_node.module
+    |> String.split(".")
+    |> List.first()
+  end
 
   defp normalize_emitted_target(target) when is_binary(target) do
     case String.starts_with?(target, "Elixir.") do

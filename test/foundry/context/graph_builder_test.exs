@@ -22,20 +22,16 @@ defmodule Foundry.Context.GraphBuilderTest do
     {:ok, nodes: nodes, edges: edges, node_map: Map.new(nodes, &{&1.module, &1})}
   end
 
-  # Bug 1: field propagation - relationships
-  test "Wallet has relationships", %{node_map: nm} do
+  test "Wallet no longer carries relationship payload on the node", %{node_map: nm} do
     wallet = nm["IgamingRef.Finance.Wallet"]
     assert wallet != nil
-    assert is_list(wallet.relationships)
-    assert length(wallet.relationships) > 0
+    assert wallet.relationships == []
   end
 
-  # Bug 1: field propagation - auth_strategies
-  test "User has auth_strategies", %{node_map: nm} do
+  test "User no longer carries auth strategy payload on the node", %{node_map: nm} do
     user = nm["IgamingRef.Accounts.User"]
     assert user != nil
-    assert is_list(user.auth_strategies)
-    assert length(user.auth_strategies) > 0
+    assert user.auth_strategies == []
   end
 
   # Bug 2: reactor steps inclusion
