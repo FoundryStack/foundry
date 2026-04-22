@@ -95,7 +95,7 @@ defmodule Foundry.Phase1AcceptanceTest do
     end
 
     test "nodes count matches fixture", %{context: ctx} do
-      assert length(ctx["nodes"]) == 51
+      assert length(ctx["nodes"]) == 52
     end
 
     test "nodes ordered alphabetically by FQN", %{context: ctx} do

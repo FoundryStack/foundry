@@ -774,6 +774,7 @@ export function consolidateExternalNodes(nodes) {
 
 export function buildCytoscapeElements(nodes, edges) {
   const elements = []
+  const behavioralRelations = new Set(['reads', 'writes'])
 
   const { nodes: consolidatedNodes, edgeMap: externalEdgeMap } = consolidateExternalNodes(nodes)
   nodes = consolidatedNodes
@@ -797,6 +798,12 @@ export function buildCytoscapeElements(nodes, edges) {
   const compoundIds = getCompoundNodeIds(nodes)
   const stepScopedNodeTypes = new Set(['reactor', 'transfer'])
   const nodeById = new Map(nodes.map(node => [node.id, node]))
+  const collapsedBehaviorPairs = buildCollapsedBehaviorPairs(
+    edges,
+    nodeById,
+    stepScopedNodeTypes,
+    behavioralRelations,
+  )
 
   // Transfer / FSM compound nodes (now IS the entity)
   compoundIds.forEach(id => {
@@ -916,46 +923,186 @@ export function buildCytoscapeElements(nodes, edges) {
   })
 
   // Edges
+  const edgeElementsById = new Map()
+
   edges.forEach(edge => {
-    const routed = routeEdgeEndpoints(edge, nodeById, externalEdgeMap, stepScopedNodeTypes)
+    const routed = routeEdgeEndpoints(
+      edge,
+      nodeById,
+      externalEdgeMap,
+      stepScopedNodeTypes,
+      collapsedBehaviorPairs,
+      behavioralRelations,
+    )
     const source = routed.source
     const target = routed.target
     if (source === target) return
 
-    elements.push({
+    const id = `${source}->${target}:${edge.relation}`
+    const existing = edgeElementsById.get(id)
+
+    if (existing) {
+      mergeRoutedEdge(existing.data, edge, routed)
+      return
+    }
+
+    edgeElementsById.set(id, {
       group: 'edges',
-      data: {
-        id: `${source}->${target}:${edge.relation}`,
-        source,
-        target,
-        relation: edge.relation,
-        ...edge,
-        from: source,
-        to: target,
-      },
+      data: buildRoutedEdgeData(id, source, target, edge, routed),
     })
   })
+
+  elements.push(...edgeElementsById.values())
 
   return elements
 }
 
-function routeEdgeEndpoints(edge, nodeById, externalEdgeMap, stepScopedNodeTypes) {
+function buildCollapsedBehaviorPairs(edges, nodeById, stepScopedNodeTypes, behavioralRelations) {
+  const activeStepsByOwner = new Map()
+  const stepsByPair = new Map()
+
+  edges.forEach(edge => {
+    if (!behavioralRelations.has(edge.relation)) return
+
+    const owner = getStepScopedOwner(edge, nodeById, stepScopedNodeTypes)
+    if (!owner) return
+
+    const stepIndex = typeof edge.step_index === 'number' ? edge.step_index : null
+    if (stepIndex === null) return
+
+    addSetValue(activeStepsByOwner, owner.ownerId, stepIndex)
+    addSetValue(stepsByPair, pairKey(owner.ownerId, owner.peerId), stepIndex)
+  })
+
+  const collapsedPairs = new Set()
+
+  stepsByPair.forEach((pairSteps, key) => {
+    const [ownerId] = key.split('\u0000')
+    const activeSteps = activeStepsByOwner.get(ownerId)
+
+    if (!activeSteps || activeSteps.size <= 1) return
+    if (pairSteps.size !== activeSteps.size) return
+
+    const coversAllActiveSteps = [...activeSteps].every(stepIndex => pairSteps.has(stepIndex))
+
+    if (coversAllActiveSteps) {
+      collapsedPairs.add(key)
+    }
+  })
+
+  return collapsedPairs
+}
+
+function routeEdgeEndpoints(
+  edge,
+  nodeById,
+  externalEdgeMap,
+  stepScopedNodeTypes,
+  collapsedBehaviorPairs,
+  behavioralRelations,
+) {
   let source = externalEdgeMap[edge.from] || edge.from
   let target = externalEdgeMap[edge.to] || edge.to
   const stepIndex = typeof edge.step_index === 'number' ? edge.step_index : null
+  const owner = getStepScopedOwner(edge, nodeById, stepScopedNodeTypes)
+  const collapseToParent =
+    owner &&
+    stepIndex !== null &&
+    behavioralRelations.has(edge.relation) &&
+    collapsedBehaviorPairs.has(pairKey(owner.ownerId, owner.peerId))
 
-  if (stepIndex !== null) {
-    const sourceNode = nodeById.get(edge.from)
-    const targetNode = nodeById.get(edge.to)
-
-    if (sourceNode && stepScopedNodeTypes.has(sourceNode.type)) {
+  if (stepIndex !== null && owner && !collapseToParent) {
+    if (owner.ownerSide === 'source') {
       source = `${edge.from}:step:${stepIndex}`
-    } else if (targetNode && stepScopedNodeTypes.has(targetNode.type)) {
+    } else {
       target = `${edge.to}:step:${stepIndex}`
     }
   }
 
-  return { source, target }
+  return { source, target, collapseToParent }
+}
+
+function getStepScopedOwner(edge, nodeById, stepScopedNodeTypes) {
+  const sourceNode = nodeById.get(edge.from)
+  const targetNode = nodeById.get(edge.to)
+
+  if (sourceNode && stepScopedNodeTypes.has(sourceNode.type)) {
+    return { ownerId: edge.from, peerId: edge.to, ownerSide: 'source' }
+  }
+
+  if (targetNode && stepScopedNodeTypes.has(targetNode.type)) {
+    return { ownerId: edge.to, peerId: edge.from, ownerSide: 'target' }
+  }
+
+  return null
+}
+
+function buildRoutedEdgeData(id, source, target, edge, routed) {
+  const data = {
+    id,
+    source,
+    target,
+    relation: edge.relation,
+    ...edge,
+    from: source,
+    to: target,
+  }
+
+  if (routed.collapseToParent) {
+    data.collapsed_to_parent = true
+  }
+
+  return data
+}
+
+function mergeRoutedEdge(existingData, edge, routed) {
+  const stepIndex = typeof edge.step_index === 'number' ? edge.step_index : null
+  const stepName = typeof edge.step_name === 'string' ? edge.step_name : null
+  const stepIndices = new Set(existingData.collapsed_step_indices || [])
+  const stepNames = new Set(existingData.collapsed_step_names || [])
+
+  if (typeof existingData.step_index === 'number') {
+    stepIndices.add(existingData.step_index)
+  }
+
+  if (typeof existingData.step_name === 'string') {
+    stepNames.add(existingData.step_name)
+  }
+
+  if (stepIndex !== null) {
+    stepIndices.add(stepIndex)
+  }
+
+  if (stepName) {
+    stepNames.add(stepName)
+  }
+
+  if (stepIndices.size > 0) {
+    existingData.collapsed_step_indices = [...stepIndices].sort((a, b) => a - b)
+  }
+
+  if (stepNames.size > 0) {
+    existingData.collapsed_step_names = [...stepNames].sort()
+  }
+
+  if (stepIndices.size > 1) {
+    delete existingData.step_index
+    delete existingData.step_name
+  }
+
+  if (routed.collapseToParent) {
+    existingData.collapsed_to_parent = true
+  }
+}
+
+function addSetValue(map, key, value) {
+  const set = map.get(key) || new Set()
+  set.add(value)
+  map.set(key, set)
+}
+
+function pairKey(ownerId, peerId) {
+  return `${ownerId}\u0000${peerId}`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

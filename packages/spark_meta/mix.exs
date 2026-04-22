@@ -22,7 +22,7 @@ defmodule SparkMeta.MixProject do
   defp deps do
     [
       {:spark, "~> 2.0"},
-      {:ash, "~> 3.0", only: [:dev, :test]}
+      {:ash, "~> 3.0"}
     ]
   end
 

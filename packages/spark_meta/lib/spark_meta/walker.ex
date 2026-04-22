@@ -12,11 +12,19 @@ defmodule SparkMeta.Walker do
   @doc """
   Check if a module is a Spark module.
 
-  Returns `true` if the module exports `spark_dsl_config/0`, `false` otherwise.
+  Returns `true` if the module exports the generated Spark DSL functions,
+  `false` otherwise.
   """
   @spec spark_module?(module()) :: boolean()
   def spark_module?(module) do
-    function_exported?(module, :spark_dsl_config, 0)
+    case Code.ensure_loaded(module) do
+      {:module, ^module} ->
+        function_exported?(module, :spark_dsl_config, 0) or
+          function_exported?(module, :spark_is, 0)
+
+      _ ->
+        false
+    end
   end
 
   @doc """

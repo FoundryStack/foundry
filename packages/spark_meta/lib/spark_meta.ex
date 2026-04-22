@@ -31,4 +31,20 @@ defmodule SparkMeta do
   defdelegate entities(module, path), to: SparkMeta.Walker
   defdelegate get_opt(module, path, key, default), to: SparkMeta.Walker
   defdelegate get_persisted(module, key, default), to: SparkMeta.Walker
+
+  @spec analyze(module(), keyword()) ::
+          {:ok, SparkMeta.Analysis.t()} | {:error, {:not_loaded, module()}}
+  def analyze(module, opts \\ []) do
+    SparkMeta.Pipeline.run(module, opts)
+  end
+
+  @spec default_analyzers() :: [module()]
+  def default_analyzers do
+    [
+      SparkMeta.Analyzers.ModuleDoc,
+      SparkMeta.Analyzers.Extensions,
+      SparkMeta.Analyzers.AshResource,
+      SparkMeta.Analyzers.StateMachine
+    ]
+  end
 end
