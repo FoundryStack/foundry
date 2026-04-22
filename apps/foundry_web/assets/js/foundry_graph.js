@@ -795,6 +795,8 @@ export function buildCytoscapeElements(nodes, edges) {
   })
 
   const compoundIds = getCompoundNodeIds(nodes)
+  const stepScopedNodeTypes = new Set(['reactor', 'transfer'])
+  const nodeById = new Map(nodes.map(node => [node.id, node]))
 
   // Transfer / FSM compound nodes (now IS the entity)
   compoundIds.forEach(id => {
@@ -915,8 +917,9 @@ export function buildCytoscapeElements(nodes, edges) {
 
   // Edges
   edges.forEach(edge => {
-    const source = externalEdgeMap[edge.from] || edge.from
-    const target = externalEdgeMap[edge.to] || edge.to
+    const routed = routeEdgeEndpoints(edge, nodeById, externalEdgeMap, stepScopedNodeTypes)
+    const source = routed.source
+    const target = routed.target
     if (source === target) return
 
     elements.push({
@@ -934,6 +937,25 @@ export function buildCytoscapeElements(nodes, edges) {
   })
 
   return elements
+}
+
+function routeEdgeEndpoints(edge, nodeById, externalEdgeMap, stepScopedNodeTypes) {
+  let source = externalEdgeMap[edge.from] || edge.from
+  let target = externalEdgeMap[edge.to] || edge.to
+  const stepIndex = typeof edge.step_index === 'number' ? edge.step_index : null
+
+  if (stepIndex !== null) {
+    const sourceNode = nodeById.get(edge.from)
+    const targetNode = nodeById.get(edge.to)
+
+    if (sourceNode && stepScopedNodeTypes.has(sourceNode.type)) {
+      source = `${edge.from}:step:${stepIndex}`
+    } else if (targetNode && stepScopedNodeTypes.has(targetNode.type)) {
+      target = `${edge.to}:step:${stepIndex}`
+    }
+  }
+
+  return { source, target }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

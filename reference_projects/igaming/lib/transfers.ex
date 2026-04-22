@@ -16,10 +16,6 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
 
   use Foundry.Annotations
 
-  @step_side_effects %{
-    submit_to_provider: [%{type: :external_http, name: :payment_provider_submission, idempotent: false}]
-  }
-
   @idempotency_key :withdrawal_request_id
   @runbook "docs/runbooks/withdrawal_transfer.md"
   @compliance [:RG_UK_014, :RG_MGA_007]

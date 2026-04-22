@@ -160,6 +160,57 @@ defmodule Foundry.Phase1AcceptanceTest do
     test "WithdrawalTransfer → Wallet (writes) edge exists", %{context: ctx} do
       edge = find_edge(ctx, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.Wallet", "writes")
       assert edge["relation"] == "writes"
+      assert edge["step_name"] == "debit_wallet"
+      assert is_integer(edge["step_index"])
+    end
+
+    test "step-scoped behavioral edges expose exact source steps", %{context: ctx} do
+      load_request =
+        find_edge(
+          ctx,
+          "IgamingRef.Finance.WithdrawalTransfer",
+          "IgamingRef.Finance.WithdrawalRequest",
+          "reads",
+          "load_request"
+        )
+
+      assert load_request["step_name"] == "load_request"
+      assert is_integer(load_request["step_index"])
+
+      load_provider =
+        find_edge(
+          ctx,
+          "IgamingRef.Gaming.ProviderSyncReactor",
+          "IgamingRef.Gaming.ProviderConfig",
+          "reads",
+          "load_provider"
+        )
+
+      assert load_provider["step_name"] == "load_provider"
+      assert is_integer(load_provider["step_index"])
+
+      sync_games =
+        find_edge(
+          ctx,
+          "IgamingRef.Gaming.ProviderSyncReactor",
+          "IgamingRef.Gaming.Game",
+          "writes",
+          "sync_games"
+        )
+
+      assert sync_games["step_name"] == "sync_games"
+      assert is_integer(sync_games["step_index"])
+    end
+
+    test "comment-only rule links are absent from project context edges", %{context: ctx} do
+      assert is_nil(
+               find_edge(
+                 ctx,
+                 "IgamingRef.Finance.Rules.PlayerKYCVerified",
+                 "IgamingRef.Finance.WithdrawalTransfer",
+                 "guards"
+               )
+             )
     end
 
     test "WithdrawalWebhook is a trigger node", %{context: ctx} do
@@ -214,10 +265,11 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert ctx["spec_kit"]["index_token_warn"] == false
     end
 
-    defp find_edge(ctx, from, to, relation \\ nil) do
+    defp find_edge(ctx, from, to, relation \\ nil, step_name \\ nil) do
       Enum.find(ctx["edges"], fn edge ->
         edge["from"] == from and edge["to"] == to and
-          (is_nil(relation) or edge["relation"] == relation)
+          (is_nil(relation) or edge["relation"] == relation) and
+          (is_nil(step_name) or edge["step_name"] == step_name)
       end)
     end
   end
