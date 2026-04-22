@@ -84,6 +84,7 @@ defmodule Foundry.SparkMeta.StepEntry do
     target_action: nil,
     step_kind: nil,
     rules_applied: [],
+    source_snippet: nil,
     # ash_ai v0.6 agent step fields (INV-014..017)
     step_model: nil,
     confidence_threshold: nil,
@@ -490,6 +491,18 @@ defmodule Foundry.SparkMeta do
           _ -> []
         end
 
+      source_text =
+        case find_module_source_file(Atom.to_string(module)) do
+          path when is_binary(path) -> File.read!(path)
+          _ -> nil
+        end
+
+      steps =
+        Enum.map(steps, fn step ->
+          snippet = source_text && extract_step_source(source_text, step.name)
+          %{step | source_snippet: snippet}
+        end)
+
       %{info | steps: steps}
     else
       info
@@ -604,6 +617,49 @@ defmodule Foundry.SparkMeta do
     Regex.scan(pattern, content)
     |> Enum.map(&List.first/1)
     |> Enum.uniq()
+  end
+
+  defp extract_step_source(source_text, step_name) when is_binary(source_text) do
+    name_str = to_string(step_name)
+    # Match "step :name do" or "step :name,"
+    pattern = ~r/\bstep\s+:#{Regex.escape(name_str)}\b/
+
+    case Regex.run(pattern, source_text, return: :index) do
+      [{start_pos, _}] ->
+        rest = String.slice(source_text, start_pos..-1//1)
+        # Extract by counting do/end nesting
+        extract_balanced_block(rest)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp extract_balanced_block(text) do
+    # Walk through lines counting do/end depth, return when balanced
+    lines = String.split(text, "\n")
+
+    {block_lines, _} =
+      Enum.reduce_while(lines, {[], 0}, fn line, {acc, depth} ->
+        new_depth = depth + count_do(line) - count_end(line)
+        acc = acc ++ [line]
+
+        if new_depth <= 0 and length(acc) > 1 do
+          {:halt, {acc, new_depth}}
+        else
+          {:cont, {acc, new_depth}}
+        end
+      end)
+
+    block_lines |> Enum.join("\n") |> String.trim()
+  end
+
+  defp count_do(line) do
+    line |> String.split(~r/\bdo\b/) |> length() |> Kernel.-(1)
+  end
+
+  defp count_end(line) do
+    line |> String.split(~r/\bend\b/) |> length() |> Kernel.-(1)
   end
 
   defp put_oban_fields(%ModuleInfo{module: module} = info) do
