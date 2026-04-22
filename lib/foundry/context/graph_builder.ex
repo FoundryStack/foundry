@@ -62,35 +62,31 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list = edge_list ++ derive_resource_edges(nodes, node_map)
     edge_list = edge_list ++ derive_auth_edges(nodes, node_map)
     edge_list = edge_list ++ derive_rule_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_policy_edges(nodes, node_map)
     edge_list = edge_list ++ derive_provider_edges(nodes, node_map)
     edge_list = edge_list ++ derive_blueprint_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_trigger_edges(nodes, node_map)
 
-    edge_list
+    Enum.uniq(edge_list)
   end
 
-  # Reactor steps: data-driven derivation from step_kind and target_resource
-  # Steps now carry step_kind (:read, :write, :map, :custom) and target_resource (FQN)
+  # Reactor steps: data-driven derivation from normalized read_targets/write_targets.
   defp derive_reactor_edges(nodes, _node_map) do
     nodes
     |> Enum.filter(&(&1.type in ["reactor", "transfer"]))
     |> Enum.flat_map(fn reactor ->
       reactor.steps
       |> Enum.flat_map(fn step ->
-        # Use StepEntry struct fields if available
-        target_resource = Map.get(step, :target_resource) || Map.get(step, "target_resource")
-        step_kind = Map.get(step, :step_kind) || Map.get(step, "step_kind")
+        read_targets =
+          Map.get(step, :read_targets) || Map.get(step, "read_targets") ||
+            fallback_targets(step, :read)
 
-        if target_resource do
-          case step_kind do
-            :write -> [EdgeEntry.new(reactor.module, target_resource, :writes)]
-            "write" -> [EdgeEntry.new(reactor.module, target_resource, :writes)]
-            :read -> [EdgeEntry.new(reactor.module, target_resource, :reads)]
-            "read" -> [EdgeEntry.new(reactor.module, target_resource, :reads)]
-            _ -> []
-          end
-        else
-          []
-        end
+        write_targets =
+          Map.get(step, :write_targets) || Map.get(step, "write_targets") ||
+            fallback_targets(step, :write)
+
+        Enum.map(read_targets, &EdgeEntry.new(reactor.module, &1, :reads)) ++
+          Enum.map(write_targets, &EdgeEntry.new(reactor.module, &1, :writes))
       end)
     end)
   end
@@ -203,20 +199,60 @@ defmodule Foundry.Context.GraphBuilder do
     end)
   end
 
-  # Rule edges: detect which resources/steps a rule guards
-  # Parse "Applied by:" entries from rule source file (moduledoc)
+  # Rule edges: derive guarded consumers from Reactor/Transfer step usage first, then
+  # fall back to the legacy "Applied by:" prose parsing for standalone rules.
   defp derive_rule_edges(nodes, node_map) do
-    nodes
-    |> Enum.filter(&(&1.type == "rule"))
-    |> Enum.flat_map(fn rule ->
-      module_name = rule.module
-      # Always try to parse from source for rules (since description callback
-      # often contains only a short description, not the full moduledoc with "Applied by:")
-      applied_by_targets = parse_applied_by_from_source(module_name)
+    consumer_edges =
+      nodes
+      |> Enum.filter(&(&1.type in ["reactor", "transfer"]))
+      |> Enum.flat_map(fn consumer ->
+        consumer.steps
+        |> Enum.flat_map(fn step ->
+          (Map.get(step, :rules_applied) || Map.get(step, "rules_applied") || [])
+          |> Enum.filter(&Map.has_key?(node_map, &1))
+          |> Enum.map(&EdgeEntry.new(&1, consumer.module, :guards))
+        end)
+      end)
 
-      applied_by_targets
-      |> Enum.filter(&Map.has_key?(node_map, &1))
-      |> Enum.map(&EdgeEntry.new(rule.module, &1, :guards))
+    fallback_edges =
+      nodes
+      |> Enum.filter(&(&1.type == "rule"))
+      |> Enum.flat_map(fn rule ->
+        parse_applied_by_from_source(rule.module)
+        |> Enum.filter(&Map.has_key?(node_map, &1))
+        |> Enum.map(&EdgeEntry.new(rule.module, &1, :guards))
+      end)
+
+    consumer_edges ++ fallback_edges
+  end
+
+  defp derive_policy_edges(nodes, node_map) do
+    nodes
+    |> Enum.filter(&(&1.type == "resource"))
+    |> Enum.flat_map(fn resource ->
+      resource.module
+      |> to_existing_module()
+      |> case do
+        nil ->
+          []
+
+        module ->
+          if ash_resource_module?(module) do
+            module
+            |> Ash.Policy.Info.policies()
+            |> Enum.flat_map(fn policy ->
+              policy.policies
+              |> Enum.map(&Map.get(&1, :check_module))
+              |> Enum.reject(&is_nil/1)
+            end)
+            |> Enum.map(&format_module/1)
+            |> Enum.filter(&Map.has_key?(node_map, &1))
+            |> Enum.uniq()
+            |> Enum.map(&EdgeEntry.new(&1, resource.module, :guards))
+          else
+            []
+          end
+      end
     end)
   end
 
@@ -231,6 +267,29 @@ defmodule Foundry.Context.GraphBuilder do
       used_by_targets
       |> Enum.filter(&Map.has_key?(node_map, &1))
       |> Enum.map(&EdgeEntry.new(blueprint.module, &1, :configures))
+    end)
+  end
+
+  defp derive_trigger_edges(nodes, node_map) do
+    nodes
+    |> Enum.filter(&(&1.type == "trigger"))
+    |> Enum.flat_map(fn trigger ->
+      trigger.side_effects
+      |> Enum.flat_map(fn side_effect ->
+        case side_effect.type do
+          :oban_emit ->
+            target = normalize_emitted_target(side_effect.name)
+
+            if Map.has_key?(node_map, target) do
+              [EdgeEntry.new(trigger.module, target, :enqueues)]
+            else
+              []
+            end
+
+          _ ->
+            []
+        end
+      end)
     end)
   end
 
@@ -275,6 +334,48 @@ defmodule Foundry.Context.GraphBuilder do
     end
   rescue
     _ -> []
+  end
+
+  defp fallback_targets(step, expected_kind) do
+    target_resource = Map.get(step, :target_resource) || Map.get(step, "target_resource")
+    step_kind = Map.get(step, :step_kind) || Map.get(step, "step_kind")
+
+    cond do
+      expected_kind == :read and step_kind in [:read, "read"] and is_binary(target_resource) ->
+        [target_resource]
+
+      expected_kind == :write and step_kind in [:write, "write"] and is_binary(target_resource) ->
+        [target_resource]
+
+      true ->
+        []
+    end
+  end
+
+  defp to_existing_module(module_name) when is_binary(module_name) do
+    String.to_existing_atom("Elixir." <> module_name)
+  rescue
+    _ -> nil
+  end
+
+  defp format_module(module) when is_atom(module) do
+    module |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
+  end
+
+  defp format_module(module) when is_binary(module), do: module
+  defp format_module(_), do: nil
+
+  defp normalize_emitted_target(target) when is_binary(target) do
+    case String.starts_with?(target, "Elixir.") do
+      true -> String.replace_prefix(target, "Elixir.", "")
+      false -> target
+    end
+  end
+
+  defp ash_resource_module?(module) do
+    function_exported?(module, :__ash_resource__, 0)
+  rescue
+    _ -> false
   end
 
   # Helper: find module source section (the moduledoc for this specific rule)

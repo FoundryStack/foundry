@@ -95,8 +95,7 @@ defmodule Foundry.Phase1AcceptanceTest do
     end
 
     test "nodes count matches fixture", %{context: ctx} do
-      # Updated: withdrawal webhook commit (c64f3de) added 9 new nodes → 42 total
-      assert length(ctx["nodes"]) == 42
+      assert length(ctx["nodes"]) == 51
     end
 
     test "nodes ordered alphabetically by FQN", %{context: ctx} do
@@ -104,15 +103,15 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert fqns == Enum.sort(fqns)
     end
 
-    test "7 distinct domains", %{context: ctx} do
+    test "8 distinct domains", %{context: ctx} do
       domains = ctx["nodes"] |> Enum.map(& &1["domain"]) |> Enum.uniq() |> Enum.sort()
-      assert length(domains) == 7
-      assert Enum.all?(~w[Finance Players Promotions Gaming Ops Accounts], &(&1 in domains))
+      assert length(domains) == 8
+      assert Enum.all?(~w[Accounts Finance Gaming Infrastructure Ops Players Policies Promotions], &(&1 in domains))
     end
 
     test "Finance has 9 nodes", %{context: ctx} do
       count = Enum.count(ctx["nodes"], fn n -> n["domain"] == "Finance" end)
-      assert count == 9
+      assert count == 10
     end
 
     test "1 blueprint node", %{context: ctx} do
@@ -127,7 +126,7 @@ defmodule Foundry.Phase1AcceptanceTest do
 
     test "1 job node", %{context: ctx} do
       count = Enum.count(ctx["nodes"], fn n -> n["type"] == "job" end)
-      assert count == 1
+      assert count == 2
     end
 
     test "every node has required fields with correct types", %{context: ctx} do
@@ -158,12 +157,26 @@ defmodule Foundry.Phase1AcceptanceTest do
       end
     end
 
-    @tag :skip
-    test "WithdrawalTransfer → Wallet (writes) edge exists", %{context: _ctx} do
-      # Skipped: plain Reactor `run fn` steps with variable-based Ash.update calls
-      # are not handled by the source heuristic (derives target from `Ash.update(Module, ...)`,
-      # not `Ash.update(variable, ...)`). Edge derivation for this pattern is Phase D.
-      assert true
+    test "WithdrawalTransfer → Wallet (writes) edge exists", %{context: ctx} do
+      edge = find_edge(ctx, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.Wallet", "writes")
+      assert edge["relation"] == "writes"
+    end
+
+    test "WithdrawalWebhook is a trigger node", %{context: ctx} do
+      node = Enum.find(ctx["nodes"], & &1["id"] == "IgamingRef.Finance.WithdrawalWebhook")
+      assert node["type"] == "trigger"
+      assert node["trigger_kind"] == "webhook"
+    end
+
+    test "WithdrawalWebhook → ProcessWithdrawalWebhook enqueue edge exists", %{context: ctx} do
+      edge =
+        find_edge(
+          ctx,
+          "IgamingRef.Finance.WithdrawalWebhook",
+          "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook"
+        )
+
+      assert edge["relation"] == "enqueues"
     end
 
     test "CatalogSyncJob → ProviderSyncReactor (async) edge exists", %{context: ctx} do
@@ -201,8 +214,12 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert ctx["spec_kit"]["index_token_warn"] == false
     end
 
-    defp find_edge(ctx, from, to),
-      do: Enum.find(ctx["edges"], & &1["from"] == from and &1["to"] == to)
+    defp find_edge(ctx, from, to, relation \\ nil) do
+      Enum.find(ctx["edges"], fn edge ->
+        edge["from"] == from and edge["to"] == to and
+          (is_nil(relation) or edge["relation"] == relation)
+      end)
+    end
   end
 
   # Helper to convert structs to JSON-serializable maps
@@ -341,8 +358,8 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert s["project"] == "IgamingRef"
     end
 
-    test "domains: 7 entries", %{status: s} do
-      assert length(s["domains"]) == 7
+    test "domains: 8 entries", %{status: s} do
+      assert length(s["domains"]) == 8
     end
 
     test "sensitive_modules contains expected short names", %{status: s} do

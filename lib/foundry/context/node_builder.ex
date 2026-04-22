@@ -47,6 +47,7 @@ defmodule Foundry.Context.NodeBuilder do
       relationships: info.relationships,
       auth_strategies: info.auth_strategies,
       side_effects: info.side_effects,
+      trigger_kind: Map.get(info, :trigger_kind),
       last_modified: format_mtime(info.last_modified)
     }
   end
