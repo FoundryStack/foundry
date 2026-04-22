@@ -16,6 +16,8 @@ defmodule Foundry.Context.EdgeEntry do
   - `persists_to`: resource persists to external system
   - `queues_via`: job/reactor queues via external queue
   - `calls_provider`: transfer step calls provider
+  - `triggers`: boundary trigger starts a downstream flow
+  - `enqueues`: boundary trigger/job enqueues a job
   """
 
   @derive Jason.Encoder
@@ -34,6 +36,8 @@ defmodule Foundry.Context.EdgeEntry do
           | :persists_to
           | :queues_via
           | :calls_provider
+          | :triggers
+          | :enqueues
 
   @type t :: %__MODULE__{
           from: String.t(),

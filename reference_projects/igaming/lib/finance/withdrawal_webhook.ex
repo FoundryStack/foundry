@@ -20,7 +20,7 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
   @compliance [:RG_UK_014, :RG_MGA_007]
 
   # @side_effect external_http: webhook_inbound, idempotent: true
-  # @side_effect oban_emit: process_withdrawal_webhook, idempotent: true
+  # @side_effect oban_emit: IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook, idempotent: true
 
   # Not a resource or action, but a trigger pattern documented for Foundry.
   # In Phoenix, this would be handled via a controller action (e.g.,

@@ -16,12 +16,6 @@ defmodule IgamingRef.Gaming.ProviderSyncReactor do
 
   use Foundry.Annotations
 
-  @step_side_effects %{
-    fetch_games: [%{type: :external_http, name: :provider_api_call, idempotent: false}],
-    sync_games: [%{type: :oban_emit, name: :catalog_sync_worker, idempotent: true}],
-    update_catalog: [%{type: :database, name: :catalog_update, idempotent: true}]
-  }
-
   @idempotency_key :provider_id
   @runbook "docs/runbooks/provider_sync.md"
   @compliance [:RG_MGA_006, :RG_UK_007]

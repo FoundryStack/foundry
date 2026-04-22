@@ -105,6 +105,36 @@ defmodule Foundry.Context.GraphBuilderTest do
     assert find_edge(edges, "IgamingRef.Gaming.CatalogSyncJob", "IgamingRef.Gaming.ProviderSyncReactor", :async)
   end
 
+  test "WithdrawalTransfer reads WithdrawalRequest, Wallet, and Player", %{edges: edges} do
+    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.WithdrawalRequest", :reads)
+    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.Wallet", :reads)
+    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Players.Player", :reads)
+  end
+
+  test "WithdrawalTransfer writes Wallet, LedgerEntry, and WithdrawalRequest", %{edges: edges} do
+    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.Wallet", :writes)
+    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.LedgerEntry", :writes)
+    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.WithdrawalRequest", :writes)
+  end
+
+  test "BonusGrantTransfer reads Player, BonusCampaign, Wallet, and BonusGrant", %{edges: edges} do
+    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Players.Player", :reads)
+    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Promotions.BonusCampaign", :reads)
+    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Finance.Wallet", :reads)
+    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Promotions.BonusGrant", :reads)
+  end
+
+  test "BonusGrantTransfer writes Wallet, LedgerEntry, and BonusGrant", %{edges: edges} do
+    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Finance.Wallet", :writes)
+    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Finance.LedgerEntry", :writes)
+    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Promotions.BonusGrant", :writes)
+  end
+
+  test "ProviderSyncReactor reads ProviderConfig and writes Game", %{edges: edges} do
+    assert find_edge(edges, "IgamingRef.Gaming.ProviderSyncReactor", "IgamingRef.Gaming.ProviderConfig", :reads)
+    assert find_edge(edges, "IgamingRef.Gaming.ProviderSyncReactor", "IgamingRef.Gaming.Game", :writes)
+  end
+
   # Total edge sanity check: should have at least 20 edges with fixes
   test "at least 20 edges total", %{edges: edges} do
     assert length(edges) >= 20
@@ -142,6 +172,14 @@ defmodule Foundry.Context.GraphBuilderTest do
 
   test "CampaignNotExpired guards BonusGrantTransfer", %{edges: edges} do
     assert find_edge(edges, "IgamingRef.Promotions.Rules.CampaignNotExpired", "IgamingRef.Promotions.BonusGrantTransfer", :guards)
+  end
+
+  test "AuthenticatedSubject guards Wallet via policy DSL", %{edges: edges} do
+    assert find_edge(edges, "IgamingRef.Policies.AuthenticatedSubject", "IgamingRef.Finance.Wallet", :guards)
+  end
+
+  test "ComplianceOrPlatformLead guards Wallet via policy DSL", %{edges: edges} do
+    assert find_edge(edges, "IgamingRef.Policies.ComplianceOrPlatformLead", "IgamingRef.Finance.Wallet", :guards)
   end
 
   test "PlayerKYCVerified is a rule node", %{node_map: nm} do
@@ -213,6 +251,31 @@ defmodule Foundry.Context.GraphBuilderTest do
       edge.relation == :calls_provider
     end)
     assert provider_edge, "Provider should have calls_provider edge to external system"
+  end
+
+  test "WithdrawalWebhook is a trigger node", %{node_map: nm} do
+    webhook = nm["IgamingRef.Finance.WithdrawalWebhook"]
+    assert webhook != nil
+    assert webhook.type == "trigger"
+    assert webhook.trigger_kind == "webhook"
+  end
+
+  test "WithdrawalWebhook enqueues ProcessWithdrawalWebhook", %{edges: edges} do
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.WithdrawalWebhook",
+             "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook",
+             :enqueues
+           )
+  end
+
+  test "ProcessWithdrawalWebhook async edge exists", %{edges: edges} do
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook",
+             "IgamingRef.Finance.WithdrawalRequest",
+             :async
+           )
   end
 
   # Helper to find an edge

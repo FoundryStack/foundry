@@ -115,6 +115,7 @@ defmodule Foundry.Context.NodeEntry do
     side_effects: [],
     provider_behaviour: nil,
     provider_name: nil,
+    trigger_kind: nil,
     rule_compliance_links: [],
     # Phase B extensions
     scenario_origins: [],
