@@ -8,14 +8,15 @@ defmodule Foundry.Annotations do
   at runtime via `module.__info__(:attributes)` for the Foundry rules engine.
 
   Registered attributes:
-    - @compliance       - List of regulatory requirement IDs (e.g. [:RG_MGA_005])
-    - @telemetry_prefix - Structured telemetry prefix list
-    - @provider_name    - String identifier for provider adapters
-    - @foundry          - Map of Foundry metadata for Oban workers and others
-    - @runbook          - Path to operational runbook document
-    - @adrs             - List of ADR references
-    - @idempotency_key  - Reactor idempotency key for deduplication (atom or tuple)
-    - @spec_invariants  - Custom spec rule invariants and constraints
+    - @compliance         - List of regulatory requirement IDs (e.g. [:RG_MGA_005])
+    - @telemetry_prefix   - Structured telemetry prefix list
+    - @provider_name      - String identifier for provider adapters
+    - @foundry            - Map of Foundry metadata for Oban workers and others
+    - @runbook            - Path to operational runbook document
+    - @adrs               - List of ADR references
+    - @idempotency_key    - Reactor idempotency key for deduplication (atom or tuple)
+    - @spec_invariants    - Custom spec rule invariants and constraints
+    - @step_side_effects  - Map of step names to lists of side effect declarations
 
   Usage:
       use Foundry.Annotations
@@ -37,6 +38,7 @@ defmodule Foundry.Annotations do
       Module.register_attribute(__MODULE__, :adrs, persist: true)
       Module.register_attribute(__MODULE__, :idempotency_key, persist: true)
       Module.register_attribute(__MODULE__, :spec_invariants, persist: true)
+      Module.register_attribute(__MODULE__, :step_side_effects, persist: true)
     end
   end
 end

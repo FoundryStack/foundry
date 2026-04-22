@@ -19,6 +19,9 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
   @telemetry_prefix [:igaming_ref, :finance, :withdrawal_webhook]
   @compliance [:RG_UK_014, :RG_MGA_007]
 
+  # @side_effect external_http: webhook_inbound, idempotent: true
+  # @side_effect oban_emit: process_withdrawal_webhook, idempotent: true
+
   # Not a resource or action, but a trigger pattern documented for Foundry.
   # In Phoenix, this would be handled via a controller action (e.g.,
   # POST /webhooks/withdrawal in IgamingRef.WebhookController).
@@ -122,11 +125,7 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
   defp paypal_status(_), do: :unknown
 
   defp dispatch_async_job(event) do
-    # Create an Oban job to process the withdrawal update async.
-    # Returns the update changeset so the controller can return 200 immediately.
-    # Real implementation: IgamingRef.Jobs.ProcessWithdrawalWebhook.new(event) |> Oban.insert()
-
-    # Stub: immediately return success
+    # Oban.insert(IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook.new(event))
     {:ok, %{provider_reference: event.reference, status: event.status}}
   end
 end

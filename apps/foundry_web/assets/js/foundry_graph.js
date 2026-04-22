@@ -105,10 +105,10 @@ const STATIC_STYLES = [
       'text-wrap': 'none',
     },
   },
-  // Step nodes: always white text (colored background, any theme)
+  // Step nodes: text color from theme
   {
     selector: 'node[nodeKind="step"]',
-    style: { 'color': '#ffffff' },
+    style: { 'color': 'var(--fg-tx)' },
   },
   // Output node geometry
   {
@@ -266,6 +266,16 @@ const STATIC_STYLES = [
     selector: '.trace, .trace-gap',
     style: { 'border-width': 1 },
   },
+  // Step nodes with side effects: solid border
+  {
+    selector: 'node[nodeKind="step"][has_declared_se="true"]',
+    style: { 'border-style': 'solid', 'border-width': 1.5 },
+  },
+  // Step nodes with inferred side effects: dashed border
+  {
+    selector: 'node[nodeKind="step"][has_inferred_se="true"]',
+    style: { 'border-style': 'dashed', 'border-width': 1.5 },
+  },
 ]
 
 // Domain → color token. Key is the domain name, value is a key into the
@@ -363,6 +373,12 @@ function _dynamicStyles(c) {
       selector: 'node[nodeKind="cluster"][type="reactor"]',
       style: { 'border-color': c.pu },
     },
+    // Step nodes with declared side effects: green border
+    { selector: 'node[nodeKind="step"][has_declared_se="true"]',
+      style: { 'border-color': c.gn } },
+    // Step nodes with inferred side effects: red border
+    { selector: 'node[nodeKind="step"][has_inferred_se="true"]',
+      style: { 'border-color': c.rd } },
     // Edge base colors
     {
       selector: 'edge',
@@ -713,10 +729,17 @@ export function boundaryTpl(data) {
 export function stepTpl(data) {
   const icons = { read: '📖', write: '✏', map: '◈', custom: '⚙' }
   const icon = icons[data.step_kind] || '⚙'
+  const ses = data.side_effects || []
+  const seBadges = ses.map(se => {
+    const color = se.declared ? 'var(--fg-gn)' : 'var(--fg-rd)'
+    const prefix = se.declared ? '' : '⚠ '
+    return `<span style="display:inline-block;font-size:7px;padding:1px 3px;border-radius:2px;background:${color};color:var(--fg-base);margin:1px">${prefix}${se.type}</span>`
+  }).join('')
   return `
     <div class="cy-node-html cy-step-node" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 4px">
       <span>${icon}</span><br>
       <span style="color:var(--fg-tx)">${data.label || data.id}</span>
+      ${ses.length > 0 ? `<div style="margin-top:2px">${seBadges}</div>` : ''}
     </div>
   `
 }
@@ -824,6 +847,7 @@ export function buildCytoscapeElements(nodes, edges) {
         const icons = { read: '📖', write: '✏', map: '◈' }
         const stepLabel = `${icons[stepKind] || '⚙'} ${step.name || `Step ${idx}`}`
 
+        const sideEffects = step.side_effects || []
         elements.push({
           group: 'nodes',
           data: {
@@ -835,6 +859,9 @@ export function buildCytoscapeElements(nodes, edges) {
             description: step.description || step.name || `Step ${idx}`,
             type: node.type,
             domain: node.domain,
+            side_effects: sideEffects,
+            has_declared_se: sideEffects.some(se => se.declared) ? 'true' : 'false',
+            has_inferred_se: sideEffects.some(se => !se.declared) ? 'true' : 'false',
           },
         })
       })
@@ -868,6 +895,7 @@ export function buildCytoscapeElements(nodes, edges) {
           })
         })
       })
+
     }
 
     if (node.sm?.states) {

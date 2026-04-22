@@ -16,6 +16,12 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
 
   use Foundry.Annotations
 
+  @step_side_effects %{
+    debit_wallet: [%{type: :database, name: :wallet_debit, idempotent: true}],
+    create_ledger_entry: [%{type: :database, name: :ledger_entry, idempotent: true}],
+    submit_to_provider: [%{type: :external_http, name: :payment_provider_submission, idempotent: false}]
+  }
+
   @idempotency_key :withdrawal_request_id
   @runbook "docs/runbooks/withdrawal_transfer.md"
   @compliance [:RG_UK_014, :RG_MGA_007]
@@ -177,6 +183,11 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   """
 
   use Foundry.Annotations
+
+  @step_side_effects %{
+    credit_wallet: [%{type: :database, name: :wallet_credit, idempotent: true}],
+    create_ledger_entry: [%{type: :database, name: :ledger_entry, idempotent: true}]
+  }
 
   @idempotency_key {:player_id, :campaign_id}
   @runbook "docs/runbooks/bonus_grant_transfer.md"

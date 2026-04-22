@@ -435,6 +435,24 @@ export const SystemMapHook = {
       `
     }
 
+    if (step.side_effects && step.side_effects.length > 0) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Side Effects (${step.side_effects.length})</div>
+          <div class="space-y-1">
+            ${step.side_effects.map(se => {
+              const badge = se.declared
+                ? `<span class="badge badge-xs badge-success">${this._esc(se.type)}</span>`
+                : `<span class="badge badge-xs badge-error">⚠ ${this._esc(se.type)}</span>`
+              const detail = se.name ? `: ${this._esc(se.name)}` : ''
+              const idempotent = se.idempotent != null ? ` · ${se.idempotent ? 'idempotent' : 'non-idempotent'}` : ''
+              return `<div class="flex items-center gap-1">${badge}<span class="text-xs text-base-content/70">${detail}${idempotent}</span></div>`
+            }).join('')}
+          </div>
+        </div>
+      `
+    }
+
     html += `</div>`
     panel.innerHTML = html
   },

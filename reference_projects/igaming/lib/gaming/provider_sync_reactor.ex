@@ -16,6 +16,12 @@ defmodule IgamingRef.Gaming.ProviderSyncReactor do
 
   use Foundry.Annotations
 
+  @step_side_effects %{
+    fetch_games: [%{type: :external_http, name: :provider_api_call, idempotent: false}],
+    sync_games: [%{type: :oban_emit, name: :catalog_sync_worker, idempotent: true}],
+    update_catalog: [%{type: :database, name: :catalog_update, idempotent: true}]
+  }
+
   @idempotency_key :provider_id
   @runbook "docs/runbooks/provider_sync.md"
   @compliance [:RG_MGA_006, :RG_UK_007]
@@ -45,7 +51,7 @@ defmodule IgamingRef.Gaming.ProviderSyncReactor do
     argument :provider, result(:load_provider)
 
     run fn %{provider: config}, _ ->
-      # In production, this calls the actual provider API
+      # In production, this calls the actual provider API via Req.get(config.api_url)
       # For reference: returns list of {game_code, title, category, rtp, volatility}
       {:ok, []}
     end

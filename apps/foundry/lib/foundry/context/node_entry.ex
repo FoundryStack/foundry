@@ -112,6 +112,7 @@ defmodule Foundry.Context.NodeEntry do
     last_modified: nil,
     relationships: [],
     auth_strategies: [],
+    side_effects: [],
     provider_behaviour: nil,
     provider_name: nil,
     rule_compliance_links: [],

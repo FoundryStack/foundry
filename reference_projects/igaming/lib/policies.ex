@@ -1,5 +1,12 @@
 defmodule IgamingRef.Policies.AuthenticatedSubject do
-  @moduledoc "Allows any authenticated user (has an actor)"
+  @moduledoc """
+  Allows any authenticated user (has an actor).
+
+  Applied by: IgamingRef.Finance.Wallet,
+              IgamingRef.Promotions.BonusCampaign,
+              IgamingRef.Finance.WithdrawalRequest,
+              IgamingRef.Players.Player
+  """
   use Ash.Policy.SimpleCheck
 
   def match?(actor, _, _), do: actor != nil
@@ -7,7 +14,13 @@ defmodule IgamingRef.Policies.AuthenticatedSubject do
 end
 
 defmodule IgamingRef.Policies.OperatorOnly do
-  @moduledoc "Allows only operator roles"
+  @moduledoc """
+  Allows only operator roles.
+
+  Applied by: IgamingRef.Gaming.ProviderConfig,
+              IgamingRef.Finance.WithdrawalRequest,
+              IgamingRef.Promotions.BonusCampaign
+  """
   use Ash.Policy.SimpleCheck
 
   def match?(actor, _, _) do
@@ -21,7 +34,14 @@ defmodule IgamingRef.Policies.OperatorOnly do
 end
 
 defmodule IgamingRef.Policies.OwnerOrOperator do
-  @moduledoc "Allows owner of the resource or any operator"
+  @moduledoc """
+  Allows owner of the resource or any operator.
+
+  Applied by: IgamingRef.Finance.Wallet,
+              IgamingRef.Finance.LedgerEntry,
+              IgamingRef.Finance.WithdrawalRequest,
+              IgamingRef.Players.Player
+  """
   use Ash.Policy.SimpleCheck
 
   def match?(%{role: :operator}, _, _), do: true
@@ -53,7 +73,13 @@ defmodule IgamingRef.Policies.SelfOnly do
 end
 
 defmodule IgamingRef.Policies.InternalSystemActor do
-  @moduledoc "Allows internal system actors (jobs, async processes)"
+  @moduledoc """
+  Allows internal system actors (jobs, async processes).
+
+  Applied by: IgamingRef.Finance.LedgerEntry,
+              IgamingRef.Promotions.BonusGrant,
+              IgamingRef.Players.SelfExclusionRecord
+  """
   use Ash.Policy.SimpleCheck
 
   def match?(actor, _, _) do
@@ -67,7 +93,11 @@ defmodule IgamingRef.Policies.InternalSystemActor do
 end
 
 defmodule IgamingRef.Policies.ComplianceOrPlatformLead do
-  @moduledoc "Allows compliance officers or platform leads"
+  @moduledoc """
+  Allows compliance officers or platform leads.
+
+  Applied by: IgamingRef.Finance.Wallet
+  """
   use Ash.Policy.SimpleCheck
 
   def match?(actor, _, _) do
