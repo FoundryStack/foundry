@@ -135,6 +135,68 @@ defmodule Foundry.Context.GraphBuilderTest do
     assert find_edge(edges, "IgamingRef.Gaming.ProviderSyncReactor", "IgamingRef.Gaming.Game", :writes)
   end
 
+  test "behavioral edges carry step metadata", %{edges: edges} do
+    load_request =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Finance.WithdrawalTransfer",
+        "IgamingRef.Finance.WithdrawalRequest",
+        :reads,
+        "load_request"
+      )
+
+    assert load_request.step_name == "load_request"
+    assert is_integer(load_request.step_index)
+
+    debit_wallet =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Finance.WithdrawalTransfer",
+        "IgamingRef.Finance.Wallet",
+        :writes,
+        "debit_wallet"
+      )
+
+    assert debit_wallet.step_name == "debit_wallet"
+    assert is_integer(debit_wallet.step_index)
+
+    create_ledger_entry =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Finance.WithdrawalTransfer",
+        "IgamingRef.Finance.LedgerEntry",
+        :writes,
+        "create_ledger_entry"
+      )
+
+    assert create_ledger_entry.step_name == "create_ledger_entry"
+    assert is_integer(create_ledger_entry.step_index)
+
+    load_provider =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Gaming.ProviderSyncReactor",
+        "IgamingRef.Gaming.ProviderConfig",
+        :reads,
+        "load_provider"
+      )
+
+    assert load_provider.step_name == "load_provider"
+    assert is_integer(load_provider.step_index)
+
+    sync_games =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Gaming.ProviderSyncReactor",
+        "IgamingRef.Gaming.Game",
+        :writes,
+        "sync_games"
+      )
+
+    assert sync_games.step_name == "sync_games"
+    assert is_integer(sync_games.step_index)
+  end
+
   # Total edge sanity check: should have at least 20 edges with fixes
   test "at least 20 edges total", %{edges: edges} do
     assert length(edges) >= 20
@@ -149,29 +211,34 @@ defmodule Foundry.Context.GraphBuilderTest do
     end)
   end
 
-  # Part A1: Rule edge derivation - "Applied by:" parsing
-  test "SufficientBalance guards WithdrawalTransfer", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Finance.Rules.SufficientBalance", "IgamingRef.Finance.WithdrawalTransfer", :guards)
-  end
+  test "reactor and transfer rules are no longer emitted as backend guard edges", %{edges: edges} do
+    refute find_edge(
+             edges,
+             "IgamingRef.Finance.Rules.SufficientBalance",
+             "IgamingRef.Finance.WithdrawalTransfer",
+             :guards
+           )
 
-  test "WithdrawalLimitNotExceeded guards WithdrawalTransfer", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded", "IgamingRef.Finance.WithdrawalTransfer", :guards)
-  end
+    refute find_edge(
+             edges,
+             "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
+             "IgamingRef.Finance.WithdrawalTransfer",
+             :guards
+           )
 
-  test "PlayerNotSelfExcluded guards WithdrawalTransfer", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Players.Rules.PlayerNotSelfExcluded", "IgamingRef.Finance.WithdrawalTransfer", :guards)
-  end
+    refute find_edge(
+             edges,
+             "IgamingRef.Players.Rules.PlayerNotSelfExcluded",
+             "IgamingRef.Finance.WithdrawalTransfer",
+             :guards
+           )
 
-  test "PlayerNotSelfExcluded guards BonusGrantTransfer", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Players.Rules.PlayerNotSelfExcluded", "IgamingRef.Promotions.BonusGrantTransfer", :guards)
-  end
-
-  test "PlayerEligibleForCampaign guards BonusGrantTransfer", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Promotions.Rules.PlayerEligibleForCampaign", "IgamingRef.Promotions.BonusGrantTransfer", :guards)
-  end
-
-  test "CampaignNotExpired guards BonusGrantTransfer", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Promotions.Rules.CampaignNotExpired", "IgamingRef.Promotions.BonusGrantTransfer", :guards)
+    refute find_edge(
+             edges,
+             "IgamingRef.Players.Rules.PlayerNotSelfExcluded",
+             "IgamingRef.Promotions.BonusGrantTransfer",
+             :guards
+           )
   end
 
   test "AuthenticatedSubject guards Wallet via policy DSL", %{edges: edges} do
@@ -192,6 +259,29 @@ defmodule Foundry.Context.GraphBuilderTest do
     active = nm["IgamingRef.Gaming.Rules.ProviderActive"]
     assert active != nil
     assert active.type == "rule"
+  end
+
+  test "stale comment-only rules do not produce consumer edges", %{edges: edges} do
+    refute find_edge(
+             edges,
+             "IgamingRef.Finance.Rules.PlayerKYCVerified",
+             "IgamingRef.Finance.WithdrawalTransfer",
+             :guards
+           )
+
+    refute find_edge(
+             edges,
+             "IgamingRef.Gaming.Rules.ProviderActive",
+             "IgamingRef.Gaming.ProviderSyncReactor",
+             :guards
+           )
+
+    refute find_edge(
+             edges,
+             "IgamingRef.Gaming.Rules.GameRTPCertified",
+             "IgamingRef.Gaming.ProviderSyncReactor",
+             :guards
+           )
   end
 
   # Part A4: Per-domain external postgres nodes
@@ -282,6 +372,13 @@ defmodule Foundry.Context.GraphBuilderTest do
   defp find_edge(edges, from, to, relation) do
     Enum.any?(edges, fn edge ->
       edge.from == from and edge.to == to and edge.relation == relation
+    end)
+  end
+
+  defp find_edge_entry(edges, from, to, relation, step_name) do
+    Enum.find(edges, fn edge ->
+      edge.from == from and edge.to == to and edge.relation == relation and
+        edge.step_name == step_name
     end)
   end
 end

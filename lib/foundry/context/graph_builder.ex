@@ -85,8 +85,14 @@ defmodule Foundry.Context.GraphBuilder do
           Map.get(step, :write_targets) || Map.get(step, "write_targets") ||
             fallback_targets(step, :write)
 
-        Enum.map(read_targets, &EdgeEntry.new(reactor.module, &1, :reads)) ++
-          Enum.map(write_targets, &EdgeEntry.new(reactor.module, &1, :writes))
+        step_name = Map.get(step, :name) || Map.get(step, "name")
+        step_index = Map.get(step, :step_index) || Map.get(step, "step_index")
+
+        Enum.map(read_targets, &new_step_edge(reactor.module, &1, :reads, step_name, step_index)) ++
+          Enum.map(
+            write_targets,
+            &new_step_edge(reactor.module, &1, :writes, step_name, step_index)
+          )
       end)
     end)
   end
@@ -199,32 +205,9 @@ defmodule Foundry.Context.GraphBuilder do
     end)
   end
 
-  # Rule edges: derive guarded consumers from Reactor/Transfer step usage first, then
-  # fall back to the legacy "Applied by:" prose parsing for standalone rules.
-  defp derive_rule_edges(nodes, node_map) do
-    consumer_edges =
-      nodes
-      |> Enum.filter(&(&1.type in ["reactor", "transfer"]))
-      |> Enum.flat_map(fn consumer ->
-        consumer.steps
-        |> Enum.flat_map(fn step ->
-          (Map.get(step, :rules_applied) || Map.get(step, "rules_applied") || [])
-          |> Enum.filter(&Map.has_key?(node_map, &1))
-          |> Enum.map(&EdgeEntry.new(&1, consumer.module, :guards))
-        end)
-      end)
-
-    fallback_edges =
-      nodes
-      |> Enum.filter(&(&1.type == "rule"))
-      |> Enum.flat_map(fn rule ->
-        parse_applied_by_from_source(rule.module)
-        |> Enum.filter(&Map.has_key?(node_map, &1))
-        |> Enum.map(&EdgeEntry.new(rule.module, &1, :guards))
-      end)
-
-    consumer_edges ++ fallback_edges
-  end
+  # Reactor/Transfer rule usage is rendered from step.rules_applied in the frontend.
+  # The backend deliberately avoids emitting duplicate reactor-level guard edges.
+  defp derive_rule_edges(_nodes, _node_map), do: []
 
   defp derive_policy_edges(nodes, node_map) do
     nodes
@@ -308,34 +291,6 @@ defmodule Foundry.Context.GraphBuilder do
     end
   end
 
-  # Parse "Applied by: Module.A, Module.B" from rule description
-  # Matches pattern: "Applied by: " followed by comma/newline-separated modules
-  defp parse_applied_by_from_description(text) do
-    case Regex.run(~r/Applied by:\s*(.*?)(?:\n\n|\z)/s, text) do
-      [_, list] ->
-        list
-        |> String.split(~r/[,\n]/)
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == ""))
-      _ ->
-        []
-    end
-  end
-
-  # Fallback: try to find "Applied by:" in the source file
-  defp parse_applied_by_from_source(module_name) do
-    # Convert module name to file path and try to read source
-    # Module paths like "IgamingRef.Finance.Rules.SufficientBalance" -> search in rules.ex
-    case find_module_source_section(module_name) do
-      {:ok, section} ->
-        parse_applied_by_from_description(section)
-      :error ->
-        []
-    end
-  rescue
-    _ -> []
-  end
-
   defp fallback_targets(step, expected_kind) do
     target_resource = Map.get(step, :target_resource) || Map.get(step, "target_resource")
     step_kind = Map.get(step, :step_kind) || Map.get(step, "step_kind")
@@ -372,52 +327,20 @@ defmodule Foundry.Context.GraphBuilder do
     end
   end
 
-  defp ash_resource_module?(module) do
-    function_exported?(module, :__ash_resource__, 0)
-  rescue
-    _ -> false
+  defp new_step_edge(from, to, relation, step_name, step_index) do
+    %EdgeEntry{
+      from: from,
+      to: to,
+      relation: relation,
+      step_name: step_name && to_string(step_name),
+      step_index: step_index
+    }
   end
 
-  # Helper: find module source section (the moduledoc for this specific rule)
-  defp find_module_source_section(module_name) do
-    try do
-      module_atom = String.to_existing_atom("Elixir." <> module_name)
-      case module_atom.__info__(:compile) do
-        compile_info when is_list(compile_info) ->
-          source = Keyword.get(compile_info, :source)
-          # Source may be a charlist or string
-          source_path =
-            if is_list(source) do
-              source |> to_string()
-            else
-              source
-            end
-
-          if source_path && File.exists?(source_path) do
-            content = File.read!(source_path)
-            # Extract just the module's section
-            # Find "defmodule <ModuleName>" and get the next ~25 lines
-            # (this covers the @moduledoc, @compliance, @spec_invariants comments)
-            module_short_name = module_name |> String.split(".") |> List.last()
-            pattern = "defmodule.*#{Regex.escape(module_short_name)} do"
-
-            case Regex.run(~r/#{pattern}/m, content, return: :index) do
-              [{start_pos, _length}] ->
-                # Extract ~30 lines starting from this position
-                rest = String.slice(content, start_pos..-1//1)
-                lines = String.split(rest, "\n") |> Enum.take(30) |> Enum.join("\n")
-                {:ok, lines}
-              _ ->
-                :error
-            end
-          else
-            :error
-          end
-        _ -> :error
-      end
-    rescue
-      _ -> :error
-    end
+  defp ash_resource_module?(module) do
+    Ash.Resource.Info.resource?(module)
+  rescue
+    _ -> false
   end
 
   # ---------------------------------------------------------------------------
