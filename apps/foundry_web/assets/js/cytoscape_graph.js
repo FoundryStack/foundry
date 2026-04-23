@@ -231,38 +231,14 @@ export class CytoscapeGraph {
   }
 
   expandNode(id) {
-    const parent = this.cy.getElementById(id)
-    if (parent.length === 0) return
-
-    const childSelector = `[parent="${id}"]`
-    const children = this.cy.elements(childSelector)
-
-    if (children.length === 0) return
-
-    parent.expand()
-    this._runLocalLayout(id)
+    // System Map compounds are rendered eagerly. Selection must not mutate layout,
+    // sizing, or visibility because Cytoscape compound bounds are child-driven.
+    this.selectNode(id)
   }
 
-  collapseNode(id) {
-    const parent = this.cy.getElementById(id)
-    if (parent.length === 0) return
-
-    const childSelector = `[parent="${id}"]`
-    const children = this.cy.elements(childSelector)
-
-    if (children.length === 0) return
-
-    children.forEach(ele => {
-      ele.remove()
-    })
-
-    parent.collapse()
-  }
+  collapseNode(_id) {}
 
   expandOnly(id) {
-    if (this._expandedNodeId && this._expandedNodeId !== id) {
-      this.collapseNode(this._expandedNodeId)
-    }
     this.expandNode(id)
     this._expandedNodeId = id
   }

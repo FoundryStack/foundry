@@ -207,6 +207,25 @@ export const STATIC_STYLES = [
     },
   },
   {
+    selector: 'edge.compound-structural-edge',
+    style: {
+      'curve-style': 'segments',
+      'segment-weights': 0.5,
+      'segment-distances': 28,
+      'edge-distances': 'intersection',
+      'source-endpoint': '90deg',
+      'target-endpoint': '270deg',
+    },
+  },
+  {
+    selector: 'edge.compound-structural-edge[relation="referenced_by"]',
+    style: {
+      'segment-distances': -28,
+      'source-endpoint': '270deg',
+      'target-endpoint': '90deg',
+    },
+  },
+  {
     selector: '.trace, .trace-gap',
     style: { 'border-width': 1 },
   },

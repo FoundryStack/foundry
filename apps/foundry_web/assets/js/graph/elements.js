@@ -2,6 +2,8 @@ import { normalizeActionName, normalizeActionType, buildStateNodeId, buildAction
 import { getDomainColor } from './colors'
 import { shortLabel } from './templates'
 
+const STRUCTURAL_RELATIONS = new Set(['references', 'referenced_by'])
+
 export function getCompoundNodeIds(nodes) {
   const transfers = nodes.filter(n => n.type === 'transfer' || n.type === 'reactor').map(n => n.id)
   const resourcesWithChildren = nodes
@@ -330,6 +332,7 @@ export function buildCytoscapeElements(nodes, edges) {
     edgeElementsById.set(id, {
       group: 'edges',
       data: buildRoutedEdgeData(id, source, target, edge, routed),
+      classes: buildRoutedEdgeClasses(source, target, edge, compoundIds),
     })
   })
 
@@ -412,6 +415,19 @@ function buildRoutedEdgeData(id, source, target, edge, routed) {
   }
 
   return data
+}
+
+function buildRoutedEdgeClasses(source, target, edge, compoundIds) {
+  const sourceIsCompound = compoundIds.has(source)
+  const targetIsCompound = compoundIds.has(target)
+
+  return [
+    STRUCTURAL_RELATIONS.has(edge.relation) && (sourceIsCompound || targetIsCompound)
+      ? 'compound-structural-edge'
+      : null,
+    sourceIsCompound ? 'source-compound' : null,
+    targetIsCompound ? 'target-compound' : null,
+  ].filter(Boolean).join(' ')
 }
 
 function mergeRoutedEdge(existingData, edge, routed) {

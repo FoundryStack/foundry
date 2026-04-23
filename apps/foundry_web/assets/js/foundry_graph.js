@@ -3,7 +3,7 @@ import { extractColors, getDomainColor, covColor, domainCoverage } from './graph
 import { buildFoundryStyles, FOUNDRY_LAYOUT_OPTIONS, FOUNDRY_COMPOUND_COMPACTION } from './graph/styles'
 import { normalizeNode } from './graph/normalizers'
 import { buildCytoscapeElements } from './graph/elements'
-import { entityTpl, domainClusterTpl, clusterTpl, stepTpl, actionTpl } from './graph/templates'
+import { entityTpl, domainClusterTpl, clusterTpl, stepTpl, actionTpl, stateTpl } from './graph/templates'
 import { buildCanvasOverlays, searchMatch } from './graph/utils'
 import { HTML_LABEL_CONFIG } from './graph/config'
 
@@ -18,6 +18,7 @@ export {
   clusterTpl,
   stepTpl,
   actionTpl,
+  stateTpl,
   searchMatch,
 }
 
@@ -43,7 +44,7 @@ export function mountFoundryGraph(container, contextJson) {
 
   graph.cy.add(elements)
 
-  const templates = [entityTpl, domainClusterTpl, clusterTpl, stepTpl, actionTpl]
+  const templates = [entityTpl, domainClusterTpl, clusterTpl, stepTpl, actionTpl, stateTpl]
   const htmlLabels = HTML_LABEL_CONFIG.map((cfg, i) => ({ ...cfg, tpl: templates[i] }))
   graph.setupHtmlLabels(htmlLabels)
 

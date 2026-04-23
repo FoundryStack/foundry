@@ -165,3 +165,12 @@ export function actionTpl(data) {
     </div>
   `
 }
+
+export function stateTpl(data) {
+  return `
+    <div class="cy-node-html cy-state-node" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 4px">
+      <span class="state-dot"></span>
+      <span style="color:var(--fg-tx)">${data.label || data.name || data.id}</span>
+    </div>
+  `
+}
