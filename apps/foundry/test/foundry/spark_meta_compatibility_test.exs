@@ -41,6 +41,33 @@ defmodule Foundry.SparkMetaCompatibilityTest do
     assert info.diagnostics == []
   end
 
+  test "resource modules infer state machine transitions with action names" do
+    info = Foundry.SparkMeta.walk(IgamingRef.Finance.Wallet)
+
+    assert info.state_machine.present == true
+    assert "active" in info.state_machine.states
+    assert "frozen" in info.state_machine.states
+    assert "closed" in info.state_machine.states
+
+    assert Enum.any?(info.state_machine.transitions, fn transition ->
+             transition[:from] == "active" and
+               transition[:to] == "frozen" and
+               transition[:action] == "freeze"
+           end)
+
+    assert Enum.any?(info.state_machine.transitions, fn transition ->
+             transition[:from] == "active" and
+               transition[:to] == "closed" and
+               transition[:action] == "close"
+           end)
+
+    assert Enum.any?(info.state_machine.transitions, fn transition ->
+             transition[:from] == "frozen" and
+               transition[:to] == "closed" and
+               transition[:action] == "close"
+           end)
+  end
+
   test "reactor modules preserve runbook and step facts" do
     info = Foundry.SparkMeta.walk(IgamingRef.Gaming.ProviderSyncReactor)
 

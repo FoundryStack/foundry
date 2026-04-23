@@ -131,6 +131,31 @@ defmodule Foundry.Context.GraphBuilderTest do
            end)
   end
 
+  test "auth edges include action-scoped links for generated authentication actions", %{edges: edges} do
+    register_edge =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Accounts.User",
+        "IgamingRef.Accounts.Token",
+        :authenticates,
+        nil,
+        "register_with_password"
+      )
+
+    reset_edge =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Accounts.User",
+        "IgamingRef.Accounts.Token",
+        :authenticates,
+        nil,
+        "password_reset_with_password"
+      )
+
+    assert register_edge.action_name == "register_with_password"
+    assert reset_edge.action_name == "password_reset_with_password"
+  end
+
   # Async edge: CatalogSyncJob → ProviderSyncReactor
   test "CatalogSyncJob→ProviderSyncReactor async edge exists", %{edges: edges} do
     assert find_edge(
@@ -338,6 +363,19 @@ defmodule Foundry.Context.GraphBuilderTest do
     assert is_integer(sync_games.step_index)
   end
 
+  test "behavioral edges carry action metadata when available", %{edges: edges} do
+    debit_wallet =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Finance.WithdrawalTransfer",
+        "IgamingRef.Finance.Wallet",
+        :writes,
+        "debit_wallet"
+      )
+
+    assert debit_wallet.action_name == "debit"
+  end
+
   # Total edge sanity check: should have at least 20 edges with fixes
   test "at least 20 edges total", %{edges: edges} do
     assert length(edges) >= 20
@@ -405,6 +443,42 @@ defmodule Foundry.Context.GraphBuilderTest do
              "IgamingRef.Finance.Wallet",
              :guards
            )
+  end
+
+  test "policy edges can target specific actions", %{edges: edges} do
+    debit_guard =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Policies.AuthenticatedSubject",
+        "IgamingRef.Finance.Wallet",
+        :guards,
+        nil,
+        "debit"
+      )
+
+    close_guard =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Policies.ComplianceOrPlatformLead",
+        "IgamingRef.Finance.Wallet",
+        :guards,
+        nil,
+        "close"
+      )
+
+    read_guard =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Policies.OwnerOrOperator",
+        "IgamingRef.Finance.Wallet",
+        :guards,
+        nil,
+        "read"
+      )
+
+    assert debit_guard.action_name == "debit"
+    assert close_guard.action_name == "close"
+    assert read_guard.action_name == "read"
   end
 
   test "PlayerKYCVerified is a rule node", %{node_map: nm} do
@@ -547,10 +621,11 @@ defmodule Foundry.Context.GraphBuilderTest do
     end)
   end
 
-  defp find_edge_entry(edges, from, to, relation, step_name) do
+  defp find_edge_entry(edges, from, to, relation, step_name, action_name \\ nil) do
     Enum.find(edges, fn edge ->
       edge.from == from and edge.to == to and edge.relation == relation and
-        edge.step_name == step_name
+        edge.step_name == step_name and
+        (is_nil(action_name) or edge.action_name == action_name)
     end)
   end
 end

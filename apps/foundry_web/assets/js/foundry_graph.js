@@ -43,6 +43,7 @@ function _extractColors() {
 const FONT = "'Segoe UI Symbol', 'Apple Symbols', 'Arial Unicode MS', sans-serif"
 
 const FOUNDRY_LAYOUT_OPTIONS = {
+  randomize: false,
   idealEdgeLength: 62,
   nodeRepulsion: 4200,
   padding: 32,
@@ -84,7 +85,7 @@ const STATIC_STYLES = [
   },
   // Hide Cytoscape's native label for nodes that use HTML labels
   {
-    selector: 'node[nodeKind="entity"], node[nodeKind="step"], node[nodeKind="state"], node[nodeKind="output"], node[nodeKind="cluster"]',
+    selector: 'node[nodeKind="entity"], node[nodeKind="step"], node[nodeKind="output"], node[nodeKind="cluster"]',
     style: { 'label': '' },
   },
   // Compliance gap: dashed border (color applied in dynamic styles)
@@ -110,9 +111,9 @@ const STATIC_STYLES = [
     selector: 'node.domain-cluster',
     style: { 'border-width': 2, 'background-opacity': 0.4, 'padding': 20 },
   },
-  // Step / state node geometry
+  // Step / action / state node geometry
   {
-    selector: 'node[nodeKind="step"], node[nodeKind="state"]',
+    selector: 'node[nodeKind="step"], node[nodeKind="action"], node[nodeKind="state"]',
     style: {
       'width': 88,
       'height': 40,
@@ -127,6 +128,16 @@ const STATIC_STYLES = [
   {
     selector: 'node[nodeKind="step"]',
     style: { 'color': 'var(--fg-tx)' },
+  },
+  // Action nodes: slightly wider than steps for action names
+  {
+    selector: 'node[nodeKind="action"]',
+    style: { 'width': 104, 'height': 40, 'font-size': 8.5, 'color': 'var(--fg-tx)' },
+  },
+  // State nodes: native labels stay visible for readability and lower DOM cost.
+  {
+    selector: 'node[nodeKind="state"]',
+    style: { 'width': 104, 'height': 38, 'font-size': 8.5, 'color': 'var(--fg-tx)' },
   },
   // Output node geometry
   {
@@ -271,6 +282,16 @@ const STATIC_STYLES = [
       'width': 1,
     },
   },
+  // Relation: declares_action — fallback structural link for unconnected actions
+  {
+    selector: 'edge[relation="declares_action"]',
+    style: {
+      'line-style': 'dotted',
+      'target-arrow-shape': 'none',
+      'opacity': 0.45,
+      'width': 1,
+    },
+  },
   // Compound edge endpoints
   {
     selector: 'edge:compound',
@@ -319,6 +340,14 @@ const STEP_COLOR_TOKEN = {
   custom: 't2',
 }
 
+// Resource action type → color token
+const ACTION_COLOR_TOKEN = {
+  read: 'bl',
+  create: 'gn',
+  update: 'gn',
+  destroy: 'rd',
+}
+
 /**
  * Build the color-dependent portion of the Cytoscape stylesheet.
  * Receives a colors object from _extractColors() — all values are resolved
@@ -334,6 +363,11 @@ function _dynamicStyles(c) {
   // Step kind background + border — one per step_kind
   const stepKindSelectors = Object.entries(STEP_COLOR_TOKEN).map(([kind, token]) => ({
     selector: `node[nodeKind="step"][step_kind="${kind}"]`,
+    style: { 'background-color': c[token], 'border-color': c[token] },
+  }))
+
+  const actionTypeSelectors = Object.entries(ACTION_COLOR_TOKEN).map(([kind, token]) => ({
+    selector: `node[nodeKind="action"][action_type="${kind}"]`,
     style: { 'background-color': c[token], 'border-color': c[token] },
   }))
 
@@ -375,6 +409,8 @@ function _dynamicStyles(c) {
     },
     // Step kind colors
     ...stepKindSelectors,
+    // Resource action colors
+    ...actionTypeSelectors,
     // Job node border
     { selector: 'node[type="job"]',       style: { 'border-color': c.pu } },
     // Trigger node border (webhook, HTTP endpoint)
@@ -435,6 +471,8 @@ function _dynamicStyles(c) {
       style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
     { selector: 'edge[relation="audit_trail"]',
       style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
+    { selector: 'edge[relation="declares_action"]',
+      style: { 'line-color': c.t3, 'target-arrow-color': c.t3 } },
     // Trace overlays
     { selector: '.trace, .trace-gap', style: { 'border-color': c.yw } },
   ]
@@ -451,6 +489,29 @@ function _buildFoundryStyles(colors) {
 // Node normalization
 // ─────────────────────────────────────────────────────────────────────────────
 
+function normalizeStateName(value) {
+  if (value == null) return null
+  return String(value).replace(/^:/, '')
+}
+
+function normalizeActionName(value) {
+  if (value == null) return null
+  return String(value).replace(/^:/, '')
+}
+
+function normalizeActionType(value) {
+  if (value == null) return null
+  return String(value).replace(/^:/, '')
+}
+
+function buildStateNodeId(nodeId, stateName) {
+  return `${nodeId}:state:${stateName}`
+}
+
+function buildActionNodeId(nodeId, actionName) {
+  return `${nodeId}:action:${actionName}`
+}
+
 /**
  * Normalize Elixir NodeEntry → GraphNode field mapping
  */
@@ -464,14 +525,72 @@ export function normalizeNode(raw) {
   // Gap = has compliance reqs but no E2E tests
   const reqs = raw.compliance || []
   const gap = reqs.length > 0 && !tc.e2e_tests
+  const normalizedInitialStates = (sm.initial_states || [])
+    .map(normalizeStateName)
+    .filter(Boolean)
+  const normalizedDefaultInitialState = normalizeStateName(sm.default_initial_state)
+
+  const actions = (raw.actions || []).map((action, index) => {
+    const normalizedName = normalizeActionName(action.name || `action_${index}`)
+    const normalizedType = normalizeActionType(action.type || 'read')
+
+    return {
+      ...action,
+      name: normalizedName,
+      type: normalizedType,
+      nodeKind: 'action',
+      id: buildActionNodeId(raw.id, normalizedName),
+    }
+  })
 
   // State machine: synthesize IDs as "${nodeId}:state:${stateName}"
-  const states = (sm.states || []).map(name => ({
-    id: `${raw.id}:state:${name}`,
-    name,
-    nodeKind: 'state',
-  }))
-  const smTransitions = sm.transitions || []
+  const states = (sm.states || []).map(name => {
+    const normalizedName = normalizeStateName(name)
+    return {
+      id: buildStateNodeId(raw.id, normalizedName),
+      name: normalizedName,
+      nodeKind: 'state',
+    }
+  }).filter(state => state.name)
+
+  const smTransitions = (sm.transitions || []).map((transition, idx) => {
+    const from = normalizeStateName(transition.from)
+    const to = normalizeStateName(transition.to)
+    const action = normalizeActionName(transition.action)
+
+    return {
+      ...transition,
+      id: `${raw.id}:transition:${idx}`,
+      from,
+      to,
+      action,
+    }
+  }).filter(transition => transition.from && transition.to)
+
+  // Ensure states include all transition endpoints.
+  const stateByName = new Map(states.map(state => [state.name, state]))
+  smTransitions.forEach(transition => {
+    if (!stateByName.has(transition.from)) {
+      const state = { id: buildStateNodeId(raw.id, transition.from), name: transition.from, nodeKind: 'state' }
+      states.push(state)
+      stateByName.set(transition.from, state)
+    }
+
+    if (!stateByName.has(transition.to)) {
+      const state = { id: buildStateNodeId(raw.id, transition.to), name: transition.to, nodeKind: 'state' }
+      states.push(state)
+      stateByName.set(transition.to, state)
+    }
+  })
+
+  ;[...normalizedInitialStates, normalizedDefaultInitialState]
+    .filter(Boolean)
+    .forEach(stateName => {
+      if (stateByName.has(stateName)) return
+      const state = { id: buildStateNodeId(raw.id, stateName), name: stateName, nodeKind: 'state' }
+      states.push(state)
+      stateByName.set(stateName, state)
+    })
 
   // Merge agent steps via step_id lookup
   const steps = (raw.steps || []).map(s => ({
@@ -497,7 +616,16 @@ export function normalizeNode(raw) {
     arch: raw.archival,
     dl: raw.data_layer,
     rl: raw.rate_limited,
-    sm: states.length > 0 ? { states, transitions: smTransitions } : null,
+    sm:
+      states.length > 0
+        ? {
+            states,
+            transitions: smTransitions,
+            initial_states: normalizedInitialStates,
+            default_initial_state: normalizedDefaultInitialState,
+          }
+        : null,
+    actions,
     steps,
     routes: raw.api_routes || [],
     money: raw.money_attributes || [],
@@ -520,8 +648,11 @@ export function normalizeNode(raw) {
 
 export function getCompoundNodeIds(nodes) {
   const transfers = nodes.filter(n => n.type === 'transfer' || n.type === 'reactor').map(n => n.id)
-  const fsms = nodes.filter(n => n.type === 'resource' && n.sm).map(n => n.id)
-  return new Set([...transfers, ...fsms])
+  const resourcesWithChildren = nodes
+    .filter(n => n.type === 'resource' && (n.sm || (n.actions || []).length > 0))
+    .map(n => n.id)
+
+  return new Set([...transfers, ...resourcesWithChildren])
 }
 
 export function getTransferNodeIds(nodes) {
@@ -639,13 +770,6 @@ export function buildIndicators(n) {
     indicators.push(`<span data-indicator="pm" title="Pending migrations">↻</span>`)
   }
 
-  if ((n.oban_queues || []).length > 0) {
-    indicators.push(`<span data-indicator="oban" title="Oban queues">⚙</span>`)
-  }
-  if (n.schedule) {
-    indicators.push(`<span data-indicator="schedule" title="Schedule: ${n.schedule}">⏱</span>`)
-  }
-
   if (n.rl) {
     indicators.push(`<span data-indicator="rl" title="Rate limited">⬅</span>`)
   }
@@ -672,10 +796,6 @@ export function entityTpl(data) {
     `
   }
 
-  const jobAnnotation = n.type === 'job' && (n.oban_queues?.length > 0 || n.schedule)
-    ? `<div style="font-size:9px;color:var(--fg-pu);margin-top:1px">⚙ ${n.oban_queues?.[0] || 'default'}${n.schedule ? ' · ' + n.schedule : ''}</div>`
-    : ''
-
   // Trigger annotation: show HTTP endpoint or webhook route
   const triggerAnnotation = n.type === 'trigger' && (n.routes?.length > 0)
     ? `<div style="font-size:8px;color:var(--fg-ac);margin-top:2px;font-family:var(--font-mono)">${n.routes[0].r}</div>`
@@ -696,7 +816,6 @@ export function entityTpl(data) {
         </span>
         <span class="title">${shortLabel(n.id)}</span>
       </div>
-      ${jobAnnotation}
       ${triggerAnnotation}
       ${n.cov > 0 ? `
         <div class="req-badges">
@@ -762,6 +881,22 @@ export function stepTpl(data) {
   `
 }
 
+export function actionTpl(data) {
+  const icons = {
+    read: '📖',
+    create: '✚',
+    update: '✏',
+    destroy: '🗑',
+  }
+  const icon = icons[data.action_type] || '⚙'
+  return `
+    <div class="cy-node-html cy-action-node" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 4px">
+      <span>${icon}</span><br>
+      <span style="color:var(--fg-tx)">${data.label || data.action_name || data.id}</span>
+    </div>
+  `
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Element builders
 // ─────────────────────────────────────────────────────────────────────────────
@@ -816,6 +951,7 @@ export function buildCytoscapeElements(nodes, edges) {
   const compoundIds = getCompoundNodeIds(nodes)
   const stepScopedNodeTypes = new Set(['reactor', 'transfer'])
   const nodeById = new Map(nodes.map(node => [node.id, node]))
+  const resourceActionIndex = buildResourceActionIndex(nodes)
   const collapsedBehaviorPairs = buildCollapsedBehaviorPairs(
     edges,
     nodeById,
@@ -825,7 +961,7 @@ export function buildCytoscapeElements(nodes, edges) {
 
   // Transfer / FSM compound nodes (now IS the entity)
   compoundIds.forEach(id => {
-    const node = nodes.find(n => n.id === id)
+    const node = nodeById.get(id)
     if (!node) return
     const classes = [
       node.type === 'transfer' ? 'transfer-cluster' : null,
@@ -866,7 +1002,10 @@ export function buildCytoscapeElements(nodes, edges) {
     })
   })
 
-  // Step / state child nodes
+  // Step / action / state child nodes
+  const actionNodeIds = new Set()
+  const connectedActionNodeIds = new Set()
+
   nodes.forEach(node => {
     if ((node.type === 'transfer' || node.type === 'reactor') && node.steps) {
       node.steps.forEach((step, idx) => {
@@ -910,6 +1049,30 @@ export function buildCytoscapeElements(nodes, edges) {
 
     }
 
+    if (node.type === 'resource' && node.actions) {
+      node.actions.forEach((action, idx) => {
+        const actionName = normalizeActionName(action.name || `action_${idx}`)
+        const actionType = normalizeActionType(action.type || 'read')
+        const actionNodeId = buildActionNodeId(node.id, actionName)
+        actionNodeIds.add(actionNodeId)
+
+        elements.push({
+          group: 'nodes',
+          data: {
+            id: actionNodeId,
+            label: actionName,
+            nodeKind: 'action',
+            parent: node.id,
+            action_name: actionName,
+            action_type: actionType,
+            description: action.description || `${actionName} action`,
+            type: node.type,
+            domain: node.domain,
+          },
+        })
+      })
+    }
+
     if (node.sm?.states) {
       node.sm.states.forEach(state => {
         elements.push({
@@ -923,6 +1086,84 @@ export function buildCytoscapeElements(nodes, edges) {
         })
       })
     }
+
+    if (node.sm?.transitions) {
+      node.sm.transitions.forEach((transition, idx) => {
+        const fromStateId = buildStateNodeId(node.id, transition.from)
+        const toStateId = buildStateNodeId(node.id, transition.to)
+        const actionName = normalizeActionName(transition.action)
+        const actionNodeId = resolveResourceActionEndpoint(node.id, actionName, resourceActionIndex)
+
+        if (actionNodeId) {
+          connectedActionNodeIds.add(actionNodeId)
+          elements.push({
+            group: 'edges',
+            data: {
+              id: `${node.id}:eligible:${idx}:${transition.from}:${actionName}`,
+              source: fromStateId,
+              target: actionNodeId,
+              relation: 'eligibleIf',
+              action_name: actionName,
+            },
+          })
+
+          elements.push({
+            group: 'edges',
+            data: {
+              id: `${node.id}:trigger:${idx}:${actionName}:${transition.to}`,
+              source: actionNodeId,
+              target: toStateId,
+              relation: 'triggers',
+              action_name: actionName,
+            },
+          })
+        } else {
+          elements.push({
+            group: 'edges',
+            data: {
+              id: `${node.id}:transition:${idx}:${transition.from}:${transition.to}`,
+              source: fromStateId,
+              target: toStateId,
+              relation: 'triggers',
+              action_name: actionName,
+            },
+          })
+        }
+      })
+    }
+
+    const initialStateName = pickInitialStateName(node.sm)
+    const initialStateId = initialStateName ? buildStateNodeId(node.id, initialStateName) : null
+
+    if (node.type === 'resource' && node.actions && initialStateId) {
+      const transitionActionNames = new Set(
+        (node.sm?.transitions || [])
+          .map(transition => normalizeActionName(transition.action))
+          .filter(Boolean),
+      )
+
+      node.actions.forEach(action => {
+        const actionName = normalizeActionName(action.name)
+        const actionType = normalizeActionType(action.type)
+        if (!actionName || actionType !== 'create') return
+        if (transitionActionNames.has(actionName)) return
+
+        const actionNodeId = buildActionNodeId(node.id, actionName)
+        connectedActionNodeIds.add(actionNodeId)
+
+        elements.push({
+          group: 'edges',
+          data: {
+            id: `${node.id}:initial-create:${actionName}:${initialStateName}`,
+            source: actionNodeId,
+            target: initialStateId,
+            relation: 'triggers',
+            action_name: actionName,
+            inferred_initial_transition: true,
+          },
+        })
+      })
+    }
   })
 
   // Edges
@@ -932,6 +1173,7 @@ export function buildCytoscapeElements(nodes, edges) {
     const routed = routeEdgeEndpoints(
       edge,
       nodeById,
+      resourceActionIndex,
       externalEdgeMap,
       stepScopedNodeTypes,
       collapsedBehaviorPairs,
@@ -940,6 +1182,8 @@ export function buildCytoscapeElements(nodes, edges) {
     const source = routed.source
     const target = routed.target
     if (source === target) return
+    if (actionNodeIds.has(source)) connectedActionNodeIds.add(source)
+    if (actionNodeIds.has(target)) connectedActionNodeIds.add(target)
 
     const id = `${source}->${target}:${edge.relation}`
     const existing = edgeElementsById.get(id)
@@ -957,6 +1201,23 @@ export function buildCytoscapeElements(nodes, edges) {
 
   elements.push(...edgeElementsById.values())
 
+  actionNodeIds.forEach(actionNodeId => {
+    if (connectedActionNodeIds.has(actionNodeId)) return
+
+    const resourceId = resourceIdFromActionNodeId(actionNodeId)
+    if (!resourceId) return
+
+    elements.push({
+      group: 'edges',
+      data: {
+        id: `${resourceId}:declares:${actionNodeId}`,
+        source: resourceId,
+        target: actionNodeId,
+        relation: 'declares_action',
+      },
+    })
+  })
+
   return elements
 }
 
@@ -966,6 +1227,7 @@ function buildCollapsedBehaviorPairs(edges, nodeById, stepScopedNodeTypes, behav
 
   edges.forEach(edge => {
     if (!behavioralRelations.has(edge.relation)) return
+    if (normalizeActionName(edge.action_name)) return
 
     const owner = getStepScopedOwner(edge, nodeById, stepScopedNodeTypes)
     if (!owner) return
@@ -999,6 +1261,7 @@ function buildCollapsedBehaviorPairs(edges, nodeById, stepScopedNodeTypes, behav
 function routeEdgeEndpoints(
   edge,
   nodeById,
+  resourceActionIndex,
   externalEdgeMap,
   stepScopedNodeTypes,
   collapsedBehaviorPairs,
@@ -1007,10 +1270,19 @@ function routeEdgeEndpoints(
   let source = externalEdgeMap[edge.from] || edge.from
   let target = externalEdgeMap[edge.to] || edge.to
   const stepIndex = typeof edge.step_index === 'number' ? edge.step_index : null
+  const actionName = normalizeActionName(edge.action_name)
+  const sourceActionId = resolveResourceActionEndpoint(edge.from, actionName, resourceActionIndex)
+  const targetActionId = resolveResourceActionEndpoint(edge.to, actionName, resourceActionIndex)
+  const actionRouted = Boolean(sourceActionId || targetActionId)
+
+  if (sourceActionId) source = sourceActionId
+  if (targetActionId) target = targetActionId
+
   const owner = getStepScopedOwner(edge, nodeById, stepScopedNodeTypes)
   const collapseToParent =
     owner &&
     stepIndex !== null &&
+    !actionRouted &&
     behavioralRelations.has(edge.relation) &&
     collapsedBehaviorPairs.has(pairKey(owner.ownerId, owner.peerId))
 
@@ -1022,7 +1294,7 @@ function routeEdgeEndpoints(
     }
   }
 
-  return { source, target, collapseToParent }
+  return { source, target, collapseToParent, actionRouted }
 }
 
 function getStepScopedOwner(edge, nodeById, stepScopedNodeTypes) {
@@ -1055,14 +1327,20 @@ function buildRoutedEdgeData(id, source, target, edge, routed) {
     data.collapsed_to_parent = true
   }
 
+  if (routed.actionRouted) {
+    data.routed_to_action = true
+  }
+
   return data
 }
 
 function mergeRoutedEdge(existingData, edge, routed) {
   const stepIndex = typeof edge.step_index === 'number' ? edge.step_index : null
   const stepName = typeof edge.step_name === 'string' ? edge.step_name : null
+  const actionName = normalizeActionName(edge.action_name)
   const stepIndices = new Set(existingData.collapsed_step_indices || [])
   const stepNames = new Set(existingData.collapsed_step_names || [])
+  const actionNames = new Set(existingData.collapsed_action_names || [])
 
   if (typeof existingData.step_index === 'number') {
     stepIndices.add(existingData.step_index)
@@ -1080,12 +1358,24 @@ function mergeRoutedEdge(existingData, edge, routed) {
     stepNames.add(stepName)
   }
 
+  if (typeof existingData.action_name === 'string') {
+    actionNames.add(existingData.action_name)
+  }
+
+  if (actionName) {
+    actionNames.add(actionName)
+  }
+
   if (stepIndices.size > 0) {
     existingData.collapsed_step_indices = [...stepIndices].sort((a, b) => a - b)
   }
 
   if (stepNames.size > 0) {
     existingData.collapsed_step_names = [...stepNames].sort()
+  }
+
+  if (actionNames.size > 0) {
+    existingData.collapsed_action_names = [...actionNames].sort()
   }
 
   if (stepIndices.size > 1) {
@@ -1096,6 +1386,40 @@ function mergeRoutedEdge(existingData, edge, routed) {
   if (routed.collapseToParent) {
     existingData.collapsed_to_parent = true
   }
+
+  if (routed.actionRouted) {
+    existingData.routed_to_action = true
+  }
+}
+
+function buildResourceActionIndex(nodes) {
+  const actionIndex = new Map()
+
+  nodes
+    .filter(node => node.type === 'resource')
+    .forEach(resource => {
+      const actionNames = new Set()
+
+      ;(resource.actions || []).forEach(action => {
+        const actionName = normalizeActionName(action.name)
+        if (actionName) {
+          actionNames.add(actionName)
+        }
+      })
+
+      actionIndex.set(resource.id, actionNames)
+    })
+
+  return actionIndex
+}
+
+function resolveResourceActionEndpoint(resourceId, actionName, actionIndex) {
+  if (!resourceId || !actionName) return null
+
+  const actionNames = actionIndex.get(resourceId)
+  if (!actionNames || !actionNames.has(actionName)) return null
+
+  return buildActionNodeId(resourceId, actionName)
 }
 
 function addSetValue(map, key, value) {
@@ -1108,11 +1432,33 @@ function pairKey(ownerId, peerId) {
   return `${ownerId}\u0000${peerId}`
 }
 
+function pickInitialStateName(stateMachine) {
+  if (!stateMachine) return null
+  const explicit = normalizeStateName(stateMachine.default_initial_state)
+  if (explicit) return explicit
+
+  const initialStates = Array.isArray(stateMachine.initial_states) ? stateMachine.initial_states : []
+  return normalizeStateName(initialStates[0])
+}
+
+function resourceIdFromActionNodeId(actionNodeId) {
+  if (!actionNodeId || typeof actionNodeId !== 'string') return null
+  const marker = ':action:'
+  const idx = actionNodeId.indexOf(marker)
+  if (idx <= 0) return null
+  return actionNodeId.slice(0, idx)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Canvas overlays
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildCanvasOverlays(container, nodes) {
+  const existing = document.getElementById('foundry-canvas-overlays')
+  if (existing) existing.remove()
+
+  if ((nodes || []).length > 220) return
+
   const overlays = document.createElement('div')
   overlays.id = 'foundry-canvas-overlays'
   overlays.style.cssText = `

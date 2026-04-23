@@ -1,4 +1,4 @@
-import { mountFoundryGraph, covColor, domainCoverage, searchMatch } from '../foundry_graph'
+import { mountFoundryGraph, covColor, searchMatch } from '../foundry_graph'
 
 const SELECTORS = {
   sidebarList: 'fm-sidebar-list',
@@ -81,7 +81,7 @@ export const SystemMapHook = {
         // Below threshold: data already available
         if (contextJson.nodes.length <= CONFIG.nodeThreshold) {
           this.pushEvent('node_selected', { id: nodeId, data: nodeData })
-          this._handleNodeSelected(nodeId)
+          this._handleNodeSelected(nodeId, nodeData)
         } else {
           // Above threshold: fetch from server
           this.pushEvent('fetch_node_detail', { id: nodeId })
@@ -89,11 +89,15 @@ export const SystemMapHook = {
       }
 
       // Wire hover handler
-      this.graph.onNodeHover = (nodeId) => {
-        this._showHoverCard(nodeId)
+      this.graph.onNodeHover = (nodeId, nodeData) => {
+        this._queueHoverCard(nodeId, nodeData)
       }
 
       this.graph.onNodeUnhover = () => {
+        if (this._hoverRaf) {
+          cancelAnimationFrame(this._hoverRaf)
+          this._hoverRaf = null
+        }
         this._hideHoverCard()
       }
 
@@ -119,7 +123,7 @@ export const SystemMapHook = {
       // Node detail from server (>200 modules)
       this.handleEvent('node_detail', (payload) => {
         if (payload.node) {
-          this._handleNodeSelected(payload.node.id)
+          this._handleNodeSelected(payload.node.id, payload.node)
         }
       })
     } catch (error) {
@@ -315,7 +319,7 @@ export const SystemMapHook = {
     }
   },
 
-  _handleNodeSelected(nodeId) {
+  _handleNodeSelected(nodeId, nodeData = null) {
     // Check if this is a step node (format: "ReactorId:step:N")
     const stepMatch = nodeId.match(/^(.+):step:(\d+)$/)
     if (stepMatch) {
@@ -325,6 +329,35 @@ export const SystemMapHook = {
       const step = parentNode.steps?.[parseInt(stepIdx)]
       if (!step) return
       this._openDrawerWithStep(step, parentNode)
+      return
+    }
+
+    const actionMatch = nodeId.match(/^(.+):action:(.+)$/)
+    if (actionMatch) {
+      const [, parentId, rawActionName] = actionMatch
+      const parentNode = this.normalizedNodes.get(parentId)
+      if (!parentNode) return
+
+      const actionName = this._normalizeActionName(rawActionName)
+      const action =
+        (parentNode.actions || []).find(a => this._normalizeActionName(a.name) === actionName) || {
+          name: actionName,
+          type: nodeData?.action_type || 'unknown',
+          description: nodeData?.description,
+        }
+
+      this._openDrawerWithAction(action, parentNode)
+      return
+    }
+
+    const stateMatch = nodeId.match(/^(.+):state:(.+)$/)
+    if (stateMatch) {
+      const [, parentId, rawStateName] = stateMatch
+      const parentNode = this.normalizedNodes.get(parentId)
+      if (!parentNode) return
+
+      const stateName = rawStateName
+      this._openDrawerWithState(stateName, parentNode)
       return
     }
 
@@ -367,6 +400,142 @@ export const SystemMapHook = {
     }
     this._renderStepDetailsPanel(step, parentNode)
     this._switchTab('details')
+  },
+
+  _openDrawerWithAction(action, parentNode) {
+    const drawer = document.getElementById(SELECTORS.drawer)
+    if (drawer) {
+      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
+      setTimeout(() => { drawer.style.width = `${savedWidth}px` }, 0)
+    }
+    this._renderActionDetailsPanel(action, parentNode)
+    this._switchTab('details')
+  },
+
+  _openDrawerWithState(stateName, parentNode) {
+    const drawer = document.getElementById(SELECTORS.drawer)
+    if (drawer) {
+      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
+      setTimeout(() => { drawer.style.width = `${savedWidth}px` }, 0)
+    }
+    this._renderStateDetailsPanel(stateName, parentNode)
+    this._switchTab('details')
+  },
+
+  _renderActionDetailsPanel(action, parentNode) {
+    const panel = document.getElementById(SELECTORS.panelDetails)
+    if (!panel) return
+
+    const actionType = this._normalizeActionName(action.type || 'unknown')
+    const normalizedActionName = this._normalizeActionName(action.name)
+    const transitions = (parentNode.sm?.transitions || []).filter(
+      t => this._normalizeActionName(t.action) === normalizedActionName,
+    )
+    const sourceSnippet = this._buildActionSourceSnippet(action, parentNode, transitions)
+
+    let html = `
+      <div class="space-y-3">
+        <div>
+          <p class="text-xs text-base-content/50">Action on</p>
+          <h4 class="font-mono text-xs text-base-content/70">${this._esc(parentNode.id)}</h4>
+        </div>
+        <div>
+          <h3 class="font-mono font-semibold text-sm">${this._esc(action.name || 'unnamed action')}</h3>
+          <span class="text-xs text-base-content/60">${this._esc(actionType)}</span>
+        </div>
+    `
+
+    if (action.description) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Description</div>
+          <p class="text-xs">${this._esc(action.description)}</p>
+        </div>
+      `
+    }
+
+    if (transitions.length > 0) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">State transitions (${transitions.length})</div>
+          <div class="space-y-1">
+            ${transitions.map(t => `<span class="text-xs font-mono">${this._esc(t.from)} → ${this._esc(t.to)}</span>`).join('')}
+          </div>
+        </div>
+      `
+    }
+
+    if (sourceSnippet) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Source</div>
+          <pre style="font-size:10px;overflow-x:auto;background:var(--b2);padding:8px;border-radius:4px;white-space:pre-wrap;word-break:break-word">${this._esc(sourceSnippet)}</pre>
+        </div>
+      `
+    }
+
+    html += `</div>`
+    panel.innerHTML = html
+  },
+
+  _renderStateDetailsPanel(stateName, parentNode) {
+    const panel = document.getElementById(SELECTORS.panelDetails)
+    if (!panel) return
+
+    const normalizedStateName = this._normalizeStateName(stateName)
+    const stateTransitions = parentNode.sm?.transitions || []
+    const outgoing = stateTransitions.filter(
+      t => this._normalizeStateName(t.from) === normalizedStateName,
+    )
+    const incoming = stateTransitions.filter(
+      t => this._normalizeStateName(t.to) === normalizedStateName,
+    )
+    const sourceSnippet = this._buildStateSourceSnippet(normalizedStateName, stateTransitions)
+
+    let html = `
+      <div class="space-y-3">
+        <div>
+          <p class="text-xs text-base-content/50">State in</p>
+          <h4 class="font-mono text-xs text-base-content/70">${this._esc(parentNode.id)}</h4>
+        </div>
+        <div>
+          <h3 class="font-mono font-semibold text-sm">${this._esc(normalizedStateName || stateName)}</h3>
+        </div>
+    `
+
+    if (outgoing.length > 0) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Outgoing transitions (${outgoing.length})</div>
+          <div class="space-y-1">
+            ${outgoing.map(t => `<span class="text-xs font-mono">${this._esc(t.action || 'transition')} → ${this._esc(t.to)}</span>`).join('')}
+          </div>
+        </div>
+      `
+    }
+
+    if (incoming.length > 0) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Incoming transitions (${incoming.length})</div>
+          <div class="space-y-1">
+            ${incoming.map(t => `<span class="text-xs font-mono">${this._esc(t.from)} → ${this._esc(t.action || 'transition')}</span>`).join('')}
+          </div>
+        </div>
+      `
+    }
+
+    if (sourceSnippet) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Source</div>
+          <pre style="font-size:10px;overflow-x:auto;background:var(--b2);padding:8px;border-radius:4px;white-space:pre-wrap;word-break:break-word">${this._esc(sourceSnippet)}</pre>
+        </div>
+      `
+    }
+
+    html += `</div>`
+    panel.innerHTML = html
   },
 
   _renderStepDetailsPanel(step, parentNode) {
@@ -461,8 +630,7 @@ export const SystemMapHook = {
     const panel = document.getElementById(SELECTORS.panelDetails)
     if (!panel) return
 
-    const coverage = domainCoverage([n])
-    const cov = coverage.length > 0 ? coverage[0].avg : n.cov
+    const cov = typeof n.cov === 'number' ? n.cov : 0
 
     let html = `
       <div class="space-y-3">
@@ -511,6 +679,17 @@ export const SystemMapHook = {
           <div class="text-xs text-base-content/50 mb-1">States (${n.sm.states.length})</div>
           <div class="space-y-1">
             ${n.sm.states.map(s => `<span class="text-xs font-mono">${this._esc(s.name)}</span>`).join('')}
+          </div>
+        </div>
+      `
+    }
+
+    if (n.actions && n.actions.length > 0) {
+      html += `
+        <div>
+          <div class="text-xs text-base-content/50 mb-1">Actions (${n.actions.length})</div>
+          <div class="space-y-1">
+            ${n.actions.map(a => `<span class="text-xs font-mono">${this._esc(a.name)} <span class="text-base-content/50">(${this._esc(a.type || 'unknown')})</span></span>`).join('')}
           </div>
         </div>
       `
@@ -618,24 +797,23 @@ export const SystemMapHook = {
     `
   },
 
-  _showHoverCard(nodeId) {
-    const node = this.normalizedNodes.get(nodeId)
+  _showHoverCard(nodeId, nodeData = null) {
+    const node = this.normalizedNodes.get(nodeId) || nodeData
     if (!node) return
 
     const card = document.getElementById(SELECTORS.hoverCard)
     if (!card) return
 
-    const coverage = domainCoverage([node])
-    const cov = coverage.length > 0 ? coverage[0].avg : node.cov
+    const cov = typeof node.cov === 'number' ? node.cov : 0
 
     card.innerHTML = `
-      <div class="font-semibold text-xs mb-1">${this._esc(node.id)}</div>
+      <div class="font-semibold text-xs mb-1">${this._esc(node.id || nodeId)}</div>
       <div class="text-xs text-base-content/60">${this._esc(node.domain || 'N/A')}</div>
       <div class="flex items-center gap-2 mt-1">
         <div class="w-8 bg-base-300 rounded h-1">
-          <div style="width: ${cov}%; height: 100%; background: ${covColor(cov)}"></div>
+          <div style="width: ${cov || 0}%; height: 100%; background: ${covColor(cov || 0)}"></div>
         </div>
-        <span class="text-xs">${cov}%</span>
+        <span class="text-xs">${cov || 0}%</span>
       </div>
       ${node.reqs && node.reqs.length > 0 ? `
         <div class="text-xs text-warning mt-1">⚠ ${node.reqs.length} compliance req${node.reqs.length > 1 ? 's' : ''}</div>
@@ -656,6 +834,72 @@ export const SystemMapHook = {
     }
   },
 
+  _queueHoverCard(nodeId, nodeData = null) {
+    this._pendingHover = { nodeId, nodeData }
+
+    if (this._hoverRaf) return
+
+    this._hoverRaf = requestAnimationFrame(() => {
+      const pending = this._pendingHover
+      this._pendingHover = null
+      this._hoverRaf = null
+      if (pending) {
+        this._showHoverCard(pending.nodeId, pending.nodeData)
+      }
+    })
+  },
+
+  _buildActionSourceSnippet(action, parentNode, transitions) {
+    if (action.source_snippet) return action.source_snippet
+    if (transitions.length > 0) {
+      return transitions
+        .map(t => this._transitionSourceLine(t))
+        .join('\n')
+    }
+
+    const actionType = this._normalizeActionName(action.type || 'action')
+    const actionName = this._normalizeActionName(action.name || 'unnamed')
+    const moduleName = parentNode?.id || 'Resource'
+
+    return [
+      `# ${moduleName}`,
+      'actions do',
+      `  ${actionType} :${actionName} do`,
+      '    # ...',
+      '  end',
+      'end',
+    ].join('\n')
+  },
+
+  _buildStateSourceSnippet(stateName, transitions) {
+    const lines = transitions
+      .filter(t => {
+        const from = this._normalizeStateName(t.from)
+        const to = this._normalizeStateName(t.to)
+        return from === stateName || to === stateName
+      })
+      .map(t => this._transitionSourceLine(t))
+
+    return lines.length > 0 ? lines.join('\n') : null
+  },
+
+  _transitionSourceLine(transition) {
+    const action = this._normalizeActionName(transition.action) || 'transition'
+    const from = this._normalizeStateName(transition.from) || 'unknown'
+    const to = this._normalizeStateName(transition.to) || 'unknown'
+    return `transition(:${action}, from: :${from}, to: :${to})`
+  },
+
+  _normalizeStateName(name) {
+    if (name == null) return null
+    return String(name).replace(/^:/, '')
+  },
+
+  _normalizeActionName(name) {
+    if (name == null) return null
+    return String(name).replace(/^:/, '')
+  },
+
   _esc(s) {
     const div = document.createElement('div')
     div.textContent = s
@@ -672,6 +916,12 @@ export const SystemMapHook = {
   },
 
   destroyed() {
+    if (this._hoverRaf) {
+      cancelAnimationFrame(this._hoverRaf)
+      this._hoverRaf = null
+    }
+    this._pendingHover = null
+
     // Remove event listeners
     const list = document.getElementById(SELECTORS.sidebarList)
     if (list && this._sidebarClickHandler) {
