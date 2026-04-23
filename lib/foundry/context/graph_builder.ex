@@ -86,11 +86,15 @@ defmodule Foundry.Context.GraphBuilder do
 
         step_name = Map.get(step, :name) || Map.get(step, "name")
         step_index = Map.get(step, :step_index) || Map.get(step, "step_index")
+        target_action = infer_step_action_name(step)
 
-        Enum.map(read_targets, &new_step_edge(reactor.module, &1, :reads, step_name, step_index)) ++
+        Enum.map(
+          read_targets,
+          &new_step_edge(reactor.module, &1, :reads, step_name, step_index, target_action)
+        ) ++
           Enum.map(
             write_targets,
-            &new_step_edge(reactor.module, &1, :writes, step_name, step_index)
+            &new_step_edge(reactor.module, &1, :writes, step_name, step_index, target_action)
           )
       end)
     end)
@@ -147,10 +151,28 @@ defmodule Foundry.Context.GraphBuilder do
         |> to_existing_module()
         |> auth_token_resources()
 
-      (explicit_tokens ++ implicit_auth_targets(user_node, explicit_tokens))
-      |> Enum.uniq()
-      |> Enum.filter(&MapSet.member?(known_modules, &1))
-      |> Enum.map(&EdgeEntry.new(user_node.module, &1, :authenticates))
+      auth_action_names = auth_action_names(user_node.actions)
+
+      token_targets =
+        (explicit_tokens ++ implicit_auth_targets(user_node, explicit_tokens))
+        |> Enum.uniq()
+        |> Enum.filter(&MapSet.member?(known_modules, &1))
+
+      case auth_action_names do
+        [] ->
+          Enum.map(token_targets, &EdgeEntry.new(user_node.module, &1, :authenticates))
+
+        action_names ->
+          for token_target <- token_targets,
+              action_name <- action_names do
+            %EdgeEntry{
+              from: user_node.module,
+              to: token_target,
+              relation: :authenticates,
+              action_name: action_name
+            }
+          end
+      end
     end)
   end
 
@@ -206,14 +228,25 @@ defmodule Foundry.Context.GraphBuilder do
             module
             |> Ash.Policy.Info.policies()
             |> Enum.flat_map(fn policy ->
-              policy.policies
-              |> Enum.map(&Map.get(&1, :check_module))
-              |> Enum.reject(&is_nil/1)
+              check_modules = policy_check_modules(policy, node_map)
+              scoped_actions = policy_action_names(policy, resource.actions)
+
+              case scoped_actions do
+                [] ->
+                  Enum.map(check_modules, &EdgeEntry.new(&1, resource.module, :guards))
+
+                action_names ->
+                  for check_module <- check_modules,
+                      action_name <- action_names do
+                    %EdgeEntry{
+                      from: check_module,
+                      to: resource.module,
+                      relation: :guards,
+                      action_name: action_name
+                    }
+                  end
+              end
             end)
-            |> Enum.map(&format_module/1)
-            |> Enum.filter(&Map.has_key?(node_map, &1))
-            |> Enum.uniq()
-            |> Enum.map(&EdgeEntry.new(&1, resource.module, :guards))
           else
             []
           end
@@ -356,6 +389,21 @@ defmodule Foundry.Context.GraphBuilder do
 
   defp implicit_auth_targets(_user_node, _explicit_tokens), do: []
 
+  defp auth_action_names(actions) do
+    actions
+    |> List.wrap()
+    |> Enum.map(fn action ->
+      action
+      |> Map.get(:name)
+      |> normalize_action_name()
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.filter(fn action_name ->
+      String.contains?(action_name, ["sign_in", "register", "password_reset", "magic_link"])
+    end)
+    |> Enum.uniq()
+  end
+
   defp user_app_prefix(user_node) do
     user_node.module
     |> String.split(".")
@@ -369,15 +417,119 @@ defmodule Foundry.Context.GraphBuilder do
     end
   end
 
-  defp new_step_edge(from, to, relation, step_name, step_index) do
+  defp new_step_edge(from, to, relation, step_name, step_index, action_name) do
     %EdgeEntry{
       from: from,
       to: to,
       relation: relation,
       step_name: step_name && to_string(step_name),
-      step_index: step_index
+      step_index: step_index,
+      action_name: action_name
     }
   end
+
+  defp infer_step_action_name(step) do
+    explicit_action =
+      step
+      |> Map.get(:target_action)
+      |> Kernel.||(Map.get(step, "target_action"))
+      |> normalize_action_name()
+
+    explicit_action ||
+      step
+      |> Map.get(:source_snippet)
+      |> Kernel.||(Map.get(step, "source_snippet"))
+      |> infer_action_name_from_source()
+  end
+
+  defp infer_action_name_from_source(nil), do: nil
+
+  defp infer_action_name_from_source(source_snippet) when is_binary(source_snippet) do
+    [
+      ~r/Ash\.(?:create|update|destroy|get|read|read_one)!?\(\s*[^,\n]+,\s*:(\w+)/m,
+      ~r/Ash\.(?:create|update|destroy|get|read|read_one)!?\([^)]*action:\s*:(\w+)/m,
+      ~r/Ash\.Changeset\.for_(?:create|update|destroy)\(\s*[^,\n]+,\s*:(\w+)/m,
+      ~r/Ash\.Changeset\.for_(?:create|update|destroy)\([^)]*action:\s*:(\w+)/m
+    ]
+    |> Enum.find_value(fn pattern ->
+      case Regex.run(pattern, source_snippet) do
+        [_, action_name] -> action_name
+        _ -> nil
+      end
+    end)
+  end
+
+  defp infer_action_name_from_source(_source_snippet), do: nil
+
+  defp policy_check_modules(policy, node_map) do
+    policy
+    |> Map.get(:policies, [])
+    |> Enum.map(&Map.get(&1, :check_module))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&format_module/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.filter(&Map.has_key?(node_map, &1))
+    |> Enum.uniq()
+  end
+
+  defp policy_action_names(policy, resource_actions) do
+    policy
+    |> Map.get(:condition, [])
+    |> Enum.flat_map(&policy_condition_action_names(&1, resource_actions))
+    |> Enum.uniq()
+  end
+
+  defp policy_condition_action_names({Ash.Policy.Check.Action, opts}, _resource_actions) do
+    opts
+    |> Keyword.get(:action, [])
+    |> List.wrap()
+    |> Enum.map(&normalize_action_name/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp policy_condition_action_names({Ash.Policy.Check.ActionType, opts}, resource_actions) do
+    action_types =
+      opts
+      |> Keyword.get(:type, [])
+      |> List.wrap()
+      |> Enum.map(&normalize_action_type/1)
+      |> Enum.reject(&is_nil/1)
+
+    resource_actions
+    |> List.wrap()
+    |> Enum.filter(fn action ->
+      action_type =
+        action
+        |> Map.get(:type)
+        |> normalize_action_type()
+
+      action_type in action_types
+    end)
+    |> Enum.map(fn action ->
+      action
+      |> Map.get(:name)
+      |> normalize_action_name()
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp policy_condition_action_names(_condition, _resource_actions), do: []
+
+  defp normalize_action_name(nil), do: nil
+
+  defp normalize_action_name(action_name) when is_atom(action_name),
+    do: Atom.to_string(action_name)
+
+  defp normalize_action_name(action_name) when is_binary(action_name), do: action_name
+  defp normalize_action_name(_action_name), do: nil
+
+  defp normalize_action_type(nil), do: nil
+
+  defp normalize_action_type(action_type) when is_atom(action_type),
+    do: Atom.to_string(action_type)
+
+  defp normalize_action_type(action_type) when is_binary(action_type), do: action_type
+  defp normalize_action_type(_action_type), do: nil
 
   defp ash_resource_module?(module) do
     Ash.Resource.Info.resource?(module)

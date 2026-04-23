@@ -216,6 +216,29 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert is_integer(sync_games["step_index"])
     end
 
+    test "action-scoped edges expose action_name when available", %{context: ctx} do
+      debit_wallet =
+        find_edge(
+          ctx,
+          "IgamingRef.Finance.WithdrawalTransfer",
+          "IgamingRef.Finance.Wallet",
+          "writes",
+          "debit_wallet"
+        )
+
+      assert debit_wallet["action_name"] == "debit"
+
+      policy_guard =
+        find_edge(
+          ctx,
+          "IgamingRef.Policies.AuthenticatedSubject",
+          "IgamingRef.Finance.Wallet",
+          "guards"
+        )
+
+      assert policy_guard["action_name"] in ["debit", "read", "close"]
+    end
+
     test "source-derived rule links are present in project context edges", %{context: ctx} do
       assert find_edge(
                ctx,
