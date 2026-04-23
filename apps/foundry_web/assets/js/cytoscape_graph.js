@@ -230,6 +230,60 @@ export class CytoscapeGraph {
     }
   }
 
+  expandNode(id) {
+    const parent = this.cy.getElementById(id)
+    if (parent.length === 0) return
+
+    const childSelector = `[parent="${id}"]`
+    const children = this.cy.elements(childSelector)
+
+    if (children.length === 0) return
+
+    parent.expand()
+    this._runLocalLayout(id)
+  }
+
+  collapseNode(id) {
+    const parent = this.cy.getElementById(id)
+    if (parent.length === 0) return
+
+    const childSelector = `[parent="${id}"]`
+    const children = this.cy.elements(childSelector)
+
+    if (children.length === 0) return
+
+    children.forEach(ele => {
+      ele.remove()
+    })
+
+    parent.collapse()
+  }
+
+  expandOnly(id) {
+    if (this._expandedNodeId && this._expandedNodeId !== id) {
+      this.collapseNode(this._expandedNodeId)
+    }
+    this.expandNode(id)
+    this._expandedNodeId = id
+  }
+
+  _runLocalLayout(parentId) {
+    const parent = this.cy.getElementById(parentId)
+    if (parent.length === 0) return
+
+    const children = parent.children()
+    if (children.length === 0) return
+
+    const layout = children.layout({
+      name: 'grid',
+      fit: false,
+      boundingBox: parent.boundingBox(),
+      avoidOverlap: true,
+      cols: Math.ceil(Math.sqrt(children.length)),
+    })
+    layout.run()
+  }
+
   _runLayout() {
     if (this.currentLayout) this.currentLayout.stop()
     this.currentLayout = this.cy.layout(this.layoutOptions)

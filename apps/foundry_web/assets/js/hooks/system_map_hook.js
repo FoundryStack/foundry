@@ -1,40 +1,13 @@
-import { mountFoundryGraph, covColor, domainCoverage, searchMatch } from '../foundry_graph'
-
-const SELECTORS = {
-  sidebarList: 'fm-sidebar-list',
-  search: 'fm-search',
-  drawer: 'fm-drawer',
-  drawerClose: 'fm-drawer-close',
-  hoverCard: 'fm-hover-card',
-  panelDetails: 'fm-panel-details',
-  panelFlow: 'fm-panel-flow',
-  panelActions: 'fm-panel-actions',
-  panelAuth: 'fm-panel-auth'
-}
-
-const CONFIG = {
-  drawerWidth: '380px',
-  nodeThreshold: 200,
-  searchDebounce: 150
-}
-
-const STORAGE_KEYS = {
-  sidebarWidth: 'foundry:sidebar-width',
-  drawerWidth: 'foundry:drawer-width'
-}
-
-const STORAGE_DEFAULTS = {
-  sidebarWidth: 240,
-  drawerWidth: 380
-}
+import { mountFoundryGraph, covColor, domainCoverage } from '../foundry_graph'
+import { UI_CONFIG } from '../graph/config'
+import { DrawerManager } from './system_map/drawer_manager'
+import { SidebarManager } from './system_map/sidebar_manager'
 
 export const SystemMapHook = {
   mounted() {
     try {
-      // Restore saved sizes before initializing
       this._restoreSizes()
 
-      // Ensure DOM is ready before accessing styles
       if (document.readyState !== 'complete' && document.readyState !== 'interactive') {
         setTimeout(() => this._initGraph(), 0)
         return
@@ -46,17 +19,15 @@ export const SystemMapHook = {
   },
 
   _restoreSizes() {
-    // Restore sidebar width
     const layout = document.querySelector('.foundry-map-layout')
     if (layout) {
-      const sidebarWidth = parseInt(localStorage.getItem('foundry:sidebar-width')) || 240
+      const sidebarWidth = parseInt(localStorage.getItem(UI_CONFIG.storageKeys.sidebarWidth)) || UI_CONFIG.sidebarWidth.default
       layout.style.gridTemplateColumns = `${sidebarWidth}px 1fr`
     }
 
-    // Restore drawer width if it was open
     const drawer = document.getElementById('fm-drawer')
     if (drawer && drawer.offsetWidth > 0) {
-      const drawerWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
+      const drawerWidth = parseInt(localStorage.getItem(UI_CONFIG.storageKeys.drawerWidth)) || UI_CONFIG.drawerWidth.default
       drawer.style.width = `${drawerWidth}px`
     }
   },
@@ -66,24 +37,16 @@ export const SystemMapHook = {
       const contextJson = JSON.parse(this.el.dataset.context)
       this.graph = mountFoundryGraph(this.el, contextJson)
 
-      // Cache for normalized nodes
-      this.normalizedNodes = this.graph.normalizedNodes
-
-      // Initialize UI
-      this._initSidebar()
-      this._initDrawer()
-      this._initSearch()
-      this._initSidebarResize()
-      this._initDrawerResize()
+      // Initialize managers
+      this.drawer = new DrawerManager(this.graph.normalizedNodes)
+      this.sidebar = new SidebarManager(this.graph, this.graph.normalizedNodes)
 
       // Wire node click handler
       this.graph.onNodeClick = (nodeId, nodeData) => {
-        // Below threshold: data already available
-        if (contextJson.nodes.length <= CONFIG.nodeThreshold) {
+        if (contextJson.nodes.length <= UI_CONFIG.nodeThreshold) {
           this.pushEvent('node_selected', { id: nodeId, data: nodeData })
           this._handleNodeSelected(nodeId, nodeData)
         } else {
-          // Above threshold: fetch from server
           this.pushEvent('fetch_node_detail', { id: nodeId })
         }
       }
@@ -116,7 +79,6 @@ export const SystemMapHook = {
         }
       })
 
-      // Node detail from server (>200 modules)
       this.handleEvent('node_detail', (payload) => {
         if (payload.node) {
           this._handleNodeSelected(payload.node.id, payload.node)
@@ -127,649 +89,18 @@ export const SystemMapHook = {
     }
   },
 
-  _initSidebar() {
-    const list = document.getElementById(SELECTORS.sidebarList)
-    if (!list) return
-
-    // Sidebar item click delegation
-    this._sidebarClickHandler = (evt) => {
-      const item = evt.target.closest('[data-node-id]')
-      if (item) {
-        const nodeId = item.dataset.nodeId
-        this.graph.selectNode(nodeId)
-        this.graph.centerOn(nodeId)
-        this._handleNodeSelected(nodeId)
-      }
-    }
-    list.addEventListener('click', this._sidebarClickHandler)
-  },
-
-  _initSidebarResize() {
-    const layout = document.querySelector('.foundry-map-layout')
-    const sidebar = document.getElementById('foundry-sidebar')
-    const handle = document.getElementById('sidebar-resize-handle')
-
-    if (!sidebar || !handle || !layout) return
-
-    // Load saved width
-    const savedWidth = localStorage.getItem('foundry:sidebar-width')
-    const initialWidth = savedWidth ? parseInt(savedWidth, 10) : 240
-    layout.style.gridTemplateColumns = `${initialWidth}px 1fr`
-
-    let isResizing = false
-    let startX = 0
-    let startWidth = 0
-
-    const onMouseDown = (e) => {
-      isResizing = true
-      startX = e.clientX
-      startWidth = sidebar.offsetWidth
-      document.addEventListener('mousemove', onMouseMove)
-      document.addEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'col-resize'
-      e.preventDefault()
-    }
-
-    const onMouseMove = (e) => {
-      if (!isResizing) return
-      const delta = e.clientX - startX
-      const newWidth = Math.max(180, Math.min(600, startWidth + delta))
-      layout.style.gridTemplateColumns = `${newWidth}px 1fr`
-    }
-
-    const onMouseUp = () => {
-      isResizing = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-      // Save width
-      localStorage.setItem('foundry:sidebar-width', sidebar.offsetWidth)
-    }
-
-    handle.addEventListener('mousedown', onMouseDown)
-
-    // Store cleanup handlers
-    this._sidebarResizeHandlers = { onMouseDown, onMouseMove, onMouseUp, handle }
-  },
-
-  _initDrawerResize() {
-    const drawer = document.getElementById('fm-drawer')
-    const handle = document.getElementById('drawer-resize-handle')
-
-    if (!drawer || !handle) return
-
-    let isResizing = false
-    let startX = 0
-    let startWidth = 0
-
-    const onMouseDown = (e) => {
-      isResizing = true
-      startX = e.clientX
-      startWidth = drawer.offsetWidth
-      document.addEventListener('mousemove', onMouseMove)
-      document.addEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'col-resize'
-      e.preventDefault()
-    }
-
-    const onMouseMove = (e) => {
-      if (!isResizing) return
-      const delta = startX - e.clientX
-      const newWidth = Math.max(240, Math.min(800, startWidth + delta))
-      drawer.style.width = newWidth + 'px'
-    }
-
-    const onMouseUp = () => {
-      isResizing = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-      // Save width
-      localStorage.setItem('foundry:drawer-width', drawer.offsetWidth)
-    }
-
-    handle.addEventListener('mousedown', onMouseDown)
-
-    // Store cleanup handlers
-    this._drawerResizeHandlers = { onMouseDown, onMouseMove, onMouseUp, handle }
-  },
-
-  _initSearch() {
-    const searchInput = document.getElementById(SELECTORS.search)
-    if (!searchInput) return
-
-    this._searchInputHandler = (evt) => {
-      clearTimeout(this._searchTimeout)
-      const query = evt.target.value.trim()
-
-      this._searchTimeout = setTimeout(() => {
-        const list = document.getElementById(SELECTORS.sidebarList)
-        if (!list) return
-
-        const items = list.querySelectorAll('[data-node-id]')
-        items.forEach(item => {
-          const nodeId = item.dataset.nodeId
-          const node = this.normalizedNodes.get(nodeId)
-
-          if (!node) {
-            item.style.display = 'none'
-            return
-          }
-
-          const match = searchMatch(node, query)
-          item.style.display = match ? '' : 'none'
-        })
-      }, CONFIG.searchDebounce)
-    }
-    searchInput.addEventListener('input', this._searchInputHandler)
-  },
-
-  _initDrawer() {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    const closeBtn = document.getElementById(SELECTORS.drawerClose)
-
-    if (!closeBtn) return
-
-    this._closeHandler = () => {
-      drawer.style.width = '0'
-    }
-    closeBtn.addEventListener('click', this._closeHandler)
-
-    // Tab click delegation
-    const tabs = drawer.querySelectorAll('[data-tab]')
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        this._switchTab(tab.dataset.tab)
-      })
-    })
-  },
-
-  _switchTab(tabName) {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    const tabs = drawer.querySelectorAll('[data-tab]')
-    const panels = {
-      details: document.getElementById(SELECTORS.panelDetails),
-      flow: document.getElementById(SELECTORS.panelFlow),
-      actions: document.getElementById(SELECTORS.panelActions),
-      auth: document.getElementById(SELECTORS.panelAuth)
-    }
-
-    // Deactivate all tabs
-    tabs.forEach(t => t.classList.remove('tab-active'))
-
-    // Activate clicked tab
-    drawer.querySelector(`[data-tab="${tabName}"]`).classList.add('tab-active')
-
-    // Hide all panels
-    Object.values(panels).forEach(p => {
-      if (p) p.classList.add('hidden')
-    })
-
-    // Show active panel
-    if (panels[tabName]) {
-      panels[tabName].classList.remove('hidden')
-    }
-  },
-
   _handleNodeSelected(nodeId, nodeData = null) {
-    // Check if this is a step node (format: "ReactorId:step:N")
-    const stepMatch = nodeId.match(/^(.+):step:(\d+)$/)
-    if (stepMatch) {
-      const [, parentId, stepIdx] = stepMatch
-      const parentNode = this.normalizedNodes.get(parentId)
-      if (!parentNode) return
-      const step = parentNode.steps?.[parseInt(stepIdx)]
-      if (!step) return
-      this._openDrawerWithStep(step, parentNode)
-      return
-    }
-
-    const actionMatch = nodeId.match(/^(.+):action:(.+)$/)
-    if (actionMatch) {
-      const [, parentId, rawActionName] = actionMatch
-      const parentNode = this.normalizedNodes.get(parentId)
-      if (!parentNode) return
-
-      const actionName = this._normalizeActionName(rawActionName)
-      const action =
-        (parentNode.actions || []).find(a => this._normalizeActionName(a.name) === actionName) || {
-          name: actionName,
-          type: nodeData?.action_type || 'unknown',
-          description: nodeData?.description,
-        }
-
-      this._openDrawerWithAction(action, parentNode)
-      return
-    }
-
-    const stateMatch = nodeId.match(/^(.+):state:(.+)$/)
-    if (stateMatch) {
-      const [, parentId, rawStateName] = stateMatch
-      const parentNode = this.normalizedNodes.get(parentId)
-      if (!parentNode) return
-
-      const stateName = rawStateName
-      this._openDrawerWithState(stateName, parentNode)
-      return
-    }
-
-    const node = this.normalizedNodes.get(nodeId)
-    if (!node) return
-
-    // Highlight sidebar item
-    const list = document.getElementById(SELECTORS.sidebarList)
-    if (list) {
-      list.querySelectorAll('[data-node-id]').forEach(item => {
-        item.classList.toggle('active', item.dataset.nodeId === nodeId)
-      })
-    }
-
-    // Open drawer with saved width
-    const drawer = document.getElementById(SELECTORS.drawer)
-    if (drawer) {
-      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
-      // Use setTimeout to allow transition to apply properly
-      setTimeout(() => {
-        drawer.style.width = `${savedWidth}px`
-      }, 0)
-    }
-
-    // Render panels
-    this._renderDetailsPanel(node)
-    this._renderFlowPanel(node)
-    this._renderActionsPanel(node)
-    this._renderAuthPanel(node)
-
-    // Switch to Details tab
-    this._switchTab('details')
-  },
-
-  _openDrawerWithStep(step, parentNode) {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    if (drawer) {
-      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
-      setTimeout(() => { drawer.style.width = `${savedWidth}px` }, 0)
-    }
-    this._renderStepDetailsPanel(step, parentNode)
-    this._switchTab('details')
-  },
-
-  _openDrawerWithAction(action, parentNode) {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    if (drawer) {
-      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
-      setTimeout(() => { drawer.style.width = `${savedWidth}px` }, 0)
-    }
-    this._renderActionDetailsPanel(action, parentNode)
-    this._switchTab('details')
-  },
-
-  _openDrawerWithState(stateName, parentNode) {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    if (drawer) {
-      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
-      setTimeout(() => { drawer.style.width = `${savedWidth}px` }, 0)
-    }
-    this._renderStateDetailsPanel(stateName, parentNode)
-    this._switchTab('details')
-  },
-
-  _renderActionDetailsPanel(action, parentNode) {
-    const panel = document.getElementById(SELECTORS.panelDetails)
-    if (!panel) return
-
-    const actionType = this._normalizeActionName(action.type || 'unknown')
-    const transitions = (parentNode.sm?.transitions || []).filter(t => this._normalizeActionName(t.action) === this._normalizeActionName(action.name))
-
-    let html = `
-      <div class="space-y-3">
-        <div>
-          <p class="text-xs text-base-content/50">Action on</p>
-          <h4 class="font-mono text-xs text-base-content/70">${this._esc(parentNode.id)}</h4>
-        </div>
-        <div>
-          <h3 class="font-mono font-semibold text-sm">${this._esc(action.name || 'unnamed action')}</h3>
-          <span class="text-xs text-base-content/60">${this._esc(actionType)}</span>
-        </div>
-    `
-
-    if (action.description) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Description</div>
-          <p class="text-xs">${this._esc(action.description)}</p>
-        </div>
-      `
-    }
-
-    if (transitions.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">State transitions (${transitions.length})</div>
-          <div class="space-y-1">
-            ${transitions.map(t => `<span class="text-xs font-mono">${this._esc(t.from)} → ${this._esc(t.to)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    html += `</div>`
-    panel.innerHTML = html
-  },
-
-  _renderStateDetailsPanel(stateName, parentNode) {
-    const panel = document.getElementById(SELECTORS.panelDetails)
-    if (!panel) return
-
-    const outgoing = (parentNode.sm?.transitions || []).filter(t => t.from === stateName)
-    const incoming = (parentNode.sm?.transitions || []).filter(t => t.to === stateName)
-
-    let html = `
-      <div class="space-y-3">
-        <div>
-          <p class="text-xs text-base-content/50">State in</p>
-          <h4 class="font-mono text-xs text-base-content/70">${this._esc(parentNode.id)}</h4>
-        </div>
-        <div>
-          <h3 class="font-mono font-semibold text-sm">${this._esc(stateName)}</h3>
-        </div>
-    `
-
-    if (outgoing.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Outgoing transitions (${outgoing.length})</div>
-          <div class="space-y-1">
-            ${outgoing.map(t => `<span class="text-xs font-mono">${this._esc(t.action || 'transition')} → ${this._esc(t.to)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    if (incoming.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Incoming transitions (${incoming.length})</div>
-          <div class="space-y-1">
-            ${incoming.map(t => `<span class="text-xs font-mono">${this._esc(t.from)} → ${this._esc(t.action || 'transition')}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    html += `</div>`
-    panel.innerHTML = html
-  },
-
-  _renderStepDetailsPanel(step, parentNode) {
-    const panel = document.getElementById(SELECTORS.panelDetails)
-    if (!panel) return
-
-    const kindColors = { read: 'var(--fg-bl)', write: 'var(--fg-gn)', map: 'var(--fg-pu)', custom: 'var(--fg-t2)' }
-    const kindColor = kindColors[step.step_kind] || 'var(--fg-t2)'
-
-    let html = `
-      <div class="space-y-3">
-        <div>
-          <p class="text-xs text-base-content/50">Step in</p>
-          <h4 class="font-mono text-xs text-base-content/70">${this._esc(parentNode.id)}</h4>
-        </div>
-        <div>
-          <h3 class="font-mono font-semibold text-sm">${this._esc(step.name || 'unnamed')}</h3>
-          <span style="color:${kindColor};font-size:10px">${this._esc(step.step_kind || step.type || 'custom')}</span>
-        </div>
-    `
-
-    if (step.description) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Description</div>
-          <p class="text-xs">${this._esc(step.description)}</p>
-        </div>
-      `
-    }
-
-    if (step.target_resource) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Resource</div>
-          <p class="text-xs font-mono">${this._esc(step.target_resource)}</p>
-        </div>
-      `
-    }
-
-    if (step.target_action) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Action</div>
-          <p class="text-xs font-mono">${this._esc(step.target_action)}</p>
-        </div>
-      `
-    }
-
-    if (step.wait_for?.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Wait for</div>
-          <div class="flex flex-wrap gap-1">
-            ${step.wait_for.map(w => `<span class="text-xs font-mono bg-base-200 px-1 rounded">${this._esc(w)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    if (step.source_snippet) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Source</div>
-          <pre style="font-size:10px;overflow-x:auto;background:var(--b2);padding:8px;border-radius:4px;white-space:pre-wrap;word-break:break-word">${this._esc(step.source_snippet)}</pre>
-        </div>
-      `
-    }
-
-    if (step.side_effects && step.side_effects.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Side Effects (${step.side_effects.length})</div>
-          <div class="space-y-1">
-            ${step.side_effects.map(se => {
-              const badge = se.declared
-                ? `<span class="badge badge-xs badge-success">${this._esc(se.type)}</span>`
-                : `<span class="badge badge-xs badge-error">⚠ ${this._esc(se.type)}</span>`
-              const detail = se.name ? `: ${this._esc(se.name)}` : ''
-              const idempotent = se.idempotent != null ? ` · ${se.idempotent ? 'idempotent' : 'non-idempotent'}` : ''
-              return `<div class="flex items-center gap-1">${badge}<span class="text-xs text-base-content/70">${detail}${idempotent}</span></div>`
-            }).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    html += `</div>`
-    panel.innerHTML = html
-  },
-
-  _renderDetailsPanel(n) {
-    const panel = document.getElementById(SELECTORS.panelDetails)
-    if (!panel) return
-
-    const coverage = domainCoverage([n])
-    const cov = coverage.length > 0 ? coverage[0].avg : n.cov
-
-    let html = `
-      <div class="space-y-3">
-        <div>
-          <h3 class="font-mono font-semibold text-sm">${this._esc(n.id)}</h3>
-          <p class="text-xs text-base-content/60">${this._esc(n.type || 'unknown')}</p>
-        </div>
-
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Coverage</div>
-          <div class="flex items-center gap-2">
-            <div class="flex-1 bg-base-300 rounded h-2 overflow-hidden">
-              <div style="width: ${cov}%; height: 100%; background: ${covColor(cov)}"></div>
-            </div>
-            <span class="text-xs font-semibold">${cov}%</span>
-          </div>
-        </div>
-
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Domain</div>
-          <p class="text-sm">${this._esc(n.domain || 'N/A')}</p>
-        </div>
-
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Description</div>
-          <p class="text-xs">${this._esc(n.description || 'No description')}</p>
-        </div>
-    `
-
-    // Compliance requirements
-    if (n.reqs && n.reqs.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Compliance (${n.reqs.length})</div>
-          <div class="space-y-1">
-            ${n.reqs.map(r => `<span class="text-xs">${this._esc(r)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    // FSM states
-    if (n.sm && n.sm.states && n.sm.states.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">States (${n.sm.states.length})</div>
-          <div class="space-y-1">
-            ${n.sm.states.map(s => `<span class="text-xs font-mono">${this._esc(s.name)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    if (n.actions && n.actions.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Actions (${n.actions.length})</div>
-          <div class="space-y-1">
-            ${n.actions.map(a => `<span class="text-xs font-mono">${this._esc(a.name)} <span class="text-base-content/50">(${this._esc(a.type || 'unknown')})</span></span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    // Steps
-    if (n.steps && n.steps.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Steps (${n.steps.length})</div>
-          <div class="space-y-1">
-            ${n.steps.map(s => `<span class="text-xs font-mono">${this._esc(s.name || 'unnamed')}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    // Routes
-    if (n.routes && n.routes.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Routes (${n.routes.length})</div>
-        </div>
-      `
-    }
-
-    // Flags
-    if (n.flags && n.flags.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Feature Flags (${n.flags.length})</div>
-          <div class="space-y-1">
-            ${n.flags.map(f => `<span class="text-xs font-mono">${this._esc(f)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    // Runbook
-    if (n.runbook) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Runbook</div>
-          <p class="text-xs truncate">${this._esc(n.runbook)}</p>
-        </div>
-      `
-    }
-
-    html += `</div>`
-    panel.innerHTML = html
-  },
-
-  _renderFlowPanel(n) {
-    const panel = document.getElementById(SELECTORS.panelFlow)
-    if (!panel) return
-
-    // Scenarios not yet tracked
-    panel.innerHTML = `
-      <div class="text-center py-6">
-        <p class="text-xs text-base-content/50">No scenarios defined yet</p>
-      </div>
-    `
-  },
-
-  _renderActionsPanel(n) {
-    const panel = document.getElementById(SELECTORS.panelActions)
-    if (!panel) return
-
-    const shortcuts = {
-      resource: ['Edit schema', 'View migrations', 'Test coverage'],
-      transfer: ['View pipeline', 'Trace execution', 'Replay'],
-      reactor: ['Run simulation', 'Debug', 'Test coverage'],
-      rule: ['View conditions', 'Test rule', 'Audit log'],
-      liveview: ['Open in browser', 'View live metrics', 'Test coverage']
-    }
-
-    const actions = shortcuts[n.type] || ['Open details', 'View in codebase']
-
-    const html = `
-      <div class="space-y-2">
-        ${actions.map(a => `
-          <button class="btn btn-sm btn-ghost w-full justify-start text-xs">
-            ${this._esc(a)}
-          </button>
-        `).join('')}
-      </div>
-    `
-    panel.innerHTML = html
-  },
-
-  _renderAuthPanel(node) {
-    const panel = document.getElementById(SELECTORS.panelAuth)
-    if (!panel) return
-
-    // Only show for resource nodes
-    if (node.type !== 'resource') {
-      panel.innerHTML = '<p class="text-xs text-base-content/50">N/A for this node type</p>'
-      return
-    }
-
-    panel.innerHTML = `
-      <div class="text-xs text-base-content/50">
-        <p>Authorization data not yet available</p>
-      </div>
-    `
+    this.sidebar.highlightNode(nodeId)
+    this.drawer.open()
+    this.drawer.renderForNode(nodeId, nodeData)
+    this.graph.expandOnly(nodeId)
   },
 
   _showHoverCard(nodeId, nodeData = null) {
-    const node = this.normalizedNodes.get(nodeId) || nodeData
+    const node = this.graph.normalizedNodes.get(nodeId) || nodeData
     if (!node) return
 
-    const card = document.getElementById(SELECTORS.hoverCard)
+    const card = document.getElementById('fm-hover-card')
     if (!card) return
 
     const coverage = (typeof node.cov === 'number') ? domainCoverage([node]) : []
@@ -790,22 +121,15 @@ export const SystemMapHook = {
     `
 
     card.classList.remove('hidden')
-
-    // Position near cursor (done by CSS in real implementation)
     card.style.left = '8px'
     card.style.top = '8px'
   },
 
   _hideHoverCard() {
-    const card = document.getElementById(SELECTORS.hoverCard)
+    const card = document.getElementById('fm-hover-card')
     if (card) {
       card.classList.add('hidden')
     }
-  },
-
-  _normalizeActionName(name) {
-    if (name == null) return null
-    return String(name).replace(/^:/, '')
   },
 
   _esc(s) {
@@ -815,7 +139,6 @@ export const SystemMapHook = {
   },
 
   updated() {
-    // Restore sizes after LiveView updates the DOM
     try {
       this._restoreSizes()
     } catch (error) {
@@ -824,37 +147,14 @@ export const SystemMapHook = {
   },
 
   destroyed() {
-    // Remove event listeners
-    const list = document.getElementById(SELECTORS.sidebarList)
-    if (list && this._sidebarClickHandler) {
-      list.removeEventListener('click', this._sidebarClickHandler)
+    if (this.drawer) {
+      this.drawer.destroy()
+      this.drawer = null
     }
 
-    const searchInput = document.getElementById(SELECTORS.search)
-    if (searchInput && this._searchInputHandler) {
-      searchInput.removeEventListener('input', this._searchInputHandler)
-      clearTimeout(this._searchTimeout)
-    }
-
-    const closeBtn = document.getElementById(SELECTORS.drawerClose)
-    if (closeBtn && this._closeHandler) {
-      closeBtn.removeEventListener('click', this._closeHandler)
-    }
-
-    // Remove sidebar resize handlers
-    if (this._sidebarResizeHandlers) {
-      const { onMouseDown, handle } = this._sidebarResizeHandlers
-      if (handle && onMouseDown) {
-        handle.removeEventListener('mousedown', onMouseDown)
-      }
-    }
-
-    // Remove drawer resize handlers
-    if (this._drawerResizeHandlers) {
-      const { onMouseDown, handle } = this._drawerResizeHandlers
-      if (handle && onMouseDown) {
-        handle.removeEventListener('mousedown', onMouseDown)
-      }
+    if (this.sidebar) {
+      this.sidebar.destroy()
+      this.sidebar = null
     }
 
     if (this.graph) {
