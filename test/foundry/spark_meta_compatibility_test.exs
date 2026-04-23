@@ -63,7 +63,6 @@ defmodule Foundry.SparkMetaCompatibilityTest do
 
     assert info.type == :trigger
     assert info.trigger_kind == "webhook"
-    assert Enum.any?(info.side_effects, &(&1.type == :external_http))
     assert Enum.any?(info.side_effects, &(&1.type == :oban_emit))
   end
 

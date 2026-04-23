@@ -64,7 +64,6 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list = edge_list ++ derive_rule_edges(nodes, node_map)
     edge_list = edge_list ++ derive_policy_edges(nodes, node_map)
     edge_list = edge_list ++ derive_provider_edges(nodes, node_map)
-    edge_list = edge_list ++ derive_blueprint_edges(nodes, node_map)
     edge_list = edge_list ++ derive_trigger_edges(nodes, node_map)
 
     Enum.uniq(edge_list)
@@ -105,6 +104,7 @@ defmodule Foundry.Context.GraphBuilder do
       cond do
         job.performs ->
           [EdgeEntry.new(job.module, job.performs, :async)]
+
         true ->
           reactor = find_reactor_in_domain(node_map, job.domain)
           if reactor, do: [EdgeEntry.new(job.module, reactor.module, :async)], else: []
@@ -164,9 +164,32 @@ defmodule Foundry.Context.GraphBuilder do
     end)
   end
 
-  # Reactor/Transfer rule usage is rendered from step.rules_applied in the frontend.
-  # The backend deliberately avoids emitting duplicate reactor-level guard edges.
-  defp derive_rule_edges(_nodes, _node_map), do: []
+  # Rule usage edges are derived from normalized step.rules_applied facts.
+  # This keeps graph links source-truthful (rule evaluate/check calls), not prose-driven.
+  defp derive_rule_edges(nodes, node_map) do
+    nodes
+    |> Enum.filter(&(&1.type in ["reactor", "transfer"]))
+    |> Enum.flat_map(fn reactor ->
+      reactor.steps
+      |> Enum.flat_map(fn step ->
+        rule_refs = Map.get(step, :rules_applied) || Map.get(step, "rules_applied") || []
+        step_name = Map.get(step, :name) || Map.get(step, "name")
+        step_index = Map.get(step, :step_index) || Map.get(step, "step_index")
+
+        rule_refs
+        |> Enum.filter(&(Map.has_key?(node_map, &1) and node_map[&1].type == "rule"))
+        |> Enum.map(fn rule_module ->
+          %EdgeEntry{
+            from: rule_module,
+            to: reactor.module,
+            relation: :guards,
+            step_name: step_name && to_string(step_name),
+            step_index: step_index
+          }
+        end)
+      end)
+    end)
+  end
 
   defp derive_policy_edges(nodes, node_map) do
     nodes
@@ -198,20 +221,6 @@ defmodule Foundry.Context.GraphBuilder do
     end)
   end
 
-  # Blueprint edges: detect which reactors/transfers a blueprint configures
-  # Parse "Used by:" entries from blueprint description
-  defp derive_blueprint_edges(nodes, node_map) do
-    nodes
-    |> Enum.filter(&(&1.type == "blueprint"))
-    |> Enum.flat_map(fn blueprint ->
-      used_by_targets = parse_used_by_from_description(blueprint.description)
-
-      used_by_targets
-      |> Enum.filter(&Map.has_key?(node_map, &1))
-      |> Enum.map(&EdgeEntry.new(blueprint.module, &1, :configures))
-    end)
-  end
-
   defp derive_trigger_edges(nodes, node_map) do
     nodes
     |> Enum.filter(&(&1.type == "trigger"))
@@ -233,21 +242,6 @@ defmodule Foundry.Context.GraphBuilder do
         end
       end)
     end)
-  end
-
-  # Parse "Used by: Module.A, Module.B" from blueprint description
-  # Matches pattern: "Used by: " followed by comma/newline-separated modules
-  defp parse_used_by_from_description(text) when is_nil(text), do: []
-  defp parse_used_by_from_description(text) do
-    case Regex.run(~r/Used by:\s*(.*?)(?:\n\n|\z)/s, text) do
-      [_, list] ->
-        list
-        |> String.split(~r/[,\n]/)
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == ""))
-      _ ->
-        []
-    end
   end
 
   defp fallback_targets(step, expected_kind) do
@@ -357,7 +351,9 @@ defmodule Foundry.Context.GraphBuilder do
     _ -> []
   end
 
-  defp implicit_auth_targets(user_node, []), do: ["#{user_app_prefix(user_node)}.#{user_node.domain}.Token"]
+  defp implicit_auth_targets(user_node, []),
+    do: ["#{user_app_prefix(user_node)}.#{user_node.domain}.Token"]
+
   defp implicit_auth_targets(_user_node, _explicit_tokens), do: []
 
   defp user_app_prefix(user_node) do
@@ -471,41 +467,43 @@ defmodule Foundry.Context.GraphBuilder do
     # Oban external node (singleton)
     oban_node =
       if length(oban_edges) > 0 do
-        [%NodeEntry{
-          module: "external:oban_queue",
-          id: "external:oban_queue",
-          type: "external",
-          domain: "Infrastructure",
-          description: "Oban background job queue",
-          app: nil,
-          sensitive: false,
-          attributes: [],
-          actions: [],
-          rules: [],
-          compliance: [],
-          adrs: [],
-          runbook: nil,
-          test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
-          data_layer: nil,
-          pending_migrations: false,
-          paper_trail: false,
-          archival: false,
-          state_machine: nil,
-          api_routes: [],
-          telemetry_prefix: nil,
-          money_attributes: [],
-          authentication_subject: false,
-          oban_queues: [],
-          rate_limited: false,
-          feature_flags: [],
-          steps: [],
-          performs: nil,
-          outputs: [],
-          agent_steps: [],
-          relationships: [],
-          auth_strategies: [],
-          last_modified: nil
-        }]
+        [
+          %NodeEntry{
+            module: "external:oban_queue",
+            id: "external:oban_queue",
+            type: "external",
+            domain: "Infrastructure",
+            description: "Oban background job queue",
+            app: nil,
+            sensitive: false,
+            attributes: [],
+            actions: [],
+            rules: [],
+            compliance: [],
+            adrs: [],
+            runbook: nil,
+            test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
+            data_layer: nil,
+            pending_migrations: false,
+            paper_trail: false,
+            archival: false,
+            state_machine: nil,
+            api_routes: [],
+            telemetry_prefix: nil,
+            money_attributes: [],
+            authentication_subject: false,
+            oban_queues: [],
+            rate_limited: false,
+            feature_flags: [],
+            steps: [],
+            performs: nil,
+            outputs: [],
+            agent_steps: [],
+            relationships: [],
+            auth_strategies: [],
+            last_modified: nil
+          }
+        ]
       else
         []
       end
@@ -517,6 +515,7 @@ defmodule Foundry.Context.GraphBuilder do
         # Extract provider name from "external:provider_name"
         provider_name = String.replace(provider_id, "external:", "")
         human_name = humanize_provider_name(provider_name)
+
         %NodeEntry{
           module: provider_id,
           id: provider_id,
@@ -562,7 +561,9 @@ defmodule Foundry.Context.GraphBuilder do
   # Extract provider name from a provider node
   defp extract_provider_name(provider) do
     case Regex.run(~r/@provider_name\s+"([^"]+)"/, provider.description || "") do
-      [_, name] -> String.downcase(name)
+      [_, name] ->
+        String.downcase(name)
+
       _ ->
         # Fallback: use last segment of module name in snake_case
         provider.module
