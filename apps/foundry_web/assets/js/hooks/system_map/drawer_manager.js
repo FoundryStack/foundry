@@ -303,7 +303,7 @@ export class DrawerManager {
             ${step.side_effects.map(se => {
               const badge = se.declared
                 ? `<span class="badge badge-xs badge-success">${this._esc(se.type)}</span>`
-                : `<span class="badge badge-xs badge-error">⚠ ${this._esc(se.type)}</span>`
+                : `<span class="badge badge-xs badge-error">inferred ${this._esc(se.type)}</span>`
               const detail = se.name ? `: ${this._esc(se.name)}` : ''
               const idempotent = se.idempotent != null ? ` · ${se.idempotent ? 'idempotent' : 'non-idempotent'}` : ''
               return `<div class="flex items-center gap-1">${badge}<span class="text-xs text-base-content/70">${detail}${idempotent}</span></div>`

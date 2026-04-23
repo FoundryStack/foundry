@@ -2,21 +2,25 @@ const FONT = 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif'
 
 export const FOUNDRY_LAYOUT_OPTIONS = {
   randomize: false,
-  idealEdgeLength: 62,
-  nodeRepulsion: 4200,
+  idealEdgeLength: 58,
+  nodeRepulsion: 3900,
+  edgeElasticity: 0.2,
   padding: 32,
   gravity: 0.35,
-  gravityCompound: 1.25,
+  gravityCompound: 1.0,
   nestingFactor: 0.18,
 }
 
 export const FOUNDRY_COMPOUND_COMPACTION = {
   enabled: true,
-  selector: 'node.domain-cluster, node.transfer-cluster, node.fsm-cluster',
-  maxChildren: 5,
+  selector: 'node.domain-cluster, node.transfer-cluster, node.resource-cluster, node.fsm-cluster',
+  maxChildren: 12,
   minOccupancy: 0.32,
-  spacing: 44,
+  spacing: 26,
   padding: 30,
+  separateDomains: true,
+  domainGap: 20,
+  domainIterations: 8,
 }
 
 export const STATIC_STYLES = [
@@ -62,7 +66,7 @@ export const STATIC_STYLES = [
   },
   {
     selector: 'node.domain-cluster',
-    style: { 'border-width': 2, 'background-opacity': 0.4, 'padding': 20 },
+    style: { 'border-width': 2, 'background-opacity': 0.4, 'padding': 42 },
   },
   {
     selector: 'node[nodeKind="step"], node[nodeKind="action"], node[nodeKind="state"]',
@@ -78,7 +82,7 @@ export const STATIC_STYLES = [
   },
   {
     selector: 'node[nodeKind="action"]',
-    style: { 'width': 98, 'height': 40 },
+    style: { 'width': 88, 'height': 40 },
   },
   {
     selector: 'node[nodeKind="output"]',
@@ -252,33 +256,9 @@ export function dynamicStyles(c) {
     Game:           'pu',
   }
 
-  const stepColorToken = {
-    read:   'bl',
-    write:  'gn',
-    map:    'pu',
-    custom: 't2',
-  }
-
-  const actionColorToken = {
-    read: 'bl',
-    create: 'gn',
-    update: 'gn',
-    destroy: 'rd',
-  }
-
   const domainSelectors = Object.entries(domainColorToken).map(([domain, token]) => ({
     selector: `node[domain="${domain}"]`,
     style: { 'border-color': c[token] },
-  }))
-
-  const stepKindSelectors = Object.entries(stepColorToken).map(([kind, token]) => ({
-    selector: `node[nodeKind="step"][step_kind="${kind}"]`,
-    style: { 'background-color': c[token], 'border-color': c[token] },
-  }))
-
-  const actionTypeSelectors = Object.entries(actionColorToken).map(([kind, token]) => ({
-    selector: `node[nodeKind="action"][action_type="${kind}"]`,
-    style: { 'background-color': c[token], 'border-color': c[token] },
   }))
 
   return [
@@ -309,9 +289,7 @@ export function dynamicStyles(c) {
       selector: 'node[type="external"]',
       style: { 'background-color': c.s3, 'border-color': c.t3 },
     },
-    { selector: 'node[nodeKind="step"], node[nodeKind="action"]', style: { 'color': c.tx } },
-    ...stepKindSelectors,
-    ...actionTypeSelectors,
+    { selector: 'node[nodeKind="step"], node[nodeKind="action"], node[nodeKind="state"]', style: { 'color': c.tx } },
     { selector: 'node[type="job"]',       style: { 'border-color': c.pu } },
     { selector: 'node[type="trigger"]',   style: { 'border-color': c.ac } },
     { selector: 'node[type="blueprint"]', style: { 'border-color': c.ac } },

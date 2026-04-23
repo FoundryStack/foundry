@@ -1,20 +1,21 @@
 import { CytoscapeGraph } from './cytoscape_graph'
-import { extractColors, getDomainColor, covColor, domainCoverage } from './graph/colors'
+import { extractColors, getActionTypeColor, getDomainColor, getTypeColor, covColor, domainCoverage } from './graph/colors'
 import { buildFoundryStyles, FOUNDRY_LAYOUT_OPTIONS, FOUNDRY_COMPOUND_COMPACTION } from './graph/styles'
 import { normalizeNode } from './graph/normalizers'
 import { buildCytoscapeElements } from './graph/elements'
-import { entityTpl, domainClusterTpl, clusterTpl, stepTpl, actionTpl, stateTpl } from './graph/templates'
+import { entityTpl, clusterTpl, stepTpl, actionTpl, stateTpl } from './graph/templates'
 import { buildCanvasOverlays, searchMatch } from './graph/utils'
 import { HTML_LABEL_CONFIG } from './graph/config'
 
 export {
   covColor,
   domainCoverage,
+  getActionTypeColor,
   getDomainColor,
+  getTypeColor,
   normalizeNode,
   buildCytoscapeElements,
   entityTpl,
-  domainClusterTpl,
   clusterTpl,
   stepTpl,
   actionTpl,
@@ -44,7 +45,7 @@ export function mountFoundryGraph(container, contextJson) {
 
   graph.cy.add(elements)
 
-  const templates = [entityTpl, domainClusterTpl, clusterTpl, stepTpl, actionTpl, stateTpl]
+  const templates = [entityTpl, clusterTpl, stepTpl, actionTpl, stateTpl]
   const htmlLabels = HTML_LABEL_CONFIG.map((cfg, i) => ({ ...cfg, tpl: templates[i] }))
   graph.setupHtmlLabels(htmlLabels)
 

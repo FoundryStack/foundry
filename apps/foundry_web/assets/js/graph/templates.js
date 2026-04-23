@@ -1,4 +1,4 @@
-import { covColor } from './colors'
+import { covColor, getActionTypeColor, getTypeColor, getTypeIcon } from './colors'
 
 export function shortLabel(id) {
   if (!id) return id
@@ -7,48 +7,96 @@ export function shortLabel(id) {
   return parts[parts.length - 1]
 }
 
+function escHtml(value) {
+  const s = value == null ? '' : String(value)
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+const STATUS_ICON_SVG = {
+  covered: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5 6.5 11.5 2.5 7.5"></path></svg>',
+  gap: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="5.8"></circle><path d="M4 12 12 4"></path></svg>',
+  sensitive: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 2 14 13H2L8 2Z"></path><path d="M8 6v3"></path><path d="M8 11.5h.01"></path></svg>',
+  paper_trail: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 3h8"></path><path d="M4 6.5h8"></path><path d="M4 10h6"></path><path d="M4 13h4"></path></svg>',
+  archival: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 5h10v8H3z"></path><path d="M2 3h12v2H2z"></path><path d="M6 8h4"></path></svg>',
+  pm: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 5A5 5 0 0 0 4 4"></path><path d="M12.5 2.5V5h-2.5"></path><path d="M3.5 11A5 5 0 0 0 12 12"></path><path d="M3.5 13.5V11H6"></path></svg>',
+  oban: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.4"></circle><path d="M8 2.5v2"></path><path d="M8 11.5v2"></path><path d="M2.5 8h2"></path><path d="M11.5 8h2"></path><path d="M4.1 4.1l1.4 1.4"></path><path d="M10.5 10.5l1.4 1.4"></path><path d="M11.9 4.1l-1.4 1.4"></path><path d="M5.5 10.5l-1.4 1.4"></path></svg>',
+  schedule: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.5"></circle><path d="M8 4.5V8l2.5 1.5"></path></svg>',
+  rl: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4 2.5 8l4 4"></path><path d="M3 8h10.5"></path></svg>',
+  fsm: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 2.5 13.5 8 8 13.5 2.5 8 8 2.5Z"></path><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"></circle></svg>',
+  runbook: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3.5 3h6.5a2 2 0 0 1 2 2v8H5.5a2 2 0 0 0-2 2V3Z"></path><path d="M5.5 6h4"></path><path d="M5.5 9h3"></path></svg>',
+}
+
+function statusIcon(key, title) {
+  const icon = STATUS_ICON_SVG[key]
+  if (!icon) return ''
+  return `<span data-indicator="${key}" title="${escHtml(title)}">${icon}</span>`
+}
+
 export function buildIndicators(n) {
   const indicators = []
 
   if (n.cov >= 80) {
-    indicators.push(`<span data-indicator="covered" title="Test coverage ≥80%">✓</span>`)
+    indicators.push(statusIcon('covered', 'Test coverage >=80%'))
   } else if (n.gap) {
-    indicators.push(`<span data-indicator="gap" title="Compliance gap">⊘</span>`)
+    indicators.push(statusIcon('gap', 'Compliance gap'))
   }
 
   if (n.sensitive) {
-    indicators.push(`<span data-indicator="sensitive" title="Sensitive data">⚠</span>`)
+    indicators.push(statusIcon('sensitive', 'Sensitive data'))
   }
 
   if (n.pt || n.arch) {
-    if (n.pt)   indicators.push(`<span data-indicator="paper_trail" title="Paper Trail">≣</span>`)
-    if (n.arch) indicators.push(`<span data-indicator="archival" title="Archival">⊟</span>`)
+    if (n.pt)   indicators.push(statusIcon('paper_trail', 'Paper Trail'))
+    if (n.arch) indicators.push(statusIcon('archival', 'Archival'))
   }
 
   if (n.pending_migrations) {
-    indicators.push(`<span data-indicator="pm" title="Pending migrations">↻</span>`)
+    indicators.push(statusIcon('pm', 'Pending migrations'))
   }
 
   if ((n.oban_queues || []).length > 0) {
-    indicators.push(`<span data-indicator="oban" title="Oban queues">⚙</span>`)
+    indicators.push(statusIcon('oban', 'Oban queues'))
   }
   if (n.schedule) {
-    indicators.push(`<span data-indicator="schedule" title="Schedule: ${n.schedule}">⏱</span>`)
+    indicators.push(statusIcon('schedule', `Schedule: ${n.schedule}`))
   }
 
   if (n.rl) {
-    indicators.push(`<span data-indicator="rl" title="Rate limited">⬅</span>`)
+    indicators.push(statusIcon('rl', 'Rate limited'))
   }
 
   if (n.sm?.states) {
-    indicators.push(`<span data-indicator="fsm" title="State machine">◊</span>`)
+    indicators.push(statusIcon('fsm', 'State machine'))
   }
 
   if (n.runbook) {
-    indicators.push(`<span data-indicator="runbook" title="Runbook">📖</span>`)
+    indicators.push(statusIcon('runbook', 'Runbook'))
   }
 
+  if (indicators.length === 0) return ''
   return `<div class="status-icons">${indicators.join('')}</div>`
+}
+
+function compactChildTpl(data, opts = {}) {
+  const type = opts.type || data.type || data.nodeKind
+  const label = data.name || data.label || data.action_name || data.id
+  const color = opts.typeColor || data.typeColor || getTypeColor(type)
+  const icon = opts.icon || getTypeIcon(type)
+
+  return `
+    <div class="cy-node-html cy-node-sm">
+      ${buildIndicators(data)}
+      <div class="title-row">
+        <span class="type-icon" style="color:${escHtml(color)}">${escHtml(icon)}</span>
+        <span class="title" style="color:${escHtml(color)}">${escHtml(label)}</span>
+      </div>
+    </div>
+  `
 }
 
 export function entityTpl(data) {
@@ -63,7 +111,7 @@ export function entityTpl(data) {
   }
 
   const jobAnnotation = n.type === 'job' && (n.oban_queues?.length > 0 || n.schedule)
-    ? `<div style="font-size:9px;color:var(--fg-pu);margin-top:1px">⚙ ${n.oban_queues?.[0] || 'default'}${n.schedule ? ' · ' + n.schedule : ''}</div>`
+    ? `<div class="node-subline">${STATUS_ICON_SVG.oban} ${escHtml(n.oban_queues?.[0] || 'default')}${n.schedule ? ' · ' + escHtml(n.schedule) : ''}</div>`
     : ''
 
   const triggerAnnotation = n.type === 'trigger' && (n.routes?.length > 0)
@@ -97,31 +145,23 @@ export function entityTpl(data) {
 }
 
 export function domainClusterTpl(data) {
-  return `
-    <div class="cy-node-html cy-domain-cluster">
-      <span class="domain-cluster-label" style="color:${data.typeColor}">${data.label}</span>
-    </div>
-  `
+  return clusterTpl({ ...data, type: data.type || 'cluster' })
 }
 
 export function clusterTpl(data) {
   const n = data
-  if (data.nodeKind === 'domain-cluster' || data.classes?.includes('domain-cluster')) return domainClusterTpl(data)
 
-  const icons = { transfer: '⇄', reactor: '◈', job: '⚙', blueprint: '◇' }
-  const icon = icons[n.type] || (n.sm ? '◊' : '◈')
+  const icon = getTypeIcon(n.type || 'cluster')
+  const color = n.typeColor || getTypeColor(n.type || 'cluster')
+  const name = n.name || n.label || shortLabel(n.id)
   const cov = n.cov ?? 0
 
   return `
-    <div class="cy-node-html cy-node-boundary" style="margin-left: 12px; margin-top: 12px">
+    <div class="cy-node-html cy-node-boundary">
       ${buildIndicators(n)}
-      <div class="domain-row">
-        <span class="domain-dot" style="background: ${covColor(cov)}"></span>
-        <span style="color: var(--fg-t2)">${n.domain || ''}</span>
-      </div>
       <div class="title-row">
-        <span class="type-icon">${icon}</span>
-        <span class="title">${shortLabel(n.id)}</span>
+        <span class="type-icon" style="color:${escHtml(color)}">${escHtml(icon)}</span>
+        <span class="title" style="color:${escHtml(color)}">${escHtml(name)}</span>
       </div>
       ${cov > 0 ? `<div class="req-badges"><div style="width:${cov}%; height:3px; background:${covColor(cov)}; border-radius:1px"></div></div>` : ''}
     </div>
@@ -133,44 +173,26 @@ export function boundaryTpl(data) {
 }
 
 export function stepTpl(data) {
-  const icons = { read: '📖', write: '✏', map: '◈', custom: '⚙' }
-  const icon = icons[data.step_kind] || '⚙'
-  const ses = data.side_effects || []
-  const seBadges = ses.map(se => {
-    const color = se.declared ? 'var(--fg-gn)' : 'var(--fg-rd)'
-    const prefix = se.declared ? '' : '⚠ '
-    return `<span style="display:inline-block;font-size:7px;padding:1px 3px;border-radius:2px;background:${color};color:var(--fg-base);margin:1px">${prefix}${se.type}</span>`
-  }).join('')
-  return `
-    <div class="cy-node-html cy-step-node" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 4px">
-      <span>${icon}</span><br>
-      <span style="color:var(--fg-tx)">${data.label || data.id}</span>
-      ${ses.length > 0 ? `<div style="margin-top:2px">${seBadges}</div>` : ''}
-    </div>
-  `
+  const isAgent = data.type === 'agent' || data.step_kind === 'agent'
+  return compactChildTpl(data, {
+    type: isAgent ? 'agent' : 'step',
+    typeColor: isAgent ? getTypeColor('agent') : getTypeColor('step'),
+    icon: isAgent ? getTypeIcon('agent') : getTypeIcon('step'),
+  })
 }
 
 export function actionTpl(data) {
-  const icons = {
-    read: '📖',
-    create: '✚',
-    update: '✏',
-    destroy: '🗑',
-  }
-  const icon = icons[data.action_type] || '⚙'
-  return `
-    <div class="cy-node-html cy-action-node" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 4px">
-      <span>${icon}</span><br>
-      <span style="color:var(--fg-tx)">${data.label || data.action_name || data.id}</span>
-    </div>
-  `
+  return compactChildTpl(data, {
+    type: 'action',
+    typeColor: getActionTypeColor(data.action_type),
+    icon: getTypeIcon('action'),
+  })
 }
 
 export function stateTpl(data) {
-  return `
-    <div class="cy-node-html cy-state-node" style="text-align:center;font-size:9px;line-height:1.2;padding:2px 4px">
-      <span class="state-dot"></span>
-      <span style="color:var(--fg-tx)">${data.label || data.name || data.id}</span>
-    </div>
-  `
+  return compactChildTpl(data, {
+    type: 'state',
+    typeColor: getTypeColor('state'),
+    icon: getTypeIcon('state'),
+  })
 }

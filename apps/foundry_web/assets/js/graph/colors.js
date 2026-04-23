@@ -40,6 +40,65 @@ export function covColor(c) {
   return 'var(--fg-rd)'
 }
 
+export const TYPE_ICON = {
+  resource: '⬡',
+  transfer: '⇄',
+  rule: '◆',
+  reactor: '◈',
+  job: '↯',
+  liveview: '▣',
+  trigger: '▶',
+  output: '⟐',
+  blueprint: '◇',
+  liveresource: '⊞',
+  provider: '⬚',
+  step: '⇄',
+  state: '○',
+  action: '◆',
+  agent: '⊕',
+  external: '↗',
+  cluster: '◇',
+}
+
+export const TYPE_COLOR = {
+  resource: 'var(--fg-bl)',
+  transfer: 'var(--fg-gn)',
+  rule: 'var(--fg-yw)',
+  reactor: 'var(--fg-pu)',
+  job: 'var(--fg-yw)',
+  liveview: 'var(--fg-bl)',
+  trigger: 'var(--fg-ac)',
+  output: 'var(--fg-t2)',
+  blueprint: 'var(--fg-pu)',
+  liveresource: 'var(--fg-pu)',
+  provider: 'var(--fg-yw)',
+  step: 'var(--fg-gn)',
+  state: 'var(--fg-bl)',
+  action: 'var(--fg-gn)',
+  agent: 'var(--fg-pu)',
+  external: 'var(--fg-t3)',
+  cluster: 'var(--fg-t2)',
+}
+
+const ACTION_TYPE_COLOR = {
+  read: 'var(--fg-bl)',
+  create: 'var(--fg-gn)',
+  update: 'var(--fg-gn)',
+  destroy: 'var(--fg-rd)',
+}
+
+export function getTypeIcon(type) {
+  return TYPE_ICON[type] || TYPE_ICON.resource
+}
+
+export function getTypeColor(type) {
+  return TYPE_COLOR[type] || 'var(--fg-t2)'
+}
+
+export function getActionTypeColor(actionType) {
+  return ACTION_TYPE_COLOR[actionType] || TYPE_COLOR.action
+}
+
 export function domainCoverage(nodes) {
   const byDomain = {}
   nodes.forEach(n => {

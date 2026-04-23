@@ -1,8 +1,27 @@
 import { normalizeActionName, normalizeActionType, buildStateNodeId, buildActionNodeId } from './normalizers'
-import { getDomainColor } from './colors'
+import { getActionTypeColor, getDomainColor, getTypeColor } from './colors'
 import { shortLabel } from './templates'
 
 const STRUCTURAL_RELATIONS = new Set(['references', 'referenced_by'])
+
+function childCoverageData(node) {
+  return {
+    cov: node.cov,
+    gap: node.gap,
+    sensitive: node.sensitive,
+    reqs: node.reqs || [],
+    pt: node.pt,
+    arch: node.arch,
+    dl: node.dl,
+    rl: node.rl,
+    sm: node.sm,
+    runbook: node.runbook,
+    adrs: node.adrs,
+    pending_migrations: node.pending_migrations,
+    oban_queues: node.oban_queues,
+    schedule: node.schedule,
+  }
+}
 
 export function getCompoundNodeIds(nodes) {
   const transfers = nodes.filter(n => n.type === 'transfer' || n.type === 'reactor').map(n => n.id)
@@ -118,7 +137,9 @@ export function buildCytoscapeElements(nodes, edges) {
       data: {
         id: `domain:${domain}`,
         label: domain,
+        name: domain,
         nodeKind: 'cluster',
+        type: 'cluster',
         domain,
         typeColor: getDomainColor(domain),
       },
@@ -144,6 +165,7 @@ export function buildCytoscapeElements(nodes, edges) {
     const classes = [
       node.type === 'transfer' ? 'transfer-cluster' : null,
       node.type === 'reactor' ? 'transfer-cluster' : null,
+      node.type === 'resource' ? 'resource-cluster' : null,
       node.sm ? 'fsm-cluster' : null,
       node.gap ? 'gap' : null,
       node.sensitive ? 'sensitive' : null,
@@ -185,21 +207,25 @@ export function buildCytoscapeElements(nodes, edges) {
     if ((node.type === 'transfer' || node.type === 'reactor') && node.steps) {
       node.steps.forEach((step, idx) => {
         const stepKind = (step.step_kind || '').toString().replace(/^:/, '')
-        const icons = { read: '📖', write: '✏', map: '◈' }
-        const stepLabel = `${icons[stepKind] || '⚙'} ${step.name || `Step ${idx}`}`
+        const isAgent = stepKind === 'agent' || !!step.agent
+        const stepName = step.name || `Step ${idx}`
 
         const sideEffects = step.side_effects || []
         elements.push({
           group: 'nodes',
           data: {
+            ...childCoverageData(node),
             id: `${node.id}:step:${idx}`,
-            label: stepLabel,
+            name: stepName,
+            label: stepName,
             nodeKind: 'step',
             parent: node.id,
             step_kind: stepKind,
             description: step.description || step.name || `Step ${idx}`,
-            type: node.type,
+            type: isAgent ? 'agent' : 'step',
+            parent_type: node.type,
             domain: node.domain,
+            typeColor: isAgent ? getTypeColor('agent') : getTypeColor('step'),
             side_effects: sideEffects,
             has_declared_se: sideEffects.some(se => se.declared) ? 'true' : 'false',
             has_inferred_se: sideEffects.some(se => !se.declared) ? 'true' : 'false',
@@ -231,15 +257,19 @@ export function buildCytoscapeElements(nodes, edges) {
         elements.push({
           group: 'nodes',
           data: {
+            ...childCoverageData(node),
             id: buildActionNodeId(node.id, actionName),
+            name: actionName,
             label: actionName,
             nodeKind: 'action',
             parent: node.id,
             action_name: actionName,
             action_type: actionType,
             description: action.description || `${actionName} action`,
-            type: node.type,
+            type: 'action',
+            parent_type: node.type,
             domain: node.domain,
+            typeColor: getActionTypeColor(actionType),
           },
         })
       })
@@ -250,10 +280,16 @@ export function buildCytoscapeElements(nodes, edges) {
         elements.push({
           group: 'nodes',
           data: {
+            ...childCoverageData(node),
             id: state.id,
+            name: state.name,
             label: state.name,
             nodeKind: 'state',
             parent: node.id,
+            type: 'state',
+            parent_type: node.type,
+            domain: node.domain,
+            typeColor: getTypeColor('state'),
           },
         })
       })

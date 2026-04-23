@@ -32,6 +32,10 @@ const DEFAULT_COMPOUND_COMPACTION = {
   minOccupancy: 0.32,
   spacing: 44,
   padding: 32,
+  separateDomains: false,
+  domainSelector: 'node.domain-cluster',
+  domainGap: 18,
+  domainIterations: 8,
 }
 
 export class CytoscapeGraph {
@@ -263,12 +267,19 @@ export class CytoscapeGraph {
   _runLayout() {
     if (this.currentLayout) this.currentLayout.stop()
     this.currentLayout = this.cy.layout(this.layoutOptions)
-    this.currentLayout.one('layoutstop', () => this._compactSparseCompoundNodes())
+    this.currentLayout.one('layoutstop', () => {
+      const compacted = this._compactSparseCompoundNodes()
+      const separated = this._separateOverlappingDomainClusters()
+
+      if ((compacted || separated) && this.layoutOptions.fit !== false) {
+        this.cy.fit(this.cy.elements(), this.layoutOptions.padding)
+      }
+    })
     this.currentLayout.run()
   }
 
   _compactSparseCompoundNodes() {
-    if (!this.compoundCompaction.enabled) return
+    if (!this.compoundCompaction.enabled) return false
 
     let compacted = false
     const parents = this.cy.nodes(this.compoundCompaction.selector)
@@ -278,7 +289,9 @@ export class CytoscapeGraph {
       const children = parent.children().nodes().sort((a, b) => a.id().localeCompare(b.id()))
 
       if (children.length < 2 || children.length > this.compoundCompaction.maxChildren) return
-      if (this._compoundOccupancy(parent, children) >= this.compoundCompaction.minOccupancy) return
+      const isSparse = this._compoundOccupancy(parent, children) < this.compoundCompaction.minOccupancy
+      const hasOverlap = this._childrenOverlap(children)
+      if (!isSparse && !hasOverlap) return
 
       const boundingBox = this._compactBoundingBox(parent, children)
       if (!boundingBox) return
@@ -297,9 +310,7 @@ export class CytoscapeGraph {
       compacted = true
     })
 
-    if (compacted && this.layoutOptions.fit !== false) {
-      this.cy.fit(this.cy.elements(), this.layoutOptions.padding)
-    }
+    return compacted
   }
 
   _compoundOccupancy(parent, children) {
@@ -314,6 +325,22 @@ export class CytoscapeGraph {
     })
 
     return childArea / parentArea
+  }
+
+  _childrenOverlap(children) {
+    for (let i = 0; i < children.length; i += 1) {
+      const a = children[i].boundingBox({ includeLabels: false, includeOverlays: false })
+
+      for (let j = i + 1; j < children.length; j += 1) {
+        const b = children[j].boundingBox({ includeLabels: false, includeOverlays: false })
+        const overlapX = Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1)
+        const overlapY = Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1)
+
+        if (overlapX > 0 && overlapY > 0) return true
+      }
+    }
+
+    return false
   }
 
   _compactBoundingBox(parent, children) {
@@ -345,6 +372,62 @@ export class CytoscapeGraph {
     }
   }
 
+  _separateOverlappingDomainClusters() {
+    if (!this.compoundCompaction.enabled || !this.compoundCompaction.separateDomains) {
+      return false
+    }
+
+    const domains = this.cy.nodes(this.compoundCompaction.domainSelector)
+      .sort((a, b) => a.id().localeCompare(b.id()))
+
+    if (domains.length < 2) return false
+
+    let separated = false
+    const gap = this.compoundCompaction.domainGap
+    const iterations = this.compoundCompaction.domainIterations
+
+    for (let pass = 0; pass < iterations; pass += 1) {
+      let movedThisPass = false
+
+      for (let i = 0; i < domains.length; i += 1) {
+        for (let j = i + 1; j < domains.length; j += 1) {
+          const a = domains[i]
+          const b = domains[j]
+          const aBox = a.boundingBox({ includeLabels: false, includeOverlays: false })
+          const bBox = b.boundingBox({ includeLabels: false, includeOverlays: false })
+          const overlapX = Math.min(aBox.x2 + gap, bBox.x2 + gap) - Math.max(aBox.x1 - gap, bBox.x1 - gap)
+          const overlapY = Math.min(aBox.y2 + gap, bBox.y2 + gap) - Math.max(aBox.y1 - gap, bBox.y1 - gap)
+
+          if (overlapX <= 0 || overlapY <= 0) continue
+
+          const aCenterX = aBox.x1 + (aBox.w / 2)
+          const aCenterY = aBox.y1 + (aBox.h / 2)
+          const bCenterX = bBox.x1 + (bBox.w / 2)
+          const bCenterY = bBox.y1 + (bBox.h / 2)
+          const moveX = overlapX <= overlapY ? (bCenterX >= aCenterX ? overlapX : -overlapX) : 0
+          const moveY = overlapY < overlapX ? (bCenterY >= aCenterY ? overlapY : -overlapY) : 0
+
+          this._shiftCompoundLeaves(b, moveX, moveY)
+          movedThisPass = true
+          separated = true
+        }
+      }
+
+      if (!movedThisPass) break
+    }
+
+    return separated
+  }
+
+  _shiftCompoundLeaves(parent, dx, dy) {
+    parent.descendants()
+      .filter(node => node.children().length === 0)
+      .positions((node) => {
+        const pos = node.position()
+        return { x: pos.x + dx, y: pos.y + dy }
+      })
+  }
+
   _bindEvents() {
     this.cy.on('tap', 'node', (evt) => {
       const node = evt.target
@@ -354,7 +437,7 @@ export class CytoscapeGraph {
     })
 
     this.cy.on('mouseover', 'node', (evt) => {
-      this.onNodeHover(evt.target.id(), evt.target.data())
+      this.onNodeHover(evt.target.id(), evt.target.data(), evt)
     })
 
     this.cy.on('mouseout', 'node', (evt) => {
