@@ -1,4 +1,4 @@
-import { mountFoundryGraph, covColor, searchMatch } from '../foundry_graph'
+import { mountFoundryGraph, covColor, domainCoverage, searchMatch } from '../foundry_graph'
 
 const SELECTORS = {
   sidebarList: 'fm-sidebar-list',
@@ -90,14 +90,10 @@ export const SystemMapHook = {
 
       // Wire hover handler
       this.graph.onNodeHover = (nodeId, nodeData) => {
-        this._queueHoverCard(nodeId, nodeData)
+        this._showHoverCard(nodeId, nodeData)
       }
 
       this.graph.onNodeUnhover = () => {
-        if (this._hoverRaf) {
-          cancelAnimationFrame(this._hoverRaf)
-          this._hoverRaf = null
-        }
         this._hideHoverCard()
       }
 
@@ -427,11 +423,7 @@ export const SystemMapHook = {
     if (!panel) return
 
     const actionType = this._normalizeActionName(action.type || 'unknown')
-    const normalizedActionName = this._normalizeActionName(action.name)
-    const transitions = (parentNode.sm?.transitions || []).filter(
-      t => this._normalizeActionName(t.action) === normalizedActionName,
-    )
-    const sourceSnippet = this._buildActionSourceSnippet(action, parentNode, transitions)
+    const transitions = (parentNode.sm?.transitions || []).filter(t => this._normalizeActionName(t.action) === this._normalizeActionName(action.name))
 
     let html = `
       <div class="space-y-3">
@@ -465,15 +457,6 @@ export const SystemMapHook = {
       `
     }
 
-    if (sourceSnippet) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Source</div>
-          <pre style="font-size:10px;overflow-x:auto;background:var(--b2);padding:8px;border-radius:4px;white-space:pre-wrap;word-break:break-word">${this._esc(sourceSnippet)}</pre>
-        </div>
-      `
-    }
-
     html += `</div>`
     panel.innerHTML = html
   },
@@ -482,15 +465,8 @@ export const SystemMapHook = {
     const panel = document.getElementById(SELECTORS.panelDetails)
     if (!panel) return
 
-    const normalizedStateName = this._normalizeStateName(stateName)
-    const stateTransitions = parentNode.sm?.transitions || []
-    const outgoing = stateTransitions.filter(
-      t => this._normalizeStateName(t.from) === normalizedStateName,
-    )
-    const incoming = stateTransitions.filter(
-      t => this._normalizeStateName(t.to) === normalizedStateName,
-    )
-    const sourceSnippet = this._buildStateSourceSnippet(normalizedStateName, stateTransitions)
+    const outgoing = (parentNode.sm?.transitions || []).filter(t => t.from === stateName)
+    const incoming = (parentNode.sm?.transitions || []).filter(t => t.to === stateName)
 
     let html = `
       <div class="space-y-3">
@@ -499,7 +475,7 @@ export const SystemMapHook = {
           <h4 class="font-mono text-xs text-base-content/70">${this._esc(parentNode.id)}</h4>
         </div>
         <div>
-          <h3 class="font-mono font-semibold text-sm">${this._esc(normalizedStateName || stateName)}</h3>
+          <h3 class="font-mono font-semibold text-sm">${this._esc(stateName)}</h3>
         </div>
     `
 
@@ -521,15 +497,6 @@ export const SystemMapHook = {
           <div class="space-y-1">
             ${incoming.map(t => `<span class="text-xs font-mono">${this._esc(t.from)} → ${this._esc(t.action || 'transition')}</span>`).join('')}
           </div>
-        </div>
-      `
-    }
-
-    if (sourceSnippet) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Source</div>
-          <pre style="font-size:10px;overflow-x:auto;background:var(--b2);padding:8px;border-radius:4px;white-space:pre-wrap;word-break:break-word">${this._esc(sourceSnippet)}</pre>
         </div>
       `
     }
@@ -630,7 +597,8 @@ export const SystemMapHook = {
     const panel = document.getElementById(SELECTORS.panelDetails)
     if (!panel) return
 
-    const cov = typeof n.cov === 'number' ? n.cov : 0
+    const coverage = domainCoverage([n])
+    const cov = coverage.length > 0 ? coverage[0].avg : n.cov
 
     let html = `
       <div class="space-y-3">
@@ -804,7 +772,8 @@ export const SystemMapHook = {
     const card = document.getElementById(SELECTORS.hoverCard)
     if (!card) return
 
-    const cov = typeof node.cov === 'number' ? node.cov : 0
+    const coverage = (typeof node.cov === 'number') ? domainCoverage([node]) : []
+    const cov = coverage.length > 0 ? coverage[0].avg : (typeof node.cov === 'number' ? node.cov : 0)
 
     card.innerHTML = `
       <div class="font-semibold text-xs mb-1">${this._esc(node.id || nodeId)}</div>
@@ -834,67 +803,6 @@ export const SystemMapHook = {
     }
   },
 
-  _queueHoverCard(nodeId, nodeData = null) {
-    this._pendingHover = { nodeId, nodeData }
-
-    if (this._hoverRaf) return
-
-    this._hoverRaf = requestAnimationFrame(() => {
-      const pending = this._pendingHover
-      this._pendingHover = null
-      this._hoverRaf = null
-      if (pending) {
-        this._showHoverCard(pending.nodeId, pending.nodeData)
-      }
-    })
-  },
-
-  _buildActionSourceSnippet(action, parentNode, transitions) {
-    if (action.source_snippet) return action.source_snippet
-    if (transitions.length > 0) {
-      return transitions
-        .map(t => this._transitionSourceLine(t))
-        .join('\n')
-    }
-
-    const actionType = this._normalizeActionName(action.type || 'action')
-    const actionName = this._normalizeActionName(action.name || 'unnamed')
-    const moduleName = parentNode?.id || 'Resource'
-
-    return [
-      `# ${moduleName}`,
-      'actions do',
-      `  ${actionType} :${actionName} do`,
-      '    # ...',
-      '  end',
-      'end',
-    ].join('\n')
-  },
-
-  _buildStateSourceSnippet(stateName, transitions) {
-    const lines = transitions
-      .filter(t => {
-        const from = this._normalizeStateName(t.from)
-        const to = this._normalizeStateName(t.to)
-        return from === stateName || to === stateName
-      })
-      .map(t => this._transitionSourceLine(t))
-
-    return lines.length > 0 ? lines.join('\n') : null
-  },
-
-  _transitionSourceLine(transition) {
-    const action = this._normalizeActionName(transition.action) || 'transition'
-    const from = this._normalizeStateName(transition.from) || 'unknown'
-    const to = this._normalizeStateName(transition.to) || 'unknown'
-    return `transition(:${action}, from: :${from}, to: :${to})`
-  },
-
-  _normalizeStateName(name) {
-    if (name == null) return null
-    return String(name).replace(/^:/, '')
-  },
-
   _normalizeActionName(name) {
     if (name == null) return null
     return String(name).replace(/^:/, '')
@@ -916,12 +824,6 @@ export const SystemMapHook = {
   },
 
   destroyed() {
-    if (this._hoverRaf) {
-      cancelAnimationFrame(this._hoverRaf)
-      this._hoverRaf = null
-    }
-    this._pendingHover = null
-
     // Remove event listeners
     const list = document.getElementById(SELECTORS.sidebarList)
     if (list && this._sidebarClickHandler) {

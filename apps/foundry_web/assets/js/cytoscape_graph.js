@@ -232,22 +232,8 @@ export class CytoscapeGraph {
 
   _runLayout() {
     if (this.currentLayout) this.currentLayout.stop()
-    const elementCount = this.cy.elements().length
-    const largeGraph = elementCount > 700
-    const veryLargeGraph = elementCount > 1200
-
-    const layoutOptions = {
-      ...this.layoutOptions,
-      animate: !largeGraph && this.layoutOptions.animate !== false,
-      animationDuration: largeGraph ? 0 : this.layoutOptions.animationDuration,
-      nodeDimensionsIncludeLabels:
-        !veryLargeGraph && this.layoutOptions.nodeDimensionsIncludeLabels !== false,
-    }
-
-    this.currentLayout = this.cy.layout(layoutOptions)
-    this.currentLayout.one('layoutstop', () => {
-      if (!largeGraph) this._compactSparseCompoundNodes()
-    })
+    this.currentLayout = this.cy.layout(this.layoutOptions)
+    this.currentLayout.one('layoutstop', () => this._compactSparseCompoundNodes())
     this.currentLayout.run()
   }
 
@@ -257,8 +243,6 @@ export class CytoscapeGraph {
     let compacted = false
     const parents = this.cy.nodes(this.compoundCompaction.selector)
       .sort((a, b) => b.parents().length - a.parents().length)
-
-    if (parents.length > 80) return
 
     parents.forEach(parent => {
       const children = parent.children().nodes().sort((a, b) => a.id().localeCompare(b.id()))

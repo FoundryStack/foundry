@@ -85,7 +85,7 @@ const STATIC_STYLES = [
   },
   // Hide Cytoscape's native label for nodes that use HTML labels
   {
-    selector: 'node[nodeKind="entity"], node[nodeKind="step"], node[nodeKind="output"], node[nodeKind="cluster"]',
+    selector: 'node[nodeKind="entity"], node[nodeKind="step"], node[nodeKind="action"], node[nodeKind="state"], node[nodeKind="output"], node[nodeKind="cluster"]',
     style: { 'label': '' },
   },
   // Compliance gap: dashed border (color applied in dynamic styles)
@@ -132,12 +132,7 @@ const STATIC_STYLES = [
   // Action nodes: slightly wider than steps for action names
   {
     selector: 'node[nodeKind="action"]',
-    style: { 'width': 104, 'height': 40, 'font-size': 8.5, 'color': 'var(--fg-tx)' },
-  },
-  // State nodes: native labels stay visible for readability and lower DOM cost.
-  {
-    selector: 'node[nodeKind="state"]',
-    style: { 'width': 104, 'height': 38, 'font-size': 8.5, 'color': 'var(--fg-tx)' },
+    style: { 'width': 98, 'height': 40, 'color': 'var(--fg-tx)' },
   },
   // Output node geometry
   {
@@ -279,16 +274,6 @@ const STATIC_STYLES = [
       'line-style': 'dotted',
       'target-arrow-shape': 'triangle',
       'opacity': 0.4,
-      'width': 1,
-    },
-  },
-  // Relation: declares_action — fallback structural link for unconnected actions
-  {
-    selector: 'edge[relation="declares_action"]',
-    style: {
-      'line-style': 'dotted',
-      'target-arrow-shape': 'none',
-      'opacity': 0.45,
       'width': 1,
     },
   },
@@ -471,8 +456,6 @@ function _dynamicStyles(c) {
       style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
     { selector: 'edge[relation="audit_trail"]',
       style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
-    { selector: 'edge[relation="declares_action"]',
-      style: { 'line-color': c.t3, 'target-arrow-color': c.t3 } },
     // Trace overlays
     { selector: '.trace, .trace-gap', style: { 'border-color': c.yw } },
   ]
@@ -525,10 +508,6 @@ export function normalizeNode(raw) {
   // Gap = has compliance reqs but no E2E tests
   const reqs = raw.compliance || []
   const gap = reqs.length > 0 && !tc.e2e_tests
-  const normalizedInitialStates = (sm.initial_states || [])
-    .map(normalizeStateName)
-    .filter(Boolean)
-  const normalizedDefaultInitialState = normalizeStateName(sm.default_initial_state)
 
   const actions = (raw.actions || []).map((action, index) => {
     const normalizedName = normalizeActionName(action.name || `action_${index}`)
@@ -583,15 +562,6 @@ export function normalizeNode(raw) {
     }
   })
 
-  ;[...normalizedInitialStates, normalizedDefaultInitialState]
-    .filter(Boolean)
-    .forEach(stateName => {
-      if (stateByName.has(stateName)) return
-      const state = { id: buildStateNodeId(raw.id, stateName), name: stateName, nodeKind: 'state' }
-      states.push(state)
-      stateByName.set(stateName, state)
-    })
-
   // Merge agent steps via step_id lookup
   const steps = (raw.steps || []).map(s => ({
     ...s,
@@ -616,15 +586,7 @@ export function normalizeNode(raw) {
     arch: raw.archival,
     dl: raw.data_layer,
     rl: raw.rate_limited,
-    sm:
-      states.length > 0
-        ? {
-            states,
-            transitions: smTransitions,
-            initial_states: normalizedInitialStates,
-            default_initial_state: normalizedDefaultInitialState,
-          }
-        : null,
+    sm: states.length > 0 ? { states, transitions: smTransitions } : null,
     actions,
     steps,
     routes: raw.api_routes || [],
@@ -770,6 +732,13 @@ export function buildIndicators(n) {
     indicators.push(`<span data-indicator="pm" title="Pending migrations">↻</span>`)
   }
 
+  if ((n.oban_queues || []).length > 0) {
+    indicators.push(`<span data-indicator="oban" title="Oban queues">⚙</span>`)
+  }
+  if (n.schedule) {
+    indicators.push(`<span data-indicator="schedule" title="Schedule: ${n.schedule}">⏱</span>`)
+  }
+
   if (n.rl) {
     indicators.push(`<span data-indicator="rl" title="Rate limited">⬅</span>`)
   }
@@ -796,6 +765,10 @@ export function entityTpl(data) {
     `
   }
 
+  const jobAnnotation = n.type === 'job' && (n.oban_queues?.length > 0 || n.schedule)
+    ? `<div style="font-size:9px;color:var(--fg-pu);margin-top:1px">⚙ ${n.oban_queues?.[0] || 'default'}${n.schedule ? ' · ' + n.schedule : ''}</div>`
+    : ''
+
   // Trigger annotation: show HTTP endpoint or webhook route
   const triggerAnnotation = n.type === 'trigger' && (n.routes?.length > 0)
     ? `<div style="font-size:8px;color:var(--fg-ac);margin-top:2px;font-family:var(--font-mono)">${n.routes[0].r}</div>`
@@ -816,6 +789,7 @@ export function entityTpl(data) {
         </span>
         <span class="title">${shortLabel(n.id)}</span>
       </div>
+      ${jobAnnotation}
       ${triggerAnnotation}
       ${n.cov > 0 ? `
         <div class="req-badges">
@@ -961,7 +935,7 @@ export function buildCytoscapeElements(nodes, edges) {
 
   // Transfer / FSM compound nodes (now IS the entity)
   compoundIds.forEach(id => {
-    const node = nodeById.get(id)
+    const node = nodes.find(n => n.id === id)
     if (!node) return
     const classes = [
       node.type === 'transfer' ? 'transfer-cluster' : null,
@@ -1003,9 +977,6 @@ export function buildCytoscapeElements(nodes, edges) {
   })
 
   // Step / action / state child nodes
-  const actionNodeIds = new Set()
-  const connectedActionNodeIds = new Set()
-
   nodes.forEach(node => {
     if ((node.type === 'transfer' || node.type === 'reactor') && node.steps) {
       node.steps.forEach((step, idx) => {
@@ -1053,13 +1024,11 @@ export function buildCytoscapeElements(nodes, edges) {
       node.actions.forEach((action, idx) => {
         const actionName = normalizeActionName(action.name || `action_${idx}`)
         const actionType = normalizeActionType(action.type || 'read')
-        const actionNodeId = buildActionNodeId(node.id, actionName)
-        actionNodeIds.add(actionNodeId)
 
         elements.push({
           group: 'nodes',
           data: {
-            id: actionNodeId,
+            id: buildActionNodeId(node.id, actionName),
             label: actionName,
             nodeKind: 'action',
             parent: node.id,
@@ -1095,7 +1064,6 @@ export function buildCytoscapeElements(nodes, edges) {
         const actionNodeId = resolveResourceActionEndpoint(node.id, actionName, resourceActionIndex)
 
         if (actionNodeId) {
-          connectedActionNodeIds.add(actionNodeId)
           elements.push({
             group: 'edges',
             data: {
@@ -1131,39 +1099,6 @@ export function buildCytoscapeElements(nodes, edges) {
         }
       })
     }
-
-    const initialStateName = pickInitialStateName(node.sm)
-    const initialStateId = initialStateName ? buildStateNodeId(node.id, initialStateName) : null
-
-    if (node.type === 'resource' && node.actions && initialStateId) {
-      const transitionActionNames = new Set(
-        (node.sm?.transitions || [])
-          .map(transition => normalizeActionName(transition.action))
-          .filter(Boolean),
-      )
-
-      node.actions.forEach(action => {
-        const actionName = normalizeActionName(action.name)
-        const actionType = normalizeActionType(action.type)
-        if (!actionName || actionType !== 'create') return
-        if (transitionActionNames.has(actionName)) return
-
-        const actionNodeId = buildActionNodeId(node.id, actionName)
-        connectedActionNodeIds.add(actionNodeId)
-
-        elements.push({
-          group: 'edges',
-          data: {
-            id: `${node.id}:initial-create:${actionName}:${initialStateName}`,
-            source: actionNodeId,
-            target: initialStateId,
-            relation: 'triggers',
-            action_name: actionName,
-            inferred_initial_transition: true,
-          },
-        })
-      })
-    }
   })
 
   // Edges
@@ -1182,8 +1117,6 @@ export function buildCytoscapeElements(nodes, edges) {
     const source = routed.source
     const target = routed.target
     if (source === target) return
-    if (actionNodeIds.has(source)) connectedActionNodeIds.add(source)
-    if (actionNodeIds.has(target)) connectedActionNodeIds.add(target)
 
     const id = `${source}->${target}:${edge.relation}`
     const existing = edgeElementsById.get(id)
@@ -1200,23 +1133,6 @@ export function buildCytoscapeElements(nodes, edges) {
   })
 
   elements.push(...edgeElementsById.values())
-
-  actionNodeIds.forEach(actionNodeId => {
-    if (connectedActionNodeIds.has(actionNodeId)) return
-
-    const resourceId = resourceIdFromActionNodeId(actionNodeId)
-    if (!resourceId) return
-
-    elements.push({
-      group: 'edges',
-      data: {
-        id: `${resourceId}:declares:${actionNodeId}`,
-        source: resourceId,
-        target: actionNodeId,
-        relation: 'declares_action',
-      },
-    })
-  })
 
   return elements
 }
@@ -1432,33 +1348,11 @@ function pairKey(ownerId, peerId) {
   return `${ownerId}\u0000${peerId}`
 }
 
-function pickInitialStateName(stateMachine) {
-  if (!stateMachine) return null
-  const explicit = normalizeStateName(stateMachine.default_initial_state)
-  if (explicit) return explicit
-
-  const initialStates = Array.isArray(stateMachine.initial_states) ? stateMachine.initial_states : []
-  return normalizeStateName(initialStates[0])
-}
-
-function resourceIdFromActionNodeId(actionNodeId) {
-  if (!actionNodeId || typeof actionNodeId !== 'string') return null
-  const marker = ':action:'
-  const idx = actionNodeId.indexOf(marker)
-  if (idx <= 0) return null
-  return actionNodeId.slice(0, idx)
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Canvas overlays
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function buildCanvasOverlays(container, nodes) {
-  const existing = document.getElementById('foundry-canvas-overlays')
-  if (existing) existing.remove()
-
-  if ((nodes || []).length > 220) return
-
   const overlays = document.createElement('div')
   overlays.id = 'foundry-canvas-overlays'
   overlays.style.cssText = `
@@ -1524,6 +1418,7 @@ export function mountFoundryGraph(container, contextJson) {
     { query: 'node.domain-cluster',      halign: 'left',   valign: 'top',    halignBox: 'left',   valignBox: 'top',    tpl: domainClusterTpl },
     { query: 'node[nodeKind="cluster"]:not(.domain-cluster)', halign: 'left', valign: 'top', halignBox: 'left', valignBox: 'top', tpl: clusterTpl },
     { query: 'node[nodeKind="step"]',    halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: stepTpl },
+    { query: 'node[nodeKind="action"]',  halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: actionTpl },
   ])
 
   buildCanvasOverlays(container, normalizedNodes)

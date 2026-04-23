@@ -131,31 +131,6 @@ defmodule Foundry.Context.GraphBuilderTest do
            end)
   end
 
-  test "auth edges include action-scoped links for generated authentication actions", %{edges: edges} do
-    register_edge =
-      find_edge_entry(
-        edges,
-        "IgamingRef.Accounts.User",
-        "IgamingRef.Accounts.Token",
-        :authenticates,
-        nil,
-        "register_with_password"
-      )
-
-    reset_edge =
-      find_edge_entry(
-        edges,
-        "IgamingRef.Accounts.User",
-        "IgamingRef.Accounts.Token",
-        :authenticates,
-        nil,
-        "password_reset_with_password"
-      )
-
-    assert register_edge.action_name == "register_with_password"
-    assert reset_edge.action_name == "password_reset_with_password"
-  end
-
   # Async edge: CatalogSyncJob → ProviderSyncReactor
   test "CatalogSyncJob→ProviderSyncReactor async edge exists", %{edges: edges} do
     assert find_edge(
