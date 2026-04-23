@@ -151,28 +151,10 @@ defmodule Foundry.Context.GraphBuilder do
         |> to_existing_module()
         |> auth_token_resources()
 
-      auth_action_names = auth_action_names(user_node.actions)
-
-      token_targets =
-        (explicit_tokens ++ implicit_auth_targets(user_node, explicit_tokens))
-        |> Enum.uniq()
-        |> Enum.filter(&MapSet.member?(known_modules, &1))
-
-      case auth_action_names do
-        [] ->
-          Enum.map(token_targets, &EdgeEntry.new(user_node.module, &1, :authenticates))
-
-        action_names ->
-          for token_target <- token_targets,
-              action_name <- action_names do
-            %EdgeEntry{
-              from: user_node.module,
-              to: token_target,
-              relation: :authenticates,
-              action_name: action_name
-            }
-          end
-      end
+      (explicit_tokens ++ implicit_auth_targets(user_node, explicit_tokens))
+      |> Enum.uniq()
+      |> Enum.filter(&MapSet.member?(known_modules, &1))
+      |> Enum.map(&EdgeEntry.new(user_node.module, &1, :authenticates))
     end)
   end
 
@@ -389,21 +371,6 @@ defmodule Foundry.Context.GraphBuilder do
 
   defp implicit_auth_targets(_user_node, _explicit_tokens), do: []
 
-  defp auth_action_names(actions) do
-    actions
-    |> List.wrap()
-    |> Enum.map(fn action ->
-      action
-      |> Map.get(:name)
-      |> normalize_action_name()
-    end)
-    |> Enum.reject(&is_nil/1)
-    |> Enum.filter(fn action_name ->
-      String.contains?(action_name, ["sign_in", "register", "password_reset", "magic_link"])
-    end)
-    |> Enum.uniq()
-  end
-
   defp user_app_prefix(user_node) do
     user_node.module
     |> String.split(".")
@@ -445,18 +412,24 @@ defmodule Foundry.Context.GraphBuilder do
   defp infer_action_name_from_source(nil), do: nil
 
   defp infer_action_name_from_source(source_snippet) when is_binary(source_snippet) do
-    [
-      ~r/Ash\.(?:create|update|destroy|get|read|read_one)!?\(\s*[^,\n]+,\s*:(\w+)/m,
-      ~r/Ash\.(?:create|update|destroy|get|read|read_one)!?\([^)]*action:\s*:(\w+)/m,
-      ~r/Ash\.Changeset\.for_(?:create|update|destroy)\(\s*[^,\n]+,\s*:(\w+)/m,
-      ~r/Ash\.Changeset\.for_(?:create|update|destroy)\([^)]*action:\s*:(\w+)/m
-    ]
-    |> Enum.find_value(fn pattern ->
-      case Regex.run(pattern, source_snippet) do
-        [_, action_name] -> action_name
-        _ -> nil
-      end
-    end)
+    with [_, action_name] <-
+           Regex.run(
+             ~r/Ash\.(?:create|update|destroy|get|read|read_one)\(\s*[^,\n]+,\s*:(\w+)/m,
+             source_snippet
+           ) do
+      action_name
+    else
+      _ ->
+        with [_, action_name] <-
+               Regex.run(
+                 ~r/Ash\.(?:create|update|destroy|get|read|read_one)\([^)]*action:\s*:(\w+)/m,
+                 source_snippet
+               ) do
+          action_name
+        else
+          _ -> nil
+        end
+    end
   end
 
   defp infer_action_name_from_source(_source_snippet), do: nil
