@@ -9,6 +9,7 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
 
   Webhooks are idempotent (provider-signature verified) and always respond 200
   to prevent retries. Processing is done async via Oban to unblock the provider.
+  Every inbound event is persisted via `WithdrawalWebhookEvent.receive`.
 
   Compliance: RG-UK-014 (withdrawal processing integrity), RG-MGA-007 (withdrawal limits).
   """
@@ -19,16 +20,7 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
   @telemetry_prefix [:igaming_ref, :finance, :withdrawal_webhook]
   @compliance [:RG_UK_014, :RG_MGA_007]
 
-  # @side_effect external_http: webhook_inbound, idempotent: true
-  # @side_effect oban_emit: IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook, idempotent: true
-
-  # Not a resource or action, but a trigger pattern documented for Foundry.
-  # In Phoenix, this would be handled via a controller action (e.g.,
-  # POST /webhooks/withdrawal in IgamingRef.WebhookController).
-  # Foundry sees this as an external trigger that feeds WithdrawalTransfer.
-
-  # Conceptually: this module documents the webhook entry point.
-  # The actual implementation is a Phoenix controller + Oban job pair.
+  alias IgamingRef.Finance.WithdrawalWebhookEvent
 
   @doc """
   Process a provider webhook for withdrawal status change.
@@ -40,8 +32,9 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
     # In a real app, verify_signature/3 checks HMAC against the provider's key
     with :ok <- verify_signature(provider, signature, body),
          {:ok, event} <- parse_event(provider, body),
-         {:ok, request} <- dispatch_async_job(event) do
-      {:ok, request}
+         {:ok, persisted} <- persist_event(event),
+         {:ok, _job} <- dispatch_async_job(event) do
+      {:ok, persisted}
     else
       error -> {:error, error}
     end
@@ -90,6 +83,7 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
            event_type: data["type"],
            reference: data["data"]["object"]["id"],
            status: stripe_status(data["type"]),
+           payload: data
          }}
 
       _ ->
@@ -107,6 +101,7 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
            event_type: data["event_type"],
            reference: data["resource"]["id"],
            status: paypal_status(data["event_type"]),
+           payload: data
          }}
 
       _ ->
@@ -124,8 +119,29 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
   defp paypal_status("PAYMENT.CAPTURE.REFUNDED"), do: :reversed
   defp paypal_status(_), do: :unknown
 
+  defp persist_event(event) do
+    Ash.create(
+      WithdrawalWebhookEvent,
+      %{
+        provider: event.provider,
+        provider_reference: event.reference,
+        event_type: event.event_type,
+        status: event.status,
+        payload: event.payload || %{}
+      },
+      action: :receive,
+      actor: :system
+    )
+  end
+
   defp dispatch_async_job(event) do
-    # Oban.insert(IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook.new(event))
-    {:ok, %{provider_reference: event.reference, status: event.status}}
+    args = %{
+      "provider" => event.provider,
+      "event_type" => event.event_type,
+      "provider_reference" => event.reference,
+      "status" => Atom.to_string(event.status)
+    }
+
+    Oban.insert(IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook.new(args))
   end
 end

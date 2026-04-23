@@ -6,6 +6,7 @@ defmodule IgamingRef.Finance do
     - Wallet
     - LedgerEntry
     - WithdrawalRequest
+    - WithdrawalWebhookEvent
     - Transfer
   """
 
@@ -14,9 +15,10 @@ defmodule IgamingRef.Finance do
     validate_config_inclusion?: false
 
   resources do
-    resource IgamingRef.Finance.Wallet
-    resource IgamingRef.Finance.LedgerEntry
-    resource IgamingRef.Finance.WithdrawalRequest
-    resource IgamingRef.Finance.Transfer
+    resource(IgamingRef.Finance.Wallet)
+    resource(IgamingRef.Finance.LedgerEntry)
+    resource(IgamingRef.Finance.WithdrawalRequest)
+    resource(IgamingRef.Finance.WithdrawalWebhookEvent)
+    resource(IgamingRef.Finance.Transfer)
   end
 end

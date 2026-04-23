@@ -5,23 +5,48 @@ import nodeHtmlLabel from 'cytoscape-node-html-label'
 // Global flag to prevent duplicate extension registration
 let extensionsRegistered = false
 
-const LAYOUT_OPTIONS = {
+const DEFAULT_LAYOUT_OPTIONS = {
   name: 'cose-bilkent',
   randomize: false,
   fit: true,
-  padding: 55,
-  idealEdgeLength: 80,
-  nodeRepulsion: 6000,
+  padding: 32,
+  idealEdgeLength: 62,
+  nodeRepulsion: 4200,
+  gravity: 0.35,
+  gravityRange: 2.8,
+  gravityCompound: 1.25,
+  gravityRangeCompound: 1.5,
+  nestingFactor: 0.18,
+  packComponents: true,
+  tilingPaddingHorizontal: 18,
+  tilingPaddingVertical: 18,
   nodeDimensionsIncludeLabels: true,
   animate: true,
   animationDuration: 500,
 }
 
+const DEFAULT_COMPOUND_COMPACTION = {
+  enabled: false,
+  selector: 'node:parent',
+  maxChildren: 5,
+  minOccupancy: 0.32,
+  spacing: 44,
+  padding: 32,
+}
+
 export class CytoscapeGraph {
   constructor(container, options = {}) {
+    const {
+      layoutOptions = {},
+      compoundCompaction = {},
+      ...cyOptions
+    } = options
+
     this.container = container
     this.cy = null
     this.currentLayout = null
+    this.layoutOptions = { ...DEFAULT_LAYOUT_OPTIONS, ...layoutOptions }
+    this.compoundCompaction = { ...DEFAULT_COMPOUND_COMPACTION, ...compoundCompaction }
 
     // Initialize callback properties with no-op defaults
     this.onNodeClick = () => {}
@@ -42,7 +67,7 @@ export class CytoscapeGraph {
       container: this.container,
       style: [],
       layout: { name: 'null' },
-      ...options,
+      ...cyOptions,
     })
 
     this._bindEvents()
@@ -207,8 +232,87 @@ export class CytoscapeGraph {
 
   _runLayout() {
     if (this.currentLayout) this.currentLayout.stop()
-    this.currentLayout = this.cy.layout(LAYOUT_OPTIONS)
+    this.currentLayout = this.cy.layout(this.layoutOptions)
+    this.currentLayout.one('layoutstop', () => this._compactSparseCompoundNodes())
     this.currentLayout.run()
+  }
+
+  _compactSparseCompoundNodes() {
+    if (!this.compoundCompaction.enabled) return
+
+    let compacted = false
+    const parents = this.cy.nodes(this.compoundCompaction.selector)
+      .sort((a, b) => b.parents().length - a.parents().length)
+
+    parents.forEach(parent => {
+      const children = parent.children().nodes().sort((a, b) => a.id().localeCompare(b.id()))
+
+      if (children.length < 2 || children.length > this.compoundCompaction.maxChildren) return
+      if (this._compoundOccupancy(parent, children) >= this.compoundCompaction.minOccupancy) return
+
+      const boundingBox = this._compactBoundingBox(parent, children)
+      if (!boundingBox) return
+
+      children.layout({
+        name: 'grid',
+        fit: false,
+        animate: false,
+        boundingBox,
+        avoidOverlap: true,
+        avoidOverlapPadding: this.compoundCompaction.spacing,
+        condense: true,
+        cols: Math.ceil(Math.sqrt(children.length)),
+      }).run()
+
+      compacted = true
+    })
+
+    if (compacted && this.layoutOptions.fit !== false) {
+      this.cy.fit(this.cy.elements(), this.layoutOptions.padding)
+    }
+  }
+
+  _compoundOccupancy(parent, children) {
+    const parentBox = parent.boundingBox({ includeLabels: false, includeOverlays: false })
+    const parentArea = Math.max(parentBox.w * parentBox.h, 1)
+
+    let childArea = 0
+
+    children.forEach(child => {
+      const box = child.boundingBox({ includeLabels: false, includeOverlays: false })
+      childArea += box.w * box.h
+    })
+
+    return childArea / parentArea
+  }
+
+  _compactBoundingBox(parent, children) {
+    const parentBox = parent.boundingBox({ includeLabels: false, includeOverlays: false })
+    const cols = Math.ceil(Math.sqrt(children.length))
+    const rows = Math.ceil(children.length / cols)
+    let maxWidth = 0
+    let maxHeight = 0
+
+    children.forEach(child => {
+      maxWidth = Math.max(maxWidth, child.outerWidth())
+      maxHeight = Math.max(maxHeight, child.outerHeight())
+    })
+
+    if (!Number.isFinite(maxWidth) || !Number.isFinite(maxHeight)) return null
+
+    const spacing = this.compoundCompaction.spacing
+    const padding = this.compoundCompaction.padding
+    const width = (cols * maxWidth) + ((cols - 1) * spacing) + (padding * 2)
+    const height = (rows * maxHeight) + ((rows - 1) * spacing) + (padding * 2)
+    const centerX = parentBox.x1 + (parentBox.w / 2)
+    const centerY = parentBox.y1 + (parentBox.h / 2)
+
+    return {
+      x1: centerX - (width / 2),
+      y1: centerY - (height / 2),
+      w: width,
+      h: height,
+    }
   }
 
   _bindEvents() {

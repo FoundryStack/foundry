@@ -42,6 +42,24 @@ function _extractColors() {
 
 const FONT = "'Segoe UI Symbol', 'Apple Symbols', 'Arial Unicode MS', sans-serif"
 
+const FOUNDRY_LAYOUT_OPTIONS = {
+  idealEdgeLength: 62,
+  nodeRepulsion: 4200,
+  padding: 32,
+  gravity: 0.35,
+  gravityCompound: 1.25,
+  nestingFactor: 0.18,
+}
+
+const FOUNDRY_COMPOUND_COMPACTION = {
+  enabled: true,
+  selector: 'node.domain-cluster, node.transfer-cluster, node.fsm-cluster',
+  maxChildren: 5,
+  minOccupancy: 0.32,
+  spacing: 44,
+  padding: 30,
+}
+
 const STATIC_STYLES = [
   // Base node geometry
   {
@@ -81,7 +99,7 @@ const STATIC_STYLES = [
       'shape': 'round-rectangle',
       'min-width': 120,
       'min-height': 60,
-      'padding': 32,
+      'padding': 28,
       'border-style': 'dashed',
       'text-valign': 'center',
       'text-halign': 'center',
@@ -90,7 +108,7 @@ const STATIC_STYLES = [
   // Domain cluster geometry
   {
     selector: 'node.domain-cluster',
-    style: { 'border-width': 2, 'background-opacity': 0.4, 'padding': 24 },
+    style: { 'border-width': 2, 'background-opacity': 0.4, 'padding': 20 },
   },
   // Step / state node geometry
   {
@@ -890,21 +908,6 @@ export function buildCytoscapeElements(nodes, edges) {
         })
       }
 
-      node.steps.forEach((step, idx) => {
-        const stepNodeId = `${node.id}:step:${idx}`;
-        (step.rules_applied || []).forEach(ruleId => {
-          elements.push({
-            group: 'edges',
-            data: {
-              id: `${ruleId}->guard->${stepNodeId}`,
-              source: ruleId,
-              target: stepNodeId,
-              relation: 'guard',
-            },
-          })
-        })
-      })
-
     }
 
     if (node.sm?.states) {
@@ -1152,6 +1155,8 @@ export function mountFoundryGraph(container, contextJson) {
 
   const graph = new CytoscapeGraph(container, {
     style: _buildFoundryStyles(colors),
+    layoutOptions: FOUNDRY_LAYOUT_OPTIONS,
+    compoundCompaction: FOUNDRY_COMPOUND_COMPACTION,
   })
 
   // Rebuild only the color-dependent stylesheet slice when the theme changes.

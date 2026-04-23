@@ -56,7 +56,7 @@ All additions are non-breaking (nil/empty defaults).
 - `guards`: Rule guards a step or resource policy
 - `sequence`: Step-to-step ordering within Reactor/Transfer
 - `compensation`: Compensation path in saga
-- `configures`: Blueprint configures a Reactor
+- `configures`: Declarative configuration relationship (source-derived first)
 - `authenticates`: AshAuthentication User → Token
 - `persists_to`: Resource → external:postgres
 - `queues_via`: Job/Reactor → external:oban_queue
@@ -151,7 +151,7 @@ perspective (ADR-016). Each is represented as a `ScenarioEntry` stored in NodeEn
 
 ```elixir
 defstruct [
-  :trigger_type,      # :cron | :condition | :json_api_route | :graphql_mutation | :auth_event
+  :trigger_type,      # :cron | :oban_condition | :json_api_route | :graphql_mutation | :auth_event | :webhook
   :schedule,          # cron string, e.g. "0 0 * * *"
   :condition_expr,    # AshOban `where` expression as string, e.g. "status == :pending"
   :route_method,      # :get | :post | :patch | :delete (JSON:API routes)
@@ -167,11 +167,12 @@ non-breaking). The Scenario perspective filter selects all nodes with non-empty
 `scenario_origins` and places them at the canvas periphery.
 
 **Data sources:**
-- `AshOban.Info.oban_triggers(resource)` → `:cron` and `:condition` entries
+- `AshOban.Info.oban_triggers(resource)` → `:cron` and `:oban_condition` entries
 - `AshOban.Info.oban_scheduled_actions(resource)` → additional `:cron` entries
 - `AshJsonApi.Resource.Info.routes(resource)` → `:json_api_route` entries for POST/PATCH
 - `AshGraphql.Resource.Info.mutations(resource)` → `:graphql_mutation` entries
 - `AshAuthentication` strategy declarations → `:auth_event` entries (login, magic link, OAuth callback)
+- Explicit webhook boundary actions/modules → `:webhook` entries
 
 ---
 

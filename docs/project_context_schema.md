@@ -211,7 +211,7 @@ per-module context into the graph.
 | `job` | Oban worker | `MyApp.Workers.KycPoller` |
 | `liveview` | Phoenix LiveView | `MyApp.Finance.WalletLive` |
 | `liveresource` | AshAdmin / AshLiveView resource | `MyApp.Identity.PlayerLiveResource` |
-| `blueprint` | Ash extension blueprint config | `MyApp.Game.DepositBonusBlueprint` |
+| `blueprint` | Legacy configurable logic module (deprecated; prefer Ash resources) | `MyApp.Game.DepositBonusBlueprint` |
 | `provider` | External integration adapter | `MyApp.Finance.PaymentGatewayAdapter` |
 | `trigger` | HTTP endpoint or scheduler entry point | `/api/register`, `cron 0 * * * *` |
 | `agent` | Standalone AshAI agent module | `MyApp.Risk.WithdrawalScorerAgent` |
@@ -320,7 +320,7 @@ Edges are ordered: `from` FQN ascending, then `to` FQN ascending.
 | `guards` | Rule | Resource/Step | Policy/rule gates access |
 | `sequence` | Step | Step | Step ordering (`:wait_for`) |
 | `compensation` | Step | Step | Compensation relationship |
-| `configures` | Blueprint | Reactor | Blueprint configures reactor |
+| `configures` | Config resource/module | Reactor | Declarative configuration relationship (source-derived when possible) |
 | `authenticates` | User Resource | Token Resource | AshAuthentication flow |
 | `persists_to` | Resource | External | Resource persists to database (future) |
 | `queues_via` | Job | External | Job queues via external queue (future) |
@@ -334,7 +334,7 @@ Each entry in `NodeEntry.scenario_origins[]`:
 
 | Field | Type | Notes |
 |---|---|---|
-| `trigger_type` | `"cron" \| "condition" \| "json_api_route" \| "graphql_mutation" \| "auth_event"` | Origin classification |
+| `trigger_type` | `"cron" \| "oban_condition" \| "json_api_route" \| "graphql_mutation" \| "auth_event" \| "webhook"` | Origin classification |
 | `schedule` | string \| null | Cron expression for `:cron` triggers |
 | `condition_expr` | string \| null | AshOban `where` expression string for `:condition` triggers |
 | `route_method` | `"get" \| "post" \| "patch" \| "delete"` \| null | HTTP method for `:json_api_route` |
@@ -353,10 +353,11 @@ This field is non-breaking — existing renderers that do not read it ignore it.
 The Scenario perspective in Foundry Studio (ADR-016) reads `scenario_origins` to place
 trigger nodes at the canvas periphery. The data flow:
 
-1. `AshOban.Info.oban_triggers(resource)` → `:cron` / `:condition` ScenarioEntry
+1. `AshOban.Info.oban_triggers(resource)` → `:cron` / `:oban_condition` ScenarioEntry
 2. `AshJsonApi.Resource.Info.routes(resource)` → `:json_api_route` ScenarioEntry
 3. `AshGraphql.Resource.Info.mutations(resource)` → `:graphql_mutation` ScenarioEntry
 4. AshAuthentication strategy declarations → `:auth_event` ScenarioEntry
+5. Explicit webhook entry modules or actions → `:webhook` ScenarioEntry
 
 Each ScenarioEntry with a non-null `initiates_module` produces a directed edge in the
 Scenario perspective from the trigger node to the Reactor/Transfer it initiates.

@@ -24,10 +24,25 @@ defmodule Foundry.Context.ScenarioEntry do
         initiates_module: "MyApp.Finance.DailyReconciliation",
         description: "Daily ledger reconciliation at midnight"
       }
+
+  Webhook origin scenario:
+      %ScenarioEntry{
+        trigger_type: :webhook,
+        route_path: "/webhooks/withdrawal",
+        initiates_module: "MyApp.Finance.WithdrawalWebhookEvent",
+        description: "Inbound provider withdrawal status callback"
+      }
   """
 
   @type status :: :missing | :partial | :implemented
-  @type trigger_type :: :cron | :oban_condition | :json_api | :graphql | :auth_event | nil
+  @type trigger_type ::
+          :cron
+          | :oban_condition
+          | :json_api_route
+          | :graphql_mutation
+          | :auth_event
+          | :webhook
+          | nil
 
   @derive Jason.Encoder
   defstruct [

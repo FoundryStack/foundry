@@ -11,7 +11,7 @@ defmodule Foundry.Context.EdgeEntry do
   - `guards`: rule guards a step or resource policy
   - `sequence`: step-to-step ordering within Reactor/Transfer
   - `compensation`: compensation path in saga
-  - `configures`: blueprint configures a Reactor
+  - `configures`: declarative config module/resource configures a Reactor
   - `authenticates`: AshAuthentication User → Token
   - `persists_to`: resource persists to external system
   - `queues_via`: job/reactor queues via external queue
@@ -68,5 +68,4 @@ defmodule Foundry.Context.EdgeEntry do
   def new(from, to, relation) when is_binary(from) and is_binary(to) and is_atom(relation) do
     %__MODULE__{from: from, to: to, relation: relation}
   end
-
 end

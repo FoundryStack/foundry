@@ -114,6 +114,21 @@ defmodule IgamingRef.Promotions.BonusCampaign do
       description("All bonus grants issued from this campaign.")
       destination_attribute(:campaign_id)
     end
+
+    has_many :triggers, IgamingRef.Promotions.BonusTrigger do
+      description("Manager-defined trigger declarations for this campaign.")
+      destination_attribute(:campaign_id)
+    end
+
+    has_many :condition_groups, IgamingRef.Promotions.BonusConditionGroup do
+      description("Logical condition tree groups for this campaign.")
+      destination_attribute(:campaign_id)
+    end
+
+    has_many :executions, IgamingRef.Promotions.BonusExecution do
+      description("Execution steps that run when campaign conditions pass.")
+      destination_attribute(:campaign_id)
+    end
   end
 
   actions do
@@ -209,7 +224,7 @@ defmodule IgamingRef.Promotions.BonusGrant do
 
   use Foundry.Annotations
 
-  @compliance [:RG_MMA_005, :RG_UK_011]
+  @compliance [:RG_MGA_005, :RG_UK_011]
   @telemetry_prefix [:igaming_ref, :promotions, :bonus_grant]
 
   use Ash.Resource,

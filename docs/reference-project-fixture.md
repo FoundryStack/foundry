@@ -12,6 +12,12 @@
 >
 > **ADR alignment:** This fixture reflects decisions from ADR-001 through ADR-010.
 > See the ADR Alignment section at the bottom for a cross-reference.
+>
+> **Amendment 2026-04:** Promotions no longer use a standalone Blueprint module pattern.
+> Bonus orchestration is modeled with Ash resources (`BonusTrigger`,
+> `BonusConditionGroup`, `BonusCondition`, `BonusExecution`, `BonusEvent`) plus
+> `BonusEvaluationReactor`. Graph relationships are inferred from executable source
+> first; metadata/prose fallbacks are legacy-only.
 
 ---
 
@@ -32,7 +38,7 @@ OTP application name: `:igaming_ref`
 
 The reference project has five domains. The `Finance` and `Players` domains exercise the
 double-entry ledger, multi-currency accounts, KYC, and self-exclusion patterns.
-The `Promotions` domain exercises the Blueprint pattern. The `Ops` domain holds the
+The `Promotions` domain exercises a resource-driven bonus engine pattern. The `Ops` domain holds the
 PIIVault and AuditEntry resources required for GDPR-safe audit logging. The `Gaming`
 domain exercises provider adapter versioning (ADR-007), back-office catalog CRUD, async
 catalog sync via Oban, and read-only catalog aggregation for player-facing presentation.
@@ -41,7 +47,7 @@ catalog sync via Oban, and read-only catalog aggregation for player-facing prese
 |---|---|
 | `IgamingRef.Finance` | AshDoubleEntry ledger, wallets, transfers — the financial core |
 | `IgamingRef.Players` | Player accounts, KYC documents (presigned S3), self-exclusion |
-| `IgamingRef.Promotions` | Bonus Blueprint modules, campaigns (instances), grants |
+| `IgamingRef.Promotions` | Bonus campaigns, grants, triggers, conditions, executions, events |
 | `IgamingRef.Ops` | AuditEntry, PIIVault — GDPR-safe append-only audit log |
 | `IgamingRef.Gaming` | Provider adapter versioning, game catalog CRUD, sync jobs, catalog aggregation |
 
@@ -232,52 +238,34 @@ directly to S3; a virus-scan webhook drives the state machine.
 
 ### `IgamingRef.Promotions` domain
 
-**ADR basis:** ADR-002 (Blueprint & Instance pattern), ADR-005 (forfeiture rules in Blueprint DSL).
+**ADR basis:** ADR-002 (configurable runtime logic), ADR-005 (bonus rule transparency).
 
-The Promotions domain splits bonus logic into two artifacts: a Blueprint module (code,
-owned by developers) and a BonusCampaign resource (instance/parameters, owned by operators).
-Every Blueprint must declare a `forfeiture` DSL block. A Blueprint without explicit forfeiture
-rules fails compilation. See ADR-002 and ADR-005.
+Promotions uses Ash resources (not standalone Blueprint modules) for manager-configured
+bonus logic. Runtime behavior is composed from:
 
-#### `IgamingRef.Promotions.Blueprints.DepositMatchBlueprint`
+- `BonusTrigger` (`:deposit_completed`, `:manual_grant`)
+- `BonusConditionGroup` (`:all` / `:any`)
+- `BonusCondition` (`:campaign_active`, `:campaign_not_expired`,
+  `:player_not_self_excluded`, `:player_country_in`, `:min_deposit_amount`,
+  `:no_active_bonus`)
+- `BonusExecution` (`:grant_deposit_match`, `:grant_fixed_amount`,
+  `:set_wagering_requirement`)
+- `BonusEvent` (inbound runtime event, idempotent, auditable)
 
-The reference project ships one concrete Blueprint to exercise the pattern.
-
-- **Type:** Elixir module implementing `IgamingRef.Promotions.Blueprint` behaviour
-- **Sensitive:** no (logic only — no data)
-- **Description:** Deposit-match bonus Blueprint. Calculates match amount, validates
-  eligibility, declares wagering steps, and declares forfeiture rules via DSL block.
-- **Blueprint callbacks:** `config_schema/0` (for Back Office form generation),
-  `eligibility_check/2`, `calculate_award/2`, `forfeiture_rules/0`
-- **Forfeiture DSL block:**
-  ```elixir
-  forfeiture do
-    on :withdrawal_before_wagering_complete, forfeit: :bonus_and_winnings
-    on :account_suspension, forfeit: :bonus_only
-    on :expiry, forfeit: :bonus_and_winnings
-    on :manual_revocation, forfeit: :bonus_only, requires_approval: true
-  end
-  ```
-- **Compliance links:** `RG-MGA-005`, `RG-UK-011`
-- **ADRs:** `ADR-002`, `ADR-005`
+`BonusEvaluationReactor` evaluates `BonusEvent` against these resources and invokes
+`BonusGrantTransfer` for money-moving execution paths.
 
 #### `IgamingRef.Promotions.BonusCampaign`
 
-Instance side of the Blueprint pattern. Stores parameters set by operators. Logic lives
-in the Blueprint module; parameters live here.
-
 - **Type:** Ash resource (`ash_postgres`)
 - **Sensitive:** no
-- **Description:** A configured bonus campaign. Declares which Blueprint handles this campaign's
-  logic and carries the operator-set parameters (amounts, multipliers, dates). Marketing
-  managers change parameters here without a deployment.
+- **Description:** A configured bonus campaign with lifecycle and base reward settings.
+  Dynamic trigger/condition/execution logic is defined by related configuration resources.
 - **Attributes:** `id`, `name` (string),
-  `blueprint_module` (string — fully-qualified module name, e.g. `"IgamingRef.Promotions.Blueprints.DepositMatchBlueprint"`),
   `kind` (atom: `:deposit_match | :free_spins | :cashback`),
   `status` (atom: `:draft | :active | :paused | :expired`),
   `bonus_amount` (`Ash.Type.Money`), `wagering_multiplier` (decimal),
   `max_redemptions` (integer, nullable), `starts_at` (datetime), `expires_at` (datetime),
-  `blueprint_version` (integer — snapshotted from Blueprint `@version` at campaign creation),
   `inserted_at`, `updated_at`
 - **Actions:** `read`, `create`, `update`, `activate`, `pause`, `expire`
 - **State machine:** yes — status states
@@ -291,11 +279,9 @@ in the Blueprint module; parameters live here.
 
 - **Type:** Ash resource (`ash_postgres`)
 - **Sensitive:** no
-- **Description:** A specific bonus awarded to a player from a campaign. Tracks wagering
-  progress. Forfeiture is always executed by `ForfeitBonusReactor` which reads forfeiture
-  rules from the originating Blueprint — never hardcoded here.
-- **Attributes:** `id`, `player_id`, `campaign_id`, `blueprint_module` (string — copied
-  from campaign at grant time for Blueprint-version safety),
+- **Description:** A specific bonus awarded to a player from a campaign.
+  Tracks wagering progress and lifecycle transitions.
+- **Attributes:** `id`, `player_id`, `campaign_id`,
   `amount` (`Ash.Type.Money`), `wagering_remaining` (decimal),
   `status` (atom: `:active | :wagered | :forfeited | :expired`),
   `granted_at`, `expires_at`, `inserted_at`, `updated_at`
@@ -550,20 +536,28 @@ retained with hashes in place of personal values. The hash chain remains intact.
 
 ### `IgamingRef.Promotions.BonusGrantTransfer`
 - **Type:** Reactor + Transfer DSL
-- **Description:** Awards a bonus to a player when campaign eligibility is confirmed. Reads
-  the Blueprint module declared on the campaign to run eligibility logic. Credits wallet via
-  `IgamingRef.Finance.Transfer`. Creates BonusGrant record. Idempotent.
+- **Description:** Awards a bonus to a player when campaign eligibility is confirmed.
+  Credits wallet and creates `BonusGrant`. Invoked directly or via `BonusEvaluationReactor`.
 - **Idempotency key:** `{player_id, campaign_id}`
-- **Steps:** `load_blueprint`, `check_eligibility`, `check_campaign_active`,
-  `credit_wallet`, `create_ledger_entry`, `create_bonus_grant`
-  - `load_blueprint` — loads the Blueprint module from `campaign.blueprint_module` and
-    calls `eligibility_check/2`
+- **Steps:** `load_context`, `evaluate_rules`, `credit_wallet`,
+  `create_ledger_entry`, `create_bonus_grant`
 - **Rules:** `PlayerEligibleForCampaign`, `CampaignNotExpired`, `PlayerNotSelfExcluded`
 - **Compliance links:** `RG-MGA-005`
 - **Runbook:** `docs/runbooks/bonus_grant_transfer.md` *(to be created)*
 - **Telemetry prefix:** `[:igaming_ref, :promotions, :bonus_grant_transfer]`
 - **Sensitive:** no (touches Wallet/LedgerEntry which are sensitive — classifier escalates to
   `:sensitive` because it touches sensitive resources)
+
+### `IgamingRef.Promotions.BonusEvaluationReactor`
+- **Type:** Reactor (non-Transfer) — `reactor` node type
+- **Description:** Evaluates `BonusEvent` rows against manager-configured triggers,
+  condition groups, conditions, and executions, then runs whitelisted handlers.
+- **Idempotency key:** `event_id`
+- **Steps:** `load_event`, `load_player`, `load_active_campaigns`,
+  `find_matching_campaigns`, `execute_campaigns`, `mark_processed`
+- **Runbook:** `docs/runbooks/bonus_evaluation_reactor.md`
+- **Compliance links:** `RG-MGA-005`, `RG-UK-011`
+- **Telemetry prefix:** `[:igaming_ref, :promotions, :bonus_evaluation_reactor]`
 
 ### `IgamingRef.Gaming.ProviderSyncReactor`
 - **Type:** Reactor (non-Transfer) — `reactor` node type
@@ -609,7 +603,7 @@ retained with hashes in place of personal values. The hash chain remains intact.
 | `IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded` | Finance | Withdrawal amount must not exceed the player's configured daily limit | RG-UK-014, RG-MGA-007 |
 | `IgamingRef.Finance.Rules.PlayerKYCVerified` | Finance | Player must have `kyc_status: :verified` before any withdrawal | RG-MGA-003, RG-UK-002 |
 | `IgamingRef.Players.Rules.PlayerNotSelfExcluded` | Players | Player must not have an active self-exclusion record | RG-UK-008, RG-MGA-009 |
-| `IgamingRef.Promotions.Rules.PlayerEligibleForCampaign` | Promotions | Player meets the campaign's eligibility criteria per Blueprint | RG-MGA-005 |
+| `IgamingRef.Promotions.Rules.PlayerEligibleForCampaign` | Promotions | Player meets campaign eligibility criteria | RG-MGA-005 |
 | `IgamingRef.Promotions.Rules.CampaignNotExpired` | Promotions | Campaign's `expires_at` has not passed | RG-MGA-005 |
 | `IgamingRef.Gaming.Rules.ProviderActive` | Gaming | `ProviderConfig.status` must be `:active` before a sync is permitted | RG-MGA-011 |
 | `IgamingRef.Gaming.Rules.GameRTPCertified` | Gaming | `Game.certification_status` must be `:certified` before `publish` is permitted | RG-MGA-006 |
@@ -627,7 +621,7 @@ meaningful across three status states (passing, failing, unimplemented).
 | `RG-MGA-001` | Wallet balance integrity — balance never goes negative; derived from immutable ledger | `Finance.Wallet`, `Finance.LedgerEntry`, `Finance.Transfer`, `Finance.Rules.SufficientBalance` | planned |
 | `RG-MGA-002` | Ledger immutability — entries cannot be modified or deleted | `Finance.LedgerEntry` (AshDoubleEntry enforces no update/destroy) | planned |
 | `RG-MGA-003` | KYC verification required before first withdrawal | `Players.KYCDocument`, `Finance.Rules.PlayerKYCVerified` (gate in WithdrawalTransfer) | planned |
-| `RG-MGA-005` | Bonus terms must be transparent and enforced per Blueprint DSL | `Promotions.BonusCampaign`, `Promotions.BonusGrant`, `Promotions.Blueprints.DepositMatchBlueprint` | planned |
+| `RG-MGA-005` | Bonus terms must be transparent and enforced by configurable runtime logic | `Promotions.BonusCampaign`, `Promotions.BonusTrigger`, `Promotions.BonusCondition`, `Promotions.BonusExecution`, `Promotions.BonusEvaluationReactor`, `Promotions.BonusGrant` | planned |
 | `RG-MGA-006` | Published RTP must match the provider-certified value; changes are logged in GameVersion | `Gaming.Game` (certification gate on publish), `Gaming.GameVersion` (RTP change log), `Gaming.Rules.GameRTPCertified` | planned |
 | `RG-MGA-007` | Withdrawal processing within declared SLA | `Finance.WithdrawalRequest`, `Finance.WithdrawalTransfer` | planned |
 | `RG-MGA-009` | Self-exclusion records must be immutable | `Players.SelfExclusionRecord` | planned |
@@ -637,7 +631,7 @@ meaningful across three status states (passing, failing, unimplemented).
 | `RG-UK-003` | Player-facing balance must match ledger sum at all times | `Finance.Wallet` (no mutable balance field; derived from LedgerEntry sum), `Finance.LedgerEntry` | planned |
 | `RG-UK-004` | UK players must be able to choose wallet draw order | `Players.Player.wallet_draw_order` attribute, `update_draw_order` action | planned |
 | `RG-UK-008` | Self-exclusion must block all financial transactions immediately | `Players.Rules.PlayerNotSelfExcluded` (required in all Transfers) | planned |
-| `RG-UK-011` | Bonus wagering requirements must be disclosed at grant time via Blueprint | `Promotions.BonusCampaign`, `Promotions.BonusGrant`, Blueprint `forfeiture_rules/0` | planned |
+| `RG-UK-011` | Bonus wagering requirements must be disclosed and enforced at grant time | `Promotions.BonusCampaign`, `Promotions.BonusExecution`, `Promotions.BonusGrant`, `Promotions.BonusEvaluationReactor` | planned |
 | `RG-UK-014` | Withdrawals must be processed to original payment method | `Finance.WithdrawalTransfer` | planned |
 | `RG-UK-015` | Game categories must be accurate for self-exclusion tooling (some programmes are category-scoped) | `Gaming.Game.category`, `Gaming.GameCatalog.list_by_category` | planned |
 | `RG-UK-GDPR-001` | Personal data must be erasable without breaking audit chain integrity | `Ops.AuditEntry`, `Ops.PIIVault` (PIIVault pattern per ADR-006) | planned |
@@ -714,19 +708,19 @@ meaningful across three status states (passing, failing, unimplemented).
 
 ## Expected Module Counts (Phase 1 validation)
 
-`mix foundry.project.context` must return all 30 nodes. Counts by domain and type:
+`mix foundry.project.context` must return all fixture nodes. Counts by domain and type:
 
-| Domain | Resources | Reactors/Transfers | Jobs | Rules | Blueprints | Providers |
-|---|---|---|---|---|---|---|
-| `Finance` | 4 (Wallet, LedgerEntry, Transfer, WithdrawalRequest) | 1 (WithdrawalTransfer) | 0 | 3 (SufficientBalance, WithdrawalLimitNotExceeded, PlayerKYCVerified) | 0 | 0 |
-| `Players` | 3 (Player, KYCDocument, SelfExclusionRecord) | 0 | 0 | 1 (PlayerNotSelfExcluded) | 0 | 0 |
-| `Promotions` | 2 (BonusCampaign, BonusGrant) | 1 (BonusGrantTransfer) | 0 | 2 (PlayerEligibleForCampaign, CampaignNotExpired) | 1 (DepositMatchBlueprint) | 0 |
-| `Gaming` | 3 (ProviderConfig, Game, GameVersion) + 1 read-only (GameCatalog) | 1 (ProviderSyncReactor) | 1 (CatalogSyncJob) | 2 (ProviderActive, GameRTPCertified) | 0 | 2 (PragmaticPlayV1, PragmaticPlayV2) |
-| `Ops` | 2 (AuditEntry, PIIVault) | 0 | 0 | 0 | 0 | 0 |
-| `Accounts` | 2 (User, Token — auth) | 0 | 0 | 0 | 0 | 0 |
+| Domain | Resources | Reactors/Transfers | Jobs | Rules | Providers |
+|---|---|---|---|---|---|
+| `Finance` | 5 (Wallet, LedgerEntry, Transfer, WithdrawalRequest, WithdrawalWebhookEvent) | 1 (WithdrawalTransfer) | 1 (ProcessWithdrawalWebhook) | 3 (SufficientBalance, WithdrawalLimitNotExceeded, PlayerKYCVerified) | 0 |
+| `Players` | 3 (Player, KYCDocument, SelfExclusionRecord) | 0 | 0 | 1 (PlayerNotSelfExcluded) | 0 |
+| `Promotions` | 7 (BonusCampaign, BonusGrant, BonusTrigger, BonusConditionGroup, BonusCondition, BonusExecution, BonusEvent) | 2 (BonusGrantTransfer, BonusEvaluationReactor) | 0 | 2 (PlayerEligibleForCampaign, CampaignNotExpired) | 0 |
+| `Gaming` | 3 (ProviderConfig, Game, GameVersion) + 1 read-only (GameCatalog) | 1 (ProviderSyncReactor) | 1 (CatalogSyncJob) | 2 (ProviderActive, GameRTPCertified) | 2 (PragmaticPlayV1, PragmaticPlayV2) |
+| `Ops` | 2 (AuditEntry, PIIVault) | 0 | 0 | 0 | 0 |
+| `Accounts` | 2 (User, Token — auth) | 0 | 0 | 0 | 0 |
 
-**Total:** 16 resources (+ 1 read-only derived), 3 reactors/transfers, 1 job, 8 rules,
-1 blueprint, 2 provider adapters, 17 compliance requirements.
+**Total:** 23 resources (+ 1 read-only derived), 4 reactors/transfers, 2 jobs, 8 rules,
+2 provider adapters, 17 compliance requirements.
 
 ---
 
@@ -739,8 +733,8 @@ Running `mix foundry.lint.all --json` against a freshly scaffolded reference pro
 - **Zero** `:missing_paper_trail` violations (all sensitive resources declare AshPaperTrail)
 - **Zero** `:missing_archival` violations (all sensitive resources declare AshArchival)
 - **Zero** `:missing_idempotency` violations (all Transfers/Reactors with side effects declare idempotency keys)
-- **Zero** `:missing_forfeiture_rules` violations (DepositMatchBlueprint declares full
-  `forfeiture` DSL block per ADR-005)
+- **Zero** bonus-engine configuration lint errors for supported trigger/condition/execution
+  kinds (unknown kinds rejected at write time by Ash constraints)
 - **Zero** `:adapter_missing_contract_tests` violations — both PragmaticPlayV1 and V2
   adapter modules must have contract tests before they can be considered active-eligible
   (INV-010 / ADR-007 constraint)
@@ -796,16 +790,16 @@ count assertions from the former `context.all` matrix are now asserted against
 | `project_type` | `"standard"` |
 | `domain_type` | `"igaming"` |
 | `graph_delta` | `null` (no active editing session at test time) |
-| `nodes` count | 30 (16 resources + 1 read-only + 3 reactors/transfers + 1 job + 8 rules + 1 blueprint + 2 providers) |
+| `nodes` count | 36 (23 resources + 1 read-only + 4 reactors/transfers + 2 jobs + 8 rules + 2 providers + 1 trigger) before synthetic external nodes |
 | Nodes ordered | Alphabetical by FQN — assert first node FQN < second node FQN |
 | Domain count derived from nodes | 6 (`Finance`, `Players`, `Promotions`, `Gaming`, `Ops`, `Accounts`) |
-| `Finance` node count | 8 (4 resources + 1 transfer + 3 rules) |
-| `Promotions` blueprint count | 1 (`DepositMatchBlueprint`) |
+| `Finance` node count | 10 (5 resources + 1 transfer + 1 job + 3 rules) |
+| `Promotions` configurable resources present | `BonusTrigger`, `BonusConditionGroup`, `BonusCondition`, `BonusExecution`, `BonusEvent` |
 | `Gaming` provider count | 2 (`PragmaticPlayV1`, `PragmaticPlayV2`) |
 | `Gaming` job count | 1 (`CatalogSyncJob`) |
 | `Ops` resource count | 2 (`AuditEntry`, `PIIVault`) |
 | `Accounts` resource count | 2 (`User`, `Token`) |
-| Every node has `id`, `module`, `type`, `domain`, `app: null` | All 30 nodes |
+| Every node has `id`, `module`, `type`, `domain`, `app: null` | All nodes |
 | Sensitive node: `sensitive: true` | Any node in `sensitive_resources` manifest list |
 | Non-sensitive node: `sensitive: false` | `IgamingRef.Gaming.Game` |
 | `edges` non-empty | At minimum: `WithdrawalTransfer → Wallet (writes)`, `WithdrawalTransfer → LedgerEntry (writes)` |
@@ -816,7 +810,7 @@ count assertions from the former `context.all` matrix are now asserted against
 | `cross_app: false` on all edges | All edges (standard project, no umbrella) |
 | `spec_kit` field present | Non-null object |
 | `spec_kit.adrs` non-empty | At least the reference project's ADRs |
-| `spec_kit.runbooks` count | 3 (withdrawal_transfer, bonus_grant_transfer, provider_sync_reactor) |
+| `spec_kit.runbooks` count | 4 (withdrawal_transfer, bonus_grant_transfer, provider_sync_reactor, bonus_evaluation_reactor) |
 | `spec_kit.index_token_count` ≤ 400 | Numeric, ≤ 400 |
 | `spec_kit.index_token_warn` | `false` (reference project corpus is small) |
 
@@ -946,10 +940,10 @@ these ADRs are from the iGaming target platform's spec-kit (`Giro` / `IgamingRef
 | ADR | Decision | Implemented by |
 |---|---|---|
 | ADR-001 | Double-entry ledger — no mutable balance fields | `Finance.LedgerEntry` (AshDoubleEntry.Balance), `Finance.Wallet` (no `balance` attribute), `Finance.Transfer` |
-| ADR-002 | Blueprint & Instance pattern for bonus engine | `Promotions.Blueprints.DepositMatchBlueprint` (Blueprint), `Promotions.BonusCampaign` (Instance with `blueprint_module` field) |
+| ADR-002 | Configurable runtime logic for bonus engine | `Promotions.BonusTrigger`, `Promotions.BonusConditionGroup`, `Promotions.BonusCondition`, `Promotions.BonusExecution`, `Promotions.BonusEvaluationReactor` |
 | ADR-003 | Multi-currency account structure | `Finance.Wallet` (one row per currency+bucket; `currency` + `bucket` attributes) |
 | ADR-004 | Wallet draw order as player preference | `Players.Player.wallet_draw_order` attribute, `update_draw_order` action, `jurisdiction` field for `:de` override |
-| ADR-005 | Forfeiture rules declared in Blueprint DSL | `DepositMatchBlueprint` forfeiture DSL block; `BonusGrant.forfeit` requires reason code matching a declared trigger |
+| ADR-005 | Bonus terms and outcomes are explicit and auditable | `Promotions.BonusEvent` + configurable condition/execution resources; `BonusGrant` state transitions remain explicit actions |
 | ADR-006 | PIIVault pattern for GDPR vs audit log conflict | `Ops.AuditEntry` (hashed PII in state columns), `Ops.PIIVault` (original values, deleted on erasure) |
 | ADR-007 | Provider API versioning via Strangler Fig | `Gaming.Adapters.PragmaticPlayV1` and `PragmaticPlayV2` (side-by-side modules); `Gaming.ProviderConfig.active_adapter_version` (dispatch field); `Gaming.ProviderSyncReactor.resolve_adapter_module` step |
 | ADR-008 | AshDoubleEntry adoption (not custom ledger) | `Finance.Wallet` extends `AshDoubleEntry.Account`; `Finance.LedgerEntry` extends `AshDoubleEntry.Balance`; `Finance.Transfer` extends `AshDoubleEntry.Transfer` |
