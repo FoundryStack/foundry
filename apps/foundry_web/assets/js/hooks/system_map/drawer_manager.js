@@ -35,12 +35,14 @@ export class DrawerManager {
     const drawer = document.getElementById(SELECTORS.drawer)
     const closeBtn = document.getElementById(SELECTORS.drawerClose)
 
-    if (!closeBtn) return
+    if (!drawer) return
 
-    this._closeHandler = () => {
-      drawer.style.width = '0'
+    if (closeBtn) {
+      this._closeHandler = () => {
+        drawer.style.width = '0'
+      }
+      closeBtn.addEventListener('click', this._closeHandler)
     }
-    closeBtn.addEventListener('click', this._closeHandler)
 
     const tabs = drawer.querySelectorAll('[data-tab]')
     tabs.forEach(tab => {
@@ -69,7 +71,10 @@ export class DrawerManager {
 
   switchTab(tabName) {
     const drawer = document.getElementById(SELECTORS.drawer)
+    if (!drawer) return
+
     const tabs = drawer.querySelectorAll('[data-tab]')
+    const activeTab = drawer.querySelector(`[data-tab="${tabName}"]`)
     const panels = {
       details: document.getElementById(SELECTORS.panelDetails),
       flow: document.getElementById(SELECTORS.panelFlow),
@@ -77,8 +82,14 @@ export class DrawerManager {
       auth: document.getElementById(SELECTORS.panelAuth)
     }
 
-    tabs.forEach(t => t.classList.remove('tab-active'))
-    drawer.querySelector(`[data-tab="${tabName}"]`).classList.add('tab-active')
+    if (!activeTab) return
+
+    tabs.forEach(t => {
+      t.classList.remove('active')
+      t.classList.remove('tab-active')
+    })
+    activeTab.classList.add('active')
+    activeTab.classList.add('tab-active')
 
     Object.values(panels).forEach(p => {
       if (p) p.classList.add('hidden')

@@ -1,70 +1,104 @@
-<div class="foundry-map-layout" data-theme="dark">
-  <!-- Sidebar (resizable) -->
-  <aside id="foundry-sidebar" class="foundry-sidebar menu bg-base-200 border-r border-base-300">
-    <!-- Search input -->
-    <input id="fm-search" class="input input-sm w-full flex-none mb-2 mx-1" placeholder="Search…" />
-
-    <!-- Stats section -->
-    <div class="flex flex-col gap-0.5 text-[10px] text-base-content/50 px-2 mb-2 flex-none">
-      <span><%= Enum.count(@all_nodes) %> modules</span>
-      <span class="text-warning"><%= @gap_count %> gaps</span>
-      <span class="text-info"><%= @migration_count %> migrations</span>
+<div class="fm-workspace" data-theme="dark">
+  <aside class="fm-sidebar" id="fm-sidebar">
+    <div class="fm-sidebar-header">
+      <span class="fm-brand">FOUNDRY</span>
+      <span class="fm-crumb"><%= @project_name || "project" %></span>
     </div>
 
-    <!-- Menu list (scrollable) -->
-    <ul id="fm-sidebar-list" class="flex-1 overflow-y-auto overflow-x-hidden">
-      <%= for {domain, nodes} <- @nodes_by_domain do %>
-        <li class="menu-title text-[11px] sticky top-0 bg-base-200 z-10"><%= domain %></li>
-        <%= for node <- nodes do %>
-          <li data-node-id={node["id"]}>
-            <a class="flex items-center gap-1 text-[10px] py-1 px-2">
-              <span class="badge badge-xs text-[9px] px-1"><%= abbr_type(node["type"]) %></span>
-              <span class="truncate flex-1 min-w-0"><%= node["id"] %></span>
-              <!-- Status pip: gap/sensitive/else -->
-              <span class={"flex-none flex-shrink-0 #{pip_class(node)}"}></span>
-            </a>
-          </li>
-        <% end %>
-      <% end %>
-    </ul>
+    <div class="fm-sidebar-tabs" role="tablist">
+      <button class={"fm-sidebar-tab #{if @sidebar_tab == :system_map, do: "active"}"} phx-click="set_sidebar_tab" phx-value-tab="system_map">System Map</button>
+      <button class={"fm-sidebar-tab #{if @sidebar_tab == :compliance, do: "active"}"} phx-click="set_sidebar_tab" phx-value-tab="compliance">Compliance</button>
+      <button class={"fm-sidebar-tab #{if @sidebar_tab == :operations, do: "active"}"} phx-click="set_sidebar_tab" phx-value-tab="operations">Operations</button>
+      <button class={"fm-sidebar-tab #{if @sidebar_tab == :test_coverage, do: "active"}"} phx-click="set_sidebar_tab" phx-value-tab="test_coverage">Coverage</button>
+    </div>
 
-    <!-- Resize handle (positioned absolutely) -->
-    <div id="sidebar-resize-handle" class="bg-base-300 hover:bg-primary/50 transition-colors" style="touch-action: none;"></div>
+    <div class="fm-sidebar-body">
+      <%= if @sidebar_tab == :system_map do %>
+        <input class="fm-sidebar-search" type="text" placeholder="Filter…"
+               phx-keyup="filter_nodes" phx-debounce="200" />
+        <div class="fm-node-list" id="fm-node-list">
+          <%= for {domain, nodes} <- @nodes_by_domain do %>
+            <div class="fm-domain-header"><%= domain %></div>
+            <%= for node <- nodes do %>
+              <button class="fm-node-item" data-node-id={node["id"]}>
+                <span class={"fm-type-badge fm-badge-#{node["type"]}"}><%= abbr_type(node["type"]) %></span>
+                <span class="fm-node-name"><%= node["id"] %></span>
+                <span class={"fm-pip #{pip_status(node)}"}></span>
+              </button>
+            <% end %>
+          <% end %>
+        </div>
+      <% end %>
+      <%= if @sidebar_tab == :compliance do %>
+        <div class="fm-placeholder">Compliance view coming soon</div>
+      <% end %>
+      <%= if @sidebar_tab == :operations do %>
+        <div class="fm-placeholder">Operations view coming soon</div>
+      <% end %>
+      <%= if @sidebar_tab == :test_coverage do %>
+        <div class="fm-placeholder">Test coverage view coming soon</div>
+      <% end %>
+    </div>
+
+    <div class="fm-sidebar-resize-handle" id="sidebar-resize-handle"></div>
   </aside>
 
-  <!-- Canvas -->
-  <div class="relative overflow-hidden foundry-map-canvas">
-    <%= if @context_json do %>
-      <div id="foundry-graph"
-           phx-hook="SystemMap"
-           data-context={@context_json}
-           style="width:100%;height:100%"></div>
-    <% else %>
-      <div class="flex items-center justify-center h-full">
-        <p class="text-base-content/60">
-          No modules found. Run <code>mix compile</code> in your project directory.
-        </p>
+  <div class="fm-central">
+    <div class="fm-lensbar">
+      <button class={"fm-lens-btn #{if @lens == :default, do: "active"}"} phx-click="set_lens" phx-value-lens="default">
+        <span class="fm-dot fm-dot-primary"></span> Default
+      </button>
+      <button class={"fm-lens-btn #{if @lens == :trc, do: "active"}"} phx-click="set_lens" phx-value-lens="trc">
+        <span class="fm-dot fm-dot-scenario"></span> Scenario
+      </button>
+      <button class={"fm-lens-btn #{if @lens == :auth, do: "active"}"} phx-click="set_lens" phx-value-lens="auth">
+        <span class="fm-dot fm-dot-auth"></span> Auth
+      </button>
+      <button class={"fm-lens-btn #{if @lens == :cfg, do: "active"}"} phx-click="set_lens" phx-value-lens="cfg">
+        <span class="fm-dot fm-dot-config"></span> Config
+      </button>
+      <div class="fm-lensbar-spacer"></div>
+      <button class={"fm-view-btn #{if @system_map_view == :table, do: "active"}"} phx-click="toggle_view">
+        <%= if @system_map_view == :graph, do: "Graph", else: "Table" %>
+      </button>
+      <button class="fm-icon-btn" phx-click="toggle_feed" title="Activity ⌘\">⊕</button>
+    </div>
+
+    <div class="fm-content">
+      <div class={"fm-drawer #{if @drawer_open, do: "open"}"} id="fm-drawer">
+        <div class="fm-drawer-tabs">
+          <button class={"fm-drawer-tab #{if @drawer_tab == :details, do: "active"}"} data-tab="details" phx-click="set_drawer_tab" phx-value-tab="details">Details</button>
+          <button class={"fm-drawer-tab #{if @drawer_tab == :flow, do: "active"}"} data-tab="flow" phx-click="set_drawer_tab" phx-value-tab="flow">Flow</button>
+          <button class={"fm-drawer-tab #{if @drawer_tab == :shortcuts, do: "active"}"} data-tab="actions" phx-click="set_drawer_tab" phx-value-tab="shortcuts">Shortcuts</button>
+          <button class={"fm-drawer-tab #{if @drawer_tab == :authorization, do: "active"}"} data-tab="auth" phx-click="set_drawer_tab" phx-value-tab="authorization">Auth</button>
+          <button class="fm-drawer-close" id="fm-drawer-close" phx-click="close_drawer">×</button>
+        </div>
+        <div class="fm-drawer-body" id="fm-panel-details"></div>
+        <div class="fm-drawer-body hidden" id="fm-panel-flow"></div>
+        <div class="fm-drawer-body hidden" id="fm-panel-actions"></div>
+        <div class="fm-drawer-body hidden" id="fm-panel-auth"></div>
       </div>
-    <% end %>
-    <!-- Hover card (hidden, positioned by JS) -->
-    <div id="fm-hover-card" class="hidden absolute z-50 bg-base-100 border border-base-300 rounded p-2 text-xs shadow-lg" style="pointer-events:none"></div>
+
+      <div class="fm-canvas" phx-hook="SystemMap" id="system-map" data-context={@context_json} phx-update="ignore">
+        <div id="fm-hover-card" class="hidden"></div>
+      </div>
+    </div>
   </div>
 
-  <!-- Drawer (slides in from right) -->
-  <div id="fm-drawer" class="bg-base-200 border-l border-base-300 flex flex-col overflow-hidden transition-all" style="width:0;">
-    <!-- Resize handle (left edge) -->
-    <div id="drawer-resize-handle" class="absolute left-0 top-0 bottom-0 w-1 bg-base-300 hover:bg-primary/50 cursor-col-resize transition-colors" style="touch-action: none;"></div>
-
-    <div class="tabs tabs-border flex-none px-2 pt-2">
-      <button class="tab tab-active" data-tab="details">Details</button>
-      <button class="tab" data-tab="flow">Flow</button>
-      <button class="tab" data-tab="actions">Actions</button>
-      <button class="tab hidden" data-tab="auth">Authorization</button>
-      <button id="fm-drawer-close" class="ml-auto btn btn-xs btn-ghost">✕</button>
+  <div class={"fm-feed #{if @feed_open, do: "open"}"} id="fm-feed">
+    <div class="fm-feed-header">
+      <span class="fm-feed-title">Activity</span>
+      <button class="fm-icon-btn" phx-click="toggle_feed">×</button>
     </div>
-    <div id="fm-panel-details" class="flex-1 overflow-y-auto p-3 text-xs"></div>
-    <div id="fm-panel-flow"    class="hidden flex-1 overflow-y-auto p-3 text-xs"></div>
-    <div id="fm-panel-actions" class="hidden flex-1 overflow-y-auto p-3 text-xs"></div>
-    <div id="fm-panel-auth"    class="hidden flex-1 overflow-y-auto p-3 text-xs"></div>
+    <div class="fm-feed-tabs">
+      <button class={"fm-feed-tab #{if @feed_tab == :feed, do: "active"}"} phx-click="set_feed_tab" phx-value-tab="feed">Feed</button>
+      <button class={"fm-feed-tab #{if @feed_tab == :copilot, do: "active"}"} phx-click="set_feed_tab" phx-value-tab="copilot">Copilot</button>
+    </div>
+    <div class="fm-feed-body" id="feed-body"></div>
+    <div class="fm-feed-input">
+      <textarea class="fm-feed-textarea" rows="2" placeholder="Ask anything…"
+                phx-keydown="feed_keydown"></textarea>
+      <div class="fm-feed-hint">⏎ send · ⇧⏎ newline</div>
+    </div>
   </div>
 </div>

@@ -2,14 +2,17 @@ import { searchMatch } from '../../foundry_graph'
 import { UI_CONFIG } from '../../graph/config'
 
 const SELECTORS = {
-  sidebarList: 'fm-sidebar-list',
-  search: 'fm-search',
+  sidebarList: 'fm-node-list',
+  nodeItem: 'fm-node-item',
+  search: 'fm-sidebar-search',
+  nodeItemAttr: 'data-node-id',
 }
 
 export class SidebarManager {
   constructor(graph, normalizedNodes) {
     this.graph = graph
     this.normalizedNodes = normalizedNodes
+    this.onNodeSelect = null
     this._initSidebar()
     this._initSearch()
     this._initResize()
@@ -20,12 +23,15 @@ export class SidebarManager {
     if (!list) return
 
     this._sidebarClickHandler = (evt) => {
-      const item = evt.target.closest('[data-node-id]')
+      const item = evt.target.closest(`.${SELECTORS.nodeItem}`)
       if (item) {
-        const nodeId = item.dataset.nodeId
-        this.highlightNode(nodeId)
-        this.graph.selectNode(nodeId)
-        this.graph.centerOn(nodeId)
+        const nodeId = item.getAttribute(SELECTORS.nodeItemAttr)
+        if (nodeId) {
+          this.highlightNode(nodeId)
+          this.graph.selectNode(nodeId)
+          this.graph.centerOn(nodeId)
+          this.onNodeSelect?.(nodeId)
+        }
       }
     }
     list.addEventListener('click', this._sidebarClickHandler)
@@ -34,14 +40,15 @@ export class SidebarManager {
   highlightNode(nodeId) {
     const list = document.getElementById(SELECTORS.sidebarList)
     if (list) {
-      list.querySelectorAll('[data-node-id]').forEach(item => {
-        item.classList.toggle('active', item.dataset.nodeId === nodeId)
+      list.querySelectorAll(`.${SELECTORS.nodeItem}`).forEach(item => {
+        const itemId = item.getAttribute(SELECTORS.nodeItemAttr)
+        item.classList.toggle('selected', itemId === nodeId)
       })
     }
   }
 
   _initSearch() {
-    const searchInput = document.getElementById(SELECTORS.search)
+    const searchInput = document.querySelector(`.${SELECTORS.search}`)
     if (!searchInput) return
 
     this._searchInputHandler = (evt) => {
@@ -52,9 +59,9 @@ export class SidebarManager {
         const list = document.getElementById(SELECTORS.sidebarList)
         if (!list) return
 
-        const items = list.querySelectorAll('[data-node-id]')
+        const items = list.querySelectorAll(`.${SELECTORS.nodeItem}`)
         items.forEach(item => {
-          const nodeId = item.dataset.nodeId
+          const nodeId = item.getAttribute(SELECTORS.nodeItemAttr)
           const node = this.normalizedNodes.get(nodeId)
 
           if (!node) {
@@ -71,15 +78,14 @@ export class SidebarManager {
   }
 
   _initResize() {
-    const layout = document.querySelector('.foundry-map-layout')
-    const sidebar = document.getElementById('foundry-sidebar')
+    const sidebar = document.getElementById('fm-sidebar')
     const handle = document.getElementById('sidebar-resize-handle')
 
-    if (!sidebar || !handle || !layout) return
+    if (!sidebar || !handle) return
 
     const savedWidth = localStorage.getItem(UI_CONFIG.storageKeys.sidebarWidth)
     const initialWidth = savedWidth ? parseInt(savedWidth, 10) : UI_CONFIG.sidebarWidth.default
-    layout.style.gridTemplateColumns = `${initialWidth}px 1fr`
+    sidebar.style.width = `${initialWidth}px`
 
     let isResizing = false
     let startX = 0
@@ -100,7 +106,7 @@ export class SidebarManager {
       if (!isResizing) return
       const delta = e.clientX - startX
       const newWidth = Math.max(UI_CONFIG.sidebarWidth.min, Math.min(UI_CONFIG.sidebarWidth.max, startWidth + delta))
-      layout.style.gridTemplateColumns = `${newWidth}px 1fr`
+      sidebar.style.width = `${newWidth}px`
     }
 
     const onMouseUp = () => {
@@ -122,7 +128,7 @@ export class SidebarManager {
       list.removeEventListener('click', this._sidebarClickHandler)
     }
 
-    const searchInput = document.getElementById(SELECTORS.search)
+    const searchInput = document.querySelector(`.${SELECTORS.search}`)
     if (searchInput && this._searchInputHandler) {
       searchInput.removeEventListener('input', this._searchInputHandler)
       clearTimeout(this._searchTimeout)

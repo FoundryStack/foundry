@@ -13,22 +13,33 @@ export const SystemMapHook = {
         return
       }
       this._initGraph()
+
+      // Register keyboard shortcut for feed toggle (⌘\)
+      this._keyHandler = (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+          e.preventDefault()
+          this.pushEvent('toggle_feed', {})
+        }
+      }
+      document.addEventListener('keydown', this._keyHandler)
     } catch (error) {
       console.error('SystemMapHook mount error:', error)
     }
   },
 
   _restoreSizes() {
-    const layout = document.querySelector('.foundry-map-layout')
-    if (layout) {
+    const sidebar = document.getElementById('fm-sidebar')
+    if (sidebar) {
       const sidebarWidth = parseInt(localStorage.getItem(UI_CONFIG.storageKeys.sidebarWidth)) || UI_CONFIG.sidebarWidth.default
-      layout.style.gridTemplateColumns = `${sidebarWidth}px 1fr`
+      sidebar.style.width = `${sidebarWidth}px`
     }
 
     const drawer = document.getElementById('fm-drawer')
-    if (drawer && drawer.offsetWidth > 0) {
+    if (drawer) {
       const drawerWidth = parseInt(localStorage.getItem(UI_CONFIG.storageKeys.drawerWidth)) || UI_CONFIG.drawerWidth.default
-      drawer.style.width = `${drawerWidth}px`
+      if (drawer.classList.contains('open')) {
+        drawer.style.width = `${drawerWidth}px`
+      }
     }
   },
 
@@ -40,6 +51,13 @@ export const SystemMapHook = {
       // Initialize managers
       this.drawer = new DrawerManager(this.graph.normalizedNodes)
       this.sidebar = new SidebarManager(this.graph, this.graph.normalizedNodes)
+
+      // Wire sidebar node select callback
+      this.sidebar.onNodeSelect = (nodeId) => {
+        const nodeData = this.graph.normalizedNodes.get(nodeId)
+        this._handleNodeSelected(nodeId, nodeData)
+        this.pushEvent('node_selected', { id: nodeId })
+      }
 
       // Wire node click handler
       this.graph.onNodeClick = (nodeId, nodeData) => {
@@ -338,6 +356,11 @@ export const SystemMapHook = {
   },
 
   destroyed() {
+    if (this._keyHandler) {
+      document.removeEventListener('keydown', this._keyHandler)
+      this._keyHandler = null
+    }
+
     if (this.drawer) {
       this.drawer.destroy()
       this.drawer = null

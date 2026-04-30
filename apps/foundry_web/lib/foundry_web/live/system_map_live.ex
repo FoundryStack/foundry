@@ -43,7 +43,16 @@ defmodule FoundryWeb.SystemMapLive do
           all_nodes: nodes,
           gap_count: gap_count,
           migration_count: migration_count,
+          project_name: Path.basename(project_root),
+          sidebar_tab: :system_map,
+          lens: :default,
+          system_map_view: :graph,
           drawer_open: false,
+          drawer_tab: :details,
+          feed_open: false,
+          feed_tab: :feed,
+          filter_query: "",
+          selected_id: nil,
           selected_node: nil,
           project_root: project_root
         )}
@@ -55,7 +64,16 @@ defmodule FoundryWeb.SystemMapLive do
           all_nodes: [],
           gap_count: 0,
           migration_count: 0,
+          project_name: Path.basename(project_root),
+          sidebar_tab: :system_map,
+          lens: :default,
+          system_map_view: :graph,
           drawer_open: false,
+          drawer_tab: :details,
+          feed_open: false,
+          feed_tab: :feed,
+          filter_query: "",
+          selected_id: nil,
           selected_node: nil,
           project_root: project_root
         )}
@@ -63,8 +81,49 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
-  def handle_event("node_selected", %{"id" => _id, "data" => node_data}, socket) do
-    {:noreply, assign(socket, selected_node: node_data, drawer_open: true)}
+  def handle_event("node_selected", _params, socket) do
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("set_sidebar_tab", %{"tab" => t}, socket) do
+    {:noreply, assign(socket, sidebar_tab: String.to_existing_atom(t))}
+  end
+
+  @impl true
+  def handle_event("set_lens", %{"lens" => l}, socket) do
+    {:noreply, assign(socket, lens: String.to_existing_atom(l))}
+  end
+
+  @impl true
+  def handle_event("toggle_view", _params, socket) do
+    new_view = if socket.assigns.system_map_view == :graph, do: :table, else: :graph
+    {:noreply, assign(socket, system_map_view: new_view)}
+  end
+
+  @impl true
+  def handle_event("toggle_feed", _params, socket) do
+    {:noreply, update(socket, :feed_open, &(!&1))}
+  end
+
+  @impl true
+  def handle_event("set_feed_tab", %{"tab" => t}, socket) do
+    {:noreply, assign(socket, feed_tab: String.to_existing_atom(t))}
+  end
+
+  @impl true
+  def handle_event("set_drawer_tab", %{"tab" => t}, socket) do
+    {:noreply, assign(socket, drawer_tab: String.to_existing_atom(t))}
+  end
+
+  @impl true
+  def handle_event("close_drawer", _params, socket) do
+    {:noreply, assign(socket, drawer_open: false)}
+  end
+
+  @impl true
+  def handle_event("filter_nodes", %{"value" => q}, socket) do
+    {:noreply, assign(socket, filter_query: q)}
   end
 
   @impl true
@@ -79,36 +138,32 @@ defmodule FoundryWeb.SystemMapLive do
     end
   end
 
-  # Helpers for template
   def abbr_type(nil), do: "unk"
   def abbr_type(type) do
     case type do
-      "resource" -> "res"
-      "transfer" -> "trx"
-      "reactor" -> "rct"
-      "rule" -> "rul"
-      "job" -> "job"
-      "liveview" -> "lv"
+      "resource"     -> "res"
+      "transfer"     -> "trx"
+      "reactor"      -> "rct"
+      "rule"         -> "rul"
+      "job"          -> "job"
+      "liveview"     -> "lv"
       "liveresource" -> "lr"
-      "blueprint" -> "bp"
-      "provider" -> "pv"
-      "trigger" -> "tg"
-      "terminal" -> "tm"
-      _ -> String.slice(type, 0..2) |> String.upcase()
+      "blueprint"    -> "bp"
+      "provider"     -> "pv"
+      "trigger"      -> "tg"
+      "terminal"     -> "tm"
+      _ -> type |> String.slice(0..2) |> String.upcase()
     end
   end
 
-  def pip_class(node) do
+  def pip_status(node) do
     compliance = node["compliance"] || []
     tc = node["test_coverage"] || %{}
-    sensitive = node["sensitive"] || false
-
     has_gap = is_list(compliance) and Enum.any?(compliance) and not Map.get(tc, "e2e_tests", false)
-
     cond do
-      has_gap -> "w-2 h-2 rounded-full bg-warning"
-      sensitive -> "w-2 h-2 rounded-full bg-error"
-      true -> "w-2 h-2 rounded-full bg-success"
+      has_gap           -> "fm-pip-gap"
+      node["sensitive"] -> "fm-pip-sensitive"
+      true              -> ""
     end
   end
 end

@@ -12,7 +12,7 @@ export function searchMatch(node, query) {
 }
 
 export function buildCanvasOverlays(container, nodes) {
-  const canvas = container.parentElement
+  const canvas = container
   if (!canvas) return
 
   canvas.querySelector('#foundry-canvas-overlays')?.remove()
