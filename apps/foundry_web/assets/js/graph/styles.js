@@ -1,3 +1,5 @@
+import { EDGE_CATALOG, edgeRelationSelector, edgeStaticStyle } from './edge_catalog'
+
 const FONT = 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif'
 
 export const FOUNDRY_LAYOUT_OPTIONS = {
@@ -138,71 +140,10 @@ export const STATIC_STYLES = [
       'opacity': 0.8,
     },
   },
-  {
-    selector: 'edge[relation="reads"]',
-    style: { 'target-arrow-shape': 'diamond', 'target-arrow-fill': 'hollow' },
-  },
-  {
-    selector: 'edge[relation="writes"]',
-    style: { 'target-arrow-shape': 'diamond', 'target-arrow-fill': 'filled' },
-  },
-  {
-    selector: 'edge[relation="triggers"]',
-    style: { 'target-arrow-shape': 'circle', 'target-arrow-fill': 'filled' },
-  },
-  {
-    selector: 'edge[relation="guard"], edge[relation="eligibleIf"], edge[relation="guards"]',
-    style: { 'line-style': 'dotted', 'width': 1.2 },
-  },
-  {
-    selector: 'edge[relation="async"]',
-    style: { 'line-style': 'dashed' },
-  },
-  {
-    selector: 'edge[relation="error"]',
-    style: { 'line-style': 'dashed' },
-  },
-  {
-    selector: 'edge[relation="compensation"]',
-    style: { 'width': 2 },
-  },
-  {
-    selector: 'edge[relation="references"]',
-    style: { 'target-arrow-shape': 'triangle', 'line-style': 'solid' },
-  },
-  {
-    selector: 'edge[relation="referenced_by"]',
-    style: { 'target-arrow-shape': 'triangle', 'line-style': 'solid' },
-  },
-  {
-    selector: 'edge[relation="configures"]',
-    style: { 'line-style': 'dashed', 'width': 1.5, 'opacity': 0.8 },
-  },
-  {
-    selector: 'edge[relation="authenticates"]',
-    style: { 'line-style': 'dashed', 'width': 1.8 },
-  },
-  {
-    selector: 'edge[relation="persists_to"]',
-    style: { 'line-style': 'dotted', 'width': 1 },
-  },
-  {
-    selector: 'edge[relation="queues_via"]',
-    style: { 'line-style': 'dotted', 'width': 1 },
-  },
-  {
-    selector: 'edge[relation="calls_provider"]',
-    style: { 'line-style': 'dotted', 'width': 1.5 },
-  },
-  {
-    selector: 'edge[relation="audit_trail"]',
-    style: {
-      'line-style': 'dotted',
-      'target-arrow-shape': 'triangle',
-      'opacity': 0.4,
-      'width': 1,
-    },
-  },
+  ...EDGE_CATALOG.map(edge => ({
+    selector: edgeRelationSelector(edge),
+    style: edgeStaticStyle(edge),
+  })),
   {
     selector: 'edge:compound',
     style: {
@@ -309,38 +250,13 @@ export function dynamicStyles(c) {
       selector: 'edge',
       style: { 'line-color': c.t2, 'target-arrow-color': c.t2 },
     },
-    { selector: 'edge[relation="sequence"]',
-      style: { 'line-color': c.t2, 'target-arrow-color': c.t2 } },
-    { selector: 'edge[relation="async"]',
-      style: { 'line-color': c.pu, 'target-arrow-color': c.pu } },
-    { selector: 'edge[relation="guard"], edge[relation="eligibleIf"], edge[relation="guards"]',
-      style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
-    { selector: 'edge[relation="compensation"]',
-      style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
-    { selector: 'edge[relation="error"]',
-      style: { 'line-color': c.rd, 'target-arrow-color': c.rd } },
-    { selector: 'edge[relation="reads"]',
-      style: { 'line-color': c.bl, 'target-arrow-color': c.bl } },
-    { selector: 'edge[relation="writes"]',
-      style: { 'line-color': c.gn, 'target-arrow-color': c.gn } },
-    { selector: 'edge[relation="triggers"]',
-      style: { 'line-color': c.pu, 'target-arrow-color': c.pu } },
-    { selector: 'edge[relation="references"]',
-      style: { 'line-color': c.b2, 'target-arrow-color': c.b2 } },
-    { selector: 'edge[relation="referenced_by"]',
-      style: { 'line-color': c.t2, 'target-arrow-color': c.t2 } },
-    { selector: 'edge[relation="configures"]',
-      style: { 'line-color': c.ac, 'target-arrow-color': c.ac } },
-    { selector: 'edge[relation="authenticates"]',
-      style: { 'line-color': c.gn, 'target-arrow-color': c.gn } },
-    { selector: 'edge[relation="persists_to"]',
-      style: { 'line-color': c.t3, 'target-arrow-color': c.t3 } },
-    { selector: 'edge[relation="queues_via"]',
-      style: { 'line-color': c.pu, 'target-arrow-color': c.pu } },
-    { selector: 'edge[relation="calls_provider"]',
-      style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
-    { selector: 'edge[relation="audit_trail"]',
-      style: { 'line-color': c.yw, 'target-arrow-color': c.yw } },
+    ...EDGE_CATALOG.map(edge => {
+      const color = c[edge.colorKey] || c.t2
+      return {
+        selector: edgeRelationSelector(edge),
+        style: { 'line-color': color, 'target-arrow-color': color },
+      }
+    }),
     { selector: '.trace, .trace-gap', style: { 'border-color': c.yw } },
   ]
 }

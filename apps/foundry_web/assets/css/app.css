@@ -136,6 +136,10 @@
   --fg-pub:  rgba(167, 139, 250, 0.1);
   --fg-pubd: rgba(167, 139, 250, 0.25);
 
+  --fg-cy:   #22d3ee;
+  --fg-pk:   #f472b6;
+  --fg-or:   #fb923c;
+
   --fg-ac:   var(--color-primary);
   --fg-tx:   var(--color-base-content);
   --fg-t2:   color-mix(in oklch, var(--color-neutral-content) 60%, transparent);
@@ -147,6 +151,23 @@
   --fg-b2:   color-mix(in oklch, var(--color-base-300) 70%, transparent);
   --fg-b3:   color-mix(in oklch, var(--color-base-300) 80%, transparent);
   --fg-r:    var(--radius-box);
+
+  --fg-edge-sequence:      #94a3b8;
+  --fg-edge-trigger:       var(--fg-pu);
+  --fg-edge-write:         var(--fg-gn);
+  --fg-edge-read:          var(--fg-bl);
+  --fg-edge-guard:         var(--fg-yw);
+  --fg-edge-eligible:      #fde047;
+  --fg-edge-async:         color-mix(in oklch, var(--fg-pu) 82%, var(--fg-bl));
+  --fg-edge-enqueue:       var(--fg-pk);
+  --fg-edge-compensation:  var(--fg-or);
+  --fg-edge-reference:     color-mix(in oklch, var(--fg-cy) 42%, var(--fg-t3));
+  --fg-edge-referenced-by: color-mix(in oklch, var(--fg-cy) 76%, var(--fg-t2));
+  --fg-edge-configure:     var(--fg-ac);
+  --fg-edge-auth:          color-mix(in oklch, var(--fg-gn) 65%, var(--fg-cy));
+  --fg-edge-persist:       color-mix(in oklch, var(--fg-t3) 78%, var(--fg-bl));
+  --fg-edge-queue:         color-mix(in oklch, var(--fg-pu) 70%, var(--fg-pk));
+  --fg-edge-provider:      color-mix(in oklch, var(--fg-cy) 70%, var(--fg-bl));
 }
 
 [data-theme=light] {
@@ -170,6 +191,10 @@
   --fg-pub:  rgba(147, 51, 234, 0.1);
   --fg-pubd: rgba(147, 51, 234, 0.25);
 
+  --fg-cy:   #0891b2;
+  --fg-pk:   #db2777;
+  --fg-or:   #ea580c;
+
   --fg-ac:   var(--color-primary);
   --fg-tx:   var(--color-base-content);
   --fg-t2:   color-mix(in oklch, var(--color-neutral-content) 60%, transparent);
@@ -181,6 +206,23 @@
   --fg-b2:   color-mix(in oklch, var(--color-base-300) 70%, transparent);
   --fg-b3:   color-mix(in oklch, var(--color-base-300) 80%, transparent);
   --fg-r:    var(--radius-box);
+
+  --fg-edge-sequence:      #64748b;
+  --fg-edge-trigger:       var(--fg-pu);
+  --fg-edge-write:         var(--fg-gn);
+  --fg-edge-read:          var(--fg-bl);
+  --fg-edge-guard:         var(--fg-yw);
+  --fg-edge-eligible:      #ca8a04;
+  --fg-edge-async:         color-mix(in oklch, var(--fg-pu) 82%, var(--fg-bl));
+  --fg-edge-enqueue:       var(--fg-pk);
+  --fg-edge-compensation:  var(--fg-or);
+  --fg-edge-reference:     color-mix(in oklch, var(--fg-cy) 42%, var(--fg-t3));
+  --fg-edge-referenced-by: color-mix(in oklch, var(--fg-cy) 76%, var(--fg-t2));
+  --fg-edge-configure:     var(--fg-ac);
+  --fg-edge-auth:          color-mix(in oklch, var(--fg-gn) 65%, var(--fg-cy));
+  --fg-edge-persist:       color-mix(in oklch, var(--fg-t3) 78%, var(--fg-bl));
+  --fg-edge-queue:         color-mix(in oklch, var(--fg-pu) 70%, var(--fg-pk));
+  --fg-edge-provider:      color-mix(in oklch, var(--fg-cy) 70%, var(--fg-bl));
 }
 
 /* Foundry system map layout utilities */
@@ -240,6 +282,100 @@
   z-index: 2;
 }
 
+#foundry-canvas-overlays {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.fm-domain-coverage,
+.fm-edge-legend {
+  position: absolute;
+  border: 1px solid color-mix(in oklch, var(--fg-b3) 55%, transparent);
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--fg-s2) 90%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(10px);
+}
+
+.fm-domain-coverage {
+  top: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: calc(100% - 32px);
+  padding: 6px 14px;
+  transform: translateX(-50%);
+  overflow: hidden;
+}
+
+.fm-domain-coverage-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fm-domain-coverage-name,
+.fm-domain-coverage-value {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.fm-domain-coverage-bar {
+  width: 40px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--fg-s3) 70%, transparent);
+}
+
+.fm-domain-coverage-fill {
+  height: 100%;
+  border-radius: inherit;
+}
+
+.fm-edge-legend {
+  bottom: 12px;
+  left: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  column-gap: 12px;
+  row-gap: 4px;
+  padding: 8px 12px;
+  font-size: 10px;
+}
+
+.fm-edge-legend-title {
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  color: color-mix(in oklch, var(--fg-t2) 70%, transparent);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.fm-edge-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: color-mix(in oklch, var(--fg-tx) 70%, transparent);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.fm-edge-legend-line {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
 /* Cytoscape node HTML labels (cytoscape-node-html-label) */
 .cy-node-html {
   position: relative;
@@ -265,7 +401,7 @@
   align-items: flex-start;
   justify-content: flex-start;
   text-align: left;
-  padding: 4px 12px 8px 12px;
+  padding: 2px 6px 6px 6px;
 }
 
 .cy-node-html .domain-row {
