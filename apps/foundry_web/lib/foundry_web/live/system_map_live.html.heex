@@ -1,104 +1,278 @@
-<div class="fm-workspace" data-theme="dark">
-  <aside class="fm-sidebar" id="fm-sidebar">
-    <div class="fm-sidebar-header">
-      <span class="fm-brand">FOUNDRY</span>
-      <span class="fm-crumb"><%= @project_name || "project" %></span>
+<div class="fm-workspace flex h-screen w-full overflow-hidden bg-base-100" data-theme="dark">
+  <aside
+    class="fm-sidebar relative flex h-screen w-60 min-w-[160px] max-w-[400px] shrink-0 select-none flex-col overflow-hidden border-r border-base-300 bg-base-200"
+    id="fm-sidebar"
+  >
+    <div class="flex shrink-0 items-center gap-1.5 border-b border-base-300 px-3 pb-2 pt-2.5">
+      <span class="text-[11px] font-bold uppercase tracking-[0.08em] text-base-content">
+        FOUNDRY
+      </span>
+      <span class="ml-auto text-[10px] text-neutral-content">{@project_name || "project"}</span>
     </div>
 
-    <div class="fm-sidebar-tabs" role="tablist">
-      <button class={"fm-sidebar-tab #{if @sidebar_tab == :system_map, do: "active"}"} phx-click="set_sidebar_tab" phx-value-tab="system_map">System Map</button>
-      <button class={"fm-sidebar-tab #{if @sidebar_tab == :compliance, do: "active"}"} phx-click="set_sidebar_tab" phx-value-tab="compliance">Compliance</button>
-      <button class={"fm-sidebar-tab #{if @sidebar_tab == :operations, do: "active"}"} phx-click="set_sidebar_tab" phx-value-tab="operations">Operations</button>
-      <button class={"fm-sidebar-tab #{if @sidebar_tab == :test_coverage, do: "active"}"} phx-click="set_sidebar_tab" phx-value-tab="test_coverage">Coverage</button>
+    <div class="flex shrink-0 gap-0.5 border-b border-base-300 px-2" role="tablist">
+      <button
+        class="fm-sidebar-tab cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.04em] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-secondary"
+        data-active={@sidebar_tab == :system_map}
+        phx-click="set_sidebar_tab"
+        phx-value-tab="system_map"
+      >
+        System Map
+      </button>
+      <button
+        class="fm-sidebar-tab cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.04em] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-secondary"
+        data-active={@sidebar_tab == :compliance}
+        phx-click="set_sidebar_tab"
+        phx-value-tab="compliance"
+      >
+        Compliance
+      </button>
+      <button
+        class="fm-sidebar-tab cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.04em] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-secondary"
+        data-active={@sidebar_tab == :operations}
+        phx-click="set_sidebar_tab"
+        phx-value-tab="operations"
+      >
+        Operations
+      </button>
+      <button
+        class="fm-sidebar-tab cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.04em] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-secondary"
+        data-active={@sidebar_tab == :test_coverage}
+        phx-click="set_sidebar_tab"
+        phx-value-tab="test_coverage"
+      >
+        Coverage
+      </button>
     </div>
 
-    <div class="fm-sidebar-body">
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <%= if @sidebar_tab == :system_map do %>
-        <input class="fm-sidebar-search" type="text" placeholder="Filter…"
-               phx-keyup="filter_nodes" phx-debounce="200" />
-        <div class="fm-node-list" id="fm-node-list">
+        <input
+          class="fm-sidebar-search m-2 w-[calc(100%-1rem)] box-border rounded-field border border-base-300/80 bg-base-300 px-2 py-1 text-[11px] text-base-content outline-none focus:border-primary"
+          type="text"
+          placeholder="Filter…"
+          phx-keyup="filter_nodes"
+          phx-debounce="200"
+        />
+        <div class="fm-node-list flex flex-col" id="fm-node-list">
           <%= for {domain, nodes} <- @nodes_by_domain do %>
-            <div class="fm-domain-header"><%= domain %></div>
+            <div class="flex items-center gap-1.5 px-3 pb-0.5 pt-1.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-neutral-content/50">
+              <span>{domain}</span>
+              <span class="h-px flex-1 bg-base-300"></span>
+            </div>
             <%= for node <- nodes do %>
-              <button class="fm-node-item" data-node-id={node["id"]}>
-                <span class={"fm-type-badge fm-badge-#{node["type"]}"}><%= abbr_type(node["type"]) %></span>
-                <span class="fm-node-name"><%= node["id"] %></span>
-                <span class={"fm-pip #{pip_status(node)}"}></span>
+              <button
+                class="fm-node-item group flex h-7 w-full cursor-pointer items-center gap-1.5 border-0 border-l-2 border-transparent bg-transparent px-2.5 text-left transition-colors hover:bg-base-300 data-[selected=true]:border-primary data-[selected=true]:bg-primary/10"
+                data-node-id={node["id"]}
+              >
+                <span
+                  class="fm-type-badge flex size-[18px] shrink-0 items-center justify-center rounded-[3px] bg-[var(--badge-bg)] text-[7px] font-bold text-[var(--badge-fg)]"
+                  style={type_badge_style(node["type"])}
+                >
+                  {abbr_type(node["type"])}
+                </span>
+                <span class="min-w-0 flex-1 truncate text-[11px] text-neutral-content group-data-[selected=true]:text-base-content">
+                  {node["id"]}
+                </span>
+                <span class={"size-[5px] shrink-0 rounded-full #{pip_status_class(node)}"}></span>
               </button>
             <% end %>
           <% end %>
         </div>
       <% end %>
       <%= if @sidebar_tab == :compliance do %>
-        <div class="fm-placeholder">Compliance view coming soon</div>
+        <div class="p-4 text-center text-xs text-neutral-content">
+          Compliance view coming soon
+        </div>
       <% end %>
       <%= if @sidebar_tab == :operations do %>
-        <div class="fm-placeholder">Operations view coming soon</div>
+        <div class="p-4 text-center text-xs text-neutral-content">
+          Operations view coming soon
+        </div>
       <% end %>
       <%= if @sidebar_tab == :test_coverage do %>
-        <div class="fm-placeholder">Test coverage view coming soon</div>
+        <div class="p-4 text-center text-xs text-neutral-content">
+          Test coverage view coming soon
+        </div>
       <% end %>
     </div>
 
-    <div class="fm-sidebar-resize-handle" id="sidebar-resize-handle"></div>
+    <div
+      class="absolute inset-y-0 right-0 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary"
+      id="sidebar-resize-handle"
+    >
+    </div>
   </aside>
 
-  <div class="fm-central">
-    <div class="fm-lensbar">
-      <button class={"fm-lens-btn #{if @lens == :default, do: "active"}"} phx-click="set_lens" phx-value-lens="default">
-        <span class="fm-dot fm-dot-primary"></span> Default
+  <div class="flex min-w-0 flex-1 flex-col">
+    <div class="flex h-9 shrink-0 items-center gap-1 border-b border-base-300 bg-base-200 px-3">
+      <button
+        class="flex cursor-pointer items-center gap-1 rounded-selector border border-transparent bg-transparent px-[7px] py-[3px] text-[11px] text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content data-[active=true]:border-neutral/80 data-[active=true]:bg-base-300 data-[active=true]:text-base-content"
+        data-active={@lens == :default}
+        phx-click="set_lens"
+        phx-value-lens="default"
+      >
+        <span class="size-[5px] shrink-0 rounded-full bg-secondary"></span> Default
       </button>
-      <button class={"fm-lens-btn #{if @lens == :trc, do: "active"}"} phx-click="set_lens" phx-value-lens="trc">
-        <span class="fm-dot fm-dot-scenario"></span> Scenario
+      <button
+        class="flex cursor-pointer items-center gap-1 rounded-selector border border-transparent bg-transparent px-[7px] py-[3px] text-[11px] text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content data-[active=true]:border-neutral/80 data-[active=true]:bg-base-300 data-[active=true]:text-base-content"
+        data-active={@lens == :trc}
+        phx-click="set_lens"
+        phx-value-lens="trc"
+      >
+        <span class="size-[5px] shrink-0 rounded-full bg-warning"></span> Scenario
       </button>
-      <button class={"fm-lens-btn #{if @lens == :auth, do: "active"}"} phx-click="set_lens" phx-value-lens="auth">
-        <span class="fm-dot fm-dot-auth"></span> Auth
+      <button
+        class="flex cursor-pointer items-center gap-1 rounded-selector border border-transparent bg-transparent px-[7px] py-[3px] text-[11px] text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content data-[active=true]:border-neutral/80 data-[active=true]:bg-base-300 data-[active=true]:text-base-content"
+        data-active={@lens == :auth}
+        phx-click="set_lens"
+        phx-value-lens="auth"
+      >
+        <span class="size-[5px] shrink-0 rounded-full bg-error"></span> Auth
       </button>
-      <button class={"fm-lens-btn #{if @lens == :cfg, do: "active"}"} phx-click="set_lens" phx-value-lens="cfg">
-        <span class="fm-dot fm-dot-config"></span> Config
+      <button
+        class="flex cursor-pointer items-center gap-1 rounded-selector border border-transparent bg-transparent px-[7px] py-[3px] text-[11px] text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content data-[active=true]:border-neutral/80 data-[active=true]:bg-base-300 data-[active=true]:text-base-content"
+        data-active={@lens == :cfg}
+        phx-click="set_lens"
+        phx-value-lens="cfg"
+      >
+        <span class="size-[5px] shrink-0 rounded-full bg-purple-400"></span> Config
       </button>
-      <div class="fm-lensbar-spacer"></div>
-      <button class={"fm-view-btn #{if @system_map_view == :table, do: "active"}"} phx-click="toggle_view">
-        <%= if @system_map_view == :graph, do: "Graph", else: "Table" %>
+      <div class="flex-1"></div>
+      <button
+        class="cursor-pointer rounded-selector border border-transparent bg-transparent px-2 py-[3px] text-[11px] text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content data-[active=true]:border-primary/30 data-[active=true]:bg-primary/10 data-[active=true]:text-secondary"
+        data-active={@system_map_view == :table}
+        phx-click="toggle_view"
+      >
+        {if @system_map_view == :graph, do: "Graph", else: "Table"}
       </button>
-      <button class="fm-icon-btn" phx-click="toggle_feed" title="Activity ⌘\">⊕</button>
+      <button
+        class="flex size-7 cursor-pointer items-center justify-center rounded-selector border-0 bg-transparent text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content"
+        phx-click="toggle_feed"
+        title="Activity ⌘\"
+      >
+        ⊕
+      </button>
     </div>
 
-    <div class="fm-content">
-      <div class={"fm-drawer #{if @drawer_open, do: "open"}"} id="fm-drawer">
-        <div class="fm-drawer-tabs">
-          <button class={"fm-drawer-tab #{if @drawer_tab == :details, do: "active"}"} data-tab="details" phx-click="set_drawer_tab" phx-value-tab="details">Details</button>
-          <button class={"fm-drawer-tab #{if @drawer_tab == :flow, do: "active"}"} data-tab="flow" phx-click="set_drawer_tab" phx-value-tab="flow">Flow</button>
-          <button class={"fm-drawer-tab #{if @drawer_tab == :shortcuts, do: "active"}"} data-tab="actions" phx-click="set_drawer_tab" phx-value-tab="shortcuts">Shortcuts</button>
-          <button class={"fm-drawer-tab #{if @drawer_tab == :authorization, do: "active"}"} data-tab="auth" phx-click="set_drawer_tab" phx-value-tab="authorization">Auth</button>
-          <button class="fm-drawer-close" id="fm-drawer-close" phx-click="close_drawer">×</button>
+    <div class="flex min-h-0 flex-1">
+      <div
+        class="fm-drawer flex w-0 shrink-0 flex-col overflow-hidden border-r border-base-300 bg-base-200 transition-[width] duration-200"
+        id="fm-drawer"
+      >
+        <div class="flex shrink-0 items-center border-b border-base-300">
+          <button
+            class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-2 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+            data-active={@drawer_tab == :details}
+            data-tab="details"
+            phx-click="set_drawer_tab"
+            phx-value-tab="details"
+          >
+            Details
+          </button>
+          <button
+            class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-2 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+            data-active={@drawer_tab == :flow}
+            data-tab="flow"
+            phx-click="set_drawer_tab"
+            phx-value-tab="flow"
+          >
+            Flow
+          </button>
+          <button
+            class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-2 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+            data-active={@drawer_tab == :shortcuts}
+            data-tab="actions"
+            phx-click="set_drawer_tab"
+            phx-value-tab="shortcuts"
+          >
+            Shortcuts
+          </button>
+          <button
+            class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-2 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+            data-active={@drawer_tab == :authorization}
+            data-tab="auth"
+            phx-click="set_drawer_tab"
+            phx-value-tab="authorization"
+          >
+            Auth
+          </button>
+          <button
+            class="ml-auto mr-2 flex size-[22px] cursor-pointer items-center justify-center rounded-selector border-0 bg-transparent text-base text-neutral-content"
+            id="fm-drawer-close"
+            phx-click="close_drawer"
+          >
+            ×
+          </button>
         </div>
-        <div class="fm-drawer-body" id="fm-panel-details"></div>
-        <div class="fm-drawer-body hidden" id="fm-panel-flow"></div>
-        <div class="fm-drawer-body hidden" id="fm-panel-actions"></div>
-        <div class="fm-drawer-body hidden" id="fm-panel-auth"></div>
+        <div class="min-h-0 flex-1 overflow-y-auto" id="fm-panel-details"></div>
+        <div class="hidden min-h-0 flex-1 overflow-y-auto" id="fm-panel-flow"></div>
+        <div class="hidden min-h-0 flex-1 overflow-y-auto" id="fm-panel-actions"></div>
+        <div class="hidden min-h-0 flex-1 overflow-y-auto" id="fm-panel-auth"></div>
       </div>
 
-      <div class="fm-canvas" phx-hook="SystemMap" id="system-map" data-context={@context_json} phx-update="ignore">
-        <div id="fm-hover-card" class="hidden"></div>
+      <div class="relative min-w-0 flex-1 overflow-hidden bg-base-100">
+        <%= if @context_json do %>
+          <div
+            phx-hook="SystemMap"
+            id="system-map"
+            data-context={@context_json}
+            phx-update="ignore"
+            class="size-full"
+          >
+            <div id="fm-hover-card" class="hidden"></div>
+          </div>
+        <% else %>
+          <div class="flex size-full items-center justify-center p-6">
+            <p class="text-base-content/60">
+              No modules found. Run <code>mix compile</code> in your project directory.
+            </p>
+          </div>
+        <% end %>
       </div>
     </div>
   </div>
 
-  <div class={"fm-feed #{if @feed_open, do: "open"}"} id="fm-feed">
-    <div class="fm-feed-header">
-      <span class="fm-feed-title">Activity</span>
-      <button class="fm-icon-btn" phx-click="toggle_feed">×</button>
+  <div
+    class={"flex shrink-0 flex-col overflow-hidden border-l border-base-300 bg-base-200 transition-[width] duration-200 #{if @feed_open, do: "w-80", else: "w-0"}"}
+    id="fm-feed"
+  >
+    <div class="flex shrink-0 items-center border-b border-base-300 px-3 py-2">
+      <span class="flex-1 text-[11px] font-semibold text-neutral-content">Activity</span>
+      <button
+        class="flex size-7 cursor-pointer items-center justify-center rounded-selector border-0 bg-transparent text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content"
+        phx-click="toggle_feed"
+      >
+        ×
+      </button>
     </div>
-    <div class="fm-feed-tabs">
-      <button class={"fm-feed-tab #{if @feed_tab == :feed, do: "active"}"} phx-click="set_feed_tab" phx-value-tab="feed">Feed</button>
-      <button class={"fm-feed-tab #{if @feed_tab == :copilot, do: "active"}"} phx-click="set_feed_tab" phx-value-tab="copilot">Copilot</button>
+    <div class="flex shrink-0 border-b border-base-300">
+      <button
+        class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+        data-active={@feed_tab == :feed}
+        phx-click="set_feed_tab"
+        phx-value-tab="feed"
+      >
+        Feed
+      </button>
+      <button
+        class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+        data-active={@feed_tab == :copilot}
+        phx-click="set_feed_tab"
+        phx-value-tab="copilot"
+      >
+        Copilot
+      </button>
     </div>
-    <div class="fm-feed-body" id="feed-body"></div>
-    <div class="fm-feed-input">
-      <textarea class="fm-feed-textarea" rows="2" placeholder="Ask anything…"
-                phx-keydown="feed_keydown"></textarea>
-      <div class="fm-feed-hint">⏎ send · ⇧⏎ newline</div>
+    <div class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2" id="feed-body"></div>
+    <div class="shrink-0 border-t border-base-300 p-2">
+      <textarea
+        class="box-border w-full resize-none rounded-field border border-base-300/80 bg-base-300 px-2 py-1.5 font-sans text-[11px] text-base-content outline-none focus:border-primary"
+        rows="2"
+        placeholder="Ask anything…"
+        phx-keydown="feed_keydown"
+      ></textarea>
+      <div class="mt-1 font-mono text-[9px] text-neutral-content/50">⏎ send · ⇧⏎ newline</div>
     </div>
   </div>
 </div>

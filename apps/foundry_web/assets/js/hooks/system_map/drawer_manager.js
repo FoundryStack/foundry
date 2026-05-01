@@ -85,11 +85,11 @@ export class DrawerManager {
     if (!activeTab) return
 
     tabs.forEach(t => {
+      t.dataset.active = 'false'
       t.classList.remove('active')
       t.classList.remove('tab-active')
     })
-    activeTab.classList.add('active')
-    activeTab.classList.add('tab-active')
+    activeTab.dataset.active = 'true'
 
     Object.values(panels).forEach(p => {
       if (p) p.classList.add('hidden')

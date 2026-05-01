@@ -20,7 +20,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       # when context building fails
       {:ok, _live, html} = live(Phoenix.ConnTest.build_conn(), "/studio")
       # Should render without crashing
-      assert html =~ "foundry-map-layout"
+      assert html =~ "fm-workspace"
     end
   end
 
@@ -29,11 +29,15 @@ defmodule FoundryWeb.SystemMapLiveTest do
       {:ok, live, _html} = live(conn, "/studio")
 
       # Simulate node selection
-      result = render_click(live, "node_selected", %{"id" => "Finance.Wallet", "data" => %{
-        "id" => "Finance.Wallet",
-        "type" => "resource",
-        "description" => "User wallet"
-      }})
+      result =
+        render_click(live, "node_selected", %{
+          "id" => "Finance.Wallet",
+          "data" => %{
+            "id" => "Finance.Wallet",
+            "type" => "resource",
+            "description" => "User wallet"
+          }
+        })
 
       # Verify the click was processed
       assert result != nil

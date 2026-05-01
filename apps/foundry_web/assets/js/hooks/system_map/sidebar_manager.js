@@ -42,7 +42,7 @@ export class SidebarManager {
     if (list) {
       list.querySelectorAll(`.${SELECTORS.nodeItem}`).forEach(item => {
         const itemId = item.getAttribute(SELECTORS.nodeItemAttr)
-        item.classList.toggle('selected', itemId === nodeId)
+        item.dataset.selected = itemId === nodeId ? 'true' : 'false'
       })
     }
   }

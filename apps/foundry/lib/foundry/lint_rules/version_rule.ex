@@ -17,14 +17,14 @@ defmodule Foundry.LintRules.VersionRule do
 
     violations =
       try do
-        {lock_map, _} = Code.eval_string(File.read!(lock_path))
+        versions = Foundry.MixLock.versions_from_content(File.read!(lock_path), [:ash, :ash_ai])
 
         # Check Ash version
-        violations = check_ash_version(lock_map, violations)
+        violations = check_ash_version(versions, violations)
         # Check Elixir version
         violations = check_elixir_version(project_root, violations)
         # Check Ash.AI version (if agent_steps present)
-        violations = check_ashai_version(lock_map, violations)
+        violations = check_ashai_version(versions, violations)
 
         violations
       rescue
@@ -34,29 +34,27 @@ defmodule Foundry.LintRules.VersionRule do
     violations
   end
 
-  defp check_ash_version(lock_map, violations) do
-    case lock_map[:ash] do
+  defp check_ash_version(versions, violations) do
+    case versions[:ash] do
       nil ->
         violations
 
-      tuple when is_tuple(tuple) and tuple_size(tuple) >= 3 and
-                 elem(tuple, 0) == :hex and elem(tuple, 1) == :ash ->
-        version = elem(tuple, 2)
+      version ->
         case Version.parse(version) do
           {:ok, %Version{major: major}} when major >= 3 ->
             violations
 
           _ ->
-            [%SparkLint.Violation{
-              rule:     :ash_version_outdated,
-              module:   Foundry.Manifest,
-              message:  "Ash version #{version} is outdated — require 3.x or later",
-              severity: :error
-            } | violations]
+            [
+              %SparkLint.Violation{
+                rule: :ash_version_outdated,
+                module: Foundry.Manifest,
+                message: "Ash version #{version} is outdated — require 3.x or later",
+                severity: :error
+              }
+              | violations
+            ]
         end
-
-      _ ->
-        violations
     end
   end
 
@@ -66,29 +64,28 @@ defmodule Foundry.LintRules.VersionRule do
     violations
   end
 
-  defp check_ashai_version(lock_map, violations) do
-    case lock_map[:ash_ai] do
+  defp check_ashai_version(versions, violations) do
+    case versions[:ash_ai] do
       nil ->
         violations
 
-      tuple when is_tuple(tuple) and tuple_size(tuple) >= 3 and
-                 elem(tuple, 0) == :hex and elem(tuple, 1) == :ash_ai ->
-        version = elem(tuple, 2)
+      version ->
         case Version.parse(version) do
           {:ok, %Version{major: major}} when major >= 2 ->
             violations
 
           _ ->
-            [%SparkLint.Violation{
-              rule:     :ashai_version_outdated,
-              module:   Foundry.Manifest,
-              message:  "Ash.AI version #{version} is outdated — require 2.x or later (if agent_steps present)",
-              severity: :warning
-            } | violations]
+            [
+              %SparkLint.Violation{
+                rule: :ashai_version_outdated,
+                module: Foundry.Manifest,
+                message:
+                  "Ash.AI version #{version} is outdated — require 2.x or later (if agent_steps present)",
+                severity: :warning
+              }
+              | violations
+            ]
         end
-
-      _ ->
-        violations
     end
   end
 end

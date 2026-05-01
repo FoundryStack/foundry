@@ -158,6 +158,35 @@ defmodule Foundry.LintRulesTest do
 
       File.rm_rf!(tmpdir)
     end
+
+    test "reads quoted mix.lock keys without compiler warnings" do
+      tmpdir = System.tmp_dir!() |> Path.join("version_rule_test_#{:rand.uniform(1_000_000)}")
+      File.mkdir_p!(tmpdir)
+
+      lock_content = """
+      %{
+        "ash": {:hex, :ash, "3.20.0", "abc123", [:mix], [], "hexpm", "def456"},
+        "ash_ai": {:hex, :ash_ai, "2.0.0", "abc123", [:mix], [], "hexpm", "def456"}
+      }
+      """
+      File.write!(Path.join(tmpdir, "mix.lock"), lock_content)
+
+      ctx = %Context{
+        module: String,
+        modules: [String],
+        metadata: %{project_root: tmpdir}
+      }
+
+      warning_output =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          {:ok, violations} = Foundry.LintRules.VersionRule.check(String, ctx)
+          assert violations == []
+        end)
+
+      refute warning_output =~ "found quoted keyword"
+
+      File.rm_rf!(tmpdir)
+    end
   end
 
   describe "Foundry.LintRules.AdapterVersionRule" do

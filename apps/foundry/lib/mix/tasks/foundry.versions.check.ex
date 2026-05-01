@@ -91,11 +91,11 @@ defmodule Mix.Tasks.Foundry.Versions.Check do
 
   @impl Mix.Task
   def run(_args) do
-    lock = read_lock!()
+    versions_by_dep = read_lock!()
 
     versions =
       Map.new(@known_deps, fn dep ->
-        {dep, extract_version(lock, dep)}
+        {dep, Map.get(versions_by_dep, dep)}
       end)
 
     result =
@@ -118,20 +118,9 @@ defmodule Mix.Tasks.Foundry.Versions.Check do
       Mix.raise("mix.lock not found at #{lock_path}. Run `mix deps.get` first.")
     end
 
-    {lock, _bindings} = Code.eval_file(lock_path)
-    lock
-  end
-
-  # mix.lock entries look like:
-  #   ash: {:hex, :ash, "3.4.1", "abcdef...", ...}
-  # We want the third element (version string).
-  defp extract_version(lock, dep) do
-    case Map.get(lock, dep) do
-      {:hex, _name, version, _hash} -> version
-      {:hex, _name, version, _hash, _deps, _path, _algo, _algos} -> version
-      tuple when is_tuple(tuple) and tuple_size(tuple) >= 3 -> elem(tuple, 2)
-      _ -> nil
-    end
+    lock_path
+    |> File.read!()
+    |> Foundry.MixLock.versions_from_content(@known_deps)
   end
 
   defp otp_version do
