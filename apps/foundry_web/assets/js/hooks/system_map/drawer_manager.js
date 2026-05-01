@@ -29,6 +29,7 @@ export class DrawerManager {
   constructor(normalizedNodes) {
     this.normalizedNodes = normalizedNodes
     this._initDrawer()
+    this._initResize()
   }
 
   _initDrawer() {
@@ -50,6 +51,51 @@ export class DrawerManager {
         this.switchTab(tab.dataset.tab)
       })
     })
+  }
+
+  _initResize() {
+    const drawer = document.getElementById(SELECTORS.drawer)
+    const handle = document.getElementById('drawer-resize-handle')
+
+    if (!drawer || !handle) return
+
+    const savedWidth = localStorage.getItem(UI_CONFIG.storageKeys.drawerWidth)
+    const initialWidth = savedWidth ? parseInt(savedWidth, 10) : UI_CONFIG.drawerWidth.default
+    drawer.style.width = `${initialWidth}px`
+
+    let isResizing = false
+    let startX = 0
+    let startWidth = 0
+
+    const onMouseDown = (e) => {
+      isResizing = true
+      startX = e.clientX
+      startWidth = drawer.offsetWidth
+      document.addEventListener('mousemove', onMouseMove)
+      document.addEventListener('mouseup', onMouseUp)
+      document.body.style.userSelect = 'none'
+      document.body.style.cursor = 'col-resize'
+      e.preventDefault()
+    }
+
+    const onMouseMove = (e) => {
+      if (!isResizing) return
+      const delta = e.clientX - startX
+      const newWidth = Math.max(UI_CONFIG.drawerWidth.min, Math.min(UI_CONFIG.drawerWidth.max, startWidth + delta))
+      drawer.style.width = `${newWidth}px`
+    }
+
+    const onMouseUp = () => {
+      isResizing = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      localStorage.setItem(UI_CONFIG.storageKeys.drawerWidth, drawer.offsetWidth)
+    }
+
+    handle.addEventListener('mousedown', onMouseDown)
+    this._resizeHandlers = { onMouseDown, onMouseMove, onMouseUp, handle }
   }
 
   open() {
@@ -255,7 +301,7 @@ export class DrawerManager {
         </div>
         <div>
           <h3 class="font-mono font-semibold text-sm">${this._esc(step.name || 'unnamed')}</h3>
-          <span style="color:${kindColor};font-size:10px">${this._esc(step.step_kind || step.type || 'custom')}</span>
+          <span style="color:${kindColor}" class="text-xs">${this._esc(step.step_kind || step.type || 'custom')}</span>
         </div>
     `
 
@@ -301,7 +347,7 @@ export class DrawerManager {
       html += `
         <div>
           <div class="text-xs text-base-content/50 mb-1">Source</div>
-          <pre style="font-size:10px;overflow-x:auto;background:var(--b2);padding:8px;border-radius:4px;white-space:pre-wrap;word-break:break-word">${this._esc(step.source_snippet)}</pre>
+          <pre class="text-xs overflow-x-auto bg-base-200 p-2 rounded whitespace-pre-wrap break-words">${this._esc(step.source_snippet)}</pre>
         </div>
       `
     }
@@ -500,6 +546,13 @@ export class DrawerManager {
     const closeBtn = document.getElementById(SELECTORS.drawerClose)
     if (closeBtn && this._closeHandler) {
       closeBtn.removeEventListener('click', this._closeHandler)
+    }
+
+    if (this._resizeHandlers) {
+      const { onMouseDown, handle } = this._resizeHandlers
+      if (handle && onMouseDown) {
+        handle.removeEventListener('mousedown', onMouseDown)
+      }
     }
   }
 }

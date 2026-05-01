@@ -64,7 +64,8 @@ defmodule Foundry.ClaudeCodeProvider do
     base = [
       "-p",
       prompt_text,
-      "--output-format", "stream-json",
+      "--output-format",
+      "stream-json",
       "--verbose",
       "--include-partial-messages",
       "--no-session-persistence"
@@ -112,27 +113,14 @@ defmodule Foundry.ClaudeCodeProvider do
   defp build_command(claude_path, args, project_root) do
     args_str = Enum.map_join(args, " ", &shell_escape/1)
 
-    cmd =
-      case :os.type() do
-        {:unix, :darwin} ->
-          "script -q /dev/null #{claude_path} #{args_str}"
+    # Claude Code's print mode expects stdin to be closed for non-interactive use.
+    inner =
+      "cd #{shell_escape(project_root)} && #{shell_escape(claude_path)} #{args_str} </dev/null 2>&1"
 
-        {:unix, _} ->
-          # Linux: script -q -c "command" /dev/null
-          "script -q -c '#{claude_path} #{args_str}' /dev/null"
-
-        _ ->
-          # Windows: not supported
-          "#{claude_path} #{args_str}"
-      end
-
-    # Use shell cd for working directory; redirect stderr to stdout to catch
-    # Claude Code diagnostic output (it may write prompts to stderr)
-    "cd #{shell_escape(project_root)} && #{cmd}"
+    "sh -c #{shell_escape(inner)}"
   end
 
   defp shell_escape(arg) do
-    # Simple shell escaping: wrap in single quotes, escape internal single quotes
     escaped = String.replace(arg, "'", "'\\''")
     "'#{escaped}'"
   end

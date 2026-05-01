@@ -58,10 +58,6 @@ defmodule FoundryWeb.ChatLive do
     end
   end
 
-  def handle_event("set_input", %{"message" => value}, socket) do
-    {:noreply, assign(socket, :input, value)}
-  end
-
   @impl true
   def handle_info({:process_message, _user_message, previous_messages}, socket) do
     case call_llm(previous_messages) do
@@ -133,37 +129,57 @@ defmodule FoundryWeb.ChatLive do
   # ---------------------------------------------------------------------------
 
   defp call_claude_code(messages) do
-    opts = [
-      system_prompt: build_system_prompt(),
-      timeout_ms: Application.get_env(:foundry, :claude_code, [])[:timeout_ms] || 120_000,
-      model: Application.get_env(:foundry, :claude_code, [])[:model],
-      project_root: File.cwd!()
-    ]
+    project_root = project_root()
 
-    case Foundry.ClaudeCodeProvider.chat(messages, opts) do
-      {:ok, text, _metadata} ->
-        {:ok, text}
+    with {:ok, system_prompt} <- build_system_prompt(project_root) do
+      opts = [
+        system_prompt: system_prompt,
+        timeout_ms: Application.get_env(:foundry, :claude_code, [])[:timeout_ms] || 120_000,
+        model: Application.get_env(:foundry, :claude_code, [])[:model],
+        project_root: project_root
+      ]
 
-      {:error, :not_installed} ->
-        {:ok, claude_not_installed_message()}
+      case Foundry.ClaudeCodeProvider.chat(messages, opts) do
+        {:ok, text, _metadata} ->
+          {:ok, text}
 
-      {:error, {:timeout, partial_text}} ->
-        if String.length(partial_text) > 0 do
-          {:ok, partial_text <> "\n\n[Response timed out — partial response above]"}
-        else
-          {:error, :timeout}
-        end
+        {:error, :not_installed} ->
+          {:ok, claude_not_installed_message()}
 
-      {:error, {:exit_code, code, output}} ->
-        {:error, {:claude_exit, code, String.slice(output, 0, 500)}}
+        {:error, {:timeout, partial_text}} ->
+          if String.length(partial_text) > 0 do
+            {:ok, partial_text <> "\n\n[Response timed out — partial response above]"}
+          else
+            {:error, :timeout}
+          end
 
-      {:error, {:parse_error, reason, _output}} ->
-        {:error, {:parse_error, reason}}
+        {:error, {:exit_code, code, output}} ->
+          {:error, {:claude_exit, code, String.slice(output, 0, 500)}}
+
+        {:error, {:parse_error, reason, _output}} ->
+          {:error, {:parse_error, reason}}
+
+        {:error, reason} ->
+          {:error, {:claude_error, reason}}
+      end
     end
   end
 
-  defp build_system_prompt do
-    Foundry.Copilot.ContextBuilder.build(project_root: File.cwd!())
+  defp build_system_prompt(project_root) do
+    {:ok, Foundry.Copilot.ContextBuilder.build(project_root: project_root)}
+  rescue
+    e -> {:error, {:context_build_failed, Exception.message(e)}}
+  catch
+    :exit, reason -> {:error, {:context_build_failed, reason}}
+    kind, reason -> {:error, {:context_build_failed, {kind, reason}}}
+  end
+
+  defp project_root do
+    Application.get_env(
+      :foundry_web,
+      :igaming_project_root,
+      Path.expand("../../../../../reference_projects/igaming", __DIR__)
+    )
   end
 
   defp claude_not_installed_message do
@@ -274,9 +290,9 @@ defmodule FoundryWeb.ChatLive do
             if(msg["role"] == "user", do: "bg-blue-100 ml-auto", else: "bg-gray-100")
           ]}>
             <p class="text-sm font-semibold mb-1">
-              <%= if msg["role"] == "user", do: "You", else: "Assistant" %>
+              {if msg["role"] == "user", do: "You", else: "Assistant"}
             </p>
-            <p class="whitespace-pre-wrap"><%= msg["content"] %></p>
+            <p class="whitespace-pre-wrap">{msg["content"]}</p>
           </div>
         <% end %>
 
@@ -289,7 +305,7 @@ defmodule FoundryWeb.ChatLive do
 
       <%= if @error do %>
         <div class="bg-red-50 text-red-600 rounded p-2 mb-2 text-sm">
-          <%= @error %>
+          {@error}
         </div>
       <% end %>
 
@@ -298,7 +314,6 @@ defmodule FoundryWeb.ChatLive do
           type="text"
           name="message"
           value={@input}
-          phx-change="set_input"
           placeholder="Type a message..."
           class="flex-1 border rounded-lg px-3 py-2"
           disabled={@loading}

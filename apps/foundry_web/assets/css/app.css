@@ -595,14 +595,14 @@ code {
   position: absolute;
   z-index: 100;
   min-width: 180px;
-  max-width: 240px;
-  padding: 6px 10px;
+  max-width: 280px;
+  padding: 8px 12px;
   border: 1px solid var(--fg-b3);
   border-radius: 6px;
   background: var(--fg-s2);
   color: var(--fg-tx);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.35;
   pointer-events: none;
 }
@@ -627,7 +627,7 @@ code {
   border: 1px solid var(--fg-b2);
   border-radius: 999px;
   padding: 1px 6px;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.4;
   background: var(--fg-s3);
 }
@@ -640,7 +640,7 @@ code {
 .fm-hover-name {
   margin-bottom: 6px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   word-break: break-word;
 }
@@ -651,13 +651,13 @@ code {
 }
 
 .fm-hover-key {
-  color: var(--fg-t3);
+  color: color-mix(in oklch, var(--color-base-content) 55%, transparent);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .fm-hover-value {
-  color: var(--fg-t2);
+  color: var(--color-base-content);
   text-align: right;
   word-break: break-word;
 }

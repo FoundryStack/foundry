@@ -21,7 +21,7 @@ export const UI_CONFIG = {
   nodeThreshold: 200,
   searchDebounce: 150,
   sidebarWidth: { default: 240, min: 180, max: 600 },
-  drawerWidth: { default: 380 },
+  drawerWidth: { default: 380, min: 280, max: 600 },
   storageKeys: {
     sidebarWidth: 'foundry:sidebar-width',
     drawerWidth: 'foundry:drawer-width',
