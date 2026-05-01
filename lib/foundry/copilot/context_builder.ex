@@ -27,9 +27,8 @@ defmodule Foundry.Copilot.ContextBuilder do
   defp tier_1_project(data) do
     agents_md = read_file(Path.join(data.project_root, "AGENTS.md"))
     mix_versions = extract_mix_versions(data.project_root)
-    spec_kit_index = format_spec_kit_index(data.spec_kit)
 
-    [agents_md, mix_versions, spec_kit_index]
+    [agents_md, mix_versions]
     |> Enum.reject(&(&1 == ""))
     |> Enum.join("\n\n")
   end
@@ -72,62 +71,6 @@ defmodule Foundry.Copilot.ContextBuilder do
       _ ->
         ""
     end
-  end
-
-  defp format_spec_kit_index(nil), do: ""
-
-  defp format_spec_kit_index(spec_kit) do
-    sections =
-      [
-        format_doc_group("AGENTS", spec_kit["agents"] || spec_kit[:agents]),
-        format_doc_group("ADRs", spec_kit["adrs"] || spec_kit[:adrs]),
-        format_doc_group("Runbooks", spec_kit["runbooks"] || spec_kit[:runbooks]),
-        format_doc_group("Regulations", spec_kit["regulations"] || spec_kit[:regulations]),
-        format_doc_group("Usage Rules", spec_kit["usage_rules"] || spec_kit[:usage_rules])
-      ]
-      |> Enum.reject(&(&1 == ""))
-
-    if sections == [] do
-      ""
-    else
-      token_count = spec_kit["index_token_count"] || spec_kit[:index_token_count] || 0
-      token_warn = spec_kit["index_token_warn"] || spec_kit[:index_token_warn] || false
-
-      """
-      ## Spec-Kit Index
-
-      Token estimate: #{token_count} (warn: #{token_warn})
-
-      #{Enum.join(sections, "\n\n")}
-      """
-      |> String.trim()
-    end
-  end
-
-  defp format_doc_group(_title, nil), do: ""
-  defp format_doc_group(_title, []), do: ""
-
-  defp format_doc_group(title, docs) do
-    lines =
-      docs
-      |> List.wrap()
-      |> Enum.map(fn doc ->
-        path = doc[:path] || doc["path"]
-        doc_title = doc[:title] || doc["title"]
-        summary = doc[:summary] || doc["summary"]
-        tags = doc[:tags] || doc["tags"] || []
-
-        suffix =
-          cond do
-            is_binary(summary) and summary != "" -> " - #{summary}"
-            tags != [] -> " [#{Enum.take(tags, 6) |> Enum.join(", ")}]"
-            true -> ""
-          end
-
-        "- #{path}: #{doc_title}#{suffix}"
-      end)
-
-    "### #{title}\n" <> Enum.join(lines, "\n")
   end
 
   defp status_prompt_view(status) do
