@@ -45,6 +45,12 @@ Source: `mix foundry.project.context <Module>` — re-runs on every copilot requ
 always current. The bulk form `mix foundry.project.context` (no module argument) returns
 the full node corpus with edges and spec-kit index metadata.
 
+The orchestrator chat model receives an LLM-optimized rendering of the bulk project
+context on each request. This is still structured retrieval, not source-file inclusion:
+the prompt contains the compiled system map, compact node facts, edges, and spec-kit
+index, while raw `lib/` and `test/` files remain available only through targeted reads
+or per-module context lookup.
+
 ### What uses full inclusion (not RAG)
 
 The spec-kit documents — ADRs, runbooks, regulations — are parsed once to structured
@@ -60,9 +66,9 @@ not just the ones a similarity search happened to surface.
 
 **The corpus boundary is strict:** spec-kit docs only (`docs/adrs/`, `docs/runbooks/`,
 `docs/regulations/`). Source files (`lib/`, `test/`) are never included wholesale —
-those use structured DSL introspection. The combination of full spec-kit inclusion +
-structured code retrieval gives the copilot complete context without the overhead of
-a general-purpose embedding pipeline.
+those use structured DSL introspection. The combination of full spec-kit inclusion,
+the LLM-optimized system map, and precise per-module retrieval gives the copilot complete
+working context without the overhead of a general-purpose embedding pipeline.
 
 **Parsing:** Each spec-kit document is parsed once with MDEx to a `%MDEx.Document{}`
 AST, cached in ETS by `{:spec_kit, file_path, mtime}`. Two consumers share the same

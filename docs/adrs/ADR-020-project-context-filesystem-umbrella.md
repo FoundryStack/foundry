@@ -60,10 +60,19 @@ any `lib/` or `test/` file changes. In umbrella projects, mtime scan covers all
 Edges are ordered by `from` FQN, then `to` FQN. Ordering is deterministic and
 git diff-stable.
 
-**Token budget:** `mix foundry.project.context` output is not included in the LLM
-context directly. It is the data source for the studio UI. The LLM context (Tier 1 + 2)
-reads the `spec_kit` field from the cached context for Tier 1, and uses
-`mix foundry.project.status` for Tier 2.
+**Token budget:** Raw `mix foundry.project.context` JSON is not included in the LLM
+context directly. It is the authoritative data source for the studio UI and for
+`Foundry.Copilot.ContextBuilder`.
+
+The orchestrator chat model receives an LLM-optimized full project map derived from
+this cached context: all nodes, edges, and the spec-kit index rendered by
+`Foundry.Context.LLMFormatter`. This gives the orchestrator enough topology to classify
+intent, detect likely impact, and choose the right follow-up retrieval without reading
+source files wholesale. Per-module `mix foundry.project.context <Module>` remains the
+lazy precision lookup for code-derived details.
+
+The LLM context also reads the `spec_kit` field from the cached context for the Tier 1
+spec-kit index and uses `mix foundry.project.status` for the compact health view.
 
 ### 2. CI staleness check via lockfile
 

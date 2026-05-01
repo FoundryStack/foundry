@@ -83,6 +83,8 @@ config :phoenix, :stacktrace_depth, 20
 
 # Default LLM provider for Chat UI — OpenAI Codex CLI.
 # Authenticate with `codex login`; override with CODEX_MODEL when needed.
+# If CODEX_EXECUTABLE is an explicit path, Foundry validates that exact file and
+# does not fall back to the bundled app binary when the path is missing or not executable.
 config :foundry, :llm_provider, :codex
 
 config :foundry, :claude_code,

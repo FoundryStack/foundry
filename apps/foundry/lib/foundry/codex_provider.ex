@@ -6,6 +6,8 @@ defmodule Foundry.CodexProvider do
   Codex runs with the target project as its working root.
   """
 
+  import Bitwise
+
   @default_timeout_ms 120_000
 
   @doc """
@@ -56,8 +58,10 @@ defmodule Foundry.CodexProvider do
   end
 
   defp find_executable(path) do
-    if Path.type(path) == :absolute do
-      if File.exists?(path) and File.regular?(path), do: path
+    if explicit_path?(path) do
+      path
+      |> expand_explicit_path()
+      |> validate_executable_path()
     else
       System.find_executable(path) || bundled_codex_path()
     end
@@ -66,8 +70,35 @@ defmodule Foundry.CodexProvider do
   defp bundled_codex_path do
     path = "/Applications/Codex.app/Contents/Resources/codex"
 
-    if File.exists?(path) and File.regular?(path) do
-      path
+    validate_executable_path(path)
+  end
+
+  defp explicit_path?(path) when is_binary(path) do
+    Path.type(path) == :absolute or
+      String.starts_with?(path, ["./", "../", "~/"])
+  end
+
+  defp expand_explicit_path("~/"), do: System.user_home!()
+
+  defp expand_explicit_path(path) do
+    if String.starts_with?(path, "~/") do
+      Path.join(user_home(), String.trim_leading(path, "~/"))
+    else
+      Path.expand(path)
+    end
+  end
+
+  defp user_home do
+    System.get_env("HOME") || System.user_home!()
+  end
+
+  defp validate_executable_path(path) do
+    case File.stat(path) do
+      {:ok, %File.Stat{type: :regular, mode: mode}} when (mode &&& 0o111) != 0 ->
+        path
+
+      _ ->
+        nil
     end
   end
 

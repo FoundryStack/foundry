@@ -38,19 +38,11 @@ defmodule Foundry.Application do
       end
 
     # Create the chat sessions table if it doesn't exist
-    case :mnesia.create_table(:foundry_chat_sessions,
+    # Ash.DataLayer.Mnesia stores each resource as `{_pkey, val}`.
+    case :mnesia.create_table(
+           :foundry_chat_sessions,
            Keyword.merge(
-             [
-               attributes: [
-                 :id,
-                 :session_id,
-                 :messages,
-                 :title,
-                 :model,
-                 :created_at,
-                 :updated_at
-               ]
-             ],
+             [attributes: [:_pkey, :val]],
              table_config
            )
          ) do

@@ -24,7 +24,7 @@ and fetches what it needs rather than receiving a pre-assembled fixed window.
 
 **Primary model: Claude Sonnet (latest stable) for all task types.**
 **The agent operates in a single agentic loop with a bash tool.**
-**Context is assembled in three tiers: system prompt, session status, retrieved via shell.**
+**Context is assembled in three tiers: system prompt, session context, retrieved via shell.**
 
 ---
 
@@ -100,9 +100,9 @@ the agent loop without stack versions in the system prompt.
 
 ---
 
-### Tier 2 — Session Status (refreshed per copilot request)
+### Tier 2 — Session Context (refreshed per copilot request)
 
-A truncated view of `mix foundry.project.status`, assembled by
+A compact status view plus the full LLM-optimized project map, assembled by
 `Foundry.Copilot.ContextBuilder` at the start of each request. 60-second TTL.
 
 **Source:** `mix foundry.project.status` — full runtime health, no cap at data layer
@@ -114,6 +114,17 @@ Contains: domain list, sensitive module names, health signals (lint errors, open
 proposals, compliance gaps, pending migrations), CI state, stack versions, manifest
 summary. The token truncation lives in `ContextBuilder`, not in the task itself — the
 task always returns the complete current state.
+
+**Source:** `mix foundry.project.context` — full node corpus, edge list, and spec-kit
+index from live compiled modules
+**ContextBuilder view:** LLM-optimized system map rendered by
+`Foundry.Context.LLMFormatter`
+**Schema:** `docs/project_context_schema.md`
+
+Contains: all nodes, edges, module aliases, compact attributes/actions/relationships,
+sensitive markers, compliance links, ADR links, and the spec-kit index. This is included
+for the orchestrator chat model so it can classify intent, estimate blast radius, and
+select precise follow-up reads without embedding raw source files in the prompt.
 
 **Why separate observation from truncation:** Earlier drafts applied a 400-token hard
 cap inside the status task itself. This conflated the data model (complete current state)
@@ -183,13 +194,14 @@ truncated.
 | Tier | Bound |
 |---|---|
 | Tier 1 (system prompt) | ~1400 tokens |
-| Tier 2 (status view, truncated by ContextBuilder) | ~400 tokens |
+| Tier 2 (status view + optimized project map) | Project-size dependent; optimized formatter, not raw JSON |
 | Tier 3 (shell / tools, accumulated) | Grows during loop; circuit breaker at 20 calls |
 | User message + 3-turn history | ~300 tokens |
-| **Static total (Tier 1 + 2)** | **~1800 tokens** |
+| **Static total (Tier 1 + 2)** | Target project dependent; monitor against current model window |
 
-Well within any current model's context window. When static total approaches 3000
-tokens, revisit this ADR.
+Well within current target project sizes. If a project's optimized map approaches a
+material share of the selected model's context window, split by domain or introduce
+a map-summary policy through a new ADR rather than silently dropping topology.
 
 ---
 

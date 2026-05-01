@@ -12,10 +12,16 @@ defmodule FoundryWeb.ChatLive do
   def mount(_params, session, socket) do
     session_id = Map.get(session, "chat_session_id", Ecto.UUID.generate())
 
-    messages =
+    {messages, load_error} =
       case load_session(session_id) do
-        {:ok, %Foundry.Chat.Session{} = chat_session} -> chat_session.messages
-        _ -> []
+        {:ok, %Foundry.Chat.Session{} = chat_session} ->
+          {chat_session.messages, nil}
+
+        {:ok, nil} ->
+          {[], nil}
+
+        {:error, reason} ->
+          {[], persistence_error("Failed to load chat session", reason)}
       end
 
     socket =
@@ -24,8 +30,9 @@ defmodule FoundryWeb.ChatLive do
       |> assign(:messages, messages)
       |> assign(:input, "")
       |> assign(:loading, false)
-      |> assign(:error, nil)
+      |> assign(:error, load_error)
       |> assign(:active_request_ref, nil)
+      |> assign(:active_request_task, nil)
       |> assign(:project_root, project_root())
       |> assign(:show_system_context, false)
       |> assign(:system_context_prompt, nil)
@@ -66,19 +73,29 @@ defmodule FoundryWeb.ChatLive do
       }
 
       messages = persisted_messages ++ [assistant_msg]
-      save_messages(socket.assigns.session_id, persisted_messages)
 
-      socket =
-        socket
-        |> assign(:messages, messages)
-        |> assign(:input, "")
-        |> assign(:loading, true)
-        |> assign(:error, nil)
-        |> assign(:active_request_ref, request_ref)
+      case save_messages(socket.assigns.session_id, persisted_messages) do
+        :ok ->
+          task = start_llm_stream(request_ref, persisted_messages, self())
 
-      start_llm_stream(request_ref, persisted_messages, self())
+          socket =
+            socket
+            |> cancel_active_task()
+            |> assign(:messages, messages)
+            |> assign(:input, "")
+            |> assign(:loading, true)
+            |> assign(:error, nil)
+            |> assign(:active_request_ref, request_ref)
+            |> assign(:active_request_task, task)
 
-      {:noreply, socket}
+          {:noreply, socket}
+
+        {:error, reason} ->
+          {:noreply,
+           socket
+           |> assign(:error, persistence_error("Failed to save chat session", reason))
+           |> assign(:loading, false)}
+      end
     end
   end
 
@@ -94,13 +111,9 @@ defmodule FoundryWeb.ChatLive do
   def handle_info({:llm_stream_done, request_ref, response}, socket) do
     if request_ref == socket.assigns.active_request_ref do
       messages = finalize_streaming_response(socket.assigns.messages, response)
-      save_messages(socket.assigns.session_id, messages)
 
       {:noreply,
-       socket
-       |> assign(:messages, messages)
-       |> assign(:loading, false)
-       |> assign(:active_request_ref, nil)}
+       finish_stream(socket, messages, save_messages(socket.assigns.session_id, messages))}
     else
       {:noreply, socket}
     end
@@ -109,21 +122,58 @@ defmodule FoundryWeb.ChatLive do
   def handle_info({:llm_stream_error, request_ref, reason}, socket) do
     if request_ref == socket.assigns.active_request_ref do
       messages = drop_empty_streaming_response(socket.assigns.messages)
-      save_messages(socket.assigns.session_id, messages)
+      save_result = save_messages(socket.assigns.session_id, messages)
 
       {:noreply,
-       socket
-       |> assign(:messages, messages)
-       |> assign(:loading, false)
-       |> assign(:active_request_ref, nil)
-       |> assign(:error, "Failed to get response: #{inspect(reason)}")}
+       finish_stream(
+         socket,
+         messages,
+         save_result,
+         "Failed to get response: #{inspect(reason)}"
+       )}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({ref, _result}, socket) when is_reference(ref) do
+    if active_task_ref(socket) == ref do
+      {:noreply, clear_active_task(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, socket) do
+    if active_task_ref(socket) == ref do
+      case reason do
+        :normal ->
+          {:noreply, clear_active_task(socket)}
+
+        :shutdown ->
+          {:noreply, clear_active_task(socket)}
+
+        {:shutdown, _} ->
+          {:noreply, clear_active_task(socket)}
+
+        _ ->
+          messages = drop_empty_streaming_response(socket.assigns.messages)
+
+          {:noreply,
+           finish_stream(
+             socket,
+             messages,
+             save_messages(socket.assigns.session_id, messages),
+             "Chat request stopped unexpectedly: #{inspect(reason)}"
+           )}
+      end
     else
       {:noreply, socket}
     end
   end
 
   defp start_llm_stream(request_ref, messages, live_view_pid) do
-    spawn(fn ->
+    Task.Supervisor.async_nolink(FoundryWeb.ChatTaskSupervisor, fn ->
       case call_llm_stream(messages, fn event ->
              send(live_view_pid, format_stream_event(request_ref, event))
            end) do
@@ -166,27 +216,59 @@ defmodule FoundryWeb.ChatLive do
   end
 
   defp load_session(session_id) do
-    Foundry.Chat.Session
-    |> Ash.Query.filter(session_id: session_id)
-    |> Ash.read_one(domain: Foundry.Chat)
+    case hook(:load_session) do
+      nil ->
+        Foundry.Chat.Session
+        |> Ash.Query.filter(session_id: session_id)
+        |> Ash.read_one(domain: Foundry.Chat)
+
+      fun ->
+        fun.(session_id)
+    end
   end
 
   defp save_messages(session_id, messages) do
     case load_session(session_id) do
       {:ok, nil} ->
+        case create_session(session_id, messages) do
+          {:ok, _session} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:ok, %Foundry.Chat.Session{} = existing} ->
+        case update_session(existing, messages) do
+          {:ok, _session} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp create_session(session_id, messages) do
+    case hook(:save_messages) do
+      nil ->
         Foundry.Chat.Session
         |> Ash.Changeset.for_create(:create, %{session_id: session_id, messages: messages},
           domain: Foundry.Chat
         )
         |> Ash.create()
 
-      {:ok, %Foundry.Chat.Session{} = existing} ->
+      fun ->
+        fun.(session_id, messages)
+    end
+  end
+
+  defp update_session(existing, messages) do
+    case hook(:save_messages) do
+      nil ->
         existing
         |> Ash.Changeset.for_update(:update, %{messages: messages}, domain: Foundry.Chat)
         |> Ash.update()
 
-      _ ->
-        :ok
+      fun ->
+        fun.(existing.session_id, messages)
     end
   end
 
@@ -212,20 +294,26 @@ defmodule FoundryWeb.ChatLive do
   end
 
   defp call_llm_stream(messages, on_event) do
-    provider = Application.get_env(:foundry, :llm_provider, :claude_code)
+    case hook(:call_llm_stream) do
+      nil ->
+        provider = Application.get_env(:foundry, :llm_provider, :claude_code)
 
-    case provider do
-      :claude_code ->
-        call_claude_code_stream(messages, on_event)
+        case provider do
+          :claude_code ->
+            call_claude_code_stream(messages, on_event)
 
-      :lm_studio ->
-        call_lm_studio_stream(messages, on_event)
+          :lm_studio ->
+            call_lm_studio_stream(messages, on_event)
 
-      :codex ->
-        call_codex_stream(messages, on_event)
+          :codex ->
+            call_codex_stream(messages, on_event)
 
-      _ ->
-        call_llm(messages)
+          _ ->
+            call_llm(messages)
+        end
+
+      fun ->
+        fun.(messages, on_event)
     end
   end
 
@@ -305,8 +393,7 @@ defmodule FoundryWeb.ChatLive do
     Target project root: #{project_root}
 
     Treat this directory as the authoritative workspace for project discovery,
-    code inspection, and Mix commands. Do not inspect or modify the parent
-    Foundry repository unless the user explicitly asks about Foundry itself.
+    code inspection, and Mix commands.
 
     ---
 
@@ -534,6 +621,69 @@ defmodule FoundryWeb.ChatLive do
 
   defp extract_assistant_message(_),
     do: "Response received (format unrecognized)."
+
+  @impl true
+  def terminate(_reason, socket) do
+    _socket = cancel_active_task(socket)
+    :ok
+  end
+
+  defp finish_stream(socket, messages, save_result, base_error \\ nil) do
+    socket
+    |> clear_active_request()
+    |> clear_active_task()
+    |> assign(:messages, messages)
+    |> assign(:loading, false)
+    |> assign(:error, merge_errors(base_error, save_result))
+  end
+
+  defp clear_active_request(socket) do
+    assign(socket, :active_request_ref, nil)
+  end
+
+  defp clear_active_task(socket) do
+    case socket.assigns.active_request_task do
+      %Task{} = task ->
+        Task.shutdown(task, 100)
+        Process.demonitor(task.ref, [:flush])
+        assign(socket, :active_request_task, nil)
+
+      _ ->
+        assign(socket, :active_request_task, nil)
+    end
+  end
+
+  defp cancel_active_task(socket) do
+    socket
+    |> clear_active_request()
+    |> clear_active_task()
+  end
+
+  defp active_task_ref(socket) do
+    case socket.assigns.active_request_task do
+      %Task{ref: ref} -> ref
+      _ -> nil
+    end
+  end
+
+  defp merge_errors(base_error, :ok), do: base_error
+
+  defp merge_errors(nil, {:error, reason}) do
+    persistence_error("Response received but session was not saved", reason)
+  end
+
+  defp merge_errors(base_error, {:error, reason}) do
+    base_error <>
+      "\n\n" <> persistence_error("Response received but session was not saved", reason)
+  end
+
+  defp persistence_error(prefix, reason), do: "#{prefix}: #{inspect(reason)}"
+
+  defp hook(key) do
+    :foundry_web
+    |> Application.get_env(:chat_live_hooks, [])
+    |> Keyword.get(key)
+  end
 
   # Render
   @impl true
