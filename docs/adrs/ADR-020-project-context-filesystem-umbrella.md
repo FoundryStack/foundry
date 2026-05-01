@@ -71,8 +71,8 @@ intent, detect likely impact, and choose the right follow-up retrieval without r
 source files wholesale. Per-module `mix foundry.project.context <Module>` remains the
 lazy precision lookup for code-derived details.
 
-The LLM context also reads the `spec_kit` field from the cached context for the Tier 1
-spec-kit index and uses `mix foundry.project.status` for the compact health view.
+Spec-kit navigation is rendered inside this full map, not injected again as a separate
+Tier 1 block. `mix foundry.project.status` remains the compact health view.
 
 ### 2. CI staleness check via lockfile
 

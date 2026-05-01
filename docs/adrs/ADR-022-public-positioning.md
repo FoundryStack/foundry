@@ -45,8 +45,9 @@ edited to show something the code does not contain.
 **"An AI agent that reads your domain model, your architectural decisions, and your
 live project snapshot before proposing any change."**
 True for Q&A (Phase 3). The three-tier context model (ADR-010) is implemented.
-The agent reads AGENTS.md, stack versions, and spec-kit index in Tier 1; the project
-snapshot in Tier 2; domain introspection via bash in Tier 3. It does not propose
+The agent reads AGENTS.md and stack versions in Tier 1; the full project context
+(including compact spec-kit navigation) in Tier 2; domain introspection via bash in
+Tier 3. It does not propose
 code changes yet — that is Phase 4.
 
 **"Every change is classified. Sensitive changes require dual approval. Nothing is

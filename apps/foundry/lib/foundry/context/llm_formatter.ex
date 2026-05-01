@@ -48,6 +48,9 @@ defmodule Foundry.Context.LLMFormatter do
     "calls_provider" => "cp"
   }
 
+  @doc_title_limit 90
+  @doc_summary_limit 170
+
   def format(context) do
     # Ensure all keys are strings for consistent processing,
     # as context can come from internal assembly (atoms) or JSON decode (strings).
@@ -259,53 +262,139 @@ defmodule Foundry.Context.LLMFormatter do
   defp format_spec_kit(nil), do: ""
 
   defp format_spec_kit(spec_kit) do
-    adr_section = format_adr_section(spec_kit["adrs"])
-    rb_section = format_rb_section(spec_kit["runbooks"])
-    reg_section = format_reg_section(spec_kit["regulations"])
+    overview = format_spec_kit_overview(spec_kit)
 
-    parts = [adr_section, rb_section, reg_section] |> Enum.reject(&(&1 == ""))
+    sections =
+      [
+        format_doc_section("AGENTS", spec_kit["agents"]),
+        format_doc_section("ADRs", spec_kit["adrs"]),
+        format_doc_section("Runbooks", spec_kit["runbooks"]),
+        format_doc_section("Regulations", spec_kit["regulations"]),
+        format_doc_section("Usage Rules", spec_kit["usage_rules"])
+      ]
+      |> Enum.reject(&(&1 == ""))
+
+    parts = [overview | sections] |> Enum.reject(&(&1 == ""))
 
     if parts == [], do: "", else: "## Spec-Kit\n\n" <> Enum.join(parts, "\n\n")
   end
 
-  defp format_adr_section(nil), do: ""
+  defp format_spec_kit_overview(spec_kit) do
+    counts =
+      [
+        {"AGENTS", count_docs(spec_kit["agents"])},
+        {"ADRs", count_docs(spec_kit["adrs"])},
+        {"Runbooks", count_docs(spec_kit["runbooks"])},
+        {"Regulations", count_docs(spec_kit["regulations"])},
+        {"Usage Rules", count_docs(spec_kit["usage_rules"])}
+      ]
+      |> Enum.filter(fn {_label, count} -> count > 0 end)
+      |> Enum.map_join("  ", fn {label, count} -> "#{label}=#{count}" end)
 
-  defp format_adr_section(adrs) when adrs == [], do: ""
+    tags =
+      spec_kit
+      |> collect_tags()
+      |> Enum.take(8)
+      |> Enum.join(", ")
 
-  defp format_adr_section(adrs) do
-    adr_lines =
-      adrs
-      |> Enum.map(fn a ->
-        tags = (a["tags"] || []) |> Enum.take(5) |> Enum.join(", ")
-        tags_str = if tags != "", do: " [#{tags}]", else: ""
-        "  #{a["id"] || a["filename"]}: #{a["title"]}#{tags_str}"
-      end)
+    token_count = spec_kit["index_token_count"] || 0
+    token_warn = spec_kit["index_token_warn"] || false
+    tag_line = if tags == "", do: "", else: "\nThemes: #{tags}"
 
-    "### ADRs\n\n" <> Enum.join(adr_lines, "\n")
+    """
+    ### Overview
+
+    Counts: #{counts}
+    Navigation: Prefer direct node links (`adrs`, `compliance`, `runbook`) before tag-based lookup.
+    Token estimate: #{token_count} (warn: #{token_warn})#{tag_line}
+    """
+    |> String.trim()
   end
 
-  defp format_rb_section(nil), do: ""
+  defp format_doc_section(_title, nil), do: ""
+  defp format_doc_section(_title, []), do: ""
 
-  defp format_rb_section(runbooks) when runbooks == [], do: ""
+  defp format_doc_section(title, docs) do
+    entries =
+      docs
+      |> Enum.map(&format_doc_entry/1)
+      |> Enum.join("\n")
 
-  defp format_rb_section(runbooks) do
-    rb_lines =
-      runbooks
-      |> Enum.map(fn r -> "  #{r["filename"]}: #{r["title"]}" end)
-
-    "### Runbooks\n\n" <> Enum.join(rb_lines, "\n")
+    "### #{title}\n\n" <> entries
   end
 
-  defp format_reg_section(nil), do: ""
+  defp format_doc_entry(doc) do
+    id = doc["id"] || doc["filename"] || doc["path"] || doc["title"] || "unknown"
+    title = doc["title"] |> presence_or_nil() |> truncate(@doc_title_limit)
+    status = doc["status"] |> presence_or_nil() |> normalize_status()
+    summary = summarize_doc(doc)
 
-  defp format_reg_section(regs) when regs == [], do: ""
+    label_parts =
+      [id, status, title]
+      |> Enum.reject(&is_nil/1)
 
-  defp format_reg_section(regs) do
-    reg_lines =
-      regs
-      |> Enum.map(fn r -> "  #{r["id"] || r["filename"]}: #{r["title"]}" end)
+    case summary do
+      nil -> "- " <> Enum.join(label_parts, " · ")
+      text -> "- " <> Enum.join(label_parts, " · ") <> " :: " <> text
+    end
+  end
 
-    "### Regulations\n\n" <> Enum.join(reg_lines, "\n")
+  defp summarize_doc(doc) do
+    doc["summary"]
+    |> presence_or_nil()
+    |> truncate(@doc_summary_limit)
+    |> case do
+      nil ->
+        doc["tags"]
+        |> List.wrap()
+        |> Enum.take(5)
+        |> Enum.join(", ")
+        |> presence_or_nil()
+
+      summary ->
+        summary
+    end
+  end
+
+  defp normalize_status(nil), do: nil
+
+  defp normalize_status(status) do
+    status |> String.trim() |> String.downcase()
+  end
+
+  defp count_docs(nil), do: 0
+  defp count_docs(docs), do: length(List.wrap(docs))
+
+  defp collect_tags(spec_kit) do
+    ["adrs", "runbooks", "regulations", "usage_rules"]
+    |> Enum.flat_map(fn key ->
+      spec_kit
+      |> Map.get(key, [])
+      |> List.wrap()
+      |> Enum.flat_map(&List.wrap(&1["tags"]))
+    end)
+    |> Enum.frequencies()
+    |> Enum.sort_by(fn {tag, count} -> {-count, tag} end)
+    |> Enum.map(&elem(&1, 0))
+  end
+
+  defp presence_or_nil(nil), do: nil
+
+  defp presence_or_nil(text) when is_binary(text) do
+    case String.trim(text) do
+      "" -> nil
+      value -> value
+    end
+  end
+
+  defp truncate(nil, _limit), do: nil
+
+  defp truncate(text, limit) when is_binary(text) do
+    if String.length(text) > limit do
+      String.slice(text, 0, limit - 3) <> "..."
+    else
+      text
+    end
   end
 
   defp build_aliases(nodes) do

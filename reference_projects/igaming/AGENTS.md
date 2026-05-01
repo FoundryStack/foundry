@@ -3,7 +3,7 @@
 This file is the primary project-specific entry point for agents working inside
 `reference_projects/igaming`. It is loaded together with Foundry's core copilot
 prompt: Foundry supplies the universal governance model, while this file supplies
-the target platform context.
+the target platform constitution.
 
 Keep this document compact. Durable domain knowledge belongs in the spec-kit:
 ADRs for decisions, regulations for compliance requirements, and runbooks for
@@ -30,42 +30,7 @@ project root.
 
 ---
 
-## Context Loading Model
-
-Foundry and project context are both required:
-
-- Foundry core context defines the universal agent rules, proposal lifecycle,
-  change classes, and invariants.
-- This `AGENTS.md` defines the igaming project orientation and retrieval posture.
-- The spec-kit index points to ADRs, regulations, and runbooks that must be read
-  before answering or changing governed areas.
-- `mix foundry.project.status` gives current health, stack, lint, compliance, and
-  sensitive-resource summary.
-- `mix foundry.project.context [Module]` gives live code-derived facts for modules,
-  resources, Reactors, Transfers, policies, relationships, and compliance links.
-
-Do not duplicate the full system map here. Use the generated project context for
-topology and source-derived details.
-
----
-
-## Source Of Truth Order
-
-When sources overlap, use this order:
-
-1. Live structured context from compiled code for attributes, actions, policies,
-   relationships, state machines, side effects, telemetry, and runbook links.
-2. Regulations for compliance requirements and test tags.
-3. ADRs for accepted architectural and domain decisions.
-4. Runbooks for operational recovery, idempotency, and failure handling.
-5. This file for project orientation and where to look next.
-
-If a change needs a decision that is not covered by an ADR or regulation, surface a
-spec-kit gap before proposing implementation.
-
----
-
-## High-Scrutiny Areas
+## Domain Risk Model
 
 Treat these areas as governed and high-risk:
 
@@ -83,36 +48,19 @@ from domain names alone; verify it through project status or project context.
 
 ---
 
-## Spec-Kit Navigation
+## Project Constitution
 
-Start with the most specific artifact for the work:
-
-- Ledger and wallet integrity: `docs/adrs/ADR-001-double-entry-ledger.md` and
-  `docs/regulations/ukgc_mga.md`
-- Withdrawal flow operations: `docs/runbooks/withdrawal_transfer.md`
-- Bonus grant operations: `docs/runbooks/bonus_grant_transfer.md`
-- Bonus event evaluation: `docs/runbooks/bonus_evaluation_reactor.md`
-- Provider catalog sync: `docs/runbooks/provider_sync.md`
-- Compliance requirements: `docs/regulations/ukgc_mga.md`
-
-`docs.md` is not a spec-kit artifact and is not part of Foundry's governed context
-roots. Do not treat it as authoritative.
-
----
-
-## Project-Specific Working Rules
-
-- For questions, answer from the spec-kit and live project context, citing the file,
-  requirement, ADR, runbook, module, or field that grounds the answer.
-- For changes touching financial movement, player eligibility, KYC, self-exclusion,
-  provider certification, bonus awards, PII, or audit evidence, read the relevant
-  regulation and runbook before planning.
-- For structural code facts, prefer `mix foundry.project.context <Module>` over
-  source-file prose.
-- For DSL syntax, use current project usage rules, ExDoc, and existing local patterns.
-- For external side effects in Reactors or Transfers, verify idempotency and
-  compensation expectations before proposing changes.
-- For compliance changes, require an ADR link or surface the missing ADR as a blocker.
+- Financial movement, withdrawal orchestration, and bonus wallet-crediting flows
+  must be treated as operationally sensitive even in the reference project.
+- Player eligibility decisions include KYC, self-exclusion, jurisdiction checks,
+  and any other gating that determines whether a player may act or receive value.
+- Provider-facing integrations are governed by certification, replay safety,
+  idempotency, and auditability requirements before convenience or throughput.
+- PII vaulting and audit evidence are first-class compliance concerns. Changes in
+  these areas must preserve traceability and operator reviewability.
+- If a requested change materially alters bonus semantics, KYC lifecycle meaning,
+  provider certification posture, or withdrawal orchestration strategy, surface the
+  need for a new ADR before implementation.
 
 ---
 

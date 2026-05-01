@@ -33,7 +33,7 @@ Foundry has two modes:
 - *Target platform* — a platform built using Foundry (e.g., an iGaming back office, a fintech ledger system)
 - *Spec-kit* — the four document types that capture what code cannot: ADRs, Regulations, Runbooks, AGENTS.md
 - *Project context* — the full system map produced by `mix foundry.project.context`:
-  all nodes, edges, and spec-kit index metadata for the current project. **Included in Tier 2 LLM context**
+  all nodes, edges, and spec-kit navigation metadata for the current project. **Included in Tier 2 LLM context**
   for agent discovery, governance validation, and change impact analysis.
 - *Project status* — the health summary produced by `mix foundry.project.status`:
   lint, migrations, proposals, compliance gaps. Also in Tier 2 LLM context. Replaces "project snapshot".
@@ -129,7 +129,7 @@ presentation. Sub-agents own scoped, tool-constrained retrieval and generation t
 **Purpose:** Deep-read the constraint graph rooted at the affected NodeEntry and produce
 a compact constraint summary.
 **Spawned:** Always for `change` intent. For `question` when ADR citation is needed.
-**Inputs:** NodeEntry (from CodeContextGatherer) + Tier 1 spec-kit index tag match.
+**Inputs:** NodeEntry (from CodeContextGatherer) + Tier 2 system map spec references/tag match.
 **Tools:** `bash` (cat, grep) — read-only.
 **Execution:**
 1. Read each ADR identified by Tier 1 tag match + NodeEntry `adrs` field
@@ -465,7 +465,7 @@ consuming the one permitted clarifying question (INV-005):
 The complete sequence the agent follows before emitting any proposal:
 
 ```
-1.  Read spec-kit index (Tier 1) — identify relevant ADRs/INVs/regulations by tag
+1.  Read system map spec overview (Tier 2) — identify relevant ADRs/INVs/regulations by node link or tag
 2.  Read those documents via bash — follow cross-references
 3.  Run pre-generation checklist — identify missing spec-kit items
 4.  Read module context: mix foundry.context <Module> --json
@@ -541,18 +541,18 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 | What changed in the system recently? | `git log` + `mix foundry.diagram.diff` |
 | Full system map (all nodes + edges)? | `mix foundry.project.context` — Tier 2 LLM context (always available to agents) |
 | Current project health (lint, proposals, gaps)? | `mix foundry.project.status` — Tier 2 context |
-| Which spec-kit document covers a concept? | Spec-kit index in Tier 1 context — agent reads summaries and tags, then `bash("cat <path>")` |
+| Which spec-kit document covers a concept? | Spec-kit overview inside full project context (Tier 2) — agent reads summaries and tags, then `bash("cat <path>")` |
 | Correct DSL syntax for X? | `bash("mix foundry.exdoc <Module>")` or `bash("cat .foundry/usage_rules/<lib>.md")` |
 | Pattern for a new construct type? | `bash("mix foundry.pattern.find <type> --domain <D>")` |
 | Operation parameter schema? | `bash("cat .foundry/usage_rules/foundry_operations.md")` or `bash("mix foundry.operation.schema <Op>")` |
 | Read a source file or spec-kit document? | `Foundry.FileSystem.read/2` via FoundryChannel `fetch_file` / `fetch_document` |
 | Spec-kit task postures? | §Spec-Kit Tasks above |
 
-### Tier 1 vs Bash — The Decision Rule
+### System Map vs Bash — The Decision Rule
 
-**Tier 1 answers "which?" — bash answers "what?"**
+**The system map answers "which?" — bash answers "what?"**
 
-| Answer comes from Tier 1 (already in system prompt) | Answer requires bash |
+| Answer comes from full project context (already in Tier 2 prompt) | Answer requires bash |
 |---|---|
 | Which ADRs are relevant to this topic? | What does ADR-013 §Confidence actually say? |
 | Which modules exist in the Finance domain? | What attributes does Wallet currently have? |
@@ -560,9 +560,9 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 | Does a pattern exist for `transfer` type? | The actual pattern source code |
 | Which spec-kit files exist? | Contents of a specific spec-kit file |
 
-Never run bash to answer a question Tier 1 already resolves. Never trust a Tier 1
-summary as the full constraint text for a contradiction check — always fetch the full
-document. Fetching a document the Tier 1 index says doesn't exist is always wrong.
+Never run bash to answer a question the system map already resolves. Never trust a
+system-map summary as the full constraint text for a contradiction check — always fetch
+the full document. Fetching a document the system map says doesn't exist is always wrong.
 
 ---
 

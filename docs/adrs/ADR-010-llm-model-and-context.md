@@ -81,15 +81,10 @@ Studio restart or project context cache invalidation.
 |---|---|---|---|
 | AGENTS.md | ~800 | File read | `{:spec_kit, path, mtime}` |
 | Stack versions | ~200 | `stack` field from `project.status` (sourced from `mix.lock`) | `{:project_status, hash}` |
-| Spec-kit index | ~400 | `spec_kit` field from project context ETS cache | `{:project_context, project_root, max_mtime}` |
-| **Tier 1 total** | **~1400** | | |
+| **Tier 1 total** | **~1000** | | |
 
 AGENTS.md is the agent's constitution — invariants, orientation, spec-kit task postures,
 shell constraints, key Mix task reference. It is never dropped or summarised.
-
-The spec-kit index gives the agent a map of all spec-kit documents (ADRs, runbooks,
-regulations, usage rules) with summaries and tags. The agent reads this directly from
-context to decide which documents to read via bash. No search tool needed.
 
 Stack versions come from the `stack` field of `mix foundry.project.status`, which
 sources them from `mix.lock` resolved values. This is not a separate task call —
@@ -122,9 +117,10 @@ index from live compiled modules
 **Schema:** `docs/project_context_schema.md`
 
 Contains: all nodes, edges, module aliases, compact attributes/actions/relationships,
-sensitive markers, compliance links, ADR links, and the spec-kit index. This is included
-for the orchestrator chat model so it can classify intent, estimate blast radius, and
-select precise follow-up reads without embedding raw source files in the prompt.
+sensitive markers, compliance links, ADR links, and a compact spec-kit navigation view
+(overview counts, short document summaries, tags, statuses where declared). This is
+included for the orchestrator chat model so it can classify intent, estimate blast
+radius, and select precise follow-up reads without embedding raw source files in the prompt.
 
 **Why separate observation from truncation:** Earlier drafts applied a 400-token hard
 cap inside the status task itself. This conflated the data model (complete current state)

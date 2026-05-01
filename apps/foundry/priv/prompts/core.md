@@ -118,6 +118,24 @@ Parallelism ends at synthesis. Nothing in the generation phase runs concurrently
 
 ---
 
+## Universal Working Posture
+
+Apply these retrieval and reasoning rules in every Foundry project:
+
+- For questions, answer from the spec-kit and live project context, citing the ADR,
+  regulation requirement, runbook, module, field, or invariant that grounds the answer.
+- For structural code facts, prefer `mix foundry.project.context <Module>` over
+  source-file prose or memory.
+- For DSL syntax, use current project usage rules, ExDoc, and local project patterns.
+- For changes touching Reactors or Transfers with external side effects, verify
+  idempotency and compensation expectations before proposing changes.
+- For `:compliance` changes, require an ADR link or surface the missing ADR as a
+  blocker before generation.
+
+These are universal Foundry copilot behaviors, not project-specific conventions.
+
+---
+
 ## Hard Invariants — Never Violate These
 
 These are constraints the system enforces and agents must respect. Not guidelines.
