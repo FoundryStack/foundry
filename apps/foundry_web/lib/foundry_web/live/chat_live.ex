@@ -25,8 +25,22 @@ defmodule FoundryWeb.ChatLive do
       |> assign(:input, "")
       |> assign(:loading, false)
       |> assign(:error, nil)
+      |> assign(:active_request_ref, nil)
+      |> assign(:project_root, project_root())
+      |> assign(:show_system_context, false)
+      |> assign(:system_context_prompt, nil)
+      |> assign(:system_context_error, nil)
 
     {:ok, socket}
+  end
+
+  @impl true
+  def handle_event("toggle_system_context", _params, socket) do
+    if socket.assigns.show_system_context do
+      {:noreply, assign(socket, :show_system_context, false)}
+    else
+      {:noreply, load_system_context(socket)}
+    end
   end
 
   @impl true
@@ -42,8 +56,17 @@ defmodule FoundryWeb.ChatLive do
         "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
       }
 
-      messages = socket.assigns.messages ++ [user_msg]
-      save_messages(socket.assigns.session_id, messages)
+      request_ref = make_ref()
+      persisted_messages = socket.assigns.messages ++ [user_msg]
+
+      assistant_msg = %{
+        "role" => "assistant",
+        "content" => "",
+        "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+      }
+
+      messages = persisted_messages ++ [assistant_msg]
+      save_messages(socket.assigns.session_id, persisted_messages)
 
       socket =
         socket
@@ -51,36 +74,94 @@ defmodule FoundryWeb.ChatLive do
         |> assign(:input, "")
         |> assign(:loading, true)
         |> assign(:error, nil)
+        |> assign(:active_request_ref, request_ref)
 
-      send(self(), {:process_message, message, messages})
+      start_llm_stream(request_ref, persisted_messages, self())
 
       {:noreply, socket}
     end
   end
 
   @impl true
-  def handle_info({:process_message, _user_message, previous_messages}, socket) do
-    case call_llm(previous_messages) do
-      {:ok, response} ->
-        assistant_msg = %{
-          "role" => "assistant",
-          "content" => response,
-          "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
-        }
+  def handle_info({:llm_stream_delta, request_ref, delta}, socket) do
+    if request_ref == socket.assigns.active_request_ref do
+      {:noreply, update(socket, :messages, &append_to_streaming_response(&1, delta))}
+    else
+      {:noreply, socket}
+    end
+  end
 
-        messages = previous_messages ++ [assistant_msg]
-        save_messages(socket.assigns.session_id, messages)
+  def handle_info({:llm_stream_done, request_ref, response}, socket) do
+    if request_ref == socket.assigns.active_request_ref do
+      messages = finalize_streaming_response(socket.assigns.messages, response)
+      save_messages(socket.assigns.session_id, messages)
 
-        {:noreply,
-         socket
-         |> assign(:messages, messages)
-         |> assign(:loading, false)}
+      {:noreply,
+       socket
+       |> assign(:messages, messages)
+       |> assign(:loading, false)
+       |> assign(:active_request_ref, nil)}
+    else
+      {:noreply, socket}
+    end
+  end
 
-      {:error, reason} ->
-        {:noreply,
-         socket
-         |> assign(:loading, false)
-         |> assign(:error, "Failed to get response: #{inspect(reason)}")}
+  def handle_info({:llm_stream_error, request_ref, reason}, socket) do
+    if request_ref == socket.assigns.active_request_ref do
+      messages = drop_empty_streaming_response(socket.assigns.messages)
+      save_messages(socket.assigns.session_id, messages)
+
+      {:noreply,
+       socket
+       |> assign(:messages, messages)
+       |> assign(:loading, false)
+       |> assign(:active_request_ref, nil)
+       |> assign(:error, "Failed to get response: #{inspect(reason)}")}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  defp start_llm_stream(request_ref, messages, live_view_pid) do
+    spawn(fn ->
+      case call_llm_stream(messages, fn event ->
+             send(live_view_pid, format_stream_event(request_ref, event))
+           end) do
+        {:ok, response} ->
+          send(live_view_pid, {:llm_stream_done, request_ref, response})
+
+        {:error, reason} ->
+          send(live_view_pid, {:llm_stream_error, request_ref, reason})
+      end
+    end)
+  end
+
+  defp format_stream_event(request_ref, {:delta, text}),
+    do: {:llm_stream_delta, request_ref, text}
+
+  defp append_to_streaming_response(messages, delta) do
+    update_last_message(messages, fn msg ->
+      Map.update(msg, "content", delta, &(&1 <> delta))
+    end)
+  end
+
+  defp finalize_streaming_response(messages, ""), do: messages
+
+  defp finalize_streaming_response(messages, response) do
+    update_last_message(messages, &Map.put(&1, "content", response))
+  end
+
+  defp drop_empty_streaming_response(messages) do
+    case Enum.reverse(messages) do
+      [%{"role" => "assistant", "content" => ""} | rest] -> Enum.reverse(rest)
+      _ -> messages
+    end
+  end
+
+  defp update_last_message(messages, fun) do
+    case Enum.reverse(messages) do
+      [last | rest] -> Enum.reverse([fun.(last) | rest])
+      [] -> []
     end
   end
 
@@ -116,6 +197,12 @@ defmodule FoundryWeb.ChatLive do
       :claude_code ->
         call_claude_code(messages)
 
+      :lm_studio ->
+        call_lm_studio(messages)
+
+      :codex ->
+        call_codex(messages)
+
       :req_llm ->
         call_req_llm(messages)
 
@@ -124,11 +211,33 @@ defmodule FoundryWeb.ChatLive do
     end
   end
 
+  defp call_llm_stream(messages, on_event) do
+    provider = Application.get_env(:foundry, :llm_provider, :claude_code)
+
+    case provider do
+      :claude_code ->
+        call_claude_code_stream(messages, on_event)
+
+      :lm_studio ->
+        call_lm_studio_stream(messages, on_event)
+
+      :codex ->
+        call_codex_stream(messages, on_event)
+
+      _ ->
+        call_llm(messages)
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # Claude Code CLI provider (default for dev — no API key needed)
   # ---------------------------------------------------------------------------
 
   defp call_claude_code(messages) do
+    call_claude_code_stream(messages, fn _event -> :ok end)
+  end
+
+  defp call_claude_code_stream(messages, on_event) do
     project_root = project_root()
 
     with {:ok, system_prompt} <- build_system_prompt(project_root) do
@@ -139,7 +248,10 @@ defmodule FoundryWeb.ChatLive do
         project_root: project_root
       ]
 
-      case Foundry.ClaudeCodeProvider.chat(messages, opts) do
+      case Foundry.ClaudeCodeProvider.stream(messages, opts, fn
+             {:delta, text} -> on_event.({:delta, text})
+             _event -> :ok
+           end) do
         {:ok, text, _metadata} ->
           {:ok, text}
 
@@ -166,7 +278,12 @@ defmodule FoundryWeb.ChatLive do
   end
 
   defp build_system_prompt(project_root) do
-    {:ok, Foundry.Copilot.ContextBuilder.build(project_root: project_root)}
+    system_prompt =
+      Foundry.Copilot.ContextBuilder.build(
+        project_root: Application.fetch_env!(:foundry_web, :igaming_project_root)
+      )
+
+    {:ok, target_project_header(project_root) <> system_prompt}
   rescue
     e -> {:error, {:context_build_failed, Exception.message(e)}}
   catch
@@ -175,11 +292,43 @@ defmodule FoundryWeb.ChatLive do
   end
 
   defp project_root do
-    Application.get_env(
-      :foundry_web,
-      :igaming_project_root,
-      Path.expand("../../../../../reference_projects/igaming", __DIR__)
-    )
+    :foundry_web
+    |> Application.fetch_env!(:igaming_project_root)
+    |> Path.expand()
+  end
+
+  defp target_project_header(project_root) do
+    """
+    # Target Project Boundary
+
+    The target platform for this chat is the reference iGaming project.
+    Target project root: #{project_root}
+
+    Treat this directory as the authoritative workspace for project discovery,
+    code inspection, and Mix commands. Do not inspect or modify the parent
+    Foundry repository unless the user explicitly asks about Foundry itself.
+
+    ---
+
+    """
+  end
+
+  defp load_system_context(socket) do
+    project_root = socket.assigns.project_root
+
+    case build_system_prompt(project_root) do
+      {:ok, prompt} ->
+        socket
+        |> assign(:show_system_context, true)
+        |> assign(:system_context_prompt, prompt)
+        |> assign(:system_context_error, nil)
+
+      {:error, reason} ->
+        socket
+        |> assign(:show_system_context, true)
+        |> assign(:system_context_prompt, nil)
+        |> assign(:system_context_error, inspect(reason))
+    end
   end
 
   defp claude_not_installed_message do
@@ -196,6 +345,116 @@ defmodule FoundryWeb.ChatLive do
 
     See: docs/runbooks/claude_code_unavailable.md
     """
+  end
+
+  # ---------------------------------------------------------------------------
+  # OpenAI Codex CLI provider
+  # ---------------------------------------------------------------------------
+
+  defp call_codex(messages) do
+    call_codex_stream(messages, fn _event -> :ok end)
+  end
+
+  defp call_codex_stream(messages, on_event) do
+    project_root = project_root()
+
+    with {:ok, system_prompt} <- build_system_prompt(project_root) do
+      config = Application.get_env(:foundry, :codex, [])
+
+      opts = [
+        system_prompt: system_prompt,
+        timeout_ms: Keyword.get(config, :timeout_ms, 120_000),
+        model: Keyword.get(config, :model),
+        profile: Keyword.get(config, :profile),
+        sandbox: Keyword.get(config, :sandbox, "read-only"),
+        executable: Keyword.get(config, :executable, "codex"),
+        project_root: project_root
+      ]
+
+      case Foundry.CodexProvider.stream(messages, opts, fn
+             {:delta, text} -> on_event.({:delta, text})
+             _event -> :ok
+           end) do
+        {:ok, text, _metadata} ->
+          {:ok, text}
+
+        {:error, :not_installed} ->
+          {:ok, codex_not_installed_message()}
+
+        {:error, {:timeout, partial_text}} ->
+          if String.length(partial_text) > 0 do
+            {:ok, partial_text <> "\n\n[Response timed out — partial response above]"}
+          else
+            {:error, :timeout}
+          end
+
+        {:error, {:exit_code, code, output}} ->
+          {:error, {:codex_exit, code, String.slice(output, 0, 500)}}
+
+        {:error, reason} ->
+          {:error, {:codex_error, reason}}
+      end
+    end
+  end
+
+  defp codex_not_installed_message do
+    """
+    OpenAI Codex CLI is not installed. To enable chat:
+
+    1. Install Codex CLI
+    2. Authenticate: codex login
+    3. Restart Foundry Studio
+
+    Or configure another provider in config/dev.exs.
+    """
+  end
+
+  # ---------------------------------------------------------------------------
+  # LM Studio local OpenAI-compatible provider
+  # ---------------------------------------------------------------------------
+
+  defp call_lm_studio(messages) do
+    call_lm_studio_stream(messages, fn _event -> :ok end)
+  end
+
+  defp call_lm_studio_stream(messages, on_event) do
+    project_root = project_root()
+
+    with {:ok, system_prompt} <- build_system_prompt(project_root) do
+      config = Application.get_env(:foundry, :lm_studio, [])
+
+      lm_messages =
+        [%{"role" => "system", "content" => system_prompt}] ++
+          Enum.map(messages, fn %{"role" => role, "content" => content} ->
+            %{"role" => role, "content" => content}
+          end)
+
+      opts = [
+        base_url: Keyword.get(config, :base_url, "http://localhost:1234/v1"),
+        model: Keyword.get(config, :model, "local-model"),
+        timeout_ms: Keyword.get(config, :timeout_ms, 120_000),
+        api_key: Keyword.get(config, :api_key, "lm-studio"),
+        temperature: Keyword.get(config, :temperature, 0.2)
+      ]
+
+      case Foundry.LMStudioProvider.stream(lm_messages, opts, fn
+             {:delta, text} -> on_event.({:delta, text})
+             _event -> :ok
+           end) do
+        {:ok, text, _metadata} ->
+          {:ok, text}
+
+        {:error, {:timeout, partial_text}} ->
+          if String.length(partial_text) > 0 do
+            {:ok, partial_text <> "\n\n[Response timed out — partial response above]"}
+          else
+            {:error, :timeout}
+          end
+
+        {:error, reason} ->
+          {:error, {:lm_studio_error, reason}}
+      end
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -281,7 +540,37 @@ defmodule FoundryWeb.ChatLive do
   def render(assigns) do
     ~H"""
     <div class="max-w-3xl mx-auto p-4 h-screen flex flex-col">
-      <h1 class="text-xl font-bold mb-4">Foundry Chat</h1>
+      <div class="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h1 class="text-xl font-bold">Foundry Chat</h1>
+          <p class="text-xs text-gray-500 break-all">{@project_root}</p>
+        </div>
+
+        <button
+          type="button"
+          phx-click="toggle_system_context"
+          class="shrink-0 border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
+        >
+          {if @show_system_context, do: "Hide context", else: "Show context"}
+        </button>
+      </div>
+
+      <%= if @show_system_context do %>
+        <div class="mb-4 border border-gray-200 rounded-lg bg-gray-50 p-3">
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <p class="text-sm font-semibold text-gray-700">System Context Prompt</p>
+            <%= if @system_context_prompt do %>
+              <p class="text-xs text-gray-500">{byte_size(@system_context_prompt)} bytes</p>
+            <% end %>
+          </div>
+
+          <%= if @system_context_error do %>
+            <p class="text-sm text-red-600 whitespace-pre-wrap">{@system_context_error}</p>
+          <% else %>
+            <pre class="max-h-64 overflow-auto text-xs leading-5 whitespace-pre-wrap text-gray-800"><%= @system_context_prompt %></pre>
+          <% end %>
+        </div>
+      <% end %>
 
       <div class="flex-1 overflow-y-auto mb-4 space-y-3">
         <%= for msg <- @messages do %>

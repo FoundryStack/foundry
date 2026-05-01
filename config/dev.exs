@@ -81,13 +81,28 @@ config :swoosh, :api_client, false
 # in production as building large stacktraces may be expensive.
 config :phoenix, :stacktrace_depth, 20
 
-# Default LLM provider for Chat UI — Claude Code CLI (no API key needed)
-# See ADR-025. Switch to :req_llm and set ANTHROPIC_API_KEY for production path.
-config :foundry, :llm_provider, :claude_code
+# Default LLM provider for Chat UI — OpenAI Codex CLI.
+# Authenticate with `codex login`; override with CODEX_MODEL when needed.
+config :foundry, :llm_provider, :codex
 
 config :foundry, :claude_code,
+  model: "haiku",
   timeout_ms: 120_000
 
+config :foundry, :codex,
+  model: System.get_env("CODEX_MODEL", "gpt-5.4-mini"),
+  profile: System.get_env("CODEX_PROFILE"),
+  sandbox: System.get_env("CODEX_SANDBOX", "read-only"),
+  executable: System.get_env("CODEX_EXECUTABLE", "codex"),
+  timeout_ms: 120_000
+
+config :foundry, :lm_studio,
+  base_url: System.get_env("LM_STUDIO_BASE_URL", "http://localhost:1234/v1"),
+  model: System.get_env("LM_STUDIO_MODEL", "qwen3-coder-30b-a3b-instruct-mlx"),
+  timeout_ms: 120_000,
+  temperature: 0.2
+
 # Configure igaming project root for System Map Viewer
-config :foundry_web, :igaming_project_root,
-  Path.expand("reference_projects/igaming", __DIR__ |> Path.dirname())
+config :foundry_web,
+       :igaming_project_root,
+       Path.expand("reference_projects/igaming", __DIR__ |> Path.dirname())
