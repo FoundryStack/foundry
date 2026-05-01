@@ -17,7 +17,7 @@ defmodule Foundry.Chat.Session do
     data_layer: Ash.DataLayer.Mnesia
 
   mnesia do
-    table :foundry_chat_sessions
+    table(:foundry_chat_sessions)
   end
 
   attributes do
@@ -50,7 +50,8 @@ defmodule Foundry.Chat.Session do
       public?(true)
     end
 
-    timestamps()
+    create_timestamp(:created_at)
+    update_timestamp(:updated_at)
   end
 
   actions do
