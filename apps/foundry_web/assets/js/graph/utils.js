@@ -1,5 +1,11 @@
-import { CLUSTER_KIND_LEGEND, NODE_KIND_LEGEND, STATUS_ICON_LEGEND, domainCoverage, covColor, getDomainColor } from './colors'
+import { domainCoverage, covColor, getDomainColor } from './colors'
 import { EDGE_CATALOG, edgeLegendDash } from './edge_catalog'
+import {
+  getBoundaryKindLegend,
+  getNodeKindLegend,
+  getStatusLegend,
+  LEGEND_SECTION_LABELS,
+} from './semantics'
 import { STATUS_ICON_SVG } from './templates'
 
 export function searchMatch(node, query) {
@@ -22,6 +28,9 @@ export function buildCanvasOverlays(container, nodes) {
   overlays.id = 'foundry-canvas-overlays'
 
   const coverage = domainCoverage(nodes)
+  const nodeKindLegend = getNodeKindLegend()
+  const boundaryKindLegend = getBoundaryKindLegend()
+  const statusLegend = getStatusLegend()
   const coverageHtml = coverage
     .map(({ domain, avg }) =>
       `<div class="flex min-w-0 items-center gap-1.5">
@@ -42,25 +51,25 @@ export function buildCanvasOverlays(container, nodes) {
   legend.className = 'pointer-events-auto absolute bottom-3 left-3 flex max-w-[min(640px,calc(100%-24px))] flex-col gap-2.5 rounded-md border border-[color:color-mix(in_oklch,var(--fg-b3)_55%,transparent)] bg-[color:color-mix(in_oklch,var(--fg-s2)_90%,transparent)] px-3 py-2.5 text-[10px] shadow-[0_8px_24px_rgba(0,0,0,0.22)] backdrop-blur-md'
   legend.innerHTML = `
     <div class="flex flex-col gap-1.5">
-      <div class="text-[8px] font-semibold uppercase leading-tight tracking-[0.1em] text-[color:color-mix(in_oklch,var(--fg-t2)_70%,transparent)]">Node Kinds</div>
+      <div class="text-[8px] font-semibold uppercase leading-tight tracking-[0.1em] text-[color:color-mix(in_oklch,var(--fg-t2)_70%,transparent)]">${LEGEND_SECTION_LABELS.nodeKinds}</div>
       <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-3 gap-y-1">
-        ${NODE_KIND_LEGEND.map(item => legendNodeItem(item)).join('')}
+        ${nodeKindLegend.map(item => legendNodeItem(item)).join('')}
       </div>
     </div>
     <div class="flex flex-col gap-1.5">
-      <div class="text-[8px] font-semibold uppercase leading-tight tracking-[0.1em] text-[color:color-mix(in_oklch,var(--fg-t2)_70%,transparent)]">Cluster Kinds</div>
+      <div class="text-[8px] font-semibold uppercase leading-tight tracking-[0.1em] text-[color:color-mix(in_oklch,var(--fg-t2)_70%,transparent)]">${LEGEND_SECTION_LABELS.boundaryKinds}</div>
       <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-3 gap-y-1">
-        ${CLUSTER_KIND_LEGEND.map(item => legendClusterItem(item)).join('')}
+        ${boundaryKindLegend.map(item => legendBoundaryItem(item)).join('')}
       </div>
     </div>
     <div class="flex flex-col gap-1.5">
-      <div class="text-[8px] font-semibold uppercase leading-tight tracking-[0.1em] text-[color:color-mix(in_oklch,var(--fg-t2)_70%,transparent)]">Status Icons</div>
+      <div class="text-[8px] font-semibold uppercase leading-tight tracking-[0.1em] text-[color:color-mix(in_oklch,var(--fg-t2)_70%,transparent)]">${LEGEND_SECTION_LABELS.statusIcons}</div>
       <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-3 gap-y-1">
-        ${STATUS_ICON_LEGEND.map(item => legendStatusItem(item)).join('')}
+        ${statusLegend.map(item => legendStatusItem(item)).join('')}
       </div>
     </div>
     <div class="flex flex-col gap-1.5">
-      <div class="text-[8px] font-semibold uppercase leading-tight tracking-[0.1em] text-[color:color-mix(in_oklch,var(--fg-t2)_70%,transparent)]">Edge Types</div>
+      <div class="text-[8px] font-semibold uppercase leading-tight tracking-[0.1em] text-[color:color-mix(in_oklch,var(--fg-t2)_70%,transparent)]">${LEGEND_SECTION_LABELS.edgeTypes}</div>
       <div class="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-3 gap-y-1">
         ${EDGE_CATALOG.map(edge => legendEdgeItem(edge)).join('')}
       </div>
@@ -111,7 +120,7 @@ function legendNodeItem(item) {
   `
 }
 
-function legendClusterItem(item) {
+function legendBoundaryItem(item) {
   return `
     <div class="flex items-center gap-1.5 whitespace-nowrap leading-tight text-[color:color-mix(in_oklch,var(--fg-tx)_70%,transparent)]" title="${escHtml(item.detail || item.label)}">
       <span class="h-3 w-3 shrink-0 rounded-[3px] border border-[color:color-mix(in_oklch,var(--fg-b3)_70%,transparent)]" style="background:${item.color}"></span>

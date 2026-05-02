@@ -1,3 +1,5 @@
+import { computeCoverageScore, getComplianceStatus, normalizeGraphNodeType } from './semantics'
+
 export function normalizeStateName(value) {
   if (value == null) return null
   return String(value).replace(/^:/, '')
@@ -25,10 +27,10 @@ export function normalizeNode(raw) {
   const tc = raw.test_coverage || {}
   const sm = raw.state_machine || {}
 
-  const cov = (tc.property_tests ? 33 : 0) + (tc.scenario_tests ? 33 : 0) + (tc.e2e_tests ? 34 : 0)
+  const cov = computeCoverageScore(tc)
   const reqs = raw.compliance || []
-  const complianceGap = reqs.length > 0 && !tc.e2e_tests
-  const type = raw.type === 'provider' ? 'adapter' : raw.type
+  const complianceStatus = getComplianceStatus(reqs, tc)
+  const type = normalizeGraphNodeType(raw.type)
 
   const actions = (raw.actions || []).map((action, index) => {
     const normalizedName = normalizeActionName(action.name || `action_${index}`)
@@ -91,6 +93,7 @@ export function normalizeNode(raw) {
     : raw.type || 'No description')
 
   return {
+    ...raw,
     id: raw.id,
     type,
     domain: raw.domain,
@@ -98,8 +101,10 @@ export function normalizeNode(raw) {
     nodeKind: 'entity',
     cov,
     reqs,
-    gap: complianceGap,
-    compliance_gap: complianceGap,
+    gap: complianceStatus.hasGap,
+    compliance_gap: complianceStatus.hasGap,
+    has_compliance_links: complianceStatus.hasLinks,
+    compliance_status: complianceStatus.label,
     sensitive: raw.sensitive,
     pt: raw.paper_trail,
     arch: raw.archival,
@@ -118,6 +123,5 @@ export function normalizeNode(raw) {
     schedule: raw.schedule || null,
     oban_queues: raw.oban_queues || [],
     performs: raw.performs || null,
-    ...raw,
   }
 }

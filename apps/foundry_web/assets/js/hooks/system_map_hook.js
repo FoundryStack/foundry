@@ -1,4 +1,5 @@
 import { mountFoundryGraph, covColor, getActionTypeColor, getTypeColor } from '../foundry_graph'
+import { getComplianceStatus, getTypeDisplayLabel, shouldShowComplianceIndicator } from '../graph/semantics'
 import { UI_CONFIG } from '../graph/config'
 import { DrawerManager } from './system_map/drawer_manager'
 import { SidebarManager } from './system_map/sidebar_manager'
@@ -122,54 +123,60 @@ export const SystemMapHook = {
     if (!card) return
 
     const cov = typeof node.cov === 'number' ? node.cov : 0
-    const gap = !!(node.compliance_gap ?? node.gap)
     const reqs = node.reqs || []
-    const coverageLabel = gap ? 'compliance coverage gap' : 'covered'
+    const complianceStatus = getComplianceStatus(reqs, node.test_coverage || {})
+    const gap = !!(node.compliance_gap ?? node.gap)
+    const coverageLabel = 'test coverage'
     const typeColor = node.typeColor || getTypeColor(node.type)
-    const typeLabel = node.type === 'agent' ? 'agent step' : node.type
+    const typeLabel = getTypeDisplayLabel(node)
+    const showCompliance = shouldShowComplianceIndicator(node)
 
     card.innerHTML = `
-      <div class="fm-hover-header">
-        <span class="fm-hover-type" style="color:${this._esc(typeColor)};border-color:${this._esc(typeColor)}">${this._esc(typeLabel || 'node')}</span>
-        ${node.sensitive ? '<span class="fm-hover-sensitive">sensitive</span>' : ''}
+      <div class="mb-1 flex items-center justify-between gap-1.5">
+        <span class="rounded-full border px-1.5 py-0.5 text-[11px] leading-[1.4]" style="color:${this._esc(typeColor)};border-color:${this._esc(typeColor)};background:var(--fg-s3)">${this._esc(typeLabel || 'node')}</span>
+        ${node.sensitive ? '<span class="rounded-full border border-[var(--fg-rd)] bg-[var(--fg-s3)] px-1.5 py-0.5 text-[11px] leading-[1.4] text-[var(--fg-rd)]">sensitive</span>' : ''}
       </div>
-      <div class="fm-hover-name">${this._esc(node.name || node.id || nodeId)}</div>
-      <div class="fm-hover-row">
-        <span class="fm-hover-key">domain</span>
-        <span class="fm-hover-value">${this._esc(node.domain || 'N/A')}</span>
+      <div class="mb-1.5 break-words font-mono text-[13px] font-semibold">
+        ${this._esc(node.name || node.id || nodeId)}
+      </div>
+      <div class="mt-0.5 flex items-center justify-between gap-2">
+        <span class="uppercase tracking-[0.04em] text-[color:color-mix(in_oklch,var(--color-base-content)_55%,transparent)]">domain</span>
+        <span class="break-words text-right text-[var(--color-base-content)]">${this._esc(node.domain || 'N/A')}</span>
       </div>
       ${node.parentName ? `
-        <div class="fm-hover-row">
-          <span class="fm-hover-key">parent</span>
-          <span class="fm-hover-value">${this._esc(node.parentName)}</span>
+        <div class="mt-0.5 flex items-center justify-between gap-2">
+          <span class="uppercase tracking-[0.04em] text-[color:color-mix(in_oklch,var(--color-base-content)_55%,transparent)]">parent</span>
+          <span class="break-words text-right text-[var(--color-base-content)]">${this._esc(node.parentName)}</span>
         </div>
       ` : ''}
       ${node.showCoverage !== false ? `
-        <div class="fm-hover-coverage">
-          <div class="fm-hover-bar">
-            <div class="fm-hover-fill" style="width:${cov}%;background:${covColor(cov)}"></div>
+        <div class="my-1.5 flex items-center gap-1.5 text-[var(--fg-t2)]">
+          <div class="h-1 min-w-12 flex-1 overflow-hidden rounded-full bg-[var(--fg-s3)]">
+            <div class="h-full rounded-[inherit]" style="width:${cov}%;background:${covColor(cov)}"></div>
           </div>
           <span>${cov}% ${coverageLabel}</span>
         </div>
-        <div class="fm-hover-row">
-          <span class="fm-hover-key">compliance</span>
-          <span class="fm-hover-value ${gap ? 'is-gap' : 'is-covered'}">${gap ? 'coverage gap' : 'covered'}</span>
-        </div>
+        ${showCompliance ? `
+          <div class="mt-0.5 flex items-center justify-between gap-2">
+            <span class="uppercase tracking-[0.04em] text-[color:color-mix(in_oklch,var(--color-base-content)_55%,transparent)]">compliance</span>
+            <span class="break-words text-right ${gap ? 'text-[var(--fg-yw)]' : 'text-[var(--fg-gn)]'}">${this._esc(complianceStatus.label)}</span>
+          </div>
+        ` : ''}
       ` : ''}
       ${node.rows.length > 0 ? `
-        <div class="fm-hover-separator"></div>
+        <div class="my-1.5 h-px bg-[var(--fg-b2)]"></div>
         ${node.rows.map(row => `
-          <div class="fm-hover-row">
-            <span class="fm-hover-key">${this._esc(row.label)}</span>
-            <span class="fm-hover-value">${this._esc(row.value)}</span>
+          <div class="mt-0.5 flex items-center justify-between gap-2">
+            <span class="uppercase tracking-[0.04em] text-[color:color-mix(in_oklch,var(--color-base-content)_55%,transparent)]">${this._esc(row.label)}</span>
+            <span class="break-words text-right text-[var(--color-base-content)]">${this._esc(row.value)}</span>
           </div>
         `).join('')}
       ` : ''}
       ${reqs.length > 0 ? `
-        <div class="fm-hover-separator"></div>
-        <div class="fm-hover-pills">
-          ${reqs.slice(0, 4).map(req => `<span class="fm-hover-pill">${this._esc(req)}</span>`).join('')}
-          ${reqs.length > 4 ? `<span class="fm-hover-pill">+${reqs.length - 4}</span>` : ''}
+        <div class="my-1.5 h-px bg-[var(--fg-b2)]"></div>
+        <div class="flex flex-wrap items-center gap-1.5">
+          ${reqs.slice(0, 4).map(req => `<span class="rounded-full border border-[var(--fg-b2)] bg-[var(--fg-s3)] px-1.5 py-0.5 font-mono text-[11px] leading-[1.4] text-[var(--fg-ac)]">${this._esc(req)}</span>`).join('')}
+          ${reqs.length > 4 ? `<span class="rounded-full border border-[var(--fg-b2)] bg-[var(--fg-s3)] px-1.5 py-0.5 font-mono text-[11px] leading-[1.4] text-[var(--fg-ac)]">+${reqs.length - 4}</span>` : ''}
         </div>
       ` : ''}
     `
@@ -281,6 +288,7 @@ export const SystemMapHook = {
       cov: typeof node.cov === 'number' ? node.cov : 0,
       gap: !!(node.compliance_gap ?? node.gap),
       compliance_gap: !!(node.compliance_gap ?? node.gap),
+      has_compliance_links: !!(node.has_compliance_links ?? ((node.reqs || []).length > 0)),
       sensitive: !!node.sensitive,
       reqs: node.reqs || [],
       showCoverage: true,

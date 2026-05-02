@@ -1,4 +1,5 @@
 import { EDGE_CATALOG, edgeRelationSelector, edgeStaticStyle } from './edge_catalog'
+import { getTypeColorToken } from './semantics'
 
 const FONT = 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif'
 
@@ -205,27 +206,26 @@ export const STATIC_STYLES = [
 ]
 
 export function dynamicStyles(c) {
-  const kindColorToken = {
-    resource:    'bl',
-    transfer:    'gn',
-    reactor:     'pu',
-    rule:        'yw',
-    job:         'or',
-    liveview:    'cy',
-    liveresource:'pk',
-    adapter:     'ac',
-    trigger:     'ac',
-    external:    't3',
-    agent:       'pu',
-    output:      't2',
-    step:        'gn',
-    action:      'gn',
-    state:       'bl',
-  }
-
-  const kindSelectors = Object.entries(kindColorToken).map(([kind, token]) => ({
+  const kindSelectors = [
+    'resource',
+    'transfer',
+    'reactor',
+    'rule',
+    'job',
+    'liveview',
+    'liveresource',
+    'blueprint',
+    'adapter',
+    'trigger',
+    'external',
+    'agent',
+    'output',
+    'step',
+    'action',
+    'state',
+  ].map(kind => ({
     selector: `node[type="${kind}"]`,
-    style: { 'border-color': c[token] },
+    style: { 'border-color': c[getTypeColorToken(kind)] || c.t2 },
   }))
 
   return [

@@ -1,4 +1,5 @@
 import { _resolveColor, _resolveBg } from '../css_utils'
+import { getActionTypeColor as getSemanticActionTypeColor, getTypeColor as getSemanticTypeColor } from './semantics'
 
 export function extractColors() {
   return {
@@ -110,62 +111,12 @@ export function covColor(c) {
   return 'var(--fg-rd)'
 }
 
-export const TYPE_ICON = {
-  resource: '⬡',
-  transfer: '⇄',
-  rule: '◆',
-  reactor: '◈',
-  job: '↯',
-  liveview: '▣',
-  trigger: '▶',
-  output: '⟐',
-  liveresource: '⊞',
-  adapter: '⬚',
-  step: '⇄',
-  state: '○',
-  action: '◆',
-  agent: '⊕',
-  external: '↗',
-  cluster: '◇',
-}
-
-export const TYPE_COLOR = {
-  resource: 'var(--fg-bl)',
-  transfer: 'var(--fg-gn)',
-  rule: 'var(--fg-yw)',
-  reactor: 'var(--fg-pu)',
-  job: 'var(--fg-or)',
-  liveview: 'var(--fg-cy)',
-  trigger: 'var(--fg-ac)',
-  output: 'var(--fg-t2)',
-  liveresource: 'var(--fg-pu)',
-  adapter: 'var(--fg-ac)',
-  step: 'var(--fg-gn)',
-  state: 'var(--fg-bl)',
-  action: 'var(--fg-gn)',
-  agent: 'var(--fg-pu)',
-  external: 'var(--fg-t3)',
-  cluster: 'var(--fg-t2)',
-  domain: 'var(--fg-b2)',
-}
-
-const ACTION_TYPE_COLOR = {
-  read: 'var(--fg-bl)',
-  create: 'var(--fg-gn)',
-  update: 'var(--fg-gn)',
-  destroy: 'var(--fg-rd)',
-}
-
-export function getTypeIcon(type) {
-  return TYPE_ICON[type] || TYPE_ICON.resource
-}
-
 export function getTypeColor(type) {
-  return TYPE_COLOR[type] || 'var(--fg-t2)'
+  return getSemanticTypeColor(type)
 }
 
 export function getActionTypeColor(actionType) {
-  return ACTION_TYPE_COLOR[actionType] || TYPE_COLOR.action
+  return getSemanticActionTypeColor(actionType)
 }
 
 export function domainCoverage(nodes) {
@@ -180,73 +131,3 @@ export function domainCoverage(nodes) {
     return { domain, avg, color: covColor(avg) }
   })
 }
-
-const NODE_KIND_LABELS = {
-  resource: 'Resource',
-  transfer: 'Transfer',
-  reactor: 'Reactor',
-  rule: 'Rule',
-  job: 'Job',
-  liveview: 'LiveView',
-  liveresource: 'LiveResource',
-  output: 'Output',
-  adapter: 'Adapter',
-  external: 'External',
-  trigger: 'Trigger',
-  agent: 'Agent',
-}
-
-const CLUSTER_KIND_LABELS = {
-  resource: 'Resource cluster',
-  transfer: 'Transfer cluster',
-  reactor: 'Reactor cluster',
-  fsm: 'FSM cluster',
-}
-
-export const NODE_KIND_LEGEND = Object.entries(NODE_KIND_LABELS).map(([type, label]) => ({
-  type,
-  label,
-  icon: TYPE_ICON[type] || TYPE_ICON.resource,
-  color: TYPE_COLOR[type] || 'var(--fg-t2)',
-}))
-
-export const CLUSTER_KIND_LEGEND = [
-  {
-    type: 'resource',
-    label: CLUSTER_KIND_LABELS.resource,
-    color: TYPE_COLOR.resource,
-    detail: 'Compound resource boundary.',
-  },
-  {
-    type: 'transfer',
-    label: CLUSTER_KIND_LABELS.transfer,
-    color: TYPE_COLOR.transfer,
-    detail: 'Transfer / saga compound boundary.',
-  },
-  {
-    type: 'reactor',
-    label: CLUSTER_KIND_LABELS.reactor,
-    color: TYPE_COLOR.reactor,
-    detail: 'Reactor compound boundary.',
-  },
-  {
-    type: 'fsm',
-    label: CLUSTER_KIND_LABELS.fsm,
-    color: TYPE_COLOR.cluster,
-    detail: 'State machine compound boundary.',
-  },
-]
-
-export const STATUS_ICON_LEGEND = [
-  { key: 'covered', label: 'Coverage >= 80%', title: 'Test coverage is above 80%.' },
-  { key: 'compliance_gap', label: 'Compliance coverage gap', title: 'Declared compliance links do not have linked E2E coverage.' },
-  { key: 'sensitive', label: 'Sensitive resource', title: 'Sensitive data or regulated resource.' },
-  { key: 'paper_trail', label: 'Paper Trail', title: 'Paper trail change history is enabled.' },
-  { key: 'archival', label: 'Archival', title: 'Soft delete / archival is enabled.' },
-  { key: 'pm', label: 'Pending migrations', title: 'One or more migrations are pending.' },
-  { key: 'oban', label: 'Oban queues', title: 'Oban queues or scheduled jobs are present.' },
-  { key: 'schedule', label: 'Schedule', title: 'A scheduled job or trigger is declared.' },
-  { key: 'rl', label: 'Rate limited', title: 'Rate limiting is declared.' },
-  { key: 'fsm', label: 'State machine', title: 'A finite state machine is present.' },
-  { key: 'runbook', label: 'Runbook', title: 'A runbook is linked.' },
-]

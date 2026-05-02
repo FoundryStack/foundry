@@ -1,4 +1,12 @@
-import { covColor, getActionTypeColor, getTypeColor, getTypeIcon } from './colors'
+import { covColor, getActionTypeColor, getTypeColor } from './colors'
+import {
+  STATUS_META,
+  canShowGovernanceIndicators,
+  getTypeDisplayLabel,
+  getTypeIcon,
+  shouldShowComplianceGap,
+  shouldShowCoverageIndicator,
+} from './semantics'
 
 export function shortLabel(id) {
   if (!id) return id
@@ -39,44 +47,46 @@ function statusIcon(key, title) {
 
 export function buildIndicators(n) {
   const indicators = []
-  const complianceGap = n.compliance_gap ?? n.gap
 
-  if (complianceGap) {
-    indicators.push(statusIcon('compliance_gap', 'Compliance coverage gap'))
-  } else if (n.cov >= 80) {
-    indicators.push(statusIcon('covered', 'Coverage >= 80%'))
+  if (shouldShowComplianceGap(n)) {
+    indicators.push(statusIcon('compliance_gap', STATUS_META.compliance_gap.title))
+  } else if (shouldShowCoverageIndicator(n)) {
+    indicators.push(statusIcon('covered', STATUS_META.covered.title))
   }
 
-  if (n.sensitive) {
-    indicators.push(statusIcon('sensitive', 'Sensitive data'))
-  }
+  if (canShowGovernanceIndicators(n)) {
+    if (n.sensitive) {
+      indicators.push(statusIcon('sensitive', STATUS_META.sensitive.title))
+    }
 
-  if (n.pt || n.arch) {
-    if (n.pt)   indicators.push(statusIcon('paper_trail', 'Paper Trail'))
-    if (n.arch) indicators.push(statusIcon('archival', 'Archival'))
-  }
+    if (n.pt || n.arch) {
+      if (n.pt) indicators.push(statusIcon('paper_trail', STATUS_META.paper_trail.title))
+      if (n.arch) indicators.push(statusIcon('archival', STATUS_META.archival.title))
+    }
 
-  if (n.pending_migrations) {
-    indicators.push(statusIcon('pm', 'Pending migrations'))
-  }
+    if (n.pending_migrations) {
+      indicators.push(statusIcon('pm', STATUS_META.pm.title))
+    }
 
-  if ((n.oban_queues || []).length > 0) {
-    indicators.push(statusIcon('oban', 'Oban queues'))
-  }
-  if (n.schedule) {
-    indicators.push(statusIcon('schedule', `Schedule: ${n.schedule}`))
-  }
+    if ((n.oban_queues || []).length > 0) {
+      indicators.push(statusIcon('oban', STATUS_META.oban.title))
+    }
 
-  if (n.rl) {
-    indicators.push(statusIcon('rl', 'Rate limited'))
-  }
+    if (n.schedule) {
+      indicators.push(statusIcon('schedule', `Schedule: ${n.schedule}`))
+    }
 
-  if (n.sm?.states) {
-    indicators.push(statusIcon('fsm', 'State machine'))
-  }
+    if (n.rl) {
+      indicators.push(statusIcon('rl', STATUS_META.rl.title))
+    }
 
-  if (n.runbook) {
-    indicators.push(statusIcon('runbook', 'Runbook'))
+    if (n.sm?.states) {
+      indicators.push(statusIcon('fsm', STATUS_META.fsm.title))
+    }
+
+    if (n.runbook) {
+      indicators.push(statusIcon('runbook', STATUS_META.runbook.title))
+    }
   }
 
   if (indicators.length === 0) return ''
@@ -151,7 +161,7 @@ export function clusterTpl(data) {
   const name = n.name || n.label || shortLabel(n.id)
   const cov = n.cov ?? 0
 
-  const icon = getTypeIcon(n.type || 'cluster')
+  const icon = getTypeIcon(getTypeDisplayLabel(n) === 'domain' ? 'cluster' : (n.type || 'cluster'))
 
   return `
     <div class="cy-node-html cy-node-boundary">

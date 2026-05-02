@@ -210,9 +210,13 @@ per-module context into the graph.
 | `liveview` | Phoenix LiveView | `MyApp.Finance.WalletLive` |
 | `liveresource` | AshAdmin / AshLiveView resource | `MyApp.Identity.PlayerLiveResource` |
 | `blueprint` | Legacy configurable logic module (deprecated; prefer Ash resources) | `MyApp.Game.DepositBonusBlueprint` |
-| `adapter` | External integration adapter | `MyApp.Finance.PaymentGatewayAdapter` |
+| `adapter` | Internal integration adapter module that calls an external system | `MyApp.Finance.PaymentGatewayAdapter` |
 | `trigger` | HTTP endpoint or scheduler entry point | `/api/register`, `cron 0 * * * *` |
 | `agent` | Standalone AshAI agent module | `MyApp.Risk.WithdrawalScorerAgent` |
+
+**UI note:** the system map renders Ash domains as top-level compound groups. Those domain
+groups are renderer-created boundaries, not additional `NodeEntry.type` values in the
+project context schema.
 
 ### StateMachine Schema
 

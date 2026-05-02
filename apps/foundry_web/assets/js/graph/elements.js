@@ -126,7 +126,7 @@ export function buildCytoscapeElements(nodes, edges) {
         domain,
         typeColor: domainColor,
         fillColor: toRgbColor(domainColor),
-        fillOpacity: 0.1,
+        fillOpacity: 0.06,
         shadowColor: toRgbColor(domainColor),
         shadowOpacity: 0.18,
       },

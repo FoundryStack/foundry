@@ -136,10 +136,23 @@ resource-action-level side effects for the module.
 
 ### 5. Frontend Compound Node Rendering
 
-**Not yet implemented** (Phase D):
-- Reactor step sub-graphs with lazy expand/collapse
-- FSM transition edges with initial/terminal state styling
-- External node styling (dashed border, lower opacity)
+The current frontend renderer keeps the direct Foundry-specific Cytoscape model from
+ADR-016 and applies these rules:
+
+- Domain groups are top-level compounds. Their color is domain-specific and reserved for
+  domain grouping only.
+- Resource / Reactor / Transfer / FSM compounds use kind-colored borders and light
+  translucent fills so nested structure stays readable without flattening all nodes to
+  domain color.
+- Adapter nodes represent internal integration modules. External systems remain separate
+  `external:*` nodes connected by `calls_adapter` edges.
+- Status indicators and tooltip labels are driven from shared frontend semantics so the
+  legend, hover card, and node chrome use the same vocabulary.
+
+Still not implemented (future work):
+- Reactor step sub-graphs with interactive expand/collapse
+- FSM transition edges with initial/terminal state styling beyond current child-node rendering
+- Full scenario-perspective renderer
 
 ---
 

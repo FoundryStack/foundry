@@ -20,8 +20,9 @@ The design was arrived at through explicit rejection of two failure modes:
 2. Over-engineered abstraction — renderer registries, semantic schema contracts, adapter layers. These are correct for a multi-stack product. Foundry is single-stack. The abstraction cost is not justified.
 
 The right model is: Cytoscape.js canvas consuming the `mix foundry.project.context`
-NodeEntry JSON directly, with Foundry-specific styling applied via a direct `switch`
-on node type. No framework. No registry. A well-organized frontend module.
+NodeEntry JSON directly, with Foundry-specific semantics centralized in one frontend
+module and consumed by the renderer, overlays, and detail affordances. No framework.
+No registry. A well-organized Foundry-specific frontend module set.
 
 ---
 
@@ -43,23 +44,25 @@ Higher zoom simply reveals detail that was rendered but hidden at coarser levels
 
 ---
 
-## Compound Node Expand/Collapse
+## Compound Node Rendering
 
 Cytoscape's compound node API is used for two purposes:
 
-**1. Domain groups** — Each Ash domain is a Cytoscape compound parent node. Resources are
-child nodes. At zoom < 0.4×, children are collapsed and the domain node shows only the
-domain name, sensitivity badge count, and coverage percentage. At zoom ≥ 0.4×, children
-expand in place using the `expandCollapse` extension.
+**1. Domain groups** — Each Ash domain is a Cytoscape compound parent node. Domain color
+belongs to this grouping layer only. The domain boundary is dashed, lightly tinted, and
+more spacious than inner compounds so the top-level structure stays legible in large maps.
+Children are rendered eagerly; the current implementation does not use interactive
+expand/collapse for domain compounds.
 
-**2. Reactor/Transfer step sub-graphs** — On zoom reached, a Reactor or Transfer node
-expands it to reveal its step sub-graph. Each step appears as a child node with its
-`step_kind` badge (`:read`, `:write`, `:map`, `:compensation`, `:agent`). `wait_for`
-edges connect dependent steps. The sub-graph uses `dagre` layout (top-to-bottom DAG)
-within the expanded compound bounds. Collapsing returns to the resource-level view.
+**2. Semantic boundaries inside domains** — Resource, Reactor, Transfer, and FSM compounds
+render as nested boundaries inside the domain group. Their border color is semantic:
+resource, transfer, reactor, and FSM compounds each use a distinct kind color. Their
+fills are subtle and translucent so the graph reads as layered structure rather than
+solid grouped slabs.
 
-Step sub-graph data comes from `NodeEntry.steps[]` with the extended fields from ADR-021:
-`step_index`, `wait_for`, `step_kind`, `target_resource`, `target_action`.
+Step, action, and state nodes are rendered as child nodes inside their parent compound
+when the data exists in `NodeEntry.steps[]`, `NodeEntry.actions[]`, and
+`NodeEntry.state_machine`.
 
 **Step-level side-effect pills (ADR-022)**
 Each expanded step node renders its `side_effects[]` as subordinate pill nodes attached
@@ -203,13 +206,13 @@ on demand via `mix foundry.project.context <Module>`.
 | Job | ⚡ | Oban.Worker | Background job, queue worker |
 | LiveView | ▣ | Phoenix.LiveView | User-facing page or back-office UI |
 | LiveResource | ⊞ | AshPyro / AshAdmin | Auto-generated back-office CRUD UI |
-| Blueprint | ◇ | Custom config resource | Configuration template / operational params |
-| Adapter | ⬚ | Integration adapter module | External system boundary |
+| Blueprint | ◇ | Legacy configurable logic module | Legacy configuration boundary (supported, deprecated) |
+| Adapter | ⬚ | Integration adapter module | Internal integration-facing module that calls an external system |
 | Trigger | ▶ | api_routes / webhook / scheduler | Entry point — how flow starts |
 | Terminal | ⟐ | Reactor return / error path | How flow ends (success / error / compensated) |
 
 Agent steps are NOT a top-level node type. They are rendered as inline step nodes (⊕
-icon, `agent` kind) inside the step sub-graph of the containing Transfer or Reactor.
+icon, `agent` kind) inside the containing Transfer or Reactor.
 
 **Side-effect pills are not a 12th node type.** They are sub-elements rendered inside
 expanded step compound nodes. They do not appear in the ambient canvas at zoom < 0.8×
@@ -235,19 +238,27 @@ sufficient for the complete surface of a Foundry-built Elixir/Ash/Phoenix system
 
 ### Status Indicators on Nodes
 
-Every node carries a compact status badge row. The exact indicators:
+Top-level nodes and compound boundaries may render a compact status icon row. Child
+step/action/state nodes do not inherit these governance indicators from their parent.
+
+The current ambient indicators are:
 
 | Indicator | Meaning |
 |---|---|
-| ◉ | Compliance-covered — all declared requirements have linked tests |
-| ○ | Compliance coverage gap — one or more declared requirements lack linked E2E coverage |
-| ⬡ | Policy present — node has declared policies or rules |
-| PSE | paper_trail + soft_delete + ecto — rendered only on `sensitive: true` nodes; shows which of the three are present (e.g. `PS·` means paper_trail and soft_delete present, ecto data layer absent or non-postgres) |
-| ~ | Has runbook linked |
-| 📖 | Has ADR linked |
-| ↻ | Has pending migration |
-| ⚠ | Active lint violation |
-| ◉⚠ | Has undeclared side effects — shown on Transfer/Reactor nodes when any `steps[].side_effects[].declared == false`. Clicking navigates to the first undeclared side-effect pill in the step sub-graph. |
+| check | Coverage >= 80% |
+| slashed circle | Compliance coverage gap — one or more declared compliance links lack linked E2E coverage |
+| warning triangle | Sensitive / regulated node |
+| stacked lines | Paper Trail enabled |
+| archive box | Archival / soft delete enabled |
+| refresh arrows | Pending migrations |
+| gear ring | Oban queues present |
+| clock | Schedule declared |
+| back-arrow | Rate limited |
+| diamond state icon | State machine present |
+| book | Runbook linked |
+
+Compliance gap is scoped intentionally: it appears only on nodes with declared
+compliance links. Nodes without compliance links do not render a compliance warning.
 
 ### Authorization Layer — Detail View Only
 
@@ -382,7 +393,7 @@ is used only by the drawer):
 
 | Field | Used for |
 |---|---|
-| `id`, `type`, `domain`, `app` | Node identity, cluster grouping |
+| `id`, `type`, `domain`, `app` | Node identity, domain grouping, compound parenting |
 | `sensitive` | PSE badge, sensitive border style |
 | `description` | Tooltip on hover |
 | `compliance[]`, `test_coverage` | ◉/○ compliance indicator |
