@@ -113,8 +113,6 @@ defmodule Foundry.Context.NodeEntry do
     relationships: [],
     auth_strategies: [],
     side_effects: [],
-    provider_behaviour: nil,
-    provider_name: nil,
     trigger_kind: nil,
     rule_compliance_links: [],
     # Phase B extensions
@@ -123,5 +121,4 @@ defmodule Foundry.Context.NodeEntry do
     json_api_routes: [],
     vectorized: false
   ]
-
 end

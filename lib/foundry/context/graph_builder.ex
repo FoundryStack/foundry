@@ -63,7 +63,7 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list = edge_list ++ derive_auth_edges(nodes, node_map)
     edge_list = edge_list ++ derive_rule_edges(nodes, node_map)
     edge_list = edge_list ++ derive_policy_edges(nodes, node_map)
-    edge_list = edge_list ++ derive_provider_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_adapter_edges(nodes, node_map)
     edge_list = edge_list ++ derive_trigger_edges(nodes, node_map)
 
     Enum.uniq(edge_list)
@@ -158,13 +158,13 @@ defmodule Foundry.Context.GraphBuilder do
     end)
   end
 
-  # Provider edges: connect provider adapter modules to external provider systems
-  defp derive_provider_edges(nodes, _node_map) do
+  # Adapter edges: connect integration adapter modules to external systems
+  defp derive_adapter_edges(nodes, _node_map) do
     nodes
-    |> Enum.filter(&(&1.type == "provider"))
-    |> Enum.flat_map(fn provider ->
-      provider_name = extract_provider_name(provider)
-      [EdgeEntry.new(provider.module, "external:#{provider_name}", :calls_provider)]
+    |> Enum.filter(&(&1.type == "adapter"))
+    |> Enum.flat_map(fn adapter ->
+      adapter_name = extract_adapter_name(adapter)
+      [EdgeEntry.new(adapter.module, "external:#{adapter_name}", :calls_adapter)]
     end)
   end
 
@@ -535,18 +535,18 @@ defmodule Foundry.Context.GraphBuilder do
           n.oban_queues && length(n.oban_queues) > 0,
           do: EdgeEntry.new(n.module, "external:oban_queue", :queues_via)
 
-    # Collect provider edges and extract unique provider names
-    provider_edges =
+    # Collect adapter edges and extract unique adapter names
+    adapter_edges =
       for n <- nodes,
-          n.type == "provider",
-          do: EdgeEntry.new(n.module, "external:#{extract_provider_name(n)}", :calls_provider)
+          n.type == "adapter",
+          do: EdgeEntry.new(n.module, "external:#{extract_adapter_name(n)}", :calls_adapter)
 
-    provider_names =
-      provider_edges
+    adapter_names =
+      adapter_edges
       |> Enum.map(& &1.to)
       |> Enum.uniq()
 
-    external_edges = postgres_edges ++ oban_edges ++ provider_edges
+    external_edges = postgres_edges ++ oban_edges ++ adapter_edges
 
     # Create external postgres nodes for each domain that has AshPostgres resources
     postgres_nodes =
@@ -633,17 +633,17 @@ defmodule Foundry.Context.GraphBuilder do
         []
       end
 
-    # Provider external nodes
-    provider_nodes =
-      provider_names
-      |> Enum.map(fn provider_id ->
-        # Extract provider name from "external:provider_name"
-        provider_name = String.replace(provider_id, "external:", "")
-        human_name = humanize_provider_name(provider_name)
+    # Adapter external nodes
+    adapter_nodes =
+      adapter_names
+      |> Enum.map(fn adapter_id ->
+        # Extract adapter name from "external:adapter_name"
+        adapter_name = String.replace(adapter_id, "external:", "")
+        human_name = humanize_adapter_name(adapter_name)
 
         %NodeEntry{
-          module: provider_id,
-          id: provider_id,
+          module: adapter_id,
+          id: adapter_id,
           type: "external",
           domain: "Infrastructure",
           description: "External API: #{human_name}",
@@ -678,30 +678,30 @@ defmodule Foundry.Context.GraphBuilder do
         }
       end)
 
-    external_nodes = postgres_nodes ++ oban_node ++ provider_nodes
+    external_nodes = postgres_nodes ++ oban_node ++ adapter_nodes
 
     {external_nodes, external_edges}
   end
 
-  # Extract provider name from a provider node
-  defp extract_provider_name(provider) do
-    case Regex.run(~r/@provider_name\s+"([^"]+)"/, provider.description || "") do
+  # Extract adapter name from an adapter node
+  defp extract_adapter_name(adapter) do
+    case Regex.run(~r/@adapter_name\s+"([^"]+)"/, adapter.description || "") do
       [_, name] ->
         String.downcase(name)
 
       _ ->
         # Fallback: use last segment of module name in snake_case
-        provider.module
+        adapter.module
         |> String.split(".")
         |> List.last()
         |> String.downcase()
     end
   end
 
-  # Humanize provider name for display in external node descriptions
+  # Humanize adapter name for display in external node descriptions
   # e.g. "pragmaticplayv1" -> "Pragmatic Play V1"
-  defp humanize_provider_name(provider_name) do
-    provider_name
+  defp humanize_adapter_name(adapter_name) do
+    adapter_name
     |> String.split(~r/(?=[A-Z])|_/)
     |> Enum.reject(&(&1 == ""))
     |> Enum.map(&String.capitalize/1)

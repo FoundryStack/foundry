@@ -125,8 +125,8 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert count == 0
     end
 
-    test "2 provider nodes", %{context: ctx} do
-      count = Enum.count(ctx["nodes"], fn n -> n["type"] == "provider" end)
+    test "2 adapter nodes", %{context: ctx} do
+      count = Enum.count(ctx["nodes"], fn n -> n["type"] == "adapter" end)
       assert count == 2
     end
 

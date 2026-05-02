@@ -546,22 +546,22 @@ defmodule Foundry.Context.GraphBuilderTest do
     assert postgres_finance.type == "external"
   end
 
-  # Part A3: Provider adapter connections
-  test "PragmaticPlayV1 provider node exists", %{node_map: nm} do
-    provider = nm["IgamingRef.Gaming.Adapters.PragmaticPlayV1"]
-    assert provider != nil
-    assert provider.type == "provider"
+  # Part A3: Adapter connections
+  test "PragmaticPlayV1 adapter node exists", %{node_map: nm} do
+    adapter = nm["IgamingRef.Gaming.Adapters.PragmaticPlayV1"]
+    assert adapter != nil
+    assert adapter.type == "adapter"
   end
 
-  test "PragmaticPlayV1 has calls_provider edge to external system", %{edges: edges} do
-    provider_edge =
+  test "PragmaticPlayV1 has calls_adapter edge to external system", %{edges: edges} do
+    adapter_edge =
       Enum.any?(edges, fn edge ->
         edge.from == "IgamingRef.Gaming.Adapters.PragmaticPlayV1" and
           String.contains?(edge.to, "external:") and
-          edge.relation == :calls_provider
+          edge.relation == :calls_adapter
       end)
 
-    assert provider_edge, "Provider should have calls_provider edge to external system"
+    assert adapter_edge, "Adapter should have calls_adapter edge to external system"
   end
 
   test "WithdrawalWebhook is a trigger node", %{node_map: nm} do

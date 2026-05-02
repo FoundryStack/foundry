@@ -17,7 +17,7 @@ defmodule Foundry.Context.LLMFormatter do
     "ash_authentication" => "auth",
     "ash_policy" => "pol",
     "blueprint" => "bp",
-    "provider" => "pvr"
+    "adapter" => "adp"
   }
 
   @attr_type_abbr %{
@@ -45,7 +45,7 @@ defmodule Foundry.Context.LLMFormatter do
     "authenticates" => "ath",
     "persists_to" => "pers",
     "queues_via" => "que",
-    "calls_provider" => "cp"
+    "calls_adapter" => "ca"
   }
 
   @doc_title_limit 90

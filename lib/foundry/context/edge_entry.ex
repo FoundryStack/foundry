@@ -15,7 +15,7 @@ defmodule Foundry.Context.EdgeEntry do
   - `authenticates`: AshAuthentication User → Token
   - `persists_to`: resource persists to external system
   - `queues_via`: job/reactor queues via external queue
-  - `calls_provider`: transfer step calls provider
+  - `calls_adapter`: transfer step calls integration adapter
   - `triggers`: boundary trigger starts a downstream flow
   - `enqueues`: boundary trigger/job enqueues a job
   """
@@ -35,7 +35,7 @@ defmodule Foundry.Context.EdgeEntry do
           | :authenticates
           | :persists_to
           | :queues_via
-          | :calls_provider
+          | :calls_adapter
           | :triggers
           | :enqueues
 
