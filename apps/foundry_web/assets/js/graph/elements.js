@@ -1,27 +1,8 @@
 import { normalizeActionName, normalizeActionType, buildStateNodeId, buildActionNodeId } from './normalizers'
-import { getActionTypeColor, getDomainColor, getTypeColor } from './colors'
+import { getActionTypeColor, getDomainColor, getTypeColor, toRgbColor } from './colors'
 import { shortLabel } from './templates'
 
 const STRUCTURAL_RELATIONS = new Set(['references', 'referenced_by'])
-
-function childCoverageData(node) {
-  return {
-    cov: node.cov,
-    gap: node.gap,
-    sensitive: node.sensitive,
-    reqs: node.reqs || [],
-    pt: node.pt,
-    arch: node.arch,
-    dl: node.dl,
-    rl: node.rl,
-    sm: node.sm,
-    runbook: node.runbook,
-    adrs: node.adrs,
-    pending_migrations: node.pending_migrations,
-    oban_queues: node.oban_queues,
-    schedule: node.schedule,
-  }
-}
 
 export function getCompoundNodeIds(nodes) {
   const transfers = nodes.filter(n => n.type === 'transfer' || n.type === 'reactor').map(n => n.id)
@@ -132,6 +113,8 @@ export function buildCytoscapeElements(nodes, edges) {
   // Domain cluster compounds
   const domains = new Set(nodes.map(n => n.domain).filter(Boolean))
   domains.forEach(domain => {
+    const domainColor = getDomainColor(domain)
+
     elements.push({
       group: 'nodes',
       data: {
@@ -141,7 +124,11 @@ export function buildCytoscapeElements(nodes, edges) {
         nodeKind: 'cluster',
         type: 'cluster',
         domain,
-        typeColor: getDomainColor(domain),
+        typeColor: domainColor,
+        fillColor: toRgbColor(domainColor),
+        fillOpacity: 0.1,
+        shadowColor: toRgbColor(domainColor),
+        shadowOpacity: 0.18,
       },
       classes: 'domain-cluster',
     })
@@ -162,6 +149,7 @@ export function buildCytoscapeElements(nodes, edges) {
   compoundIds.forEach(id => {
     const node = nodes.find(n => n.id === id)
     if (!node) return
+    const clusterColor = node.typeColor || getTypeColor(node.type)
     const classes = [
       node.type === 'transfer' ? 'transfer-cluster' : null,
       node.type === 'reactor' ? 'transfer-cluster' : null,
@@ -179,6 +167,11 @@ export function buildCytoscapeElements(nodes, edges) {
         label: shortLabel(node.id),
         nodeKind: 'cluster',
         parent: node.domain ? `domain:${node.domain}` : null,
+        typeColor: clusterColor,
+        fillColor: toRgbColor(clusterColor),
+        fillOpacity: 0.1,
+        shadowColor: toRgbColor(clusterColor),
+        shadowOpacity: 0.14,
       },
       classes,
     })
@@ -197,7 +190,7 @@ export function buildCytoscapeElements(nodes, edges) {
 
     elements.push({
       group: 'nodes',
-      data: { id: node.id, nodeKind: 'entity', parent, ...node },
+      data: { id: node.id, nodeKind: 'entity', parent, typeColor: node.typeColor || getTypeColor(node.type), ...node },
       classes,
     })
   })
@@ -214,7 +207,6 @@ export function buildCytoscapeElements(nodes, edges) {
         elements.push({
           group: 'nodes',
           data: {
-            ...childCoverageData(node),
             id: `${node.id}:step:${idx}`,
             name: stepName,
             label: stepName,
@@ -257,7 +249,6 @@ export function buildCytoscapeElements(nodes, edges) {
         elements.push({
           group: 'nodes',
           data: {
-            ...childCoverageData(node),
             id: buildActionNodeId(node.id, actionName),
             name: actionName,
             label: actionName,
@@ -280,7 +271,6 @@ export function buildCytoscapeElements(nodes, edges) {
         elements.push({
           group: 'nodes',
           data: {
-            ...childCoverageData(node),
             id: state.id,
             name: state.name,
             label: state.name,

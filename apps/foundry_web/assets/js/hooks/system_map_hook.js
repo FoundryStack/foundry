@@ -122,9 +122,9 @@ export const SystemMapHook = {
     if (!card) return
 
     const cov = typeof node.cov === 'number' ? node.cov : 0
-    const gap = !!node.gap
+    const gap = !!(node.compliance_gap ?? node.gap)
     const reqs = node.reqs || []
-    const coverageLabel = gap ? 'gap' : 'covered'
+    const coverageLabel = gap ? 'compliance coverage gap' : 'covered'
     const typeColor = node.typeColor || getTypeColor(node.type)
     const typeLabel = node.type === 'agent' ? 'agent step' : node.type
 
@@ -144,16 +144,18 @@ export const SystemMapHook = {
           <span class="fm-hover-value">${this._esc(node.parentName)}</span>
         </div>
       ` : ''}
-      <div class="fm-hover-coverage">
-        <div class="fm-hover-bar">
-          <div class="fm-hover-fill" style="width:${cov}%;background:${covColor(cov)}"></div>
+      ${node.showCoverage !== false ? `
+        <div class="fm-hover-coverage">
+          <div class="fm-hover-bar">
+            <div class="fm-hover-fill" style="width:${cov}%;background:${covColor(cov)}"></div>
+          </div>
+          <span>${cov}% ${coverageLabel}</span>
         </div>
-        <span>${cov}% ${coverageLabel}</span>
-      </div>
-      <div class="fm-hover-row">
-        <span class="fm-hover-key">compliance</span>
-        <span class="fm-hover-value ${gap ? 'is-gap' : 'is-covered'}">${gap ? 'gap' : 'covered'}</span>
-      </div>
+        <div class="fm-hover-row">
+          <span class="fm-hover-key">compliance</span>
+          <span class="fm-hover-value ${gap ? 'is-gap' : 'is-covered'}">${gap ? 'coverage gap' : 'covered'}</span>
+        </div>
+      ` : ''}
       ${node.rows.length > 0 ? `
         <div class="fm-hover-separator"></div>
         ${node.rows.map(row => `
@@ -204,6 +206,7 @@ export const SystemMapHook = {
         type: isAgent ? 'agent' : 'step',
         typeColor: getTypeColor(isAgent ? 'agent' : 'step'),
         parentName: parent.id,
+        showCoverage: false,
         rows,
       }
     }
@@ -233,6 +236,7 @@ export const SystemMapHook = {
         type: 'action',
         typeColor: getActionTypeColor(actionType),
         parentName: parent.id,
+        showCoverage: false,
         rows,
       }
     }
@@ -254,6 +258,7 @@ export const SystemMapHook = {
         type: 'state',
         typeColor: getTypeColor('state'),
         parentName: parent.id,
+        showCoverage: false,
         rows: [
           { label: 'incoming', value: `${incoming.length}` },
           { label: 'outgoing', value: `${outgoing.length}` },
@@ -274,9 +279,11 @@ export const SystemMapHook = {
       typeColor: node.typeColor || getTypeColor(node.type),
       domain: node.domain,
       cov: typeof node.cov === 'number' ? node.cov : 0,
-      gap: !!node.gap,
+      gap: !!(node.compliance_gap ?? node.gap),
+      compliance_gap: !!(node.compliance_gap ?? node.gap),
       sensitive: !!node.sensitive,
       reqs: node.reqs || [],
+      showCoverage: true,
       rows: [
         node.runbook ? { label: 'runbook', value: node.runbook } : null,
         node.sm?.states?.length > 0 ? { label: 'states', value: `${node.sm.states.length}` } : null,
@@ -288,10 +295,7 @@ export const SystemMapHook = {
   _parentHoverContext(parent) {
     return {
       domain: parent.domain,
-      cov: typeof parent.cov === 'number' ? parent.cov : 0,
-      gap: !!parent.gap,
-      sensitive: !!parent.sensitive,
-      reqs: parent.reqs || [],
+      showCoverage: false,
     }
   },
 

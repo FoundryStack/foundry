@@ -17,9 +17,9 @@ function escHtml(value) {
     .replace(/'/g, '&#39;')
 }
 
-const STATUS_ICON_SVG = {
+export const STATUS_ICON_SVG = {
   covered: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5 6.5 11.5 2.5 7.5"></path></svg>',
-  gap: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="5.8"></circle><path d="M4 12 12 4"></path></svg>',
+  compliance_gap: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="5.8"></circle><path d="M4 12 12 4"></path></svg>',
   sensitive: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M8 2 14 13H2L8 2Z"></path><path d="M8 6v3"></path><path d="M8 11.5h.01"></path></svg>',
   paper_trail: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 3h8"></path><path d="M4 6.5h8"></path><path d="M4 10h6"></path><path d="M4 13h4"></path></svg>',
   archival: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M3 5h10v8H3z"></path><path d="M2 3h12v2H2z"></path><path d="M6 8h4"></path></svg>',
@@ -39,11 +39,12 @@ function statusIcon(key, title) {
 
 export function buildIndicators(n) {
   const indicators = []
+  const complianceGap = n.compliance_gap ?? n.gap
 
-  if (n.cov >= 80) {
-    indicators.push(statusIcon('covered', 'Test coverage >=80%'))
-  } else if (n.gap) {
-    indicators.push(statusIcon('gap', 'Compliance gap'))
+  if (complianceGap) {
+    indicators.push(statusIcon('compliance_gap', 'Compliance coverage gap'))
+  } else if (n.cov >= 80) {
+    indicators.push(statusIcon('covered', 'Coverage >= 80%'))
   }
 
   if (n.sensitive) {
@@ -90,7 +91,6 @@ function compactChildTpl(data, opts = {}) {
 
   return `
     <div class="cy-node-html cy-node-sm">
-      ${buildIndicators(data)}
       <div class="title-row">
         <span class="type-icon" style="color:${escHtml(color)}">${escHtml(icon)}</span>
         <span class="title" style="color:${escHtml(color)}">${escHtml(label)}</span>
@@ -144,17 +144,14 @@ export function entityTpl(data) {
   `
 }
 
-export function domainClusterTpl(data) {
-  return clusterTpl({ ...data, type: data.type || 'cluster' })
-}
-
 export function clusterTpl(data) {
   const n = data
 
-  const icon = getTypeIcon(n.type || 'cluster')
   const color = n.typeColor || getTypeColor(n.type || 'cluster')
   const name = n.name || n.label || shortLabel(n.id)
   const cov = n.cov ?? 0
+
+  const icon = getTypeIcon(n.type || 'cluster')
 
   return `
     <div class="cy-node-html cy-node-boundary">

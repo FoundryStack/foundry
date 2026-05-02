@@ -34,7 +34,7 @@ The copilot reads `<AppName>Test.Generators` to confirm generator availability b
 | `LiveResource` declaration | Renders correctly, filter tests, action tests | ExUnit + Wallaby |
 | `AshJsonApi route` | Auth (401), multitenancy (403), validation tests | ExUnit + `bypass` |
 | `AshStateMachine` | Transition guard tests, invalid transition rejection tests | ExUnit |
-| Provider adapter module | HTTP contract test against `bypass` server | `bypass` + `mox` |
+| Adapter module | HTTP contract test against `bypass` server | `bypass` + `mox` |
 | RG-* requirement in regulation file | E2E browser test scenario stub with compliance tags | Wallaby + ExUnit tags |
 
 ### What is NOT generated

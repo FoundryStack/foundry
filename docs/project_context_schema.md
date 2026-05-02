@@ -192,8 +192,6 @@ per-module context into the graph.
 | `last_modified` | ISO 8601 date | File mtime |
 | `relationships` | RelationshipEntry[] | Ash resource relationships (belongs_to, has_many, etc.) |
 | `auth_strategies` | AuthStrategyEntry[] | AshAuthentication strategies on resource |
-| `provider_behaviour` | string\|null | Provider adapter behaviour name |
-| `provider_name` | string\|null | Provider adapter display name |
 | `rule_compliance_links` | RuleComplianceLink[] | Links from rules to compliance requirements |
 | `scenario_origins` | ScenarioEntry[] | Trigger/API route origins for Scenario perspective |
 | `graphql_mutations` | GraphqlMutation[] | AshGraphql mutation declarations |
@@ -212,7 +210,7 @@ per-module context into the graph.
 | `liveview` | Phoenix LiveView | `MyApp.Finance.WalletLive` |
 | `liveresource` | AshAdmin / AshLiveView resource | `MyApp.Identity.PlayerLiveResource` |
 | `blueprint` | Legacy configurable logic module (deprecated; prefer Ash resources) | `MyApp.Game.DepositBonusBlueprint` |
-| `provider` | External integration adapter | `MyApp.Finance.PaymentGatewayAdapter` |
+| `adapter` | External integration adapter | `MyApp.Finance.PaymentGatewayAdapter` |
 | `trigger` | HTTP endpoint or scheduler entry point | `/api/register`, `cron 0 * * * *` |
 | `agent` | Standalone AshAI agent module | `MyApp.Risk.WithdrawalScorerAgent` |
 
@@ -324,7 +322,7 @@ Edges are ordered: `from` FQN ascending, then `to` FQN ascending.
 | `authenticates` | User Resource | Token Resource | AshAuthentication flow |
 | `persists_to` | Resource | External | Resource persists to database (future) |
 | `queues_via` | Job | External | Job queues via external queue (future) |
-| `calls_provider` | Step | Provider | Step invokes provider (future) |
+| `calls_adapter` | Step | Adapter | Step invokes adapter (future) |
 
 ---
 

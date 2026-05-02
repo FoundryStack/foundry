@@ -15,7 +15,7 @@ This ADR defines schema extensions to NodeEntry, EdgeEntry, and SparkMeta to cap
 - State machine sub-graphs with initial/terminal states
 - Authentication flows (User → Token)
 - Rule guards and policy applications
-- External system integrations (databases, queues, payment providers)
+- External system integrations (databases, queues, payment systems)
 
 ## Decision
 
@@ -33,7 +33,6 @@ All additions are non-breaking (nil/empty defaults).
 **New fields:**
 - `relationships`: List of RelationshipEntry structs (replaces fragile attribute-embedded relationship data)
 - `auth_strategies`: List of AuthStrategyEntry structs for AshAuthentication strategies
-- `provider_behaviour` / `provider_name`: Provider adapter metadata
 - `rule_compliance_links`: Links from rules to compliance requirements
 
 **Extended StepEntry** (in steps list):
@@ -60,7 +59,7 @@ All additions are non-breaking (nil/empty defaults).
 - `authenticates`: AshAuthentication User → Token
 - `persists_to`: Resource → external:postgres
 - `queues_via`: Job/Reactor → external:oban_queue
-- `calls_provider`: Transfer step → Provider → external system
+- `calls_adapter`: Transfer step → Adapter → external system
 
 **New metadata fields:**
 - `step_name`: Step name for sequence edges
@@ -131,8 +130,8 @@ resource-action-level side effects for the module.
 - **Reactor edges**: Use `step.step_kind` + `step.target_resource` instead of name heuristics
 - **Resource edges**: Use `relationships` list instead of attribute scanning
 - **Auth edges**: User resource with `auth_strategies` → token resources
-- **External edges**: From `persists_to`, `queues_via`, `calls_provider` patterns
-- **Side-effect edges (new)**: From step nodes to Provider nodes where `side_effects[].type == "external_http"` and a matching Provider node exists. Edge type: `calls_provider`. Undeclared external_http entries also emit a `⚠ undeclared` edge annotation visible at Code zoom level.
+- **External edges**: From `persists_to`, `queues_via`, `calls_adapter` patterns
+- **Side-effect edges (new)**: From step nodes to Adapter nodes where `side_effects[].type == "external_http"` and a matching Adapter node exists. Edge type: `calls_adapter`. Undeclared external_http entries also emit a `⚠ undeclared` edge annotation visible at Code zoom level.
 - **Oban emit edges (new)**: From step nodes to Job nodes where `side_effects[].type == "oban_emit"` and a corresponding `Oban.Worker` NodeEntry exists. Edge type: async/message (`- - -▶`).
 
 ### 5. Frontend Compound Node Rendering

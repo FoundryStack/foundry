@@ -189,7 +189,7 @@ code {
   --fg-edge-auth:          color-mix(in oklch, var(--fg-gn) 65%, var(--fg-cy));
   --fg-edge-persist:       color-mix(in oklch, var(--fg-t3) 78%, var(--fg-bl));
   --fg-edge-queue:         color-mix(in oklch, var(--fg-pu) 70%, var(--fg-pk));
-  --fg-edge-provider:      color-mix(in oklch, var(--fg-cy) 70%, var(--fg-bl));
+  --fg-edge-adapter:       color-mix(in oklch, var(--fg-cy) 70%, var(--fg-bl));
 }
 
 [data-theme=light] {
@@ -244,7 +244,7 @@ code {
   --fg-edge-auth:          color-mix(in oklch, var(--fg-gn) 65%, var(--fg-cy));
   --fg-edge-persist:       color-mix(in oklch, var(--fg-t3) 78%, var(--fg-bl));
   --fg-edge-queue:         color-mix(in oklch, var(--fg-pu) 70%, var(--fg-pk));
-  --fg-edge-provider:      color-mix(in oklch, var(--fg-cy) 70%, var(--fg-bl));
+  --fg-edge-adapter:       color-mix(in oklch, var(--fg-cy) 70%, var(--fg-bl));
 }
 
 /* Foundry system map layout utilities */
@@ -309,93 +309,6 @@ code {
   inset: 0;
   z-index: 10;
   pointer-events: none;
-}
-
-.fm-domain-coverage,
-.fm-edge-legend {
-  position: absolute;
-  border: 1px solid color-mix(in oklch, var(--fg-b3) 55%, transparent);
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--fg-s2) 90%, transparent);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(10px);
-}
-
-.fm-domain-coverage {
-  top: 12px;
-  left: 50%;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  max-width: calc(100% - 32px);
-  padding: 6px 14px;
-  transform: translateX(-50%);
-  overflow: hidden;
-}
-
-.fm-domain-coverage-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.fm-domain-coverage-name,
-.fm-domain-coverage-value {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.fm-domain-coverage-bar {
-  width: 40px;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: color-mix(in oklch, var(--fg-s3) 70%, transparent);
-}
-
-.fm-domain-coverage-fill {
-  height: 100%;
-  border-radius: inherit;
-}
-
-.fm-edge-legend {
-  bottom: 12px;
-  left: 12px;
-  display: grid;
-  grid-template-columns: repeat(2, max-content);
-  column-gap: 12px;
-  row-gap: 4px;
-  padding: 8px 12px;
-  font-size: 10px;
-}
-
-.fm-edge-legend-title {
-  grid-column: 1 / -1;
-  margin-bottom: 2px;
-  color: color-mix(in oklch, var(--fg-t2) 70%, transparent);
-  font-size: 8px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.fm-edge-legend-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: color-mix(in oklch, var(--fg-tx) 70%, transparent);
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.fm-edge-legend-line {
-  flex: 0 0 auto;
-  overflow: visible;
 }
 
 /* Cytoscape node HTML labels (cytoscape-node-html-label) */
@@ -469,7 +382,8 @@ code {
 }
 
 .cy-node-html .status-icons span[data-indicator="covered"] { color: var(--fg-gn); }
-.cy-node-html .status-icons span[data-indicator="gap"] { color: var(--fg-yw); }
+.cy-node-html .status-icons span[data-indicator="gap"],
+.cy-node-html .status-icons span[data-indicator="compliance_gap"] { color: var(--fg-yw); }
 .cy-node-html .status-icons span[data-indicator="sensitive"] { color: var(--fg-rd); }
 .cy-node-html .status-icons span[data-indicator="paper_trail"],
 .cy-node-html .status-icons span[data-indicator="archival"] { color: var(--fg-bl); }

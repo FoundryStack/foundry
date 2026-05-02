@@ -27,7 +27,8 @@ export function normalizeNode(raw) {
 
   const cov = (tc.property_tests ? 33 : 0) + (tc.scenario_tests ? 33 : 0) + (tc.e2e_tests ? 34 : 0)
   const reqs = raw.compliance || []
-  const gap = reqs.length > 0 && !tc.e2e_tests
+  const complianceGap = reqs.length > 0 && !tc.e2e_tests
+  const type = raw.type === 'provider' ? 'adapter' : raw.type
 
   const actions = (raw.actions || []).map((action, index) => {
     const normalizedName = normalizeActionName(action.name || `action_${index}`)
@@ -91,13 +92,14 @@ export function normalizeNode(raw) {
 
   return {
     id: raw.id,
-    type: raw.type,
+    type,
     domain: raw.domain,
     description,
     nodeKind: 'entity',
     cov,
     reqs,
-    gap,
+    gap: complianceGap,
+    compliance_gap: complianceGap,
     sensitive: raw.sensitive,
     pt: raw.paper_trail,
     arch: raw.archival,

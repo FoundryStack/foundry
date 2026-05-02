@@ -37,20 +37,71 @@ export function extractColors() {
     edgeAuth:         _resolveColor('--fg-edge-auth'),
     edgePersist:      _resolveColor('--fg-edge-persist'),
     edgeQueue:        _resolveColor('--fg-edge-queue'),
-    edgeProvider:     _resolveColor('--fg-edge-provider'),
+    edgeAdapter:      _resolveColor('--fg-edge-adapter'),
   }
 }
 
-const DOMAIN_COLOR_TOKENS = ['bl', 'gn', 'yw', 'pu', 't2', 'rd', 'ac', 'b1', 'b2', 'b3']
+function hashString(value) {
+  let hash = 0
+  for (let i = 0; i < value.length; i++) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(i)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
+
+function hslToRgb(h, s, l) {
+  const sat = s / 100
+  const light = l / 100
+  const chroma = (1 - Math.abs((2 * light) - 1)) * sat
+  const segment = h / 60
+  const x = chroma * (1 - Math.abs((segment % 2) - 1))
+
+  let red = 0
+  let green = 0
+  let blue = 0
+
+  if (segment >= 0 && segment < 1) [red, green, blue] = [chroma, x, 0]
+  else if (segment < 2) [red, green, blue] = [x, chroma, 0]
+  else if (segment < 3) [red, green, blue] = [0, chroma, x]
+  else if (segment < 4) [red, green, blue] = [0, x, chroma]
+  else if (segment < 5) [red, green, blue] = [x, 0, chroma]
+  else [red, green, blue] = [chroma, 0, x]
+
+  const match = light - (chroma / 2)
+  const r = Math.round((red + match) * 255)
+  const g = Math.round((green + match) * 255)
+  const b = Math.round((blue + match) * 255)
+
+  return `rgb(${r},${g},${b})`
+}
+
+export function withAlpha(color, alpha) {
+  const resolved = color.startsWith('var(')
+    ? _resolveColor(color.slice(4, -1).trim())
+    : color
+  const match = resolved.match(/\d+(?:\.\d+)?/g)
+  if (!match || match.length < 3) return color
+  const [r, g, b] = match.slice(0, 3).map(Number)
+  return `rgba(${r},${g},${b},${alpha})`
+}
+
+export function toRgbColor(color) {
+  const resolved = color.startsWith('var(')
+    ? _resolveColor(color.slice(4, -1).trim())
+    : color
+  const match = resolved.match(/\d+(?:\.\d+)?/g)
+  if (!match || match.length < 3) return color
+  const [r, g, b] = match.slice(0, 3).map(Number)
+  return `rgb(${r},${g},${b})`
+}
 
 export function getDomainColor(domain) {
-  let hash = 0
-  for (let i = 0; i < domain.length; i++) {
-    hash = ((hash << 5) - hash) + domain.charCodeAt(i)
-    hash = hash & hash
-  }
-  const token = DOMAIN_COLOR_TOKENS[Math.abs(hash) % DOMAIN_COLOR_TOKENS.length]
-  return `var(--fg-${token})`
+  const hash = hashString(domain || '')
+  const hue = (hash * 137.508) % 360
+  const saturation = 62 + (hash % 10)
+  const lightness = 58 + ((Math.floor(hash / 11)) % 8)
+  return hslToRgb(hue, saturation, lightness)
 }
 
 export function covColor(c) {
@@ -68,9 +119,8 @@ export const TYPE_ICON = {
   liveview: '▣',
   trigger: '▶',
   output: '⟐',
-  blueprint: '◇',
   liveresource: '⊞',
-  provider: '⬚',
+  adapter: '⬚',
   step: '⇄',
   state: '○',
   action: '◆',
@@ -84,19 +134,19 @@ export const TYPE_COLOR = {
   transfer: 'var(--fg-gn)',
   rule: 'var(--fg-yw)',
   reactor: 'var(--fg-pu)',
-  job: 'var(--fg-yw)',
-  liveview: 'var(--fg-bl)',
+  job: 'var(--fg-or)',
+  liveview: 'var(--fg-cy)',
   trigger: 'var(--fg-ac)',
   output: 'var(--fg-t2)',
-  blueprint: 'var(--fg-pu)',
   liveresource: 'var(--fg-pu)',
-  provider: 'var(--fg-yw)',
+  adapter: 'var(--fg-ac)',
   step: 'var(--fg-gn)',
   state: 'var(--fg-bl)',
   action: 'var(--fg-gn)',
   agent: 'var(--fg-pu)',
   external: 'var(--fg-t3)',
   cluster: 'var(--fg-t2)',
+  domain: 'var(--fg-b2)',
 }
 
 const ACTION_TYPE_COLOR = {
@@ -130,3 +180,73 @@ export function domainCoverage(nodes) {
     return { domain, avg, color: covColor(avg) }
   })
 }
+
+const NODE_KIND_LABELS = {
+  resource: 'Resource',
+  transfer: 'Transfer',
+  reactor: 'Reactor',
+  rule: 'Rule',
+  job: 'Job',
+  liveview: 'LiveView',
+  liveresource: 'LiveResource',
+  output: 'Output',
+  adapter: 'Adapter',
+  external: 'External',
+  trigger: 'Trigger',
+  agent: 'Agent',
+}
+
+const CLUSTER_KIND_LABELS = {
+  resource: 'Resource cluster',
+  transfer: 'Transfer cluster',
+  reactor: 'Reactor cluster',
+  fsm: 'FSM cluster',
+}
+
+export const NODE_KIND_LEGEND = Object.entries(NODE_KIND_LABELS).map(([type, label]) => ({
+  type,
+  label,
+  icon: TYPE_ICON[type] || TYPE_ICON.resource,
+  color: TYPE_COLOR[type] || 'var(--fg-t2)',
+}))
+
+export const CLUSTER_KIND_LEGEND = [
+  {
+    type: 'resource',
+    label: CLUSTER_KIND_LABELS.resource,
+    color: TYPE_COLOR.resource,
+    detail: 'Compound resource boundary.',
+  },
+  {
+    type: 'transfer',
+    label: CLUSTER_KIND_LABELS.transfer,
+    color: TYPE_COLOR.transfer,
+    detail: 'Transfer / saga compound boundary.',
+  },
+  {
+    type: 'reactor',
+    label: CLUSTER_KIND_LABELS.reactor,
+    color: TYPE_COLOR.reactor,
+    detail: 'Reactor compound boundary.',
+  },
+  {
+    type: 'fsm',
+    label: CLUSTER_KIND_LABELS.fsm,
+    color: TYPE_COLOR.cluster,
+    detail: 'State machine compound boundary.',
+  },
+]
+
+export const STATUS_ICON_LEGEND = [
+  { key: 'covered', label: 'Coverage >= 80%', title: 'Test coverage is above 80%.' },
+  { key: 'compliance_gap', label: 'Compliance coverage gap', title: 'Declared compliance links do not have linked E2E coverage.' },
+  { key: 'sensitive', label: 'Sensitive resource', title: 'Sensitive data or regulated resource.' },
+  { key: 'paper_trail', label: 'Paper Trail', title: 'Paper trail change history is enabled.' },
+  { key: 'archival', label: 'Archival', title: 'Soft delete / archival is enabled.' },
+  { key: 'pm', label: 'Pending migrations', title: 'One or more migrations are pending.' },
+  { key: 'oban', label: 'Oban queues', title: 'Oban queues or scheduled jobs are present.' },
+  { key: 'schedule', label: 'Schedule', title: 'A scheduled job or trigger is declared.' },
+  { key: 'rl', label: 'Rate limited', title: 'Rate limiting is declared.' },
+  { key: 'fsm', label: 'State machine', title: 'A finite state machine is present.' },
+  { key: 'runbook', label: 'Runbook', title: 'A runbook is linked.' },
+]

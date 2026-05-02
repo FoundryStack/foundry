@@ -310,11 +310,11 @@ in the manifest is owned and triggered by this domain.
 #### `IgamingRef.Gaming.Adapters.PragmaticPlayV1`
 
 **ADR basis:** ADR-007 (Strangler Fig). First concrete adapter in the reference project.
-Exercises the `provider` node type and establishes the `ProviderAdapter` behaviour contract.
+Exercises the `adapter` node type and establishes the `ProviderAdapter` behaviour contract.
 A V2 stub is included to demonstrate the side-by-side versioning pattern — it is registered
 but not set as active, so contract tests must pass before it can be promoted.
 
-- **Type:** Provider adapter module — `provider` node type
+- **Type:** Adapter module — `adapter` node type
 - **Sensitive:** no (logic only — credentials live in `ProviderConfig`)
 - **Description:** Pragmatic Play game catalog adapter, API version 1. Implements
   `IgamingRef.Gaming.ProviderAdapter` behaviour. Fetches game list, normalises response
@@ -325,7 +325,7 @@ but not set as active, so contract tests must pass before it can be promoted.
 
 #### `IgamingRef.Gaming.Adapters.PragmaticPlayV2`
 
-- **Type:** Provider adapter module — `provider` node type
+- **Type:** Adapter module — `adapter` node type
 - **Sensitive:** no
 - **Description:** Pragmatic Play game catalog adapter, API version 2. Side-by-side with V1
   per the Strangler Fig pattern. Not yet set as active on any `ProviderConfig` row. Must pass

@@ -5,7 +5,6 @@ export const NODE_TYPE_CONFIG = {
   job:       { colorToken: 'pu', canExpand: false, childrenKind: null      },
   trigger:   { colorToken: 'ac', canExpand: false, childrenKind: null      },
   rule:      { colorToken: 'yw', canExpand: false, childrenKind: null      },
-  blueprint: { colorToken: 'ac', canExpand: false, childrenKind: null      },
   external:  { colorToken: 't3', canExpand: false, childrenKind: null      },
 }
 

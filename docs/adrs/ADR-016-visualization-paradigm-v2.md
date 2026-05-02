@@ -73,7 +73,7 @@ below the step box. Pill rendering rules:
   type, declaration status, idempotency, epistemic marker, and — if `declared: false` —
   the INV violation text and a "Declare this side effect ↗" copilot action button
 - External system connections: a dashed `async/message` edge (ADR-016 edge taxonomy:
-  `- - -▶`) runs from undeclared `external_http` pill nodes to the relevant Provider node
+   `- - -▶`) runs from undeclared `external_http` pill nodes to the relevant adapter node
   when one exists in the graph. This makes the ungoverned external boundary crossing
   visible at the topology level without manual navigation.
 
@@ -169,13 +169,13 @@ Foundry should add all possible DSL blocks including actions and manual code.
 Shows the system boundary, user personas, and external systems. Rendered as the fully
 zoomed-out state of the main canvas. User personas and non-Elixir external system
 descriptions are hand-authored in the spec-kit manifest YAML (`foundry.exs` or
-`docs/system-context.yml`). Provider nodes (`⬚`) and API entry points are auto-derived.
+`docs/system-context.yml`). Adapter nodes (`⬚`) and API entry points are auto-derived.
 This level is not a separate diagram — it is what the canvas shows at maximum zoom-out.
 
 **Level 2 — Containers**
 For monolithic Phoenix applications (Foundry's primary target), Level 2 is incorporated
-into Level 1. Relevant external containers (Postgres, Redis, Oban queue, external providers)
-appear as Provider nodes. Multi-service architectures are not a v1 target.
+into Level 1. Relevant external containers (Postgres, Redis, Oban queue, external systems)
+appear as adapter nodes. Multi-service architectures are not a v1 target.
 
 **Level 3 — Components (primary operating level)**
 Domains as Cytoscape compound nodes. Resources, Transfers, Reactors, Rules, LiveViews as
@@ -204,7 +204,7 @@ on demand via `mix foundry.project.context <Module>`.
 | LiveView | ▣ | Phoenix.LiveView | User-facing page or back-office UI |
 | LiveResource | ⊞ | AshPyro / AshAdmin | Auto-generated back-office CRUD UI |
 | Blueprint | ◇ | Custom config resource | Configuration template / operational params |
-| Provider | ⬚ | External adapter module | External system boundary |
+| Adapter | ⬚ | Integration adapter module | External system boundary |
 | Trigger | ▶ | api_routes / webhook / scheduler | Entry point — how flow starts |
 | Terminal | ⟐ | Reactor return / error path | How flow ends (success / error / compensated) |
 
@@ -240,7 +240,7 @@ Every node carries a compact status badge row. The exact indicators:
 | Indicator | Meaning |
 |---|---|
 | ◉ | Compliance-covered — all declared requirements have linked tests |
-| ○ | Compliance gap — one or more requirements untested |
+| ○ | Compliance coverage gap — one or more declared requirements lack linked E2E coverage |
 | ⬡ | Policy present — node has declared policies or rules |
 | PSE | paper_trail + soft_delete + ecto — rendered only on `sensitive: true` nodes; shows which of the three are present (e.g. `PS·` means paper_trail and soft_delete present, ecto data layer absent or non-postgres) |
 | ~ | Has runbook linked |

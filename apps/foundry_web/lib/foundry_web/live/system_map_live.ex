@@ -36,7 +36,7 @@ defmodule FoundryWeb.SystemMapLive do
           end)
           |> Enum.into(%{})
 
-        # Count gaps: compliance reqs + no E2E tests
+        # Count compliance coverage gaps: declared requirements without linked E2E coverage
         gap_count =
           Enum.count(nodes, fn n ->
             (n.compliance || []) |> Enum.any?(fn _ -> true end) and
@@ -200,7 +200,7 @@ defmodule FoundryWeb.SystemMapLive do
       "liveview" -> "lv"
       "liveresource" -> "lr"
       "blueprint" -> "bp"
-      "provider" -> "pv"
+      "adapter" -> "adp"
       "trigger" -> "tg"
       "terminal" -> "tm"
       _ -> type |> String.slice(0..2) |> String.upcase()
@@ -218,7 +218,7 @@ defmodule FoundryWeb.SystemMapLive do
         "liveview" -> {"#22d3ee", "#000"}
         "liveresource" -> {"#f472b6", "#fff"}
         "blueprint" -> {"#fb923c", "#000"}
-        "provider" -> {"var(--color-secondary)", "#fff"}
+        "adapter" -> {"var(--color-secondary)", "#fff"}
         "trigger" -> {"#fde047", "#000"}
         "terminal" -> {"var(--color-neutral)", "#fff"}
         _ -> {"var(--color-neutral)", "#fff"}

@@ -32,9 +32,14 @@ export const STATIC_STYLES = [
       'shape': 'round-rectangle',
       'width': 170,
       'height': 64,
-      'border-width': 1,
+      'background-opacity': 0.92,
+      'border-width': 1.5,
       'border-style': 'solid',
       'border-opacity': 1,
+      'shadow-blur': 18,
+      'shadow-opacity': 0.18,
+      'shadow-offset-x': 0,
+      'shadow-offset-y': 8,
       'font-size': 11,
       'font-family': FONT,
       'text-valign': 'center',
@@ -51,24 +56,43 @@ export const STATIC_STYLES = [
     style: { 'label': '' },
   },
   {
-    selector: 'node.gap',
+    selector: 'node.compliance-gap, node.gap',
     style: { 'border-width': 1, 'border-style': 'dashed' },
   },
   {
     selector: 'node[nodeKind="cluster"]',
     style: {
       'shape': 'round-rectangle',
-      'min-width': 120,
-      'min-height': 60,
-      'padding': 28,
+      'min-width': 180,
+      'min-height': 96,
+      'padding': 42,
       'border-style': 'dashed',
+      'border-width': 1.5,
+      'border-opacity': 0.75,
+      'background-opacity': 'data(fillOpacity)',
+      'shadow-blur': 28,
+      'shadow-opacity': 'data(shadowOpacity)',
+      'shadow-offset-x': 0,
+      'shadow-offset-y': 10,
       'text-valign': 'center',
       'text-halign': 'center',
     },
   },
   {
     selector: 'node.domain-cluster',
-    style: { 'border-width': 2, 'background-opacity': 0.4, 'padding': 42 },
+    style: {
+      'border-style': 'dashed',
+      'border-width': 1.5,
+      'border-opacity': 0.45,
+      'background-opacity': 'data(fillOpacity)',
+      'shadow-blur': 40,
+      'shadow-opacity': 'data(shadowOpacity)',
+      'shadow-offset-x': 0,
+      'shadow-offset-y': 12,
+      'min-width': 240,
+      'min-height': 140,
+      'padding': 64,
+    },
   },
   {
     selector: 'node[nodeKind="step"], node[nodeKind="action"], node[nodeKind="state"]',
@@ -124,12 +148,8 @@ export const STATIC_STYLES = [
     style: { 'shape': 'barrel', 'border-style': 'dotted', 'border-width': 1.5 },
   },
   {
-    selector: 'node[type="blueprint"]',
-    style: { 'shape': 'diamond', 'width': 110, 'height': 66, 'border-width': 1 },
-  },
-  {
     selector: 'node[nodeKind="cluster"][type="transfer"], node[nodeKind="cluster"][type="reactor"]',
-    style: { 'border-width': 1.5 },
+    style: { 'border-width': 2 },
   },
   {
     selector: 'edge',
@@ -185,20 +205,26 @@ export const STATIC_STYLES = [
 ]
 
 export function dynamicStyles(c) {
-  const domainColorToken = {
-    Finance:        'bl',
-    Players:        'gn',
-    Promotions:     'yw',
-    Gaming:         'pu',
-    Accounts:       'bl',
-    Infrastructure: 't2',
-    Identity:       'gn',
-    Compliance:     'yw',
-    Game:           'pu',
+  const kindColorToken = {
+    resource:    'bl',
+    transfer:    'gn',
+    reactor:     'pu',
+    rule:        'yw',
+    job:         'or',
+    liveview:    'cy',
+    liveresource:'pk',
+    adapter:     'ac',
+    trigger:     'ac',
+    external:    't3',
+    agent:       'pu',
+    output:      't2',
+    step:        'gn',
+    action:      'gn',
+    state:       'bl',
   }
 
-  const domainSelectors = Object.entries(domainColorToken).map(([domain, token]) => ({
-    selector: `node[domain="${domain}"]`,
+  const kindSelectors = Object.entries(kindColorToken).map(([kind, token]) => ({
+    selector: `node[type="${kind}"]`,
     style: { 'border-color': c[token] },
   }))
 
@@ -208,23 +234,22 @@ export function dynamicStyles(c) {
       style: {
         'background-color': c.nodeBg,
         'border-color': c.b1,
+        'shadow-color': c.s3,
         'color': c.tx,
       },
     },
-    { selector: 'node.gap',       style: { 'border-color': c.yw } },
-    { selector: 'node.sensitive', style: { 'border-width': 1, 'border-color': c.rd } },
+    { selector: 'node.compliance-gap, node.gap', style: { 'border-color': c.yw } },
+    { selector: 'node.sensitive', style: { 'border-width': 2, 'border-color': c.rd } },
     {
       selector: 'node[nodeKind="cluster"]',
       style: {
-        'background-color': c.clusterBg,
+        'background-color': 'data(fillColor)',
         'border-color': c.b1,
+        'shadow-color': c.s3,
       },
     },
-    {
-      selector: 'node.domain-cluster',
-      style: { 'background-color': c.clusterBg },
-    },
-    ...domainSelectors,
+    { selector: 'node.domain-cluster', style: { 'background-color': 'data(fillColor)', 'border-color': 'data(typeColor)', 'shadow-color': c.s3 } },
+    ...kindSelectors,
     { selector: 'node:selected', style: { 'border-color': c.ac } },
     {
       selector: 'node[type="external"]',
@@ -233,7 +258,6 @@ export function dynamicStyles(c) {
     { selector: 'node[nodeKind="step"], node[nodeKind="action"], node[nodeKind="state"]', style: { 'color': c.tx } },
     { selector: 'node[type="job"]',       style: { 'border-color': c.pu } },
     { selector: 'node[type="trigger"]',   style: { 'border-color': c.ac } },
-    { selector: 'node[type="blueprint"]', style: { 'border-color': c.ac } },
     {
       selector: 'node[nodeKind="cluster"][type="transfer"]',
       style: { 'border-color': c.gn },
