@@ -131,7 +131,9 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
           kind: :withdrawal,
           idempotency_key: "withdrawal:#{req.id}",
           reference_id: req.id
-        }, actor: :system)
+        },
+        actor: :system
+      )
     end)
   end
 
@@ -232,8 +234,16 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
       with {:ok, player} <- Ash.get(IgamingRef.Players.Player, pid, actor: :system),
            {:ok, campaign} <- Ash.get(BonusCampaign, cid, actor: :system),
            {:ok, wallet} <- primary_wallet(pid),
-           {:ok, grants} <- existing_grants(pid, cid) do
-        {:ok, %{player: player, campaign: campaign, wallet: wallet, existing_grants: grants}}
+           {:ok, grants} <- existing_grants(pid, cid),
+           {:ok, campaign_grants} <- campaign_grants(cid) do
+        {:ok,
+         %{
+           player: player,
+           campaign: campaign,
+           wallet: wallet,
+           existing_grants: grants,
+           campaign_grants: campaign_grants
+         }}
       end
     end)
   end
@@ -242,8 +252,21 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
     description("Check self-exclusion, campaign expiry, and player eligibility.")
     argument(:ctx, result(:load_context))
 
-    run(fn %{ctx: %{player: player, campaign: campaign, existing_grants: grants}}, _ ->
-      rule_ctx = %{player: player, campaign: campaign, existing_grants: grants}
+    run(fn %{
+             ctx: %{
+               player: player,
+               campaign: campaign,
+               existing_grants: grants,
+               campaign_grants: campaign_grants
+             }
+           },
+           _ ->
+      rule_ctx = %{
+        player: player,
+        campaign: campaign,
+        existing_grants: grants,
+        campaign_grants: campaign_grants
+      }
 
       with :ok <- PlayerNotSelfExcluded.evaluate(rule_ctx, nil),
            :ok <- CampaignNotExpired.evaluate(rule_ctx, nil),
@@ -294,7 +317,9 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
           kind: :bonus,
           idempotency_key: "bonus_grant:#{pid}:#{cid}",
           reference_id: cid
-        }, actor: :system)
+        },
+        actor: :system
+      )
     end)
   end
 
@@ -321,7 +346,9 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
           wagering_remaining: wagering_required,
           granted_at: DateTime.utc_now(),
           expires_at: campaign.expires_at
-        }, actor: :system)
+        },
+        actor: :system
+      )
     end)
   end
 
@@ -340,6 +367,13 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   defp existing_grants(player_id, campaign_id) do
     Ash.read(BonusGrant,
       filter: [player_id: player_id, campaign_id: campaign_id],
+      actor: :system
+    )
+  end
+
+  defp campaign_grants(campaign_id) do
+    Ash.read(BonusGrant,
+      filter: [campaign_id: campaign_id],
       actor: :system
     )
   end

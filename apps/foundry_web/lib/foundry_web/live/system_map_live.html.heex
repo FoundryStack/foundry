@@ -147,11 +147,11 @@
         {if @system_map_view == :graph, do: "Graph", else: "Table"}
       </button>
       <button
-        class="flex size-8 cursor-pointer items-center justify-center rounded-selector border-0 bg-transparent text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content"
+        class="flex cursor-pointer items-center gap-2 rounded-selector border border-transparent bg-transparent px-2 py-1 text-xs font-medium text-neutral-content transition-colors hover:border-primary/20 hover:bg-base-300 hover:text-base-content"
         phx-click="toggle_feed"
-        title="Activity ⌘\"
+        title="Copilot panel ⌘\"
       >
-        ⊕
+        <span class="size-[6px] shrink-0 rounded-full bg-secondary"></span> Copilot
       </button>
     </div>
 
@@ -230,11 +230,13 @@
   </div>
 
   <div
-    class={"flex shrink-0 flex-col overflow-hidden border-l border-base-300 bg-base-200 transition-[width] duration-200 #{if @feed_open, do: "w-80", else: "w-0"}"}
+    class={"flex shrink-0 flex-col overflow-hidden border-l border-base-300 bg-base-200 transition-[width] duration-200 #{if @feed_open, do: "w-[26rem]", else: "w-0"}"}
     id="fm-feed"
   >
     <div class="flex shrink-0 items-center border-b border-base-300 px-3 py-2">
-      <span class="flex-1 text-[11px] font-semibold text-neutral-content">Activity</span>
+      <span class="flex-1 text-[11px] font-semibold text-neutral-content">
+        {if @feed_tab == :copilot, do: "Copilot", else: "Activity"}
+      </span>
       <button
         class="flex size-7 cursor-pointer items-center justify-center rounded-selector border-0 bg-transparent text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content"
         phx-click="toggle_feed"
@@ -260,15 +262,38 @@
         Copilot
       </button>
     </div>
-    <div class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-2" id="feed-body"></div>
-    <div class="shrink-0 border-t border-base-300 p-2">
-      <textarea
-        class="box-border w-full resize-none rounded-field border border-base-300/80 bg-base-300 px-2 py-1.5 font-sans text-[11px] text-base-content outline-none focus:border-primary"
-        rows="2"
-        placeholder="Ask anything…"
-        phx-keydown="feed_keydown"
-      ></textarea>
-      <div class="mt-1 font-mono text-[9px] text-neutral-content/50">⏎ send · ⇧⏎ newline</div>
+    <div class="min-h-0 flex-1 overflow-hidden">
+      <%= if @feed_tab == :feed do %>
+        <div class="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3">
+          <div class="rounded-box border border-base-300/80 bg-base-100/60 p-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-content">
+              Activity Feed
+            </p>
+            <p class="mt-2 text-sm leading-6 text-base-content">
+              Proposal cards and review activity will appear here.
+            </p>
+            <p class="mt-1 text-xs leading-5 text-neutral-content">
+              The Copilot tab now hosts the integrated project chat workspace.
+            </p>
+          </div>
+        </div>
+      <% else %>
+        <FoundryWeb.ChatComponents.studio_panel
+          messages={@messages}
+          loading={@loading}
+          error={@error}
+          project_root={@project_root}
+          show_system_context={@show_system_context}
+          system_context_prompt={@system_context_prompt}
+          system_context_error={@system_context_error}
+          llm_provider={@llm_provider}
+          llm_diagnostics={@llm_diagnostics}
+          chat_view={@chat_view}
+          activity_runs={@activity_runs}
+          selected_activity_run_id={@selected_activity_run_id}
+          session_digest={@session_digest}
+        />
+      <% end %>
     </div>
   </div>
 </div>

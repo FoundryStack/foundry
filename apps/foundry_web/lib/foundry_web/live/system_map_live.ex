@@ -1,8 +1,9 @@
 defmodule FoundryWeb.SystemMapLive do
   use FoundryWeb, :live_view
+  alias FoundryWeb.ChatSession
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
     project_root =
       Application.get_env(
         :foundry_web,
@@ -45,49 +46,78 @@ defmodule FoundryWeb.SystemMapLive do
         # Count migrations
         migration_count = Enum.count(nodes, fn n -> n.pending_migrations end)
 
-        {:ok,
-         assign(socket,
-           context_json: context_json,
-           nodes_by_domain: nodes_by_domain,
-           all_nodes: nodes,
-           gap_count: gap_count,
-           migration_count: migration_count,
-           project_name: Path.basename(project_root),
-           sidebar_tab: :system_map,
-           lens: :default,
-           system_map_view: :graph,
-           drawer_open: false,
-           drawer_tab: :details,
-           feed_open: false,
-           feed_tab: :feed,
-           filter_query: "",
-           selected_id: nil,
-           selected_node: nil,
-           project_root: project_root
-         )}
+        {:ok, socket} =
+          socket
+          |> assign(
+            context_json: context_json,
+            nodes_by_domain: nodes_by_domain,
+            all_nodes: nodes,
+            gap_count: gap_count,
+            migration_count: migration_count,
+            project_name: Path.basename(project_root),
+            sidebar_tab: :system_map,
+            lens: :default,
+            system_map_view: :graph,
+            drawer_open: false,
+            drawer_tab: :details,
+            feed_open: false,
+            feed_tab: :copilot,
+            filter_query: "",
+            selected_id: nil,
+            selected_node: nil,
+            project_root: project_root
+          )
+          |> ChatSession.mount(session)
+
+        {:ok, socket}
 
       {:error, _reason} ->
-        {:ok,
-         assign(socket,
-           context_json: nil,
-           nodes_by_domain: %{},
-           all_nodes: [],
-           gap_count: 0,
-           migration_count: 0,
-           project_name: Path.basename(project_root),
-           sidebar_tab: :system_map,
-           lens: :default,
-           system_map_view: :graph,
-           drawer_open: false,
-           drawer_tab: :details,
-           feed_open: false,
-           feed_tab: :feed,
-           filter_query: "",
-           selected_id: nil,
-           selected_node: nil,
-           project_root: project_root
-         )}
+        {:ok, socket} =
+          socket
+          |> assign(
+            context_json: nil,
+            nodes_by_domain: %{},
+            all_nodes: [],
+            gap_count: 0,
+            migration_count: 0,
+            project_name: Path.basename(project_root),
+            sidebar_tab: :system_map,
+            lens: :default,
+            system_map_view: :graph,
+            drawer_open: false,
+            drawer_tab: :details,
+            feed_open: false,
+            feed_tab: :copilot,
+            filter_query: "",
+            selected_id: nil,
+            selected_node: nil,
+            project_root: project_root
+          )
+          |> ChatSession.mount(session)
+
+        {:ok, socket}
     end
+  end
+
+  @impl true
+  def handle_event("toggle_system_context", params, socket) do
+    ChatSession.handle_event("toggle_system_context", params, socket)
+  end
+
+  @impl true
+  def handle_event("send_message", params, socket) do
+    socket = assign(socket, :feed_open, true)
+    ChatSession.handle_event("send_message", params, socket)
+  end
+
+  @impl true
+  def handle_event("set_chat_view", params, socket) do
+    ChatSession.handle_event("set_chat_view", params, socket)
+  end
+
+  @impl true
+  def handle_event("select_activity_run", params, socket) do
+    ChatSession.handle_event("select_activity_run", params, socket)
   end
 
   @impl true
@@ -147,6 +177,14 @@ defmodule FoundryWeb.SystemMapLive do
 
       {:error, _} ->
         {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_info(message, socket) do
+    case ChatSession.handle_info(message, socket) do
+      :unhandled -> {:noreply, socket}
+      reply -> reply
     end
   end
 

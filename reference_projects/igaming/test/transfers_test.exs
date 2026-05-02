@@ -228,11 +228,18 @@ defmodule IgamingRef.Promotions.BonusGrantTransferTest do
       campaign = campaign_fixture(%{max_redemptions: 1})
 
       # One grant from a different player already used the redemption
-      existing = [%{player_id: Ash.UUID.generate(), campaign_id: campaign.id, status: :active}]
+      campaign_grants = [
+        %{player_id: Ash.UUID.generate(), campaign_id: campaign.id, status: :active}
+      ]
 
       assert {:error, :campaign_max_redemptions_reached, _} =
                PlayerEligibleForCampaign.evaluate(
-                 %{player: player, campaign: campaign, existing_grants: existing},
+                 %{
+                   player: player,
+                   campaign: campaign,
+                   existing_grants: [],
+                   campaign_grants: campaign_grants
+                 },
                  nil
                )
     end

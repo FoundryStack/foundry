@@ -20,8 +20,12 @@ defmodule IgamingRef.Finance.Rules.SufficientBalance do
   @impl IgamingRef.Rule
   def evaluate(%{wallet: wallet, amount: amount}, _context) do
     case Money.compare!(wallet.balance, amount) do
-      :lt -> {:error, :insufficient_balance, "Wallet balance #{wallet.balance} is less than requested amount #{amount} (RG-MGA-001)"}
-      _   -> :ok
+      :lt ->
+        {:error, :insufficient_balance,
+         "Wallet balance #{wallet.balance} is less than requested amount #{amount} (RG-MGA-001)"}
+
+      _ ->
+        :ok
     end
   end
 
@@ -54,9 +58,9 @@ defmodule IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded do
 
   # Default limits by risk level (in GBP-equivalent)
   @daily_limits %{
-    low:    Money.new(10_000_00, :GBP),
+    low: Money.new(10_000_00, :GBP),
     medium: Money.new(2_500_00, :GBP),
-    high:   Money.new(500_00, :GBP)
+    high: Money.new(500_00, :GBP)
   }
 
   @impl IgamingRef.Rule
@@ -65,8 +69,12 @@ defmodule IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded do
     total = Money.add!(daily_used, amount)
 
     case Money.compare!(total, limit) do
-      :gt -> {:error, :daily_limit_exceeded, "Withdrawal of #{amount} would exceed the daily limit of #{limit} for risk level #{player.risk_level} (RG-MGA-007)"}
-      _   -> :ok
+      :gt ->
+        {:error, :daily_limit_exceeded,
+         "Withdrawal of #{amount} would exceed the daily limit of #{limit} for risk level #{player.risk_level} (RG-MGA-007)"}
+
+      _ ->
+        :ok
     end
   end
 
@@ -102,7 +110,8 @@ defmodule IgamingRef.Players.Rules.PlayerNotSelfExcluded do
   @impl IgamingRef.Rule
   def evaluate(%{player: player}, _context) do
     if player.status == :self_excluded do
-      {:error, :player_self_excluded, "Player #{player.id} is self-excluded and cannot perform financial transactions (RG-UK-008)"}
+      {:error, :player_self_excluded,
+       "Player #{player.id} is self-excluded and cannot perform financial transactions (RG-UK-008)"}
     else
       :ok
     end
@@ -117,7 +126,7 @@ defmodule IgamingRef.Promotions.Rules.PlayerEligibleForCampaign do
   Rule: the player meets the campaign's eligibility criteria.
 
   Eligibility checks that the player has not already redeemed this campaign
-  (if max_redemptions is 1) and that their account is in good standing.
+  and that the campaign has not exhausted its redemption cap across all players.
 
   Applied by: IgamingRef.Promotions.BonusGrantTransfer
   Compliance: RG-MGA-005 (bonus terms transparency and enforcement)
@@ -135,18 +144,26 @@ defmodule IgamingRef.Promotions.Rules.PlayerEligibleForCampaign do
   @behaviour IgamingRef.Rule
 
   @impl IgamingRef.Rule
-  def evaluate(%{player: player, campaign: campaign, existing_grants: existing_grants}, _context) do
-    player_grants = Enum.filter(existing_grants, &(&1.player_id == player.id and &1.campaign_id == campaign.id))
+  def evaluate(
+        %{player: player, campaign: campaign, existing_grants: existing_grants} = context,
+        _context
+      ) do
+    player_grants =
+      Enum.filter(existing_grants, &(&1.player_id == player.id and &1.campaign_id == campaign.id))
+
+    campaign_grants = Map.get(context, :campaign_grants, existing_grants)
 
     cond do
       player.status != :active ->
         {:error, :player_not_active, "Player account is not active (RG-MGA-005)"}
 
-      campaign.max_redemptions != nil and length(existing_grants) >= campaign.max_redemptions ->
-        {:error, :campaign_max_redemptions_reached, "Campaign has reached its maximum redemption limit (RG-MGA-005)"}
+      campaign.max_redemptions != nil and length(campaign_grants) >= campaign.max_redemptions ->
+        {:error, :campaign_max_redemptions_reached,
+         "Campaign has reached its maximum redemption limit (RG-MGA-005)"}
 
       Enum.any?(player_grants, &(&1.status == :active)) ->
-        {:error, :player_already_has_grant, "Player already has an active grant from campaign #{campaign.id} (RG-MGA-005)"}
+        {:error, :player_already_has_grant,
+         "Player already has an active grant from campaign #{campaign.id} (RG-MGA-005)"}
 
       true ->
         :ok
@@ -191,7 +208,8 @@ defmodule IgamingRef.Promotions.Rules.CampaignNotExpired do
         {:error, :campaign_not_active, "Campaign #{campaign.id} is not active (RG-MGA-005)"}
 
       DateTime.compare(campaign.expires_at, now) == :lt ->
-        {:error, :campaign_expired, "Campaign #{campaign.id} expired at #{campaign.expires_at} (RG-MGA-005)"}
+        {:error, :campaign_expired,
+         "Campaign #{campaign.id} expired at #{campaign.expires_at} (RG-MGA-005)"}
 
       true ->
         :ok
@@ -225,7 +243,8 @@ defmodule IgamingRef.Finance.Rules.PlayerKYCVerified do
     if player.kyc_status == :verified do
       :ok
     else
-      {:error, :kyc_not_verified, "Player #{player.id} has kyc_status #{player.kyc_status}, must be :verified (RG-MGA-003)"}
+      {:error, :kyc_not_verified,
+       "Player #{player.id} has kyc_status #{player.kyc_status}, must be :verified (RG-MGA-003)"}
     end
   end
 
@@ -256,7 +275,8 @@ defmodule IgamingRef.Gaming.Rules.ProviderActive do
     if config.status == :active do
       :ok
     else
-      {:error, :provider_inactive, "Provider #{config.provider_name} has status #{config.status}, must be :active (RG-MGA-006)"}
+      {:error, :provider_inactive,
+       "Provider #{config.provider_name} has status #{config.status}, must be :active (RG-MGA-006)"}
     end
   end
 
@@ -287,7 +307,8 @@ defmodule IgamingRef.Gaming.Rules.GameRTPCertified do
     if version.rtp_certified do
       :ok
     else
-      {:error, :rtp_not_certified, "Game version #{version.id} is not RTP-certified. Cannot be played (RG-UK-007)"}
+      {:error, :rtp_not_certified,
+       "Game version #{version.id} is not RTP-certified. Cannot be played (RG-UK-007)"}
     end
   end
 

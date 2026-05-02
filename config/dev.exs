@@ -94,7 +94,7 @@ config :foundry, :claude_code,
 config :foundry, :codex,
   model: System.get_env("CODEX_MODEL", "gpt-5.4-mini"),
   profile: System.get_env("CODEX_PROFILE"),
-  sandbox: System.get_env("CODEX_SANDBOX", "read-only"),
+  sandbox: System.get_env("CODEX_SANDBOX", "workspace-write"),
   executable: System.get_env("CODEX_EXECUTABLE", "codex"),
   timeout_ms: 120_000
 

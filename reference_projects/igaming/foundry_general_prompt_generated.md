@@ -508,7 +508,7 @@ The platform models:
 - PII vaulting, audit evidence, and operator/compliance policy checks
 
 This is a reference target platform, not the Foundry meta-platform. Work from this
-project root unless the user explicitly asks about Foundry's own implementation.
+project root.
 
 ---
 
@@ -561,24 +561,9 @@ Treat these areas as governed and high-risk:
 - Ops: PII vault and audit evidence
 
 The manifest declares sensitive resources and approvers. Do not infer sensitivity
-from domain names alone; verify it through project status or project context.
-
----
-
-## Spec-Kit Navigation
-
-Start with the most specific artifact for the work:
-
-- Ledger and wallet integrity: `docs/adrs/ADR-001-double-entry-ledger.md` and
-  `docs/regulations/ukgc_mga.md`
-- Withdrawal flow operations: `docs/runbooks/withdrawal_transfer.md`
-- Bonus grant operations: `docs/runbooks/bonus_grant_transfer.md`
-- Bonus event evaluation: `docs/runbooks/bonus_evaluation_reactor.md`
-- Provider catalog sync: `docs/runbooks/provider_sync.md`
-- Compliance requirements: `docs/regulations/ukgc_mga.md`
-
-`docs.md` is not a spec-kit artifact and is not part of Foundry's governed context
-roots. Do not treat it as authoritative.
+from domain names alone; verify it through project status or project context. Use
+the full system map's `Spec-Kit` section to choose the exact ADR, runbook, or
+regulation to read before planning.
 
 ---
 
@@ -686,36 +671,12 @@ Likely gaps to surface when relevant:
     ]
 ```
 
-## Spec-Kit Index
-
-Token estimate: 851 (warn: false)
-
-### AGENTS
-- AGENTS.md: AGENTS - This file is the primary project-specific entry point for agents working inside
-`reference_projects/igaming`. It is loaded together with Foundry's core copilot
-prompt: Foundry supplies the universal governance model, while this file supplies
-the target platform context.
-
-### ADRs
-- docs/adrs/ADR-001-double-entry-ledger.md: ADR-001-double-entry-ledger - The iGaming domain requires immutable, auditable financial transaction records. Players make deposits, withdrawals, and earn bonuses.
-
-### Runbooks
-- docs/runbooks/bonus_grant_transfer.md: bonus_grant_transfer - Awards a bonus to a player when campaign eligibility is confirmed. Credits the wallet and creates a tracking record for wagering.
-- docs/runbooks/bonus_evaluation_reactor.md: bonus_evaluation_reactor - `IgamingRef.Promotions.BonusEvaluationReactor` evaluates inbound `BonusEvent` rows
-against configured `BonusTrigger`, `BonusConditionGroup`, `BonusCondition`, and
-`BonusExecution` resources.
-- docs/runbooks/withdrawal_transfer.md: withdrawal_transfer - Handles the complete flow of processing an approved withdrawal request through to provider submission.
-- docs/runbooks/provider_sync.md: provider_sync - Synchronizes the game catalog from a provider's API and creates or updates local records. Fully idempotent.
-
-### Regulations
-- docs/regulations/ukgc_mga.md: ukgc_mga [001, 002, 003, 005, 007, 008]
-
 ---
 
 ## Project Status
 
 ```json
-{"ci":{"branch":null,"commit":null,"context_lock_current":true,"last_run_at":null,"lint_passed":null,"tests_passed":null},"compiled_at":"2026-05-01T09:31:35Z","compliance":{"covered_count":0,"planned_count":13,"sample_requirements":[{"coverage":0,"id":"RG-MGA-001","status":"planned"},{"coverage":0,"id":"RG-MGA-002","status":"planned"},{"coverage":0,"id":"RG-MGA-003","status":"planned"},{"coverage":0,"id":"RG-MGA-005","status":"planned"},{"coverage":0,"id":"RG-MGA-006","status":"planned"}],"total_requirements":13,"truncated_count":8},"domain_type":"igaming","domains":["Accounts","Finance","Gaming","Infrastructure","Ops","Players","Policies","Promotions"],"generated_at":"2026-05-01T09:31:38.941577Z","lint":{"errors":0,"total_violations":49,"warnings":49},"manifest":{"domain_type":"igaming","sensitive_resources":["Elixir.IgamingRef.Finance.Wallet","Elixir.IgamingRef.Finance.LedgerEntry","Elixir.IgamingRef.Finance.WithdrawalRequest","Elixir.IgamingRef.Players.Player","Elixir.IgamingRef.Players.SelfExclusionRecord"]},"migrations":{"applied_count":0,"pending_count":0},"project":"IgamingRef","project_type":"standard","proposals":{"open_count":0,"recent":[]},"sensitive_modules":["LedgerEntry","Player","SelfExclusionRecord","Wallet","WithdrawalRequest"],"stack":{"ash":"3.24.3","ash_postgres":"2.9.0","elixir":null,"oban":"2.21.1","phoenix":"1.8.5","reactor":"1.0.1"}}
+{"ci":{"branch":null,"commit":null,"context_lock_current":true,"last_run_at":null,"lint_passed":null,"tests_passed":null},"compiled_at":"2026-05-01T09:54:21Z","compliance":{"covered_count":0,"planned_count":13,"sample_requirements":[{"coverage":0,"id":"RG-MGA-001","status":"planned"},{"coverage":0,"id":"RG-MGA-002","status":"planned"},{"coverage":0,"id":"RG-MGA-003","status":"planned"},{"coverage":0,"id":"RG-MGA-005","status":"planned"},{"coverage":0,"id":"RG-MGA-006","status":"planned"}],"total_requirements":13,"truncated_count":8},"domain_type":"igaming","domains":["Accounts","Finance","Gaming","Infrastructure","Ops","Players","Policies","Promotions"],"generated_at":"2026-05-01T09:55:24.128976Z","lint":{"errors":0,"total_violations":49,"warnings":49},"manifest":{"domain_type":"igaming","sensitive_resources":["Elixir.IgamingRef.Finance.Wallet","Elixir.IgamingRef.Finance.LedgerEntry","Elixir.IgamingRef.Finance.WithdrawalRequest","Elixir.IgamingRef.Players.Player","Elixir.IgamingRef.Players.SelfExclusionRecord"]},"migrations":{"applied_count":0,"pending_count":0},"project":"IgamingRef","project_type":"standard","proposals":{"open_count":0,"recent":[]},"sensitive_modules":["LedgerEntry","Player","SelfExclusionRecord","Wallet","WithdrawalRequest"],"stack":{"ash":"3.24.3","ash_postgres":"2.9.0","elixir":null,"oban":"2.21.1","phoenix":"1.8.5","reactor":"1.0.1"}}
 ```
 
 ## System Architecture (Full Project Context)
@@ -1236,17 +1197,30 @@ PR11 --grd--> PR8 [seq=1,step=evaluate_rules]
 
 ## Spec-Kit
 
+### Overview
+
+Counts: AGENTS=1  ADRs=1  Runbooks=4  Regulations=1
+Navigation: Prefer direct node links (`adrs`, `compliance`, `runbook`) before tag-based lookup.
+Token estimate: 1007 (warn: false)
+Themes: 007, 001, 003, 005, 008, 014, account, active
+
+### AGENTS
+
+- AGENTS · AGENTS.md - iGaming Reference Project :: This file is the primary project-specific entry point for agents working inside
+`reference_projects/igaming`. It is l...
+
 ### ADRs
 
-  : ADR-001-double-entry-ledger [001, 003, 008, 2024, accepted]
+- ADR-001 · accepted · Double-Entry Ledger for Financial Transactions :: The iGaming domain requires immutable, auditable financial transaction records. Players make deposits, withdrawals, a...
 
 ### Runbooks
 
-  : bonus_grant_transfer
-  : bonus_evaluation_reactor
-  : withdrawal_transfer
-  : provider_sync
+- bonus_grant_transfer · Bonus Grant Transfer Runbook :: Awards a bonus to a player when campaign eligibility is confirmed. Credits the wallet and creates a tracking record f...
+- bonus_evaluation_reactor · BonusEvaluationReactor Runbook :: `IgamingRef.Promotions.BonusEvaluationReactor` evaluates inbound `BonusEvent` rows
+against configured `BonusTrigger`,...
+- withdrawal_transfer · Withdrawal Transfer Runbook :: Handles the complete flow of processing an approved withdrawal request through to provider submission.
+- provider_sync · Provider Sync Runbook :: Synchronizes the game catalog from a provider's API and creates or updates local records. Fully idempotent.
 
 ### Regulations
 
-  : ukgc_mga
+- ukgc_mga · planned · IgamingRef Regulations - UKGC & MGA :: 001, 002, 003, 005, 007

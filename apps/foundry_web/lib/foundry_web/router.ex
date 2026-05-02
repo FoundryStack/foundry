@@ -48,7 +48,6 @@ defmodule FoundryWeb.Router do
 
     get "/", PageController, :home
     live "/studio", SystemMapLive
-    live "/chat", ChatLive
   end
 
   # MCP server — exposes Foundry.Context tools to external agents
