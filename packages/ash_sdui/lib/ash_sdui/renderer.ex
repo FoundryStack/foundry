@@ -52,7 +52,6 @@ defmodule AshSDUI.Renderer do
         {:ok, layout_node_to_tree(layout_def.root)}
 
       {:error, :not_found} ->
-        IO.warn("Layout not found: #{layout_name}")
         {:error, {:not_found, layout_name}}
     end
   end
@@ -89,8 +88,8 @@ defmodule AshSDUI.Renderer do
       id: node.id,
       component_name: node.component,
       static_props: %{},
-      subject_resource: nil,
-      subject_id: nil,
+      subject_resource: node.subject_resource,
+      subject_id: node.subject_id,
       region: node.region,
       order: node.order,
       children: children

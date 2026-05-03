@@ -54,17 +54,24 @@ defmodule SduiDemo.Application do
   defp seed_demo_data do
     alias SduiDemo.Accounts.User
 
-    case User
-         |> Ash.Changeset.for_create(:create, %{
-           username: "demo_user",
-           email: "demo@example.com",
-           avatar_url: "https://api.example.com/avatars/demo.jpg"
-         })
-         |> Ash.create() do
-      {:ok, _user} ->
-        IO.puts("✓ Created demo user")
+    case User |> Ash.read() do
+      {:ok, []} ->
+        # Only create if no users exist
+        case User
+             |> Ash.Changeset.for_create(:create, %{
+               username: "demo_user",
+               email: "demo@example.com",
+               avatar_url: "https://api.example.com/avatars/demo.jpg"
+             })
+             |> Ash.create() do
+          {:ok, _user} ->
+            IO.puts("✓ Created demo user")
 
-      {:error, _reason} ->
+          {:error, _reason} ->
+            nil
+        end
+
+      _ ->
         nil
     end
   end

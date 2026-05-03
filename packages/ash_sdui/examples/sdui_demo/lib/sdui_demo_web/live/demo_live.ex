@@ -7,7 +7,7 @@ defmodule SduiDemoWeb.Live.DemoLive do
     ~H"""
     <div class="demo-page">
       <h1>SDUI Demo</h1>
-      <.sdui_root />
+      <.sdui_root tree={@__sdui_tree__} />
     </div>
     """
   end

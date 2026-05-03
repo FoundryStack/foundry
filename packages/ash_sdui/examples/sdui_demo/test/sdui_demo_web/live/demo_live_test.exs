@@ -7,7 +7,7 @@ defmodule SduiDemoWeb.Live.DemoLiveTest do
     # Initialize registry
     AshSDUI.Registry.init_table()
 
-    # Create a test user
+    # Create a test user (will be the first and only user in the ETS table)
     {:ok, user} =
       SduiDemo.Accounts.User
       |> Ash.Changeset.for_create(:create, %{
@@ -47,6 +47,20 @@ defmodule SduiDemoWeb.Live.DemoLiveTest do
       assert html =~ ~s(<main class="main-content">)
       assert html =~ ~s(</aside>)
       assert html =~ ~s(</main>)
+    end
+
+    test "renders UserCard with loaded user data", %{conn: conn} do
+      {:ok, _view, html} = live(conn, "/")
+
+      # Verify UserCard is rendered
+      assert html =~ "user-card"
+
+      # Verify user data is loaded (not showing "No user loaded")
+      refute html =~ "No user loaded"
+
+      # Verify the demo user is displayed (created at app startup)
+      assert html =~ "demo_user"
+      assert html =~ "demo@example.com"
     end
   end
 end

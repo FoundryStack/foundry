@@ -4,7 +4,7 @@ defmodule SduiDemo.Accounts.User do
     data_layer: Ash.DataLayer.Ets
 
   ets do
-    private?(true)
+    private?(false)
   end
 
   attributes do
@@ -19,6 +19,14 @@ defmodule SduiDemo.Accounts.User do
   end
 
   actions do
-    defaults [:read, :destroy, create: :*, update: :*]
+    defaults [:read, :destroy]
+
+    create :create do
+      accept [:username, :email, :avatar_url]
+    end
+
+    update :update do
+      accept [:username, :email, :avatar_url]
+    end
   end
 end

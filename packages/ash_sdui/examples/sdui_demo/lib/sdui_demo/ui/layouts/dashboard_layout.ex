@@ -3,13 +3,8 @@ defmodule SduiDemo.UI.Layouts.DashboardLayout do
   alias SduiDemo.Accounts.User
 
   def register do
-    # Get the first user if available
-    user_id =
-      case Ash.read(User) do
-        {:ok, [user | _]} -> user.id
-        _ -> nil
-      end
-
+    # Create a layout that finds the first user at render time
+    # by using a marker value that resolve_subject will understand
     user_card = %Layout.Node{
       id: "user-card-1",
       component: "UserCard@v1",
@@ -17,7 +12,7 @@ defmodule SduiDemo.UI.Layouts.DashboardLayout do
       region: :sidebar,
       order: 0,
       subject_resource: "SduiDemo.Accounts.User",
-      subject_id: user_id,
+      subject_id: "first",
       children: []
     }
 
@@ -44,6 +39,6 @@ defmodule SduiDemo.UI.Layouts.DashboardLayout do
       root: root
     })
 
-    IO.puts("✓ Registered user-dashboard layout (user_id: #{user_id})")
+    IO.puts("✓ Registered user-dashboard layout")
   end
 end
