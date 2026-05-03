@@ -6,6 +6,7 @@ defmodule AshSDUI.Registry do
 
   def init_table do
     ensure_ets_table()
+    discover_components()
   end
 
   defp ensure_ets_table do
@@ -77,24 +78,49 @@ defmodule AshSDUI.Registry do
   end
 
   def lookup(name) do
-    # Ensure ETS table exists and is populated
     ensure_ets_table()
 
-    # Try ETS first
+    if registry_empty?() do
+      discover_components()
+    end
+
     case try_ets_lookup(name) do
-      {:ok, entry} -> {:ok, entry}
-      _ -> lookup_in_map(name)
+      {:ok, entry} ->
+        {:ok, entry}
+
+      _ ->
+        discover_components()
+
+        case try_ets_lookup(name) do
+          {:ok, entry} -> {:ok, entry}
+          _ -> lookup_in_map(name)
+        end
     end
   end
 
   def all do
-    # Ensure ETS table exists and is populated
     ensure_ets_table()
+
+    if registry_empty?() do
+      discover_components()
+    end
 
     case try_ets_all() do
       {:ok, entries} -> entries
       _ -> Map.values(all_map())
     end
+  end
+
+  def discover_components do
+    Application.loaded_applications()
+    |> Enum.each(fn {app, _, _} ->
+      app
+      |> Application.spec(:modules)
+      |> List.wrap()
+      |> Enum.each(&discover_component_module/1)
+    end)
+
+    :ok
   end
 
   defp try_ets_all do
@@ -138,6 +164,32 @@ defmodule AshSDUI.Registry do
     case :persistent_term.get(@key, nil) do
       nil -> %{}
       map -> map
+    end
+  end
+
+  defp registry_empty? do
+    case try_ets_all() do
+      {:ok, []} -> map_size(all_map()) == 0
+      {:ok, _entries} -> false
+      _ -> map_size(all_map()) == 0
+    end
+  end
+
+  defp discover_component_module(module) do
+    with {:module, module} <- Code.ensure_loaded(module),
+         true <- function_exported?(module, :__ash_sdui_component_name__, 0),
+         true <- function_exported?(module, :__ash_sdui_fragment__, 0),
+         true <- function_exported?(module, :__ash_sdui_subject_types__, 0) do
+      register(
+        module.__ash_sdui_component_name__(),
+        module,
+        %{
+          fragment: module.__ash_sdui_fragment__(),
+          subject_types: module.__ash_sdui_subject_types__()
+        }
+      )
+    else
+      _ -> :ok
     end
   end
 end

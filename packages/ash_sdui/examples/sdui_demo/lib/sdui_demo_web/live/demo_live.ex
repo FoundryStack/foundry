@@ -6,7 +6,7 @@ defmodule SduiDemoWeb.Live.DemoLive do
   def render(assigns) do
     ~H"""
     <div class="demo-page">
-      <h1>SDUI Demo</h1>
+      <h1>Ash SDUI</h1>
       <.sdui_root tree={@__sdui_tree__} />
     </div>
     """

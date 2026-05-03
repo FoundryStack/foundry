@@ -38,7 +38,5 @@ defmodule SduiDemo.UI.Layouts.DashboardLayout do
       name: "user-dashboard",
       root: root
     })
-
-    IO.puts("✓ Registered user-dashboard layout")
   end
 end
