@@ -31,6 +31,7 @@ defmodule SduiDemo.MixProject do
       {:ash_phoenix, "~> 2.0"},
       {:phoenix, "~> 1.7"},
       {:phoenix_live_view, "~> 1.0"},
+      {:phoenix_storybook, "~> 0.9.0"},
       {:bandit, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:lazy_html, ">= 0.1.0", only: :test}

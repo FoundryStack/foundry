@@ -1,11 +1,12 @@
 defmodule SduiDemoWeb.Storybook.Components.ActionButton do
   use PhoenixStorybook.Story, :component
+  alias PhoenixStorybook.Stories.Variation
 
   def function, do: &SduiDemoWeb.Components.ActionButton.render/1
 
   def variations do
     [
-      %PhoenixStorybook.Story.Variation{
+      %Variation{
         id: :default,
         description: "ActionButton with label and url",
         attributes: %{

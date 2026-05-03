@@ -1,11 +1,12 @@
 defmodule SduiDemoWeb.Storybook.Components.UserCard do
   use PhoenixStorybook.Story, :component
+  alias PhoenixStorybook.Stories.Variation
 
   def function, do: &SduiDemoWeb.Components.UserCard.render/1
 
   def variations do
     [
-      %PhoenixStorybook.Story.Variation{
+      %Variation{
         id: :with_user,
         description: "UserCard with a mock user subject",
         attributes: %{
@@ -15,7 +16,7 @@ defmodule SduiDemoWeb.Storybook.Components.UserCard do
           children: %{}
         }
       },
-      %PhoenixStorybook.Story.Variation{
+      %Variation{
         id: :no_user,
         description: "UserCard with nil subject",
         attributes: %{

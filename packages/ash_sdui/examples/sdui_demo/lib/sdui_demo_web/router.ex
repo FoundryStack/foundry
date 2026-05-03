@@ -1,5 +1,6 @@
 defmodule SduiDemoWeb.Router do
   use SduiDemoWeb, :router
+  import PhoenixStorybook.Router
 
   pipeline :browser do
     plug :accepts, ["html"]
@@ -10,8 +11,15 @@ defmodule SduiDemoWeb.Router do
     plug :put_secure_browser_headers
   end
 
+  scope "/" do
+    storybook_assets()
+  end
+
   scope "/", SduiDemoWeb do
     pipe_through :browser
+
     live "/", Live.DemoLive
+
+    live_storybook "/storybook", backend_module: SduiDemoWeb.Storybook
   end
 end
