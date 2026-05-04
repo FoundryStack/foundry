@@ -1,63 +1,65 @@
 defmodule Foundry.Context.ScenarioEntry do
   @moduledoc """
-  A scenario is either a compliance-tagged test or a runtime trigger entry.
+  Represents a single test scenario extracted from an ExUnit test file.
 
-  Collected into `NodeEntry.scenario_origins`. Populated from compliance-tagged
-  ExUnit tests (Layer 2 compliance scenarios) and, in Phase D, from runtime
-  trigger extraction (cron schedules, Oban conditions, API routes, auth events).
+  A scenario is a BDD-style test case annotated with @moduletag metadata
+  declaring its category, participating graph nodes, execution path, and steps.
 
-  ## Usage
+  Scenarios are extracted via `ScenarioExtractor` from test files and linked to
+  graph nodes in Studio. Used by ADR-025 test visualization.
 
-  Compliance test scenario:
+  ## Example
+
       %ScenarioEntry{
-        requirement_id: "RG-MGA-001",
-        test_module: "IgamingRef.Compliance.MgaTest",
-        test_tag: :rg_mga_001,
-        status: :partial,
-        description: "Verifies player spending limits are enforced"
-      }
-
-  Runtime trigger scenario (Phase D):
-      %ScenarioEntry{
-        trigger_type: :cron,
-        schedule: "0 0 * * *",
-        initiates_module: "MyApp.Finance.DailyReconciliation",
-        description: "Daily ledger reconciliation at midnight"
-      }
-
-  Webhook origin scenario:
-      %ScenarioEntry{
-        trigger_type: :webhook,
-        route_path: "/webhooks/withdrawal",
-        initiates_module: "MyApp.Finance.WithdrawalWebhookEvent",
-        description: "Inbound provider withdrawal status callback"
+        id: "Finance.SufficientBalance.rejects_exceeds",
+        name: "SufficientBalance — rejects when amount exceeds balance",
+        category: :invariant,
+        source_file: "test/finance/withdrawal_transfer_test.exs",
+        source_module: "IgamingRef.Finance.WithdrawalTransferTest",
+        nodes: ["Finance.WithdrawalTransfer", "Finance.Rules.SufficientBalance"],
+        graph_path: ["Finance.WithdrawalTransfer", "Finance.Rules.SufficientBalance", "Finance.Wallet"],
+        compliance_links: ["RG-UK-014"],
+        steps: %{
+          given: ["A player with active status", "A wallet with £500 balance"],
+          when: ["The player requests a withdrawal of £600"],
+          then: ["The withdrawal is rejected", "The wallet balance remains £500"]
+        },
+        tags: [:invariant, :compliance]
       }
   """
 
-  @type status :: :missing | :partial | :implemented
-  @type trigger_type ::
-          :cron
-          | :oban_condition
-          | :json_api_route
-          | :graphql_mutation
-          | :auth_event
-          | :webhook
-          | nil
+  @type category :: :invariant | :state_machine | :compliance | :property
 
   @derive Jason.Encoder
+
+  @enforce_keys [:id, :name, :category, :source_file, :source_module]
   defstruct [
-    # Compliance test scenario (from compliance-tagged ExUnit tests)
-    :requirement_id,
-    :test_module,
-    :test_tag,
-    :trigger_type,
-    :schedule,
-    :condition_expr,
-    :route_method,
-    :route_path,
-    :mutation_name,
-    :initiates_module,
-    :description,
-    status: :missing
+    :id,
+    :name,
+    :category,
+    :source_file,
+    :source_module,
+    nodes: [],
+    graph_path: [],
+    compliance_links: [],
+    steps: %{given: [], when: [], then: []},
+    tags: []
   ]
+
+  @type t :: %__MODULE__{
+          id: String.t(),
+          name: String.t(),
+          category: category(),
+          source_file: String.t(),
+          source_module: String.t(),
+          nodes: [String.t()],
+          graph_path: [String.t()],
+          compliance_links: [String.t()],
+          steps: %{
+            given: [String.t()],
+            when: [String.t()],
+            then: [String.t()]
+          },
+          tags: [atom() | {atom(), any()}]
+        }
 end

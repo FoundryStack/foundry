@@ -414,7 +414,7 @@ defmodule Foundry.Context.Introspector do
       file_contains_pattern?(test_dir, "#{mod_name}", ":compliance") or
         file_contains_pattern?(test_dir, "#{mod_name}", ":e2e")
 
-    %{property_tests: property_tests, scenario_tests: scenario_tests, e2e_tests: e2e_tests}
+    %{property_tests: property_tests, scenario_tests: scenario_tests, e2e_tests: e2e_tests, scenario_count: 0}
   end
 
   defp file_contains_pattern?(test_dir, module_name, pattern) do
