@@ -125,8 +125,12 @@ defmodule Foundry.Context.LLMFormatter do
     type = Map.get(@type_abbr, node["type"], node["type"] || "?")
     domain = node["domain"] || ""
     sensitive = if node["sensitive"], do: " · **sensitive**", else: ""
-    desc = node["description"] || ""
-    desc_text = if desc != "", do: "> #{String.slice(desc, 0, 120)}", else: ""
+
+    desc_text =
+      case format_node_description(node) do
+        "" -> ""
+        text -> "> #{text}"
+      end
 
     initial_lines = [
       "[#{alias_name}] #{type} · #{short_domain(domain)}#{sensitive}",
@@ -190,6 +194,33 @@ defmodule Foundry.Context.LLMFormatter do
        flag_section)
     |> Enum.reject(&(&1 == ""))
     |> Enum.join("\n  ")
+  end
+
+  defp format_node_description(node) do
+    node
+    |> Map.get("description", "")
+    |> to_string()
+    |> String.trim()
+    |> case do
+      "" ->
+        ""
+
+      description ->
+        description
+        |> String.split(~r/\n\s*\n|\n/, parts: 2)
+        |> List.first()
+        |> String.replace(~r/\s+/, " ")
+        |> String.trim()
+        |> first_sentence()
+        |> String.slice(0, 170)
+    end
+  end
+
+  defp first_sentence(text) do
+    case Regex.run(~r/^.*?[.!?](?=\s|$)/u, text) do
+      [sentence] -> sentence
+      _ -> text
+    end
   end
 
   defp format_attr(attr) do

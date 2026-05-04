@@ -43,6 +43,9 @@ defmodule Foundry.Context.LLMFormatterTest do
 
     assert prompt =~
              "- ADR-001 · accepted · Double-Entry Ledger for Financial Transactions ::"
+
+    assert prompt =~ ~r/\[FI8\] res .*?\n  > /s
+    assert prompt =~ ~r/\[PR4\] rxr .*?\n  > /s
   end
 
   test "context builder keeps spec navigation in the full system map", %{root: root} do
