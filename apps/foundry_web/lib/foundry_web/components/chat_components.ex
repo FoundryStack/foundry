@@ -3,7 +3,6 @@ defmodule FoundryWeb.ChatComponents do
   use FoundryWeb, :html
 
   alias Foundry.ChatTrace
-  alias FoundryWeb.ChatMarkdown
 
   attr :messages, :list, required: true
   attr :loading, :boolean, required: true
@@ -26,6 +25,7 @@ defmodule FoundryWeb.ChatComponents do
       assigns
       |> assign(:selected_run, selected_run)
       |> assign(:latest_run, List.first(assigns.activity_runs))
+      |> assign(:message_count, length(assigns.messages))
 
     ~H"""
     <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-200/30">
@@ -175,8 +175,12 @@ defmodule FoundryWeb.ChatComponents do
                   </div>
                 <% end %>
 
-                <%= for msg <- @messages do %>
-                  <.message_bubble message={msg} />
+                <%= for {msg, index} <- Enum.with_index(@messages) do %>
+                  <.message_bubble
+                    message={msg}
+                    message_index={index}
+                    streaming={streaming_message?(msg, index, @message_count, @loading)}
+                  />
                 <% end %>
 
                 <%= if @loading do %>
@@ -586,19 +590,18 @@ defmodule FoundryWeb.ChatComponents do
   end
 
   attr :message, :map, required: true
+  attr :message_index, :integer, required: true
+  attr :streaming, :boolean, default: false
 
   defp message_bubble(assigns) do
     is_user = assigns.message["role"] == "user"
 
-    rendered_content =
-      ChatMarkdown.to_html(assigns.message["content"] || "",
-        variant: if(is_user, do: :user, else: :assistant)
-      )
-
     assigns =
       assigns
       |> assign(:is_user, is_user)
-      |> assign(:rendered_content, rendered_content)
+      |> assign(:content, assigns.message["content"] || "")
+      |> assign(:markdown_id, message_markdown_id(assigns.message, assigns.message_index))
+      |> assign(:markdown_variant, if(is_user, do: "user", else: "assistant"))
       |> assign(:wrapper_class, if(is_user, do: "flex justify-end", else: "flex justify-start"))
       |> assign(
         :bubble_class,
@@ -618,12 +621,53 @@ defmodule FoundryWeb.ChatComponents do
             {if @is_user, do: "You", else: "Assistant"}
           </p>
         </div>
-        <div class="space-y-3 break-words text-sm leading-6" data-role="chat-markdown">
-          {raw(@rendered_content)}
+        <div
+          class="space-y-3 break-words text-sm leading-6"
+          data-role="chat-markdown"
+          data-variant={@markdown_variant}
+        >
+          <PhoenixStreamdown.markdown
+            content={@content}
+            id={@markdown_id}
+            streaming={@streaming}
+            theme="github_dark"
+            class="chat-markdown-body"
+            block_class="chat-markdown-block"
+            mdex_opts={markdown_options()}
+          />
         </div>
       </div>
     </div>
     """
+  end
+
+  defp streaming_message?(%{"role" => "assistant"}, index, message_count, true),
+    do: index == message_count - 1
+
+  defp streaming_message?(_message, _index, _message_count, _loading), do: false
+
+  defp message_markdown_id(message, index) do
+    timestamp = Map.get(message, "timestamp", "message")
+    "chat-message-#{index}-#{timestamp}"
+  end
+
+  defp markdown_options do
+    [
+      extension: [
+        autolink: true,
+        strikethrough: true,
+        table: true,
+        tasklist: true
+      ],
+      parse: [
+        relaxed_autolinks: true,
+        relaxed_tasklist_matching: true,
+        smart: true
+      ],
+      render: [
+        escape: true
+      ]
+    ]
   end
 
   defp provider_label(nil), do: "Default"

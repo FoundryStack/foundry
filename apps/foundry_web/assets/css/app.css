@@ -2,6 +2,8 @@
    https://tailwindcss.com/docs/configuration */
 
 @import "tailwindcss" source(none);
+@import "../../../../deps/phoenix_streamdown/priv/static/phoenix_streamdown.css";
+@import "./markdown.css";
 @source "../css";
 @source "../js";
 @source "../../lib/foundry_web";

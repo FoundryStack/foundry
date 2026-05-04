@@ -143,18 +143,29 @@ defmodule FoundryWeb.SystemMapLiveTest do
              render(live)
     end
 
-    test "renders safe markdown in assistant messages", %{conn: conn} do
+    test "renders GFM markdown in assistant messages", %{conn: conn} do
       markdown = """
       # Build Steps
 
-      - Run `mix test`
-      - Review [docs](https://example.com)
+      1. Run `mix test`
+      2. Review [docs](https://example.com)
+
+      > Watch the streaming renderer.
+
+      - [x] Keep tables
+      - [ ] Keep task lists
+
+      ~~Legacy parser~~ replaced.
+
+      | Step | Status |
+      | --- | --- |
+      | Render | ready |
 
       ```elixir
       IO.puts("ok")
       ```
 
-      <script>alert("x")</script>
+      https://foundry.test
       """
 
       Application.put_env(:foundry_web, :chat_live_hooks,
@@ -169,11 +180,82 @@ defmodule FoundryWeb.SystemMapLiveTest do
                rendered = render(live)
 
                rendered =~ "<h1" and
-                 rendered =~ "<ul" and
+                 rendered =~ "<ol" and
+                 rendered =~ "<blockquote" and
+                 rendered =~ "type=\"checkbox\"" and
+                 rendered =~ "<table" and
+                 rendered =~ "<del>Legacy parser</del>" and
                  rendered =~ "mix test" and
                  rendered =~ "href=\"https://example.com\"" and
+                 rendered =~ "href=\"https://foundry.test\"" and
                  rendered =~ "<pre" and
-                 rendered =~ "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"
+                 rendered =~ "puts"
+             end),
+             render(live)
+    end
+
+    test "renders partial streamed markdown while the assistant is still responding", %{
+      conn: conn
+    } do
+      test_pid = self()
+
+      Application.put_env(:foundry_web, :chat_live_hooks,
+        save_messages: fn _session_id, _messages -> {:ok, %{}} end,
+        call_llm_stream: fn _messages, on_event ->
+          on_event.({:delta, "```elixir\nIO.puts("})
+          send(test_pid, :stream_chunk_sent)
+          Process.sleep(1_000)
+
+          on_event.({:delta, "\"ok\")\n```"})
+          {:ok, "```elixir\nIO.puts(\"ok\")\n```"}
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+      _html = render_submit(live, "send_message", %{"message" => "Stream this"})
+
+      assert_receive :stream_chunk_sent
+
+      assert eventually(fn ->
+               rendered = render(live)
+
+               rendered =~ "<pre" and
+                 rendered =~ "Thinking..." and
+                 rendered =~ "puts"
+             end),
+             render(live)
+
+      assert eventually(
+               fn ->
+                 rendered = render(live)
+
+                 rendered =~ "<pre" and
+                   rendered =~ "&quot;ok&quot;" and
+                   not String.contains?(rendered, "Thinking...")
+               end,
+               60
+             ),
+             render(live)
+    end
+
+    test "escapes raw HTML in assistant messages", %{conn: conn} do
+      markdown = """
+      <script>alert("x")</script>
+      """
+
+      Application.put_env(:foundry_web, :chat_live_hooks,
+        save_messages: fn _session_id, _messages -> {:ok, %{}} end,
+        call_llm_stream: fn _messages, _on_event -> {:ok, markdown} end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+      _html = render_submit(live, "send_message", %{"message" => "Format this"})
+
+      assert eventually(fn ->
+               rendered = render(live)
+
+               rendered =~ "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;" and
+                 not String.contains?(rendered, "<script>alert(\"x\")</script>")
              end),
              render(live)
     end
