@@ -136,7 +136,7 @@ a compact constraint summary.
 2. Follow `Extends:` headers — read those ADRs too
 3. Read regulation files from NodeEntry `compliance` field; follow requirement → ADR links
 4. Read runbook from NodeEntry `runbook` field if a Reactor is in scope
-5. Check all INV-001..INV-018 against the proposed change
+5. Check all INV-001..INV-023 against the proposed change
 **Returns:** Applicable constraints, contradiction result (`blocked: bool, rule: string`),
 spec-kit gap list.
 
@@ -165,7 +165,23 @@ spec-kit gap list.
 check passes.
 **Inputs:** Change class, constraint summary, code context, spec-kit gap list.
 **Tools:** None — pure reasoning from inputs.
-**Returns:** Ordered plan (spec → tests → code → migration) with per-step rationale.
+**Returns:** Ordered plan (spec → tests → code → migration) with per-step rationale,
+plus an interface assessment for `:behavioral` and `:compliance` changes and for any
+`:structural` change introducing a new module.
+
+**Interface assessment** (presented to human at step 10):
+For every new or substantially modified module, PlanArchitect answers:
+
+1. Public surface: minimum set of public functions/actions the caller requires (named explicitly)
+2. Hidden complexity: implementation details that must NOT leak to callers — at least one
+   required for `:behavioral` and `:compliance` changes
+3. Simplicity signal: does the caller need to assemble multiple calls for one logical
+   operation? If yes: shallow-module warning — propose a single higher-level action that
+   hides the assembly
+
+The assessment is not a gate. It is presented alongside the plan so the human can refine
+the interface before generation starts. The confirmed public surface is binding for
+CodeGenerator — adding functions beyond it requires a plan revision.
 
 ---
 
@@ -201,7 +217,7 @@ classify(intent) [orchestrator — inline, from Tier 1]
   SpecKitNavigator                  CodeContextGatherer
   reads ADR graph from              reads live NodeEntry
   NodeEntry entry points            finds pattern example
-  checks INV-001..018               collects @description fields
+  checks INV-001..023               collects @description fields
          │                                    │
          └────────────────────────────────────┘
                           │
@@ -217,6 +233,36 @@ classify(intent) [orchestrator — inline, from Tier 1]
 ```
 
 Parallelism ends at synthesis. Nothing in the generation phase runs concurrently.
+
+---
+
+## Universal Working Posture
+
+Apply these retrieval and reasoning rules in every Foundry project:
+
+- For questions, answer from the spec-kit and live project context, citing the ADR,
+  regulation requirement, runbook, module, field, or invariant that grounds the answer.
+- For structural code facts, prefer `mix foundry.project.context <Module>` over
+  source-file prose or memory.
+- For DSL syntax, use current project usage rules, ExDoc, and local project patterns.
+- For changes touching Reactors or Transfers with external side effects, verify
+  idempotency and compensation expectations before proposing changes.
+- For `:compliance` changes, require an ADR link or surface the missing ADR as a
+  blocker before generation.
+- For underspecified `:behavioral` or `:compliance` change intents, run a structured
+  requirements interview before `speckit.specify`. Do not wait for the user to discover
+  this — begin asking. Group related questions into batches with structured answer
+  options. Continue until all design branches are resolved.
+- Surface copilot capabilities proactively when they'd help: offer to run a plan
+  before answering a broad question; confirm the full plan-then-confirm flow before
+  starting implementation; suggest options as structured buttons, not prose lists.
+  Users should not need to know skill names.
+- Use domain terminology from the system map exactly as it appears: module short names
+  (e.g. "WithdrawalRequest" not "withdrawal request"), action names (e.g. "mark_completed"
+  not "complete"), rule names (e.g. "PlayerKYCVerified" not "KYC check"). The system map
+  is the ubiquitous language — do not invent synonyms.
+
+These are universal Foundry copilot behaviors, not project-specific conventions.
 
 ---
 
@@ -382,6 +428,27 @@ be tagged `[VERIFIED]`, `[INFERRED]`, or `[ASSUMPTION]`. An `[ASSUMPTION]` on a
 `:compliance`-class claim blocks the Approve button until explicitly dismissed by the
 Compliance officer. This is enforced in the review panel UI, not by the lint system.
 
+**INV-022: Requirements interview runs until branches are resolved, not on a turn limit**
+When the copilot runs a pre-spec requirements interview, it continues until all identified
+design branches are resolved. There is no fixed turn limit. Questions are grouped into
+batches of 2–4, each with structured answer options and a free-text fallback. When the
+copilot identifies no remaining unresolved branches, it generates the spec from the
+collected answers. Remaining uncertainties after answer collection become `[ASSUMPTION]`
+markers in the spec with explicit risk notes. The interview budget is bounded by the
+design tree, not by a turn counter.
+
+**INV-023: Tests define correctness — implementation satisfies tests, never the reverse**
+Test skeletons must be committed on the proposal branch before any implementation code.
+The test assertions define what "correct" means for this change. Implementation must be
+written to satisfy the tests. The copilot may never:
+- Write implementation code before test skeletons are committed
+- Modify an assertion value to make a failing test pass
+- Remove a test to reduce the failure count
+- Generate a test that trivially passes without testing the specified behavior
+When `mix test` fails after implementation: correct the implementation (max 3 attempts at
+compile level, 1 attempt at assertion logic). If still failing: surface `APPLY_FAILED` —
+do not make the tests easier.
+
 ---
 
 ## Change Classification
@@ -425,9 +492,14 @@ reasoning obligation. The agent runs it internally before constructing the sessi
 □ New Reactors with external side effects declare idempotency keys
 □ @description drafted for all new attributes
 □ @moduledoc drafted for the new module
+□ @moduledoc or description: field drafted for all new resources, reactors, blueprints,
+  jobs, and adapters (these appear as > descriptions in the system map — required for
+  LLM context quality; missing descriptions degrade vocabulary alignment across sessions)
 □ All side effects on new Reactor steps declared via annotation (INV-019/INV-020)
 □ No resource action introduces more than one side effect (INV-019)
 □ @description fields on touched attributes are consistent with proposed change
+□ Interface assessment confirmed by human for new modules and :behavioral/:compliance changes
+  (public surface named, hidden complexity identified, shallow-module warning resolved if present)
 □ Policy compatibility verified for all generated UI actions via Ash.Resource.Info.policies/1
    (do not generate UI actions the current actor cannot authorize — check before generating)
 ```
@@ -483,6 +555,10 @@ The complete sequence the agent follows before emitting any proposal:
       [code]  Implementation constrained by test structure
       [migration] mix ash.codegen if schema changes
 
+    For `:behavioral`, `:compliance`, and `:structural` changes introducing a new module:
+    [interface] Interface assessment produced by PlanArchitect (see above).
+      Presented at step 10 alongside the plan. Confirmed surface is binding for CodeGenerator.
+
     Ordering rationale — why spec before tests before code:
 
     Spec first: A reviewer reading code cannot govern what they do not understand.
@@ -507,6 +583,7 @@ The complete sequence the agent follows before emitting any proposal:
 11. On confirmation: single generation pass on foundry/prop_<id> branch
       → Write spec-kit files first (Markdown, direct branch write)
       → Generate test skeletons
+         [COMMIT point: test skeletons committed before any implementation — INV-023]
       → Generate implementation
          → if {:error, :spec_gap, description} raised during generation:
              abort branch (git branch -D foundry/prop_<id>)
@@ -516,8 +593,10 @@ The complete sequence the agent follows before emitting any proposal:
              apply INV-005: one clarifying question maximum
       → Run mix ash.codegen (if migration needed)
       → Run mix compile (must pass)
-      → Run mix test <new-test-file> — pre-surface quality gate;
-        max 3 self-corrections at compile level; never iterates on assertion values
+      → Run mix test <new-test-file> — must pass (INV-023)
+          max 3 self-corrections at compile level
+          max 1 self-correction at assertion logic level — fix implementation, never assertions
+          if still failing: surface APPLY_FAILED; do not weaken tests
       → Compute graph_delta from operation parameters
 12. Surface diff to review panel — review panel Impact tab includes:
       → Epistemic marker annotations on all substantive claims (INV-021)
@@ -826,6 +905,24 @@ surfaces only the finished output: a confirmed plan, a review diff, or a BLOCKED
 solution without a problem statement. The copilot runs `speckit.specify` whenever the
 intent describes what to build but no written spec exists. Plan generation is blocked
 until the spec is produced.
+
+**`speckit.specify` automatically interviews for underspecified behavioral/compliance changes.**
+When `speckit.specify` is triggered for a `:behavioral` or `:compliance` change intent that is
+underspecified — the intent describes a feature but leaves design branches unresolved
+(error handling, actor variants, edge cases, compliance implications) — the copilot runs
+a structured requirements interview before generating the spec.
+
+The interview is not announced as a mode or skill. The copilot begins asking grouped
+questions directly. Questions are batched (2–4 per round) and presented with structured
+answer options where the domain is bounded (binary choices, labeled options) plus a
+free-text fallback. The interview runs until all identified design branches are resolved —
+there is no fixed turn limit. When resolution is complete, the spec is generated from the
+collected answers without re-prompting the user.
+
+The batch Q&A format follows ADR-013 §Clarifying Question UX extended for multiple
+simultaneous questions. Free-text is always available alongside structured options.
+INV-005 (one clarifying question maximum) applies only to generation-time ambiguity
+during the reasoning sequence — not to the pre-spec requirements interview.
 
 **`speckit.clarify` feeds the single permitted question.** The skill may identify up to
 5 underspecified areas. The copilot distills this to the one most critical ambiguity and
