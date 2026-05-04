@@ -49,6 +49,18 @@ defmodule Foundry.Context.ScenarioExtractor do
   defp extract_module_name({:defmodule, _meta, [{:__aliases__, _am, parts}, _body]}),
     do: Enum.join(parts, ".")
 
+  defp extract_module_name({:__block__, _meta, forms}) do
+    # When file starts with Code.require_file or other statements, AST is wrapped in __block__
+    forms
+    |> Enum.find_value(fn form ->
+      case form do
+        {:defmodule, _, [{:__aliases__, _, parts}, _]} -> Enum.join(parts, ".")
+        _ -> nil
+      end
+    end)
+    |> Kernel.||("UnknownModule")
+  end
+
   defp extract_module_name(_), do: "UnknownModule"
 
   defp extract_from_ast(ast, source_module, file_path, nodes_map) do
@@ -120,7 +132,23 @@ defmodule Foundry.Context.ScenarioExtractor do
 
   defp build_scenario_entry(describe_name, category, tags, source_module, file_path, nodes_map) do
     nodes = get_nodes(tags, file_path, nodes_map)
-    graph_path = Keyword.get(tags, :graph_path, nodes)
+
+    graph_path =
+      case Keyword.get(tags, :graph_path) do
+        nil ->
+          nodes
+
+        raw_path when is_list(raw_path) ->
+          raw_path
+          |> Enum.map(&stringify/1)
+          |> Enum.map(&resolve_node_id(&1, nodes_map))
+
+        raw_path ->
+          [raw_path]
+          |> Enum.map(&stringify/1)
+          |> Enum.map(&resolve_node_id(&1, nodes_map))
+      end
+
     compliance_links = Keyword.get(tags, :compliance_links, [])
     steps = Keyword.get(tags, :steps, %{given: [], when: [], then: []})
 
@@ -160,12 +188,66 @@ defmodule Foundry.Context.ScenarioExtractor do
         extract_nodes_from_file(file_path, nodes_map)
 
       nodes when is_list(nodes) ->
-        Enum.map(nodes, &stringify/1)
+        nodes
+        |> Enum.map(&stringify/1)
+        |> Enum.map(&resolve_node_id(&1, nodes_map))
 
       node ->
         [stringify(node)]
+        |> Enum.map(&resolve_node_id(&1, nodes_map))
     end
   end
+
+  defp resolve_node_id(name, nodes_ref) do
+    node_ids = node_ids(nodes_ref)
+
+    cond do
+      name in node_ids ->
+        name
+
+      true ->
+        case resolve_by_suffix(name, node_ids) do
+          nil -> name
+          resolved -> resolved
+        end
+    end
+  end
+
+  defp resolve_by_suffix(shorthand, node_ids) do
+    shorthand_with_separator = "." <> shorthand
+
+    node_ids
+    |> Enum.filter(&String.ends_with?(&1, shorthand_with_separator))
+    |> case do
+      [resolved] -> resolved
+      _ -> nil
+    end
+  end
+
+  defp node_ids(nodes_ref) when is_map(nodes_ref) do
+    nodes_ref
+    |> Enum.flat_map(fn
+      {key, %{id: id, module: module}} -> [to_string(key), id, module]
+      {key, %{id: id}} -> [to_string(key), id]
+      {key, %{module: module}} -> [to_string(key), module]
+      {key, _value} -> [to_string(key)]
+    end)
+    |> Enum.uniq()
+  end
+
+  defp node_ids(nodes_ref) when is_list(nodes_ref) do
+    nodes_ref
+    |> Enum.flat_map(fn
+      %{id: id, module: module} -> [id, module]
+      %{id: id} -> [id]
+      %{module: module} -> [module]
+      value when is_binary(value) -> [value]
+      _ -> []
+    end)
+    |> Enum.uniq()
+  end
+
+  defp node_ids(_), do: []
 
   defp extract_nodes_from_file(file_path, nodes_map) do
     case File.read(file_path) do
@@ -200,7 +282,7 @@ defmodule Foundry.Context.ScenarioExtractor do
   end
 
   defp is_in_graph(module_name, nodes_map) do
-    Enum.any?(nodes_map, fn node -> node.module == module_name end)
+    module_name in node_ids(nodes_map)
   end
 
   defp stringify(value) do

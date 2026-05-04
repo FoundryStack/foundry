@@ -1,6 +1,7 @@
 defmodule Foundry.Context.ScenarioExtractorTest do
   use ExUnit.Case, async: true
 
+  alias Foundry.Context.NodeEntry
   alias Foundry.Context.ScenarioExtractor
 
   describe "extract/2" do
@@ -77,6 +78,55 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       assert Enum.count(scenarios) > 0
       scenario = Enum.at(scenarios, 0)
       assert scenario.category == :invariant
+
+      File.rm_rf(tmpdir)
+    end
+
+    test "resolves shorthand node names against graph node ids from a node list" do
+      tmpdir = System.tmp_dir!() <> "/foundry_test_#{System.unique_integer()}"
+      File.mkdir_p(tmpdir)
+      test_file = Path.join([tmpdir, "test", "bonus_scenario.exs"])
+      File.mkdir_p(Path.dirname(test_file))
+
+      content = """
+      defmodule IgamingRef.Finance.BonusScenarioTest do
+        describe "Property: Bonus value never exceeds deposit" do
+          @moduletag category: :property
+          @moduletag nodes: ["Finance.Bonus"]
+          @moduletag graph_path: ["Finance.Bonus"]
+
+          test "bonus never exceeds limits" do
+            :ok
+          end
+        end
+      end
+      """
+
+      File.write(test_file, content)
+
+      nodes = [
+        %NodeEntry{
+          id: "IgamingRef.Finance.Bonus",
+          module: "IgamingRef.Finance.Bonus",
+          type: "resource",
+          domain: "Finance",
+          description: "Bonus resource"
+        },
+        %NodeEntry{
+          id: "IgamingRef.Finance.WageringRequirement",
+          module: "IgamingRef.Finance.WageringRequirement",
+          type: "resource",
+          domain: "Finance",
+          description: "Wagering requirement resource"
+        }
+      ]
+
+      scenarios = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert Enum.count(scenarios) > 0
+      scenario = Enum.at(scenarios, 0)
+      assert scenario.nodes == ["IgamingRef.Finance.Bonus"]
+      assert scenario.graph_path == ["IgamingRef.Finance.Bonus"]
 
       File.rm_rf(tmpdir)
     end
