@@ -1,7 +1,8 @@
 <div class="fm-workspace flex h-screen w-full overflow-hidden bg-base-100" data-theme="dark">
   <aside
-    class="fm-sidebar relative flex h-screen w-60 min-w-[160px] max-w-[400px] shrink-0 select-none flex-col overflow-hidden border-r border-base-300 bg-base-200"
+    class="fm-sidebar relative flex h-screen min-w-[160px] max-w-[400px] shrink-0 select-none flex-col overflow-hidden border-r border-base-300 bg-base-200"
     id="fm-sidebar"
+    style={panel_width_style("--foundry-sidebar-width", true, 240)}
   >
     <div class="flex shrink-0 items-center gap-1.5 border-b border-base-300 px-3 pb-2 pt-2.5">
       <span class="text-sm font-bold uppercase tracking-[0.08em] text-base-content">
@@ -150,7 +151,6 @@
                       data-selected={@selected_scenario_id == scenario.id}
                       phx-click="select_scenario"
                       phx-value-id={scenario.id}
-                      onclick="event.stopPropagation()"
                     >
                       <span class="text-xs font-medium text-base-content">
                         {scenario.name}
@@ -248,9 +248,10 @@
 
     <div class="flex min-h-0 flex-1">
       <div
-        class="fm-drawer relative flex w-0 shrink-0 flex-col overflow-hidden border-r border-base-300 bg-base-200 transition-[width] duration-200"
+        class="fm-drawer relative flex shrink-0 flex-col overflow-hidden border-r border-base-300 bg-base-200 transition-[width] duration-200"
         id="fm-drawer"
         data-open={to_string(@drawer_open)}
+        style={panel_width_style("--foundry-drawer-width", @drawer_open, 380)}
       >
         <div class="flex shrink-0 items-center border-b border-base-300">
           <button
@@ -325,6 +326,7 @@
     class="relative flex shrink-0 flex-col overflow-hidden border-l border-base-300 bg-base-200 transition-[width] duration-200"
     id="fm-feed"
     data-open={to_string(@feed_open)}
+    style={panel_width_style("--foundry-feed-width", @feed_open, 360)}
   >
     <div
       class="absolute inset-y-0 left-0 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary"

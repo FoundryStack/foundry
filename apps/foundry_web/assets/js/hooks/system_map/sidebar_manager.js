@@ -18,6 +18,7 @@ export class SidebarManager {
       elementId: 'fm-sidebar',
       handleId: 'sidebar-resize-handle',
       storageKey: UI_CONFIG.storageKeys.sidebarWidth,
+      cssVarName: '--foundry-sidebar-width',
       defaultWidth: UI_CONFIG.sidebarWidth.default,
       minWidth: UI_CONFIG.sidebarWidth.min,
       maxWidth: UI_CONFIG.sidebarWidth.max,

@@ -35,7 +35,9 @@ export const SystemMapHook = {
       this.graph = mountFoundryGraph(this.el, contextJson)
 
       // Initialize managers
-      this.drawer = new DrawerManager(this.graph.normalizedNodes)
+      this.drawer = new DrawerManager(this.graph.normalizedNodes, (event, payload) => {
+        this.pushEvent(event, payload)
+      })
       this.sidebar = new SidebarManager(this.graph, this.graph.normalizedNodes)
 
       // Wire sidebar node select callback
@@ -77,12 +79,19 @@ export const SystemMapHook = {
         }
       })
 
-      this.handleEvent('graph:scenario_overlay', ({ nodes, path, start, end }) => {
+      this.handleEvent('graph:scenario_overlay', (payload) => {
+        const { nodes, path, start, end } = payload
+
         if (this.graph) {
-          this.graph.applyScenarioOverlay({ nodes, path, start, end })
+          try {
+            this.graph.applyScenarioOverlay({ nodes, path, start, end })
+          } catch (e) {
+            console.error('  ❌ applyScenarioOverlay error:', e)
+          }
         }
+
         if (this.drawer) {
-          this.drawer.switchTab('flow')
+          this.drawer.renderForScenario(payload)
         }
       })
 

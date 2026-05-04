@@ -198,47 +198,62 @@ export class CytoscapeGraph {
     this.cy.elements().filter(ele => ele.data('state') === 'phantom').remove()
   }
 
-  clearScenarioOverlay() {
-    this.cy.nodes().style('opacity', 1)
-    this.cy.nodes().style('filter', 'none')
-    this.cy.nodes().style('border-width', '1px')
-    this.cy.nodes().style('border-color', '#000000')
-    this.cy.edges().style('opacity', 1)
-    this.cy.edges().style('line-color', '')
-    this.cy.edges().style('width', '')
-  }
-
   applyScenarioOverlay({ nodes, path, start, end }) {
     if (!nodes || nodes.length === 0) return
 
+    this.clearScenarioOverlay()
+
     const nodeSet = new Set(nodes)
 
-    // Dim nodes not in scenario
+    // Dim non-participating nodes and make scenario nodes visually explicit.
     this.cy.nodes().forEach(node => {
       const id = node.id()
       if (nodeSet.has(id)) {
         node.style('opacity', 1)
-        node.style('filter', 'none')
+        node.style('border-color', 'rgb(250, 204, 21)')
+        node.style('border-style', 'solid')
+        node.style('border-width', '3px')
+        node.style('border-opacity', 1)
+        node.style('underlay-color', 'rgb(250, 204, 21)')
+        node.style('underlay-opacity', 0.18)
+        node.style('underlay-padding', '10px')
+        node.style('z-index', 999)
       } else {
-        node.style('opacity', 0.15)
-        node.style('filter', 'grayscale(100%)')
+        node.style('opacity', 0.08)
+        node.style('z-index', null)
       }
     })
 
-    // Highlight path edges
+    // Highlight path edges (consecutive nodes in the path)
     if (path && path.length > 1) {
+      const pathEdgeSet = new Set()
+      for (let i = 0; i < path.length - 1; i++) {
+        const src = path[i]
+        const tgt = path[i + 1]
+        pathEdgeSet.add(`${src}|${tgt}`)
+        pathEdgeSet.add(`${tgt}|${src}`)
+      }
+
       this.cy.edges().forEach(edge => {
         const source = edge.source().id()
         const target = edge.target().id()
-        const isInPath = path.includes(source) && path.includes(target)
+        const edgeKey = `${source}|${target}`
+        const isPathEdge = pathEdgeSet.has(edgeKey)
 
-        if (isInPath) {
+        if (isPathEdge) {
           edge.style('line-color', 'rgb(34, 211, 238)')
-          edge.style('width', '2px')
+          edge.style('width', '4px')
           edge.style('opacity', 1)
+          edge.style('z-index', 999)
         } else {
-          edge.style('opacity', 0.15)
+          edge.style('opacity', 0.08)
+          edge.style('z-index', null)
         }
+      })
+    } else {
+      this.cy.edges().forEach(edge => {
+        edge.style('opacity', 0.08)
+        edge.style('z-index', null)
       })
     }
 
@@ -248,6 +263,8 @@ export class CytoscapeGraph {
       if (startNode.length > 0) {
         startNode.style('border-color', '#10b981')
         startNode.style('border-width', '3px')
+        startNode.style('underlay-color', '#10b981')
+        startNode.style('underlay-opacity', 0.2)
       }
     }
 
@@ -257,6 +274,8 @@ export class CytoscapeGraph {
       if (endNode.length > 0) {
         endNode.style('border-color', '#ef4444')
         endNode.style('border-width', '3px')
+        endNode.style('underlay-color', '#ef4444')
+        endNode.style('underlay-opacity', 0.2)
       }
     }
 
@@ -267,6 +286,27 @@ export class CytoscapeGraph {
         this.cy.fit(scenarioNodes, 50)
       }
     }
+  }
+
+  clearScenarioOverlay() {
+    this.cy.nodes().forEach(node => {
+      node.style('opacity', null)
+      node.style('border-color', null)
+      node.style('border-style', null)
+      node.style('border-width', null)
+      node.style('border-opacity', null)
+      node.style('underlay-color', null)
+      node.style('underlay-opacity', null)
+      node.style('underlay-padding', null)
+      node.style('z-index', null)
+    })
+
+    this.cy.edges().forEach(edge => {
+      edge.style('line-color', null)
+      edge.style('width', null)
+      edge.style('opacity', null)
+      edge.style('z-index', null)
+    })
   }
 
   selectNode(id) {

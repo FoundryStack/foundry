@@ -86,19 +86,20 @@ defmodule IgamingRef.Finance.BonusScenarioTest do
 
   describe "Wagering requirement state machine" do
     @moduletag category: :state_machine
-    @moduletag nodes: ["Finance.Bonus", "Finance.WageringRequirement"]
-    @moduletag graph_path: ["Finance.Bonus", "Finance.WageringRequirement"]
+    @moduletag nodes: ["Promotions.BonusGrant", "Promotions.BonusCampaign"]
+    @moduletag graph_path: ["Promotions.BonusCampaign", "Promotions.BonusGrant"]
     @moduletag steps: %{
       given: [
-        "A bonus with a £10 wagering requirement"
+        "An active bonus campaign with a wagering multiplier",
+        "A granted player bonus with wagering remaining"
       ],
       when: [
-        "Player completes £5 worth of qualifying bets",
-        "Player completes another £5 of qualifying bets"
+        "The player applies qualifying wagers to the bonus grant",
+        "The remaining wagering reaches zero"
       ],
       then: [
-        "Bonus progresses through pending → in_progress → completed states",
-        "Wagering requirement reaches 100%"
+        "The bonus grant progresses through active -> wagered state",
+        "The campaign terms remain the source of the wagering requirement"
       ]
     }
 
@@ -109,17 +110,19 @@ defmodule IgamingRef.Finance.BonusScenarioTest do
 
   describe "Property: Bonus value never exceeds deposit" do
     @moduletag category: :property
-    @moduletag nodes: ["Finance.Bonus"]
-    @moduletag graph_path: ["Finance.Bonus"]
+    @moduletag nodes: ["Promotions.BonusCampaign", "Promotions.BonusGrantTransfer", "Promotions.BonusGrant"]
+    @moduletag graph_path: ["Promotions.BonusCampaign", "Promotions.BonusGrantTransfer", "Promotions.BonusGrant"]
     @moduletag steps: %{
       given: [
-        "A player makes a deposit"
+        "A deposit-triggered bonus campaign is active",
+        "A player makes a qualifying deposit"
       ],
       when: [
-        "Bonuses are calculated"
+        "The bonus grant transfer evaluates and awards the campaign"
       ],
       then: [
-        "Total bonus value <= deposit * max_bonus_multiplier"
+        "The granted bonus amount matches the configured campaign amount",
+        "The created bonus grant cannot exceed the awarded transfer amount"
       ]
     }
 

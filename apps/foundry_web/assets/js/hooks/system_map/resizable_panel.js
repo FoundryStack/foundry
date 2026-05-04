@@ -3,6 +3,7 @@ export class ResizablePanel {
     elementId,
     handleId,
     storageKey,
+    cssVarName = null,
     defaultWidth,
     minWidth,
     maxWidth,
@@ -12,6 +13,7 @@ export class ResizablePanel {
     this.elementId = elementId
     this.handleId = handleId
     this.storageKey = storageKey
+    this.cssVarName = cssVarName
     this.defaultWidth = defaultWidth
     this.minWidth = minWidth
     this.maxWidth = maxWidth
@@ -40,10 +42,11 @@ export class ResizablePanel {
     }
 
     const open = this.isOpen(element)
+    const width = this._loadWidth()
+    this._setCssWidth(width)
 
-    if (force || elementChanged || this._open !== open) {
-      const width = this._loadWidth()
-      element.style.width = open ? `${width}px` : '0'
+    if (force || elementChanged || this._open !== open || this._width == null) {
+      element.style.width = open ? `${width}px` : '0px'
     }
 
     this._element = element
@@ -95,6 +98,8 @@ export class ResizablePanel {
 
       const delta = (event.clientX - startX) * this.deltaSign
       const nextWidth = Math.max(this.minWidth, Math.min(this.maxWidth, startWidth + delta))
+      this._width = nextWidth
+      this._setCssWidth(nextWidth)
       element.style.width = `${nextWidth}px`
     }
 
@@ -111,6 +116,7 @@ export class ResizablePanel {
 
       this._width = element.offsetWidth
       localStorage.setItem(this.storageKey, String(this._width))
+      this._setCssWidth(this._width)
     }
 
     handle.addEventListener('mousedown', onMouseDown)
@@ -120,8 +126,20 @@ export class ResizablePanel {
   _loadWidth() {
     if (Number.isFinite(this._width)) return this._width
 
-    const savedWidth = parseInt(localStorage.getItem(this.storageKey), 10)
+    const savedWidth = this._readStoredWidth()
     this._width = Number.isFinite(savedWidth) ? savedWidth : this.defaultWidth
     return this._width
+  }
+
+  _setCssWidth(width) {
+    if (!this.cssVarName || !Number.isFinite(width)) return
+
+    document.documentElement.style.setProperty(this.cssVarName, `${width}px`)
+  }
+
+  _readStoredWidth() {
+    if (typeof localStorage === 'undefined') return NaN
+
+    return parseInt(localStorage.getItem(this.storageKey), 10)
   }
 }

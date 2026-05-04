@@ -127,8 +127,6 @@ export function buildCytoscapeElements(nodes, edges) {
         typeColor: domainColor,
         fillColor: toRgbColor(domainColor),
         fillOpacity: 0.06,
-        shadowColor: toRgbColor(domainColor),
-        shadowOpacity: 0.18,
       },
       classes: 'domain-cluster',
     })
@@ -170,8 +168,6 @@ export function buildCytoscapeElements(nodes, edges) {
         typeColor: clusterColor,
         fillColor: toRgbColor(clusterColor),
         fillOpacity: 0.1,
-        shadowColor: toRgbColor(clusterColor),
-        shadowOpacity: 0.14,
       },
       classes,
     })

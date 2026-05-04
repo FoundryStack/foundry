@@ -7,6 +7,7 @@ export class FeedManager {
       elementId: 'fm-feed',
       handleId: 'feed-resize-handle',
       storageKey: UI_CONFIG.storageKeys.feedWidth,
+      cssVarName: '--foundry-feed-width',
       defaultWidth: UI_CONFIG.feedWidth.default,
       minWidth: UI_CONFIG.feedWidth.min,
       maxWidth: UI_CONFIG.feedWidth.max,

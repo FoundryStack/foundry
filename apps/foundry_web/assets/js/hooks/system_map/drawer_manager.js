@@ -27,12 +27,14 @@ const ACTION_SHORTCUTS = {
 }
 
 export class DrawerManager {
-  constructor(normalizedNodes) {
+  constructor(normalizedNodes, pushEvent) {
     this.normalizedNodes = normalizedNodes
+    this._pushEvent = pushEvent || (() => {})
     this._panel = new ResizablePanel({
       elementId: SELECTORS.drawer,
       handleId: 'drawer-resize-handle',
       storageKey: UI_CONFIG.storageKeys.drawerWidth,
+      cssVarName: '--foundry-drawer-width',
       defaultWidth: UI_CONFIG.drawerWidth.default,
       minWidth: UI_CONFIG.drawerWidth.min,
       maxWidth: UI_CONFIG.drawerWidth.max,
@@ -71,6 +73,23 @@ export class DrawerManager {
       this._closeHandler = () => this.close()
       closeBtn.addEventListener('click', this._closeHandler)
       this._boundCloseBtn = closeBtn
+    }
+
+    const flowPanel = document.getElementById(SELECTORS.panelFlow)
+    if (flowPanel && this._boundFlowPanel !== flowPanel) {
+      if (this._boundFlowPanel && this._flowClickHandler) {
+        this._boundFlowPanel.removeEventListener('click', this._flowClickHandler)
+      }
+
+      this._flowClickHandler = (e) => {
+        const btn = e.target.closest('[data-scenario-id]')
+        if (btn) {
+          this._pushEvent('select_scenario', { id: btn.dataset.scenarioId })
+        }
+      }
+
+      flowPanel.addEventListener('click', this._flowClickHandler)
+      this._boundFlowPanel = flowPanel
     }
   }
 
@@ -587,7 +606,7 @@ export class DrawerManager {
           <div class="space-y-1">
             ${n.scenario_origins.map(scen_id => `
               <button class="w-full rounded-box border border-base-300/50 bg-base-300/30 px-2 py-1.5 text-left text-xs text-base-content hover:bg-base-300/60 transition-colors"
-                      phx-click="select_scenario" phx-value-id="${this._esc(scen_id)}">
+                      data-scenario-id="${this._esc(scen_id)}">
                 ${this._esc(scen_id)}
               </button>
             `).join('')}

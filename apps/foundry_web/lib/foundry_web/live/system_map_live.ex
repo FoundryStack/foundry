@@ -239,6 +239,45 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
+  def handle_event("select_scenario", %{"id" => scenario_id}, socket) do
+    scenarios = socket.assigns.scenarios
+    scenario = Enum.find(scenarios, &(&1.id == scenario_id))
+
+    case scenario do
+      nil ->
+        {:noreply, socket}
+
+      scen ->
+        payload = %{
+          nodes: scen.nodes,
+          path: scen.graph_path,
+          start: List.first(scen.graph_path),
+          end: List.last(scen.graph_path),
+          name: scen.name,
+          steps: scen.steps,
+          compliance_links: scen.compliance_links
+        }
+
+        socket =
+          socket
+          |> assign(selected_scenario_id: scenario_id)
+          |> push_event("graph:scenario_overlay", payload)
+
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("clear_scenario", _params, socket) do
+    socket =
+      socket
+      |> assign(selected_scenario_id: nil)
+      |> push_event("graph:clear_overlay", %{})
+
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_info(message, socket) do
     case ChatSession.handle_info(message, socket) do
       :unhandled -> {:noreply, socket}
@@ -340,37 +379,15 @@ defmodule FoundryWeb.SystemMapLive do
     }
   end
 
-  def handle_event("select_scenario", %{"id" => scenario_id}, socket) do
-    scenarios = socket.assigns.scenarios
-    scenario = Enum.find(scenarios, &(&1.id == scenario_id))
+  defp panel_width_style(css_var_name, open, default_width) do
+    width =
+      if open do
+        "var(#{css_var_name}, #{default_width}px)"
+      else
+        "0px"
+      end
 
-    case scenario do
-      nil ->
-        {:noreply, socket}
-
-      scen ->
-        socket =
-          socket
-          |> assign(selected_scenario_id: scenario_id)
-          |> push_event("graph:scenario_overlay", %{
-            nodes: scen.nodes,
-            path: scen.graph_path,
-            start: List.first(scen.graph_path),
-            end: List.last(scen.graph_path)
-          })
-          |> push_event("drawer:open_flow", %{})
-
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("clear_scenario", _params, socket) do
-    socket =
-      socket
-      |> assign(selected_scenario_id: nil)
-      |> push_event("graph:clear_overlay", %{})
-
-    {:noreply, socket}
+    "width: #{width};"
   end
 
   defp calculate_domain_coverage(nodes, scenarios) do
