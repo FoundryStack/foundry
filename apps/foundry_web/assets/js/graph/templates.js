@@ -160,13 +160,17 @@ export function clusterTpl(data) {
   const color = n.typeColor || getTypeColor(n.type || 'cluster')
   const name = n.name || n.label || shortLabel(n.id)
   const cov = n.cov ?? 0
+  const isDomainCluster = getTypeDisplayLabel(n) === 'domain'
+  const titleRowClass = isDomainCluster
+    ? 'title-row boundary-title-row boundary-title-row-domain'
+    : 'title-row boundary-title-row boundary-title-row-subcluster'
 
   const icon = getTypeIcon(getTypeDisplayLabel(n) === 'domain' ? 'cluster' : (n.type || 'cluster'))
 
   return `
     <div class="cy-node-html cy-node-boundary">
       ${buildIndicators(n)}
-      <div class="title-row">
+      <div class="${titleRowClass}">
         <span class="type-icon" style="color:${escHtml(color)}">${escHtml(icon)}</span>
         <span class="title" style="color:${escHtml(color)}">${escHtml(name)}</span>
       </div>

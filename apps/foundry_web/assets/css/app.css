@@ -338,7 +338,7 @@ code {
   align-items: flex-start;
   justify-content: flex-start;
   text-align: left;
-  padding: 2px 6px 6px 6px;
+  padding: 4px 6px 6px 2px;
 }
 
 .cy-node-html .domain-row {
@@ -413,6 +413,29 @@ code {
 
 .cy-node-html.cy-node-boundary .title-row {
   justify-content: flex-start;
+}
+
+.cy-node-html.cy-node-boundary .boundary-title-row-domain {
+  position: relative;
+  left: -12px;
+}
+
+.cy-node-html.cy-node-boundary .boundary-title-row-subcluster {
+  margin-top: 22px;
+}
+
+.cy-node-html.cy-node-boundary .title {
+  font-size: 22px;
+  line-height: 1.05;
+}
+
+.cy-node-html.cy-node-boundary .type-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.cy-node-html.cy-node-boundary .title-row {
+  gap: 8px;
 }
 
 .cy-node-html.cy-node-boundary .status-icons {

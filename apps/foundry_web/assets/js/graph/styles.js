@@ -19,10 +19,12 @@ export const FOUNDRY_COMPOUND_COMPACTION = {
   selector: 'node.domain-cluster, node.transfer-cluster, node.resource-cluster, node.fsm-cluster',
   maxChildren: 12,
   minOccupancy: 0.32,
-  spacing: 26,
-  padding: 30,
+  spacing: 40,
+  padding: 48,
   separateDomains: true,
-  domainGap: 20,
+  domainGap: 52,
+  domainLabelBufferX: 132,
+  domainLabelBufferY: 72,
   domainIterations: 8,
 }
 
@@ -92,7 +94,7 @@ export const STATIC_STYLES = [
       'shadow-offset-y': 12,
       'min-width': 240,
       'min-height': 140,
-      'padding': 64,
+      'padding': 96,
     },
   },
   {

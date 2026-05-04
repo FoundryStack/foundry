@@ -10,7 +10,7 @@ export const NODE_TYPE_CONFIG = {
 
 export const HTML_LABEL_CONFIG = [
   { query: 'node[nodeKind="entity"]',  halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: null },
-  { query: 'node[nodeKind="cluster"]', halign: 'left',   valign: 'top',    halignBox: 'right',  valignBox: 'bottom', tpl: null },
+  { query: 'node[nodeKind="cluster"]', halign: 'left',   valign: 'top',    halignBox: 'right',  valignBox: 'top',    tpl: null },
   { query: 'node[nodeKind="step"]',    halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: null },
   { query: 'node[nodeKind="action"]',  halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: null },
   { query: 'node[nodeKind="state"]',   halign: 'center', valign: 'center', halignBox: 'center', valignBox: 'center', tpl: null },

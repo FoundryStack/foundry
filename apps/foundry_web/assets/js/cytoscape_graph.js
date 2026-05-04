@@ -35,6 +35,8 @@ const DEFAULT_COMPOUND_COMPACTION = {
   separateDomains: false,
   domainSelector: 'node.domain-cluster',
   domainGap: 18,
+  domainLabelBufferX: 0,
+  domainLabelBufferY: 0,
   domainIterations: 8,
 }
 
@@ -384,6 +386,8 @@ export class CytoscapeGraph {
 
     let separated = false
     const gap = this.compoundCompaction.domainGap
+    const labelBufferX = this.compoundCompaction.domainLabelBufferX
+    const labelBufferY = this.compoundCompaction.domainLabelBufferY
     const iterations = this.compoundCompaction.domainIterations
 
     for (let pass = 0; pass < iterations; pass += 1) {
@@ -393,8 +397,16 @@ export class CytoscapeGraph {
         for (let j = i + 1; j < domains.length; j += 1) {
           const a = domains[i]
           const b = domains[j]
-          const aBox = a.boundingBox({ includeLabels: false, includeOverlays: false })
-          const bBox = b.boundingBox({ includeLabels: false, includeOverlays: false })
+          const aBox = this._expandBox(
+            a.boundingBox({ includeLabels: false, includeOverlays: false }),
+            labelBufferX,
+            labelBufferY,
+          )
+          const bBox = this._expandBox(
+            b.boundingBox({ includeLabels: false, includeOverlays: false }),
+            labelBufferX,
+            labelBufferY,
+          )
           const overlapX = Math.min(aBox.x2 + gap, bBox.x2 + gap) - Math.max(aBox.x1 - gap, bBox.x1 - gap)
           const overlapY = Math.min(aBox.y2 + gap, bBox.y2 + gap) - Math.max(aBox.y1 - gap, bBox.y1 - gap)
 
@@ -417,6 +429,18 @@ export class CytoscapeGraph {
     }
 
     return separated
+  }
+
+  _expandBox(box, padX, padY) {
+    return {
+      ...box,
+      x1: box.x1 - padX,
+      x2: box.x2 + padX,
+      y1: box.y1 - padY,
+      y2: box.y2 + padY,
+      w: box.w + (padX * 2),
+      h: box.h + (padY * 2),
+    }
   }
 
   _shiftCompoundLeaves(parent, dx, dy) {

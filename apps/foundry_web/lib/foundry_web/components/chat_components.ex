@@ -228,7 +228,7 @@ defmodule FoundryWeb.ChatComponents do
               ></textarea>
               <div class="mt-3 flex items-center justify-between gap-3">
                 <p class="text-[11px] leading-5 text-neutral-content">
-                  The Studio copilot carries forward compact session memory instead of rebuilding the full prompt each turn.
+
                 </p>
                 <button
                   type="submit"
