@@ -230,62 +230,68 @@ defmodule FoundryWeb.ChatSession do
   end
 
   defp build_run_context(socket, message) do
-    project_root = socket.assigns.project_root
-    mode = classify_mode(message)
+    case hook(:build_run_context) do
+      nil ->
+        project_root = socket.assigns.project_root
+        mode = classify_mode(message)
 
-    with {:ok, retrieval} <-
-           ChatRetrieval.prepare(project_root, message, socket.assigns.session_digest || %{}) do
-      proposal =
-        if mode == :change do
-          case ChatRetrieval.create_proposal(
-                 message,
-                 "studio@local",
-                 retrieval.tool_results,
-                 socket.assigns.session_digest || %{}
-               ) do
-            {:ok, proposal} -> proposal
-            {:error, _reason} -> nil
-          end
+        with {:ok, retrieval} <-
+               ChatRetrieval.prepare(project_root, message, socket.assigns.session_digest || %{}) do
+          proposal =
+            if mode == :change do
+              case ChatRetrieval.create_proposal(
+                     message,
+                     "studio@local",
+                     retrieval.tool_results,
+                     socket.assigns.session_digest || %{}
+                   ) do
+                {:ok, proposal} -> proposal
+                {:error, _reason} -> nil
+              end
+            end
+
+          session_digest =
+            socket.assigns.session_digest
+            |> normalize_session_digest()
+            |> prepare_session_digest(retrieval, mode, proposal)
+
+          system_prompt =
+            build_run_system_prompt(project_root, retrieval, session_digest, mode, proposal)
+
+          proposal_trace =
+            if proposal do
+              [
+                %{
+                  "provider" => "foundry",
+                  "type" => "foundry.proposal.created",
+                  "phase" => "proposal",
+                  "message" => "Created proposal draft #{proposal.id}",
+                  "proposal" => proposal
+                }
+              ]
+            else
+              []
+            end
+
+          {:ok,
+           %{
+             mode: mode,
+             retrieval: retrieval,
+             proposal: proposal,
+             session_digest: session_digest,
+             system_prompt: system_prompt,
+             trace_events: retrieval.trace_events ++ proposal_trace,
+             diagnostics: %{
+               mode: Atom.to_string(mode),
+               context_cache: Atom.to_string(retrieval.cached_context.cache),
+               context_fingerprint: retrieval.cached_context.fingerprint,
+               proposal_id: proposal && proposal.id
+             }
+           }}
         end
 
-      session_digest =
-        socket.assigns.session_digest
-        |> normalize_session_digest()
-        |> prepare_session_digest(retrieval, mode, proposal)
-
-      system_prompt =
-        build_run_system_prompt(project_root, retrieval, session_digest, mode, proposal)
-
-      proposal_trace =
-        if proposal do
-          [
-            %{
-              "provider" => "foundry",
-              "type" => "foundry.proposal.created",
-              "phase" => "proposal",
-              "message" => "Created proposal draft #{proposal.id}",
-              "proposal" => proposal
-            }
-          ]
-        else
-          []
-        end
-
-      {:ok,
-       %{
-         mode: mode,
-         retrieval: retrieval,
-         proposal: proposal,
-         session_digest: session_digest,
-         system_prompt: system_prompt,
-         trace_events: retrieval.trace_events ++ proposal_trace,
-         diagnostics: %{
-           mode: Atom.to_string(mode),
-           context_cache: Atom.to_string(retrieval.cached_context.cache),
-           context_fingerprint: retrieval.cached_context.fingerprint,
-           proposal_id: proposal && proposal.id
-         }
-       }}
+      fun ->
+        fun.(socket, message)
     end
   end
 
@@ -502,12 +508,18 @@ defmodule FoundryWeb.ChatSession do
   end
 
   defp build_system_prompt(project_root, nil) do
-    case Foundry.Chat.ContextCache.get_or_build(project_root) do
-      {:ok, cached_context} ->
-        {:ok, target_project_header(project_root) <> cached_context.prompt}
+    case hook(:build_system_prompt) do
+      nil ->
+        case Foundry.Chat.ContextCache.get_or_build(project_root) do
+          {:ok, cached_context} ->
+            {:ok, target_project_header(project_root) <> cached_context.prompt}
 
-      {:error, reason} ->
-        {:error, {:context_build_failed, reason}}
+          {:error, reason} ->
+            {:error, {:context_build_failed, reason}}
+        end
+
+      fun ->
+        fun.(project_root, nil)
     end
   rescue
     e -> {:error, {:context_build_failed, Exception.message(e)}}

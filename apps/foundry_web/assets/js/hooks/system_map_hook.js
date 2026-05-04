@@ -2,12 +2,13 @@ import { mountFoundryGraph, covColor, getActionTypeColor, getTypeColor } from '.
 import { getComplianceStatus, getTypeDisplayLabel, shouldShowComplianceIndicator } from '../graph/semantics'
 import { UI_CONFIG } from '../graph/config'
 import { DrawerManager } from './system_map/drawer_manager'
+import { FeedManager } from './system_map/feed_manager'
 import { SidebarManager } from './system_map/sidebar_manager'
 
 export const SystemMapHook = {
   mounted() {
     try {
-      this._restoreSizes()
+      this.feed = new FeedManager()
 
       if (document.readyState !== 'complete' && document.readyState !== 'interactive') {
         setTimeout(() => this._initGraph(), 0)
@@ -25,22 +26,6 @@ export const SystemMapHook = {
       document.addEventListener('keydown', this._keyHandler)
     } catch (error) {
       console.error('SystemMapHook mount error:', error)
-    }
-  },
-
-  _restoreSizes() {
-    const sidebar = document.getElementById('fm-sidebar')
-    if (sidebar) {
-      const sidebarWidth = parseInt(localStorage.getItem(UI_CONFIG.storageKeys.sidebarWidth)) || UI_CONFIG.sidebarWidth.default
-      sidebar.style.width = `${sidebarWidth}px`
-    }
-
-    const drawer = document.getElementById('fm-drawer')
-    if (drawer) {
-      const drawerWidth = parseInt(localStorage.getItem(UI_CONFIG.storageKeys.drawerWidth)) || UI_CONFIG.drawerWidth.default
-      if (drawer.classList.contains('open')) {
-        drawer.style.width = `${drawerWidth}px`
-      }
     }
   },
 
@@ -102,6 +87,16 @@ export const SystemMapHook = {
         if (payload.node) {
           this._handleNodeSelected(payload.node.id, payload.node)
         }
+      })
+
+      this.handleEvent('file_content', (payload) => {
+        this.drawer.open()
+        this.drawer.renderFileContent(payload)
+      })
+
+      this.handleEvent('file_error', (payload) => {
+        this.drawer.open()
+        this.drawer.renderFileError(payload)
       })
     } catch (error) {
       console.error('SystemMapHook init error:', error)
@@ -361,7 +356,9 @@ export const SystemMapHook = {
 
   updated() {
     try {
-      this._restoreSizes()
+      this.feed?.sync()
+      this.drawer?.sync()
+      this.sidebar?.sync()
     } catch (error) {
       console.error('SystemMapHook update error:', error)
     }
@@ -381,6 +378,11 @@ export const SystemMapHook = {
     if (this.sidebar) {
       this.sidebar.destroy()
       this.sidebar = null
+    }
+
+    if (this.feed) {
+      this.feed.destroy()
+      this.feed = null
     }
 
     if (this.graph) {

@@ -1,9 +1,13 @@
 defmodule FoundryWeb.SystemMapLive do
   use FoundryWeb, :live_view
   alias FoundryWeb.ChatSession
+  alias Foundry.Context.ProjectContext
 
   @impl true
   def mount(_params, session, socket) do
+    hooks = Application.get_env(:foundry_web, :system_map_live_hooks, [])
+    build_context = Keyword.get(hooks, :build_context, &ProjectContext.build/1)
+
     project_root =
       Application.get_env(
         :foundry_web,
@@ -18,7 +22,7 @@ defmodule FoundryWeb.SystemMapLive do
       Code.append_path(ebin_path)
     end
 
-    case Foundry.Context.ProjectContext.build(project_root) do
+    case build_context.(project_root) do
       {:ok, context} ->
         context_json = Jason.encode!(Foundry.Context.Compact.compact(context))
         nodes = context.nodes || []
@@ -60,7 +64,7 @@ defmodule FoundryWeb.SystemMapLive do
             system_map_view: :graph,
             drawer_open: false,
             drawer_tab: :details,
-            feed_open: false,
+            feed_open: true,
             feed_tab: :copilot,
             filter_query: "",
             selected_id: nil,
@@ -86,7 +90,7 @@ defmodule FoundryWeb.SystemMapLive do
             system_map_view: :graph,
             drawer_open: false,
             drawer_tab: :details,
-            feed_open: false,
+            feed_open: true,
             feed_tab: :copilot,
             filter_query: "",
             selected_id: nil,
@@ -170,13 +174,50 @@ defmodule FoundryWeb.SystemMapLive do
   def handle_event("fetch_node_detail", %{"id" => module_id}, socket) do
     # Above 200-module threshold path
     project_root = socket.assigns.project_root
+    hooks = Application.get_env(:foundry_web, :system_map_live_hooks, [])
+    build_node = Keyword.get(hooks, :build_node, &ProjectContext.build_one/2)
 
-    case Foundry.Context.ProjectContext.build_one(project_root, module_id) do
+    case build_node.(project_root, module_id) do
       {:ok, node} ->
         {:noreply, push_event(socket, "node_detail", %{node: node})}
 
       {:error, _} ->
         {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("fetch_file", %{"path" => relative_path} = params, socket) do
+    line =
+      case Map.get(params, "line") do
+        line when is_integer(line) and line > 0 ->
+          line
+
+        line when is_binary(line) ->
+          case Integer.parse(line) do
+            {value, ""} when value > 0 -> value
+            _ -> nil
+          end
+
+        _ ->
+          nil
+      end
+
+    case Foundry.FileSystem.read(socket.assigns.project_root, relative_path) do
+      {:ok, content} ->
+        {:noreply,
+         push_event(socket, "file_content", %{
+           path: relative_path,
+           content: content,
+           line: line
+         })}
+
+      {:error, reason} ->
+        {:noreply,
+         push_event(socket, "file_error", %{
+           path: relative_path,
+           reason: to_string(reason)
+         })}
     end
   end
 

@@ -159,6 +159,7 @@
       <div
         class="fm-drawer relative flex w-0 shrink-0 flex-col overflow-hidden border-r border-base-300 bg-base-200 transition-[width] duration-200"
         id="fm-drawer"
+        data-open={to_string(@drawer_open)}
       >
         <div class="flex shrink-0 items-center border-b border-base-300">
           <button
@@ -230,9 +231,15 @@
   </div>
 
   <div
-    class={"flex shrink-0 flex-col overflow-hidden border-l border-base-300 bg-base-200 transition-[width] duration-200 #{if @feed_open, do: "w-[26rem]", else: "w-0"}"}
+    class="relative flex shrink-0 flex-col overflow-hidden border-l border-base-300 bg-base-200 transition-[width] duration-200"
     id="fm-feed"
+    data-open={to_string(@feed_open)}
   >
+    <div
+      class="absolute inset-y-0 left-0 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary"
+      id="feed-resize-handle"
+    >
+    </div>
     <div class="flex shrink-0 items-center border-b border-base-300 px-3 py-2">
       <span class="flex-1 text-[11px] font-semibold text-neutral-content">
         {if @feed_tab == :copilot, do: "Copilot", else: "Activity"}

@@ -25,12 +25,13 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/foundry_web"
 import topbar from "../vendor/topbar"
 import { SystemMapHook } from "./hooks/system_map_hook"
+import { StudioChatHook } from "./hooks/studio_chat_hook"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, SystemMap: SystemMapHook},
+  hooks: {...colocatedHooks, SystemMap: SystemMapHook, StudioChat: StudioChatHook},
 })
 
 // Show progress bar on live navigation and form submits
@@ -81,4 +82,3 @@ if (process.env.NODE_ENV === "development") {
     window.liveReloader = reloader
   })
 }
-

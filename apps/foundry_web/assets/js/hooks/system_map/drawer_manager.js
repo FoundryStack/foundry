@@ -1,5 +1,6 @@
 import { covColor, domainCoverage } from '../../foundry_graph'
 import { UI_CONFIG } from '../../graph/config'
+import { ResizablePanel } from './resizable_panel'
 
 const SELECTORS = {
   drawer: 'fm-drawer',
@@ -28,8 +29,17 @@ const ACTION_SHORTCUTS = {
 export class DrawerManager {
   constructor(normalizedNodes) {
     this.normalizedNodes = normalizedNodes
+    this._panel = new ResizablePanel({
+      elementId: SELECTORS.drawer,
+      handleId: 'drawer-resize-handle',
+      storageKey: UI_CONFIG.storageKeys.drawerWidth,
+      defaultWidth: UI_CONFIG.drawerWidth.default,
+      minWidth: UI_CONFIG.drawerWidth.min,
+      maxWidth: UI_CONFIG.drawerWidth.max,
+      isOpen: (drawer) => drawer.dataset.open === 'true',
+    })
     this._initDrawer()
-    this._initResize()
+    this._panel.sync({ force: true })
   }
 
   _initDrawer() {
@@ -38,81 +48,51 @@ export class DrawerManager {
 
     if (!drawer) return
 
-    if (closeBtn) {
-      this._closeHandler = () => {
-        drawer.style.width = '0'
+    if (this._boundDrawer !== drawer) {
+      if (this._boundDrawer && this._drawerClickHandler) {
+        this._boundDrawer.removeEventListener('click', this._drawerClickHandler)
       }
-      closeBtn.addEventListener('click', this._closeHandler)
-    }
 
-    const tabs = drawer.querySelectorAll('[data-tab]')
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
+      this._drawerClickHandler = (event) => {
+        const tab = event.target.closest('[data-tab]')
+        if (!tab || !drawer.contains(tab)) return
         this.switchTab(tab.dataset.tab)
-      })
-    })
-  }
+      }
 
-  _initResize() {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    const handle = document.getElementById('drawer-resize-handle')
-
-    if (!drawer || !handle) return
-
-    const savedWidth = localStorage.getItem(UI_CONFIG.storageKeys.drawerWidth)
-    const initialWidth = savedWidth ? parseInt(savedWidth, 10) : UI_CONFIG.drawerWidth.default
-    drawer.style.width = `${initialWidth}px`
-
-    let isResizing = false
-    let startX = 0
-    let startWidth = 0
-
-    const onMouseDown = (e) => {
-      isResizing = true
-      startX = e.clientX
-      startWidth = drawer.offsetWidth
-      document.addEventListener('mousemove', onMouseMove)
-      document.addEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'col-resize'
-      e.preventDefault()
+      drawer.addEventListener('click', this._drawerClickHandler)
+      this._boundDrawer = drawer
     }
 
-    const onMouseMove = (e) => {
-      if (!isResizing) return
-      const delta = e.clientX - startX
-      const newWidth = Math.max(UI_CONFIG.drawerWidth.min, Math.min(UI_CONFIG.drawerWidth.max, startWidth + delta))
-      drawer.style.width = `${newWidth}px`
-    }
+    if (closeBtn && this._boundCloseBtn !== closeBtn) {
+      if (this._boundCloseBtn && this._closeHandler) {
+        this._boundCloseBtn.removeEventListener('click', this._closeHandler)
+      }
 
-    const onMouseUp = () => {
-      isResizing = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-      localStorage.setItem(UI_CONFIG.storageKeys.drawerWidth, drawer.offsetWidth)
+      this._closeHandler = () => this.close()
+      closeBtn.addEventListener('click', this._closeHandler)
+      this._boundCloseBtn = closeBtn
     }
-
-    handle.addEventListener('mousedown', onMouseDown)
-    this._resizeHandlers = { onMouseDown, onMouseMove, onMouseUp, handle }
   }
 
   open() {
     const drawer = document.getElementById(SELECTORS.drawer)
     if (drawer) {
-      const savedWidth = parseInt(localStorage.getItem(UI_CONFIG.storageKeys.drawerWidth)) || UI_CONFIG.drawerWidth.default
-      setTimeout(() => {
-        drawer.style.width = `${savedWidth}px`
-      }, 0)
+      drawer.dataset.open = 'true'
+      this._panel.sync({ force: true })
     }
   }
 
   close() {
     const drawer = document.getElementById(SELECTORS.drawer)
     if (drawer) {
-      drawer.style.width = '0'
+      drawer.dataset.open = 'false'
+      this._panel.sync({ force: true })
     }
+  }
+
+  sync() {
+    this._initDrawer()
+    this._panel.sync()
   }
 
   switchTab(tabName) {
@@ -197,6 +177,64 @@ export class DrawerManager {
     this._renderFlowPanel(node)
     this._renderActionsPanel(node)
     this._renderAuthPanel(node)
+    this.switchTab('details')
+  }
+
+  renderFileContent({ path, content, line = null }) {
+    const panel = document.getElementById(SELECTORS.panelDetails)
+    if (!panel) return
+
+    const lines = String(content || '').split('\n')
+
+    panel.innerHTML = `
+      <div class="space-y-3">
+        <div>
+          <p class="text-xs text-base-content/50">File preview</p>
+          <h3 class="font-mono font-semibold text-sm break-all">${this._esc(path || 'unknown')}</h3>
+          ${line ? `<p class="mt-1 text-xs text-base-content/60">Focused line ${line}</p>` : ''}
+        </div>
+        <div class="overflow-hidden rounded-box border border-base-300/80 bg-base-100/90">
+          <div class="max-h-[32rem] overflow-auto">
+            <table class="w-full border-collapse font-mono text-[11px] leading-5">
+              <tbody>
+                ${lines.map((fileLine, index) => {
+                  const lineNumber = index + 1
+                  const isActive = lineNumber === line
+
+                  return `
+                    <tr class="${isActive ? 'bg-primary/10' : ''}" data-line="${lineNumber}">
+                      <td class="select-none border-r border-base-300/80 px-3 py-0.5 text-right align-top text-base-content/40">${lineNumber}</td>
+                      <td class="px-3 py-0.5 align-top text-base-content whitespace-pre-wrap break-words">${this._esc(fileLine)}</td>
+                    </tr>
+                  `
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `
+
+    this.switchTab('details')
+
+    if (line) {
+      const activeLine = panel.querySelector(`[data-line="${line}"]`)
+      activeLine?.scrollIntoView({ block: 'center' })
+    }
+  }
+
+  renderFileError({ path, reason }) {
+    const panel = document.getElementById(SELECTORS.panelDetails)
+    if (!panel) return
+
+    panel.innerHTML = `
+      <div class="rounded-box border border-error/30 bg-error/10 px-4 py-4">
+        <p class="text-xs font-semibold uppercase tracking-[0.12em] text-error">File preview unavailable</p>
+        <p class="mt-2 font-mono text-xs text-base-content break-all">${this._esc(path || 'unknown')}</p>
+        <p class="mt-3 text-sm text-error">${this._esc(reason || 'unknown error')}</p>
+      </div>
+    `
+
     this.switchTab('details')
   }
 
@@ -542,17 +580,16 @@ export class DrawerManager {
   }
 
   destroy() {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    const closeBtn = document.getElementById(SELECTORS.drawerClose)
-    if (closeBtn && this._closeHandler) {
-      closeBtn.removeEventListener('click', this._closeHandler)
+    if (this._boundCloseBtn && this._closeHandler) {
+      this._boundCloseBtn.removeEventListener('click', this._closeHandler)
     }
 
-    if (this._resizeHandlers) {
-      const { onMouseDown, handle } = this._resizeHandlers
-      if (handle && onMouseDown) {
-        handle.removeEventListener('mousedown', onMouseDown)
-      }
+    if (this._boundDrawer && this._drawerClickHandler) {
+      this._boundDrawer.removeEventListener('click', this._drawerClickHandler)
     }
+
+    this._boundDrawer = null
+    this._boundCloseBtn = null
+    this._panel.destroy()
   }
 }

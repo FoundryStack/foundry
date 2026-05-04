@@ -28,7 +28,12 @@ defmodule FoundryWeb.ChatComponents do
       |> assign(:message_count, length(assigns.messages))
 
     ~H"""
-    <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-200/30">
+    <section
+      id="studio-chat-panel"
+      phx-hook="StudioChat"
+      data-project-root={@project_root}
+      class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-200/30"
+    >
       <div class="border-b border-base-300/80 px-4 py-4">
         <div class="flex items-start justify-between gap-3">
           <div class="space-y-1">
@@ -142,7 +147,7 @@ defmodule FoundryWeb.ChatComponents do
 
           <%= if @chat_view == :conversation do %>
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-              <div class="space-y-3">
+              <div id="studio-chat-conversation" class="space-y-3" aria-live="polite">
                 <%= if Enum.empty?(@messages) do %>
                   <div class="rounded-box border border-dashed border-base-300 bg-base-200/50 px-4 py-6 text-center">
                     <p class="text-sm font-medium text-base-content">
@@ -210,7 +215,11 @@ defmodule FoundryWeb.ChatComponents do
             </div>
           <% end %>
 
-          <form phx-submit="send_message" class="border-t border-base-300/80 px-4 py-4">
+          <form
+            id="studio-chat-form"
+            phx-submit="send_message"
+            class="border-t border-base-300/80 px-4 py-4"
+          >
             <div class="rounded-box border border-base-300 bg-base-200/70 p-3">
               <label
                 for="chat-message-studio"
@@ -223,12 +232,13 @@ defmodule FoundryWeb.ChatComponents do
                 name="message"
                 rows="3"
                 placeholder="Ask about the system, or request a governed change..."
+                data-role="chat-input"
                 class="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-base-content outline-none placeholder:text-neutral-content/50"
                 disabled={@loading}
               ></textarea>
               <div class="mt-3 flex items-center justify-between gap-3">
                 <p class="text-[11px] leading-5 text-neutral-content">
-
+                  Enter sends. Shift+Enter adds a new line.
                 </p>
                 <button
                   type="submit"

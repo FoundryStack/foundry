@@ -2,18 +2,48 @@ defmodule FoundryWeb.SystemMapLiveTest do
   use FoundryWeb.ConnCase
   import Phoenix.LiveViewTest
 
+  setup_all do
+    project_root = Application.fetch_env!(:foundry_web, :igaming_project_root)
+    {:ok, project_context} = Foundry.Context.ProjectContext.build(project_root)
+
+    project_node =
+      List.first(project_context.nodes) ||
+        %Foundry.Context.NodeEntry{
+          module: "Foundry.Test.Node",
+          id: "Foundry.Test.Node",
+          type: "resource",
+          domain: "Test",
+          description: "Test node"
+        }
+
+    {:ok, project_context: project_context, project_node: project_node}
+  end
+
   setup do
     llm_provider = Application.get_env(:foundry, :llm_provider)
     codex = Application.get_env(:foundry, :codex)
     project_root = Application.get_env(:foundry_web, :igaming_project_root)
     chat_live_hooks = Application.get_env(:foundry_web, :chat_live_hooks)
+    system_map_live_hooks = Application.get_env(:foundry_web, :system_map_live_hooks)
 
     on_exit(fn ->
       restore_env(:foundry, :llm_provider, llm_provider)
       restore_env(:foundry, :codex, codex)
       restore_env(:foundry_web, :igaming_project_root, project_root)
       restore_env(:foundry_web, :chat_live_hooks, chat_live_hooks)
+      restore_env(:foundry_web, :system_map_live_hooks, system_map_live_hooks)
     end)
+  end
+
+  setup %{project_context: project_context, project_node: project_node} do
+    Application.put_env(:foundry_web, :system_map_live_hooks,
+      build_context: fn _project_root -> {:ok, project_context} end,
+      build_node: fn _project_root, _module_id -> {:ok, project_node} end
+    )
+
+    put_chat_hooks()
+
+    :ok
   end
 
   describe "mount" do
@@ -43,6 +73,10 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert html =~ "Foundry Copilot"
       assert html =~ "Governed studio chat"
       assert html =~ "Copilot"
+      assert html =~ ~s(id="fm-feed")
+      assert html =~ ~s(id="fm-drawer")
+      assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"/, html)
+      assert Regex.match?(~r/id="fm-drawer"[\s\S]*data-open="false"/, html)
     end
   end
 
@@ -74,6 +108,25 @@ defmodule FoundryWeb.SystemMapLiveTest do
       # For now, just verify the handler exists and doesn't crash
       result = render_click(live, "fetch_node_detail", %{"id" => "Finance.Wallet"})
       assert result
+    end
+  end
+
+  describe "handle_event fetch_file" do
+    test "pushes file content for allowed project files", %{conn: conn} do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      render_click(live, "fetch_file", %{"path" => "mix.exs", "line" => "1"})
+
+      assert_push_event(live, "file_content", %{path: "mix.exs", line: 1, content: content})
+      assert content =~ "defmodule"
+    end
+
+    test "pushes a boundary error for disallowed paths", %{conn: conn} do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      render_click(live, "fetch_file", %{"path" => ".env"})
+
+      assert_push_event(live, "file_error", %{path: ".env", reason: "outside_boundary"})
     end
   end
 
@@ -112,7 +165,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     test "keeps the assistant response visible when final persistence fails", %{conn: conn} do
       test_pid = self()
 
-      Application.put_env(:foundry_web, :chat_live_hooks,
+      put_chat_hooks(
         save_messages: fn _session_id, messages ->
           send(test_pid, {:saved_messages, length(messages)})
 
@@ -168,7 +221,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       https://foundry.test
       """
 
-      Application.put_env(:foundry_web, :chat_live_hooks,
+      put_chat_hooks(
         save_messages: fn _session_id, _messages -> {:ok, %{}} end,
         call_llm_stream: fn _messages, _on_event -> {:ok, markdown} end
       )
@@ -199,12 +252,12 @@ defmodule FoundryWeb.SystemMapLiveTest do
     } do
       test_pid = self()
 
-      Application.put_env(:foundry_web, :chat_live_hooks,
+      put_chat_hooks(
         save_messages: fn _session_id, _messages -> {:ok, %{}} end,
         call_llm_stream: fn _messages, on_event ->
           on_event.({:delta, "```elixir\nIO.puts("})
           send(test_pid, :stream_chunk_sent)
-          Process.sleep(1_000)
+          Process.sleep(100)
 
           on_event.({:delta, "\"ok\")\n```"})
           {:ok, "```elixir\nIO.puts(\"ok\")\n```"}
@@ -243,7 +296,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       <script>alert("x")</script>
       """
 
-      Application.put_env(:foundry_web, :chat_live_hooks,
+      put_chat_hooks(
         save_messages: fn _session_id, _messages -> {:ok, %{}} end,
         call_llm_stream: fn _messages, _on_event -> {:ok, markdown} end
       )
@@ -263,7 +316,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     test "shows structured provider trace with tools, files, and raw payloads", %{conn: conn} do
       Application.put_env(:foundry, :llm_provider, :codex)
 
-      Application.put_env(:foundry_web, :chat_live_hooks,
+      put_chat_hooks(
         save_messages: fn _session_id, _messages -> {:ok, %{}} end,
         call_llm_stream: fn _messages, on_event ->
           on_event.(
@@ -302,7 +355,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "shows persisted session memory in the session panel", %{conn: conn} do
-      Application.put_env(:foundry_web, :chat_live_hooks,
+      put_chat_hooks(
         save_messages: fn _session_id, _messages, session_digest ->
           {:ok, %{session_digest: session_digest}}
         end,
@@ -322,7 +375,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "routes change requests into proposal-backed mode", %{conn: conn} do
-      Application.put_env(:foundry_web, :chat_live_hooks,
+      put_chat_hooks(
         save_messages: fn _session_id, _messages, session_digest ->
           {:ok, %{session_digest: session_digest}}
         end,
@@ -345,14 +398,64 @@ defmodule FoundryWeb.SystemMapLiveTest do
   defp restore_env(app, key, nil), do: Application.delete_env(app, key)
   defp restore_env(app, key, value), do: Application.put_env(app, key, value)
 
-  defp eventually(fun, attempts \\ 10)
+  defp put_chat_hooks(overrides \\ []) do
+    Application.put_env(
+      :foundry_web,
+      :chat_live_hooks,
+      Keyword.merge(base_chat_hooks(), overrides)
+    )
+  end
+
+  defp base_chat_hooks do
+    [
+      load_session: fn _session_id -> {:ok, nil} end,
+      save_messages: fn _session_id, _messages, session_digest ->
+        {:ok, %{session_digest: session_digest}}
+      end,
+      call_llm_stream: fn _messages, _on_event, _run_context -> {:ok, "Stubbed response"} end,
+      build_run_context: fn socket, message -> {:ok, canned_run_context(socket, message)} end,
+      build_system_prompt: fn project_root, _run_context ->
+        {:ok,
+         """
+         # Target Project Boundary
+
+         Target project root: #{project_root}
+         """}
+      end
+    ]
+  end
+
+  defp canned_run_context(socket, message) do
+    mode = if String.contains?(String.downcase(message), "implement"), do: :change, else: :ask
+
+    proposal =
+      if mode == :change do
+        %{id: 42, change_class: :behavioral}
+      end
+
+    %{
+      mode: mode,
+      proposal: proposal,
+      session_digest: socket.assigns.session_digest || %{},
+      system_prompt: "stub system prompt",
+      trace_events: [],
+      diagnostics: %{
+        mode: Atom.to_string(mode),
+        context_cache: "stubbed",
+        context_fingerprint: "test",
+        proposal_id: proposal && proposal.id
+      }
+    }
+  end
+
+  defp eventually(fun, attempts \\ 8)
   defp eventually(fun, 0), do: fun.()
 
   defp eventually(fun, attempts) do
     if fun.() do
       true
     else
-      Process.sleep(25)
+      Process.sleep(10)
       eventually(fun, attempts - 1)
     end
   end

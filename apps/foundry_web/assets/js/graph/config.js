@@ -21,8 +21,10 @@ export const UI_CONFIG = {
   searchDebounce: 150,
   sidebarWidth: { default: 240, min: 180, max: 600 },
   drawerWidth: { default: 380, min: 280, max: 600 },
+  feedWidth: { default: 360, min: 280, max: 640 },
   storageKeys: {
     sidebarWidth: 'foundry:sidebar-width',
     drawerWidth: 'foundry:drawer-width',
+    feedWidth: 'foundry:feed-width',
   },
 }

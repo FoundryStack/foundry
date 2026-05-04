@@ -1,5 +1,6 @@
 import { searchMatch } from '../../foundry_graph'
 import { UI_CONFIG } from '../../graph/config'
+import { ResizablePanel } from './resizable_panel'
 
 const SELECTORS = {
   sidebarList: 'fm-node-list',
@@ -13,14 +14,26 @@ export class SidebarManager {
     this.graph = graph
     this.normalizedNodes = normalizedNodes
     this.onNodeSelect = null
+    this._panel = new ResizablePanel({
+      elementId: 'fm-sidebar',
+      handleId: 'sidebar-resize-handle',
+      storageKey: UI_CONFIG.storageKeys.sidebarWidth,
+      defaultWidth: UI_CONFIG.sidebarWidth.default,
+      minWidth: UI_CONFIG.sidebarWidth.min,
+      maxWidth: UI_CONFIG.sidebarWidth.max,
+    })
     this._initSidebar()
     this._initSearch()
-    this._initResize()
+    this._panel.sync({ force: true })
   }
 
   _initSidebar() {
     const list = document.getElementById(SELECTORS.sidebarList)
-    if (!list) return
+    if (!list || this._boundList === list) return
+
+    if (this._boundList && this._sidebarClickHandler) {
+      this._boundList.removeEventListener('click', this._sidebarClickHandler)
+    }
 
     this._sidebarClickHandler = (evt) => {
       const item = evt.target.closest(`.${SELECTORS.nodeItem}`)
@@ -35,6 +48,7 @@ export class SidebarManager {
       }
     }
     list.addEventListener('click', this._sidebarClickHandler)
+    this._boundList = list
   }
 
   highlightNode(nodeId) {
@@ -49,7 +63,11 @@ export class SidebarManager {
 
   _initSearch() {
     const searchInput = document.querySelector(`.${SELECTORS.search}`)
-    if (!searchInput) return
+    if (!searchInput || this._boundSearchInput === searchInput) return
+
+    if (this._boundSearchInput && this._searchInputHandler) {
+      this._boundSearchInput.removeEventListener('input', this._searchInputHandler)
+    }
 
     this._searchInputHandler = (evt) => {
       clearTimeout(this._searchTimeout)
@@ -75,70 +93,27 @@ export class SidebarManager {
       }, UI_CONFIG.searchDebounce)
     }
     searchInput.addEventListener('input', this._searchInputHandler)
+    this._boundSearchInput = searchInput
   }
 
-  _initResize() {
-    const sidebar = document.getElementById('fm-sidebar')
-    const handle = document.getElementById('sidebar-resize-handle')
-
-    if (!sidebar || !handle) return
-
-    const savedWidth = localStorage.getItem(UI_CONFIG.storageKeys.sidebarWidth)
-    const initialWidth = savedWidth ? parseInt(savedWidth, 10) : UI_CONFIG.sidebarWidth.default
-    sidebar.style.width = `${initialWidth}px`
-
-    let isResizing = false
-    let startX = 0
-    let startWidth = 0
-
-    const onMouseDown = (e) => {
-      isResizing = true
-      startX = e.clientX
-      startWidth = sidebar.offsetWidth
-      document.addEventListener('mousemove', onMouseMove)
-      document.addEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'col-resize'
-      e.preventDefault()
-    }
-
-    const onMouseMove = (e) => {
-      if (!isResizing) return
-      const delta = e.clientX - startX
-      const newWidth = Math.max(UI_CONFIG.sidebarWidth.min, Math.min(UI_CONFIG.sidebarWidth.max, startWidth + delta))
-      sidebar.style.width = `${newWidth}px`
-    }
-
-    const onMouseUp = () => {
-      isResizing = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-      localStorage.setItem(UI_CONFIG.storageKeys.sidebarWidth, sidebar.offsetWidth)
-    }
-
-    handle.addEventListener('mousedown', onMouseDown)
-    this._resizeHandlers = { onMouseDown, onMouseMove, onMouseUp, handle }
+  sync() {
+    this._initSidebar()
+    this._initSearch()
+    this._panel.sync()
   }
 
   destroy() {
-    const list = document.getElementById(SELECTORS.sidebarList)
-    if (list && this._sidebarClickHandler) {
-      list.removeEventListener('click', this._sidebarClickHandler)
+    if (this._boundList && this._sidebarClickHandler) {
+      this._boundList.removeEventListener('click', this._sidebarClickHandler)
     }
 
-    const searchInput = document.querySelector(`.${SELECTORS.search}`)
-    if (searchInput && this._searchInputHandler) {
-      searchInput.removeEventListener('input', this._searchInputHandler)
+    if (this._boundSearchInput && this._searchInputHandler) {
+      this._boundSearchInput.removeEventListener('input', this._searchInputHandler)
       clearTimeout(this._searchTimeout)
     }
 
-    if (this._resizeHandlers) {
-      const { onMouseDown, handle } = this._resizeHandlers
-      if (handle && onMouseDown) {
-        handle.removeEventListener('mousedown', onMouseDown)
-      }
-    }
+    this._boundList = null
+    this._boundSearchInput = null
+    this._panel.destroy()
   }
 }
