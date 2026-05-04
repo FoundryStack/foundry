@@ -1,34 +1,27 @@
 defmodule Foundry.Context.ScenarioEntry do
   @moduledoc """
-  Represents a single test scenario extracted from an ExUnit test file.
+  Represents a single Studio scenario extracted from test source.
 
-  A scenario is a BDD-style test case annotated with @moduletag metadata
-  declaring its category, participating graph nodes, execution path, and steps.
-
-  Scenarios are extracted via `ScenarioExtractor` from test files and linked to
-  graph nodes in Studio. Used by ADR-025 test visualization.
-
-  ## Example
-
-      %ScenarioEntry{
-        id: "Finance.SufficientBalance.rejects_exceeds",
-        name: "SufficientBalance — rejects when amount exceeds balance",
-        category: :invariant,
-        source_file: "test/finance/withdrawal_transfer_test.exs",
-        source_module: "IgamingRef.Finance.WithdrawalTransferTest",
-        nodes: ["Finance.WithdrawalTransfer", "Finance.Rules.SufficientBalance"],
-        graph_path: ["Finance.WithdrawalTransfer", "Finance.Rules.SufficientBalance", "Finance.Wallet"],
-        compliance_links: ["RG-UK-014"],
-        steps: %{
-          given: ["A player with active status", "A wallet with £500 balance"],
-          when: ["The player requests a withdrawal of £600"],
-          then: ["The withdrawal is rejected", "The wallet balance remains £500"]
-        },
-        tags: [:invariant, :compliance]
-      }
+  The canonical runtime story is the ordered `flow`. Aggregate fields like
+  `nodes` and `graph_path` are derived summaries that help with coverage
+  grouping and graph navigation.
   """
 
   @type category :: :invariant | :state_machine | :compliance | :property
+
+  @type flow_step :: %{
+          id: String.t(),
+          type: atom() | String.t(),
+          label: String.t(),
+          node_id: String.t() | nil,
+          focus_node_id: String.t() | nil,
+          focus_targets: [String.t()],
+          emits: [String.t()],
+          reacts_to: String.t() | nil,
+          action: String.t() | nil,
+          actor: String.t() | nil,
+          details: String.t() | nil
+        }
 
   @derive Jason.Encoder
 
@@ -42,7 +35,7 @@ defmodule Foundry.Context.ScenarioEntry do
     nodes: [],
     graph_path: [],
     compliance_links: [],
-    steps: %{given: [], when: [], then: []},
+    flow: [],
     tags: []
   ]
 
@@ -55,11 +48,7 @@ defmodule Foundry.Context.ScenarioEntry do
           nodes: [String.t()],
           graph_path: [String.t()],
           compliance_links: [String.t()],
-          steps: %{
-            given: [String.t()],
-            when: [String.t()],
-            then: [String.t()]
-          },
+          flow: [flow_step()],
           tags: [atom() | {atom(), any()}]
         }
 end
