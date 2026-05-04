@@ -75,9 +75,22 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert html =~ "Copilot"
       assert html =~ ~s(id="fm-feed")
       assert html =~ ~s(id="fm-drawer")
-      assert Regex.match?(~r/id="fm-sidebar"[\s\S]*style="[^"]*width: var\(--foundry-sidebar-width, 240px\);"/, html)
-      assert Regex.match?(~r/id="fm-drawer"[\s\S]*data-open="false"[\s\S]*style="[^"]*width: 0px;"/, html)
-      assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"[\s\S]*style="[^"]*width: var\(--foundry-feed-width, 360px\);"/, html)
+
+      assert Regex.match?(
+               ~r/id="fm-sidebar"[\s\S]*style="[^"]*width: var\(--foundry-sidebar-width, 240px\);"/,
+               html
+             )
+
+      assert Regex.match?(
+               ~r/id="fm-drawer"[\s\S]*data-open="false"[\s\S]*style="[^"]*width: 0px;"/,
+               html
+             )
+
+      assert Regex.match?(
+               ~r/id="fm-feed"[\s\S]*data-open="true"[\s\S]*style="[^"]*width: var\(--foundry-feed-width, 360px\);"/,
+               html
+             )
+
       assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"/, html)
       assert Regex.match?(~r/id="fm-drawer"[\s\S]*data-open="false"/, html)
     end
@@ -466,10 +479,14 @@ defmodule FoundryWeb.SystemMapLiveTest do
       html = render_click(live, "set_sidebar_tab", %{"tab" => "test_coverage"})
 
       # Check that scenario categories are rendered
-      assert html =~ "INVARIANT" or html =~ "COMPLIANCE" or html =~ "STATE_MACHINE" or html =~ "PROPERTY"
+      assert html =~ "INVARIANT" or html =~ "COMPLIANCE" or html =~ "STATE_MACHINE" or
+               html =~ "PROPERTY"
     end
 
-    test "select_scenario finds scenario by id and pushes graph overlay event", %{conn: conn, project_context: context} do
+    test "select_scenario finds scenario by id and pushes graph overlay event", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, live, _html} = live(conn, "/studio")
 
       # Get first scenario from context
@@ -481,19 +498,29 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       # Verify graph:scenario_overlay event was pushed
       nodes = scenario.nodes
-      graph_path = scenario.graph_path
-      start_node = List.first(graph_path)
-      end_node = List.last(graph_path)
+      active_step = List.first(scenario.flow)
+      flow = scenario.flow
+      active_step_id = active_step.id
+      scenario_id = scenario.id
+      scenario_category = scenario.category
 
       assert_push_event(live, "graph:scenario_overlay", %{
+        id: ^scenario_id,
+        category: ^scenario_category,
         nodes: ^nodes,
-        path: ^graph_path,
-        start: ^start_node,
-        end: ^end_node
+        flow: ^flow,
+        active_step: ^active_step,
+        active_step_id: ^active_step_id
       })
+
+      assert active_step.focus_node_id
+      assert is_list(active_step.focus_targets)
     end
 
-    test "select_scenario updates selected_scenario_id in socket assigns", %{conn: conn, project_context: context} do
+    test "select_scenario updates selected_scenario_id in socket assigns", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, live, _html} = live(conn, "/studio")
 
       scenario = List.first(context.scenarios)
@@ -505,6 +532,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       # Verify the event was pushed (this indicates the handler ran)
       assert_push_event(live, "graph:scenario_overlay", _)
+      assert_push_event(live, "drawer:open_flow", %{})
     end
 
     test "select_scenario opens flow drawer tab", %{conn: conn, project_context: context} do
@@ -512,20 +540,25 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       scenario = List.first(context.scenarios)
       name = scenario.name
-      steps = scenario.steps
       compliance_links = scenario.compliance_links
+      flow = scenario.flow
 
       _html = render_click(live, "select_scenario", %{"id" => scenario.id})
 
       # Verify graph:scenario_overlay event was pushed with scenario data for drawer rendering
       assert_push_event(live, "graph:scenario_overlay", %{
         name: ^name,
-        steps: ^steps,
-        compliance_links: ^compliance_links
+        compliance_links: ^compliance_links,
+        flow: ^flow
       })
+
+      assert_push_event(live, "drawer:open_flow", %{})
     end
 
-    test "scenario button in Coverage tab is clickable and triggers event", %{conn: conn, project_context: context} do
+    test "scenario button in Coverage tab is clickable and triggers event", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, live, _html} = live(conn, "/studio")
 
       # Switch to Coverage tab to render scenario buttons
@@ -533,7 +566,10 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       # Verify scenario button is rendered with correct attributes
       scenario = List.first(context.scenarios)
-      scenario_button_pattern = ~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(scenario.id)}"/
+
+      scenario_button_pattern =
+        ~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(scenario.id)}"/
+
       assert Regex.match?(scenario_button_pattern, coverage_html)
 
       # Verify onclick="event.stopPropagation()" is NOT present (it breaks <details>)
@@ -544,11 +580,12 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       # Verify the event was processed and the graph overlay was pushed
       nodes = scenario.nodes
-      graph_path = scenario.graph_path
+
       assert_push_event(live, "graph:scenario_overlay", %{
-        nodes: ^nodes,
-        path: ^graph_path
+        nodes: ^nodes
       })
+
+      assert_push_event(live, "drawer:open_flow", %{})
     end
 
     test "select_scenario returns unchanged socket when scenario not found", %{conn: conn} do
@@ -561,12 +598,17 @@ defmodule FoundryWeb.SystemMapLiveTest do
       refute_push_event(live, "graph:scenario_overlay", _, 100)
     end
 
-    test "clear_scenario clears selected scenario id and pushes clear overlay event", %{conn: conn, project_context: context} do
+    test "clear_scenario clears selected scenario id and pushes clear overlay event", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, live, _html} = live(conn, "/studio")
 
       # First select a scenario
       scenario = List.first(context.scenarios)
       _html = render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", _)
+      assert_push_event(live, "drawer:open_flow", %{})
 
       # Clear it
       _html = render_click(live, "clear_scenario", %{})
@@ -575,14 +617,20 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert_push_event(live, "graph:clear_overlay", %{})
     end
 
-    test "scenario nodes are correctly extracted from test files", %{conn: conn, project_context: context} do
+    test "scenario nodes are correctly extracted from test files", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, _live, _html} = live(conn, "/studio")
 
       # Verify scenarios have populated node lists (not empty)
       assert Enum.any?(context.scenarios, fn s -> Enum.count(s.nodes) > 0 end)
     end
 
-    test "scenario graph paths are correctly extracted", %{conn: conn, project_context: context} do
+    test "scenario graph paths are derived from extracted flow", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, _live, _html} = live(conn, "/studio")
 
       # Verify scenarios have populated graph paths
@@ -596,6 +644,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       {:ok, _live, _html} = live(conn, "/studio")
 
       node_ids = MapSet.new(Enum.map(context.nodes, & &1.id))
+      graph_node_ids = graph_node_ids(context)
 
       Enum.each(context.scenarios, fn scenario ->
         Enum.each(scenario.nodes, fn node_id ->
@@ -604,13 +653,44 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end)
 
         Enum.each(scenario.graph_path, fn node_id ->
-          assert MapSet.member?(node_ids, node_id),
+          assert MapSet.member?(graph_node_ids, node_id),
                  "scenario #{inspect(scenario.name)} graph_path references missing node #{inspect(node_id)}"
         end)
       end)
     end
 
-    test "compliance scenarios are tagged with compliance_links", %{conn: conn, project_context: context} do
+    test "scenario flow nodes resolve to live graph node ids", %{
+      conn: conn,
+      project_context: context
+    } do
+      {:ok, _live, _html} = live(conn, "/studio")
+
+      graph_node_ids = graph_node_ids(context)
+
+      Enum.each(context.scenarios, fn scenario ->
+        Enum.each(scenario.flow || [], fn step ->
+          if step.node_id do
+            assert MapSet.member?(graph_node_ids, step.node_id),
+                   "scenario #{inspect(scenario.name)} flow step #{inspect(step.id)} references missing node #{inspect(step.node_id)}"
+          end
+
+          if step.focus_node_id do
+            assert MapSet.member?(graph_node_ids, step.focus_node_id),
+                   "scenario #{inspect(scenario.name)} flow step #{inspect(step.id)} focus_node_id references missing graph node #{inspect(step.focus_node_id)}"
+          end
+
+          Enum.each(step.focus_targets || [], fn node_id ->
+            assert MapSet.member?(graph_node_ids, node_id),
+                   "scenario #{inspect(scenario.name)} flow step #{inspect(step.id)} focus_targets references missing graph node #{inspect(node_id)}"
+          end)
+        end)
+      end)
+    end
+
+    test "compliance scenarios are tagged with compliance_links", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, _live, _html} = live(conn, "/studio")
 
       compliance_scenarios = Enum.filter(context.scenarios, &(&1.category == :compliance))
@@ -619,7 +699,10 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert Enum.any?(compliance_scenarios, fn s -> Enum.count(s.compliance_links) > 0 end)
     end
 
-    test "scenario categories are properly grouped in scenarios_by_category", %{conn: conn, project_context: context} do
+    test "scenario categories are properly grouped in scenarios_by_category", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, _live, _html} = live(conn, "/studio")
 
       # Get categories from context
@@ -660,10 +743,13 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       # Should contain scenario groupings
       assert coverage_html =~ "INVARIANT" or coverage_html =~ "COMPLIANCE" or
-             coverage_html =~ "STATE_MACHINE" or coverage_html =~ "PROPERTY"
+               coverage_html =~ "STATE_MACHINE" or coverage_html =~ "PROPERTY"
     end
 
-    test "graph:scenario_overlay event includes all required fields for drawer rendering", %{conn: conn, project_context: context} do
+    test "graph:scenario_overlay event includes all required fields for drawer rendering", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, live, _html} = live(conn, "/studio")
 
       scenario = List.first(context.scenarios)
@@ -675,22 +761,56 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       # Check all required fields are present
       assert Map.has_key?(payload, :nodes)
-      assert Map.has_key?(payload, :path)
-      assert Map.has_key?(payload, :start)
-      assert Map.has_key?(payload, :end)
+      assert Map.has_key?(payload, :id)
+      assert Map.has_key?(payload, :category)
       assert Map.has_key?(payload, :name)
-      assert Map.has_key?(payload, :steps)
       assert Map.has_key?(payload, :compliance_links)
+      assert Map.has_key?(payload, :flow)
+      assert Map.has_key?(payload, :active_step)
+      assert Map.has_key?(payload, :active_step_id)
 
       # Verify nodes is the correct set
       assert payload.nodes == scenario.nodes
-      assert payload.path == scenario.graph_path
-      assert payload.start == List.first(scenario.graph_path)
-      assert payload.end == List.last(scenario.graph_path)
+      assert payload.id == scenario.id
+      assert payload.category == scenario.category
       assert payload.name == scenario.name
+      assert payload.flow == scenario.flow
+      assert payload.active_step_id == List.first(scenario.flow).id
+      assert Map.has_key?(List.first(payload.flow), :focus_node_id)
+      assert Map.has_key?(List.first(payload.flow), :focus_targets)
     end
 
-    test "clear_scenario properly clears overlay and resets graph state", %{conn: conn, project_context: context} do
+    test "timeline step selection updates the active overlay state", %{
+      conn: conn,
+      project_context: context
+    } do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      scenario = Enum.find(context.scenarios, &(Enum.count(&1.flow) > 1))
+      assert scenario
+
+      render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", _)
+      assert_push_event(live, "drawer:open_flow", %{})
+
+      selected_step = Enum.at(scenario.flow, 1)
+      selected_step_id = selected_step.id
+
+      render_click(live, "select_scenario_step", %{
+        "scenario_id" => scenario.id,
+        "step_id" => selected_step_id
+      })
+
+      assert_push_event(live, "graph:scenario_overlay", %{
+        active_step_id: ^selected_step_id,
+        active_step: ^selected_step
+      })
+    end
+
+    test "clear_scenario properly clears overlay and resets graph state", %{
+      conn: conn,
+      project_context: context
+    } do
       {:ok, live, _html} = live(conn, "/studio")
 
       scenario = List.first(context.scenarios)
@@ -698,12 +818,32 @@ defmodule FoundryWeb.SystemMapLiveTest do
       # First select a scenario
       render_click(live, "select_scenario", %{"id" => scenario.id})
       assert_push_event(live, "graph:scenario_overlay", _)
+      assert_push_event(live, "drawer:open_flow", %{})
 
       # Then clear it
       render_click(live, "clear_scenario", %{})
 
       # Verify graph:clear_overlay event was pushed to reset graph state in JS hook
       assert_push_event(live, "graph:clear_overlay", %{})
+    end
+
+    test "leaving Coverage sidebar tab clears active scenario and closes drawer", %{
+      conn: conn,
+      project_context: context
+    } do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      scenario = List.first(context.scenarios)
+
+      render_click(live, "set_sidebar_tab", %{"tab" => "test_coverage"})
+      render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", _)
+      assert_push_event(live, "drawer:open_flow", %{})
+
+      render_click(live, "set_sidebar_tab", %{"tab" => "system_map"})
+
+      assert_push_event(live, "graph:clear_overlay", %{})
+      refute render(live) =~ ~s(phx-value-id="#{scenario.id}")
     end
   end
 
@@ -717,5 +857,24 @@ defmodule FoundryWeb.SystemMapLiveTest do
       Process.sleep(10)
       eventually(fun, attempts - 1)
     end
+  end
+
+  defp graph_node_ids(context) do
+    context.nodes
+    |> Enum.flat_map(fn node ->
+      step_ids =
+        node
+        |> Map.get(:steps, [])
+        |> Enum.with_index()
+        |> Enum.map(fn {_step, index} -> "#{node.id}:step:#{index}" end)
+
+      action_ids =
+        node
+        |> Map.get(:actions, [])
+        |> Enum.map(fn action -> "#{node.id}:action:#{action.name}" end)
+
+      [node.id | step_ids ++ action_ids]
+    end)
+    |> MapSet.new()
   end
 end

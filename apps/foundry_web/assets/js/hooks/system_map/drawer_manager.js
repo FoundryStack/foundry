@@ -82,9 +82,30 @@ export class DrawerManager {
       }
 
       this._flowClickHandler = (e) => {
-        const btn = e.target.closest('[data-scenario-id]')
-        if (btn) {
-          this._pushEvent('select_scenario', { id: btn.dataset.scenarioId })
+        const stepBtn = e.target.closest('[data-scenario-step-id]')
+        if (stepBtn) {
+          if (this._activeScenario && this._activeScenario.id === stepBtn.dataset.scenarioId) {
+            this._activeScenario = {
+              ...this._activeScenario,
+              active_step_id: stepBtn.dataset.scenarioStepId,
+              active_step:
+                (this._activeScenario.flow || []).find(
+                  step => step.id === stepBtn.dataset.scenarioStepId,
+                ) || this._activeScenario.active_step,
+            }
+            this._renderScenarioFlowPanel(this._activeScenario)
+          }
+
+          this._pushEvent('select_scenario_step', {
+            scenario_id: stepBtn.dataset.scenarioId,
+            step_id: stepBtn.dataset.scenarioStepId,
+          })
+          return
+        }
+
+        const scenarioBtn = e.target.closest('[data-scenario-id]')
+        if (scenarioBtn) {
+          this._pushEvent('select_scenario', { id: scenarioBtn.dataset.scenarioId })
         }
       }
 
@@ -117,6 +138,13 @@ export class DrawerManager {
   switchTab(tabName) {
     const drawer = document.getElementById(SELECTORS.drawer)
     if (!drawer) return
+
+    const leavingScenarioFlow = this._activeScenario && tabName !== 'flow'
+    if (leavingScenarioFlow) {
+      this.clearScenario()
+      this._pushEvent('clear_scenario', {})
+      return
+    }
 
     const tabs = drawer.querySelectorAll('[data-tab]')
     const activeTab = drawer.querySelector(`[data-tab="${tabName}"]`)
@@ -544,40 +572,83 @@ export class DrawerManager {
 
   renderForScenario(scenario) {
     if (!scenario) return
+    this._activeScenario = scenario
     this._renderScenarioFlowPanel(scenario)
     this.open()
     this.switchTab('flow')
+  }
+
+  clearScenario() {
+    this._activeScenario = null
+    this.close()
   }
 
   _renderScenarioFlowPanel(scenario) {
     const panel = document.getElementById(SELECTORS.panelFlow)
     if (!panel) return
 
-    const renderSteps = (title, steps) => {
-      if (!steps || steps.length === 0) return ''
-      return `
-        <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content">${title}</p>
-          <ul class="mt-1 space-y-1">
-            ${steps.map(step => `<li class="flex gap-2 text-xs text-base-content/80"><span>•</span><span>${this._esc(step)}</span></li>`).join('')}
-          </ul>
-        </div>
-      `
-    }
+    const flow = Array.isArray(scenario.flow) ? scenario.flow : []
+    const activeStepId = scenario.active_step_id || scenario.active_step?.id || flow[0]?.id || null
+    const startNode = flow[0]?.focus_node_id || flow[0]?.node_id || null
+    const endNode = flow[flow.length - 1]?.focus_node_id || flow[flow.length - 1]?.node_id || null
+
+    const timelineHtml = flow.length > 0 ? `
+      <div class="space-y-2">
+        ${flow.map((step, index) => {
+          const isActive = step.id === activeStepId
+          const focusTargets = Array.isArray(step.focus_targets) ? step.focus_targets : []
+          const emits = Array.isArray(step.emits) ? step.emits : []
+          const focusNodeId = step.focus_node_id || step.node_id || null
+          const exactFocus = focusNodeId && focusNodeId !== step.node_id
+
+          return `
+            <button
+              class="w-full cursor-pointer rounded-box border px-3 py-3 text-left shadow-sm transition-all ${isActive ? 'border-info bg-info/12 ring-2 ring-info/25' : 'border-base-300/70 bg-base-100/75 hover:border-info/40 hover:bg-base-100'}"
+              data-scenario-id="${this._esc(scenario.id)}"
+              data-scenario-step-id="${this._esc(step.id)}"
+              aria-pressed="${isActive ? 'true' : 'false'}"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.12em] ${isActive ? 'text-info' : 'text-base-content/50'}">Step ${index + 1}</p>
+                  <p class="mt-1 text-sm font-medium text-base-content">${this._esc(step.label || `Step ${index + 1}`)}</p>
+                </div>
+                <span class="rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${isActive ? 'border-info/40 text-info' : 'border-base-300/80 text-base-content/55'}">${this._esc(String(step.type || 'reaction'))}</span>
+              </div>
+              <div class="mt-2 space-y-1 text-xs text-base-content/75">
+                ${step.node_id ? `<p><span class="text-base-content/50">Node:</span> <span class="font-mono">${this._esc(step.node_id)}</span></p>` : ''}
+                ${focusNodeId ? `<p><span class="text-base-content/50">Focuses:</span> <span class="font-mono">${this._esc(focusNodeId)}</span></p>` : ''}
+                ${step.action ? `<p><span class="text-base-content/50">Action:</span> <span class="font-mono">${this._esc(step.action)}</span></p>` : ''}
+                ${step.actor ? `<p><span class="text-base-content/50">Actor:</span> ${this._esc(step.actor)}</p>` : ''}
+                ${step.reacts_to ? `<p><span class="text-base-content/50">Reacts to:</span> ${this._esc(step.reacts_to)}</p>` : ''}
+                ${emits.length > 0 ? `<p><span class="text-base-content/50">Emits:</span> ${emits.map(event => `<span class="font-mono">${this._esc(event)}</span>`).join(', ')}</p>` : ''}
+                ${focusTargets.length > 0 ? `<p><span class="text-base-content/50">Focuses next:</span> ${focusTargets.map(node => `<span class="font-mono">${this._esc(node)}</span>`).join(', ')}</p>` : ''}
+                ${exactFocus ? `<p class="pt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-info/80">Exact graph step focus</p>` : ''}
+                ${step.details ? `<p class="pt-1 leading-5 text-base-content/80">${this._esc(step.details)}</p>` : ''}
+              </div>
+            </button>
+          `
+        }).join('')}
+      </div>
+    ` : `
+      <div class="rounded-box border border-dashed border-base-300/70 bg-base-100/40 px-3 py-4 text-xs text-base-content/60">
+        No executable scenario flow was extracted for this scenario.
+      </div>
+    `
 
     const nodes_html = scenario.nodes && scenario.nodes.length ? `
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content">Participating Nodes</p>
-        <div class="mt-1 flex flex-wrap gap-1">
+      <div class="rounded-box border border-base-300/60 bg-base-100/40 p-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/70">Participating Nodes</p>
+        <div class="mt-2 flex flex-wrap gap-1">
           ${scenario.nodes.map(n => `<span class="inline-block rounded bg-base-300 px-2 py-1 text-[10px] text-base-content/70">${this._esc(n)}</span>`).join('')}
         </div>
       </div>
     ` : ''
 
     const compliance_html = scenario.compliance_links && scenario.compliance_links.length ? `
-      <div>
-        <p class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content">Compliance</p>
-        <div class="mt-1 flex flex-wrap gap-1">
+      <div class="rounded-box border border-warning/30 bg-warning/8 p-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-warning/80">Compliance</p>
+        <div class="mt-2 flex flex-wrap gap-1">
           ${scenario.compliance_links.map(link => `<span class="inline-block rounded bg-warning/20 px-2 py-1 text-[10px] font-mono text-warning">${this._esc(link)}</span>`).join('')}
         </div>
       </div>
@@ -585,9 +656,15 @@ export class DrawerManager {
 
     panel.innerHTML = `
       <div class="space-y-3">
-        ${renderSteps('GIVEN', scenario.steps?.given || [])}
-        ${renderSteps('WHEN', scenario.steps?.when || [])}
-        ${renderSteps('THEN', scenario.steps?.then || [])}
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/55">Scenario Flow</p>
+          <h3 class="mt-1 text-sm font-semibold text-base-content">${this._esc(scenario.name || 'Scenario')}</h3>
+          <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-base-content/60">
+            <span class="rounded-full border border-success/30 px-2 py-1">starts here: <span class="font-mono">${this._esc(startNode || 'unknown')}</span></span>
+            <span class="rounded-full border border-error/30 px-2 py-1">ends here: <span class="font-mono">${this._esc(endNode || 'unknown')}</span></span>
+          </div>
+        </div>
+        ${timelineHtml}
         ${nodes_html}
         ${compliance_html}
       </div>
@@ -673,12 +750,17 @@ export class DrawerManager {
       this._boundCloseBtn.removeEventListener('click', this._closeHandler)
     }
 
+    if (this._boundFlowPanel && this._flowClickHandler) {
+      this._boundFlowPanel.removeEventListener('click', this._flowClickHandler)
+    }
+
     if (this._boundDrawer && this._drawerClickHandler) {
       this._boundDrawer.removeEventListener('click', this._drawerClickHandler)
     }
 
     this._boundDrawer = null
     this._boundCloseBtn = null
+    this._boundFlowPanel = null
     this._panel.destroy()
   }
 }

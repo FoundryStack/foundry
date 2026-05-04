@@ -62,6 +62,15 @@ export class SidebarManager {
     }
   }
 
+  clearHighlight() {
+    const list = document.getElementById(SELECTORS.sidebarList)
+    if (list) {
+      list.querySelectorAll(`.${SELECTORS.nodeItem}`).forEach(item => {
+        item.dataset.selected = 'false'
+      })
+    }
+  }
+
   _initSearch() {
     const searchInput = document.querySelector(`.${SELECTORS.search}`)
     if (!searchInput || this._boundSearchInput === searchInput) return

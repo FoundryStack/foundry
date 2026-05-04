@@ -57,6 +57,10 @@ export const SystemMapHook = {
         }
       }
 
+      this.graph.onBackgroundClick = () => {
+        this.pushEvent('clear_scenario', {})
+      }
+
       // Wire hover handler
       this.graph.onNodeHover = (nodeId, nodeData, event) => {
         this._showHoverCard(nodeId, nodeData, event)
@@ -80,11 +84,9 @@ export const SystemMapHook = {
       })
 
       this.handleEvent('graph:scenario_overlay', (payload) => {
-        const { nodes, path, start, end } = payload
-
         if (this.graph) {
           try {
-            this.graph.applyScenarioOverlay({ nodes, path, start, end })
+            this.graph.applyScenarioOverlay(payload)
           } catch (e) {
             console.error('  ❌ applyScenarioOverlay error:', e)
           }
@@ -105,6 +107,14 @@ export const SystemMapHook = {
       this.handleEvent('graph:clear_overlay', () => {
         if (this.graph) {
           this.graph.clearScenarioOverlay()
+        }
+
+        if (this.sidebar) {
+          this.sidebar.clearHighlight()
+        }
+
+        if (this.drawer) {
+          this.drawer.clearScenario()
         }
       })
 

@@ -56,6 +56,7 @@ export class CytoscapeGraph {
 
     // Initialize callback properties with no-op defaults
     this.onNodeClick = () => {}
+    this.onBackgroundClick = () => {}
     this.onNodeHover = () => {}
     this.onNodeUnhover = () => {}
     this.onReady = () => {}
@@ -198,114 +199,193 @@ export class CytoscapeGraph {
     this.cy.elements().filter(ele => ele.data('state') === 'phantom').remove()
   }
 
-  applyScenarioOverlay({ nodes, path, start, end }) {
-    if (!nodes || nodes.length === 0) return
+  applyScenarioOverlay({ flow, active_step: activeStep, active_step_id: activeStepId }) {
+    if (!Array.isArray(flow) || flow.length === 0) return
 
     this.clearScenarioOverlay()
 
-    const nodeSet = new Set(nodes)
+    const currentActiveStep =
+      activeStep ||
+      flow.find(step => step.id === activeStepId) ||
+      flow[0]
 
-    // Dim non-participating nodes and make scenario nodes visually explicit.
+    const transitions = this._scenarioTransitions(flow)
+    const scenarioNodeIds = this._scenarioStepNodeIds(flow)
+    const activeNodeIds = this._scenarioActiveNodeIds(currentActiveStep)
+    const activeEdgeSet = this._scenarioActiveEdges(currentActiveStep)
+    const transitionEdgeSet = new Set()
+    const contextNodeIds = this._scenarioContextNodeIds(scenarioNodeIds)
+
+    this._ensureScenarioOverlayEdges(transitions, activeEdgeSet, transitionEdgeSet)
+
+    this.cy.elements().unselect()
+
     this.cy.nodes().forEach(node => {
       const id = node.id()
-      if (nodeSet.has(id)) {
+      const isActiveFocus = activeNodeIds.has(id)
+      const inScenario = scenarioNodeIds.has(id)
+      const inContext = contextNodeIds.has(id)
+
+      if (isActiveFocus) {
+        node.select()
         node.style('opacity', 1)
-        node.style('border-color', 'rgb(250, 204, 21)')
-        node.style('border-style', 'solid')
-        node.style('border-width', '3px')
-        node.style('border-opacity', 1)
-        node.style('underlay-color', 'rgb(250, 204, 21)')
-        node.style('underlay-opacity', 0.18)
-        node.style('underlay-padding', '10px')
+        node.style('border-width', node.isParent() ? '3px' : '2.5px')
         node.style('z-index', 999)
+      } else if (inScenario || inContext) {
+        node.style('opacity', 1)
+        node.style('border-width', null)
+        node.style('z-index', 800)
       } else {
-        node.style('opacity', 0.08)
+        node.style('opacity', 0.12)
         node.style('z-index', null)
       }
     })
 
-    // Highlight path edges (consecutive nodes in the path)
-    if (path && path.length > 1) {
-      const pathEdgeSet = new Set()
-      for (let i = 0; i < path.length - 1; i++) {
-        const src = path[i]
-        const tgt = path[i + 1]
-        pathEdgeSet.add(`${src}|${tgt}`)
-        pathEdgeSet.add(`${tgt}|${src}`)
-      }
+    this.cy.edges().forEach(edge => {
+      const source = edge.source().id()
+      const target = edge.target().id()
+      const edgeKey = `${source}|${target}`
+      const isScenarioEdge =
+        transitionEdgeSet.has(edgeKey) ||
+        transitionEdgeSet.has(`${target}|${source}`)
+      const isActiveEdge = activeEdgeSet.has(edgeKey)
+      const isSyntheticScenarioEdge = edge.data('state') === 'scenario-overlay'
 
-      this.cy.edges().forEach(edge => {
-        const source = edge.source().id()
-        const target = edge.target().id()
-        const edgeKey = `${source}|${target}`
-        const isPathEdge = pathEdgeSet.has(edgeKey)
-
-        if (isPathEdge) {
-          edge.style('line-color', 'rgb(34, 211, 238)')
-          edge.style('width', '4px')
-          edge.style('opacity', 1)
-          edge.style('z-index', 999)
-        } else {
-          edge.style('opacity', 0.08)
-          edge.style('z-index', null)
-        }
-      })
-    } else {
-      this.cy.edges().forEach(edge => {
-        edge.style('opacity', 0.08)
+      if (isActiveEdge) {
+        edge.select()
+        edge.style('line-style', 'solid')
+        edge.style('width', '4px')
+        edge.style('opacity', 1)
+        edge.style('z-index', 999)
+      } else if (isScenarioEdge) {
+        edge.style('line-style', isSyntheticScenarioEdge ? 'dashed' : 'solid')
+        edge.style('width', '2.5px')
+        edge.style('opacity', 1)
+        edge.style('z-index', 850)
+      } else {
+        edge.style('opacity', 0.12)
         edge.style('z-index', null)
-      })
-    }
-
-    // Add START badge
-    if (start) {
-      const startNode = this.cy.getElementById(start)
-      if (startNode.length > 0) {
-        startNode.style('border-color', '#10b981')
-        startNode.style('border-width', '3px')
-        startNode.style('underlay-color', '#10b981')
-        startNode.style('underlay-opacity', 0.2)
       }
-    }
+    })
 
-    // Add END badge
-    if (end) {
-      const endNode = this.cy.getElementById(end)
-      if (endNode.length > 0) {
-        endNode.style('border-color', '#ef4444')
-        endNode.style('border-width', '3px')
-        endNode.style('underlay-color', '#ef4444')
-        endNode.style('underlay-opacity', 0.2)
-      }
-    }
+    const focusSet = activeNodeIds.size > 0 ? activeNodeIds : scenarioNodeIds
+    const scenarioNodes = this.cy.nodes().filter(n => focusSet.has(n.id()))
 
-    // Auto-fit to scenario subgraph
-    if (nodes.length > 0) {
-      const scenarioNodes = this.cy.nodes().filter(n => nodeSet.has(n.id()))
-      if (scenarioNodes.length > 0) {
-        this.cy.fit(scenarioNodes, 50)
-      }
+    if (scenarioNodes.length > 0) {
+      this.cy.fit(scenarioNodes, activeNodeIds.size > 0 ? 80 : 50)
     }
   }
 
   clearScenarioOverlay() {
+    this.cy.elements().filter(ele => ele.data('state') === 'scenario-overlay').remove()
+    this.cy.elements().unselect()
+
     this.cy.nodes().forEach(node => {
       node.style('opacity', null)
-      node.style('border-color', null)
-      node.style('border-style', null)
       node.style('border-width', null)
-      node.style('border-opacity', null)
-      node.style('underlay-color', null)
-      node.style('underlay-opacity', null)
-      node.style('underlay-padding', null)
       node.style('z-index', null)
     })
 
     this.cy.edges().forEach(edge => {
-      edge.style('line-color', null)
+      edge.style('line-style', null)
       edge.style('width', null)
       edge.style('opacity', null)
       edge.style('z-index', null)
+    })
+
+    if (this.cy.elements().length > 0) {
+      this.cy.fit(this.cy.elements(), this.layoutOptions.padding)
+    }
+  }
+
+  _scenarioActiveNodeIds(activeStep) {
+    const ids = new Set()
+
+    if (!activeStep) return ids
+
+    if (activeStep.node_id) ids.add(activeStep.node_id)
+    if (activeStep.focus_node_id) ids.add(activeStep.focus_node_id)
+    ;(activeStep.focus_targets || []).forEach(id => ids.add(id))
+
+    return ids
+  }
+
+  _scenarioActiveEdges(activeStep) {
+    const edges = new Set()
+    const source = activeStep?.focus_node_id || activeStep?.node_id
+    if (!source) return edges
+
+    ;(activeStep.focus_targets || []).forEach(target => {
+      edges.add(`${source}|${target}`)
+    })
+
+    return edges
+  }
+
+  _scenarioStepNodeIds(flow) {
+    const ids = new Set()
+
+    ;(flow || []).forEach(step => {
+      if (step?.node_id) ids.add(step.node_id)
+      if (step?.focus_node_id) ids.add(step.focus_node_id)
+      ;(step?.focus_targets || []).forEach(id => {
+        if (id) ids.add(id)
+      })
+    })
+
+    return ids
+  }
+
+  _scenarioTransitions(flow) {
+    return (flow || []).flatMap(step => {
+      const source = step.focus_node_id || step.node_id
+      const targets = step.focus_targets || []
+
+      return targets
+        .filter(Boolean)
+        .map(target => ({ source, target }))
+        .filter(({ source: from, target: to }) => Boolean(from && to))
+    })
+  }
+
+  _scenarioContextNodeIds(nodeIds) {
+    const ids = new Set(nodeIds)
+
+    ;[...nodeIds].forEach(id => {
+      const node = this.cy.getElementById(id)
+      if (node.length === 0) return
+
+      node.parents().forEach(parent => ids.add(parent.id()))
+    })
+
+    return ids
+  }
+
+  _ensureScenarioOverlayEdges(transitions, activeEdgeSet, transitionEdgeSet) {
+    ;(transitions || []).forEach(({ source, target }, index) => {
+      if (!(source && target)) return
+
+      transitionEdgeSet.add(`${source}|${target}`)
+
+      const existing = this.cy.edges().filter(edge =>
+        edge.source().id() === source && edge.target().id() === target,
+      )
+
+      if (existing.length > 0) return
+
+      const overlayId = `scenario-overlay:${index}:${source}->${target}`
+      if (this.cy.getElementById(overlayId).length > 0) return
+
+      this.cy.add({
+        group: 'edges',
+        data: {
+          id: overlayId,
+          source,
+          target,
+          relation: 'scenario_overlay',
+          state: 'scenario-overlay',
+        },
+      })
     })
   }
 
@@ -568,6 +648,12 @@ export class CytoscapeGraph {
       const node = evt.target
       if (!node.data('isDomain')) {
         this.onNodeClick(node.id(), node.data())
+      }
+    })
+
+    this.cy.on('tap', (evt) => {
+      if (evt.target === this.cy) {
+        this.onBackgroundClick()
       }
     })
 

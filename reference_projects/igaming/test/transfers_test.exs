@@ -12,6 +12,7 @@ defmodule IgamingRef.Finance.WithdrawalTransferTest do
 
   use ExUnit.Case, async: true
   use ExUnitProperties
+  use Foundry.TestScenario
 
   import IgamingRefTest.Generators
 
@@ -31,14 +32,7 @@ defmodule IgamingRef.Finance.WithdrawalTransferTest do
   # ---------------------------------------------------------------------------
 
   describe "SufficientBalance" do
-    @moduletag category: :invariant
-    @moduletag nodes: ["Finance.WithdrawalTransfer", "Finance.Rules.SufficientBalance"]
-    @moduletag graph_path: ["Finance.WithdrawalTransfer", "Finance.Rules.SufficientBalance", "Finance.Wallet"]
-    @moduletag steps: %{
-      given: ["A wallet with balance £X"],
-      when: ["Withdrawal of £Y is attempted"],
-      then: ["Rejection when Y > X", "Success when Y <= X"]
-    }
+    @scenario category: :invariant
 
     property "rejects when amount exceeds balance" do
       check all(
@@ -82,14 +76,7 @@ defmodule IgamingRef.Finance.WithdrawalTransferTest do
   # ---------------------------------------------------------------------------
 
   describe "PlayerNotSelfExcluded" do
-    @moduletag category: :invariant
-    @moduletag nodes: ["Players.Player", "Finance.WithdrawalTransfer"]
-    @moduletag graph_path: ["Players.Player", "Finance.WithdrawalTransfer"]
-    @moduletag steps: %{
-      given: ["A player with status"],
-      when: ["Withdrawal is attempted"],
-      then: ["Rejection when self-excluded", "Success when active or suspended"]
-    }
+    @scenario category: :invariant
 
     test "rejects self-excluded players" do
       player = self_excluded_player_fixture()
@@ -114,14 +101,7 @@ defmodule IgamingRef.Finance.WithdrawalTransferTest do
   # ---------------------------------------------------------------------------
 
   describe "WithdrawalLimitNotExceeded" do
-    @moduletag category: :invariant
-    @moduletag nodes: ["Finance.WithdrawalTransfer", "Finance.Rules.WithdrawalLimitNotExceeded"]
-    @moduletag graph_path: ["Finance.WithdrawalTransfer", "Finance.Rules.WithdrawalLimitNotExceeded"]
-    @moduletag steps: %{
-      given: ["A player with risk level and daily limit"],
-      when: ["Withdrawal request is evaluated"],
-      then: ["High-risk limited to £500/day", "Low-risk limited to £5000/day"]
-    }
+    @scenario category: :invariant
 
     test "rejects when high-risk player exceeds £500 limit" do
       player = player_fixture(%{risk_level: :high})

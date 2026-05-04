@@ -69,6 +69,7 @@ defmodule FoundryWeb.SystemMapLive do
             scenarios_by_category: scenarios_by_category,
             domain_coverage: domain_coverage,
             selected_scenario_id: nil,
+            active_scenario_step_id: nil,
             gap_count: gap_count,
             migration_count: migration_count,
             project_name: Path.basename(project_root),
@@ -99,6 +100,7 @@ defmodule FoundryWeb.SystemMapLive do
             scenarios_by_category: %{},
             domain_coverage: %{},
             selected_scenario_id: nil,
+            active_scenario_step_id: nil,
             gap_count: 0,
             migration_count: 0,
             project_name: Path.basename(project_root),
@@ -148,7 +150,16 @@ defmodule FoundryWeb.SystemMapLive do
 
   @impl true
   def handle_event("set_sidebar_tab", %{"tab" => t}, socket) do
-    {:noreply, assign_known(socket, :sidebar_tab, t, sidebar_tabs())}
+    next_socket = assign_known(socket, :sidebar_tab, t, sidebar_tabs())
+
+    socket =
+      if socket.assigns.sidebar_tab == :test_coverage and next_socket.assigns.sidebar_tab != :test_coverage do
+        clear_scenario_state(next_socket)
+      else
+        next_socket
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -248,19 +259,47 @@ defmodule FoundryWeb.SystemMapLive do
         {:noreply, socket}
 
       scen ->
-        payload = %{
-          nodes: scen.nodes,
-          path: scen.graph_path,
-          start: List.first(scen.graph_path),
-          end: List.last(scen.graph_path),
-          name: scen.name,
-          steps: scen.steps,
-          compliance_links: scen.compliance_links
-        }
+        active_step_id = default_active_step_id(scen)
+        payload = scenario_overlay_payload(scen, active_step_id)
 
         socket =
           socket
-          |> assign(selected_scenario_id: scenario_id)
+          |> assign(
+            selected_scenario_id: scenario_id,
+            active_scenario_step_id: active_step_id,
+            drawer_open: true,
+            drawer_tab: :flow
+          )
+          |> push_event("graph:scenario_overlay", payload)
+          |> push_event("drawer:open_flow", %{})
+
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event(
+        "select_scenario_step",
+        %{"scenario_id" => scenario_id, "step_id" => step_id},
+        socket
+      ) do
+    scenario = Enum.find(socket.assigns.scenarios, &(&1.id == scenario_id))
+
+    case scenario do
+      nil ->
+        {:noreply, socket}
+
+      scen ->
+        payload = scenario_overlay_payload(scen, step_id)
+
+        socket =
+          socket
+          |> assign(
+            selected_scenario_id: scenario_id,
+            active_scenario_step_id: step_id,
+            drawer_open: true,
+            drawer_tab: :flow
+          )
           |> push_event("graph:scenario_overlay", payload)
 
         {:noreply, socket}
@@ -269,12 +308,7 @@ defmodule FoundryWeb.SystemMapLive do
 
   @impl true
   def handle_event("clear_scenario", _params, socket) do
-    socket =
-      socket
-      |> assign(selected_scenario_id: nil)
-      |> push_event("graph:clear_overlay", %{})
-
-    {:noreply, socket}
+    {:noreply, clear_scenario_state(socket)}
   end
 
   @impl true
@@ -397,7 +431,10 @@ defmodule FoundryWeb.SystemMapLive do
       Enum.reduce(domains, %{}, fn domain, acc ->
         domain_nodes = Enum.filter(nodes, &(&1.domain == domain))
         domain_scenario_count = count_scenarios_for_domain(domain_nodes, scenarios)
-        score = if Enum.empty?(domain_nodes), do: 0, else: min(domain_scenario_count / 4 * 100, 100)
+
+        score =
+          if Enum.empty?(domain_nodes), do: 0, else: min(domain_scenario_count / 4 * 100, 100)
+
         Map.put(acc, domain, score)
       end)
 
@@ -416,10 +453,51 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   defp count_scenarios_for_domain(nodes, scenarios) do
-    node_ids = Enum.map(nodes, & &1.module)
+    node_ids =
+      nodes
+      |> Enum.flat_map(&[&1.id, &1.module])
+      |> Enum.reject(&is_nil/1)
+      |> MapSet.new()
 
     Enum.count(scenarios, fn scen ->
-      Enum.any?(scen.nodes, &(&1 in node_ids))
+      Enum.any?(scen.nodes, &MapSet.member?(node_ids, &1))
     end)
+  end
+
+  defp scenario_overlay_payload(scenario, active_step_id) do
+    active_step = find_flow_step(scenario, active_step_id)
+
+    %{
+      id: scenario.id,
+      category: scenario.category,
+      nodes: scenario.nodes,
+      name: scenario.name,
+      compliance_links: scenario.compliance_links,
+      flow: scenario.flow,
+      active_step: active_step,
+      active_step_id: active_step && active_step.id
+    }
+  end
+
+  defp default_active_step_id(%{flow: [first_step | _]}), do: first_step.id
+  defp default_active_step_id(_scenario), do: nil
+
+  defp find_flow_step(%{flow: flow}, nil) when is_list(flow), do: List.first(flow)
+
+  defp find_flow_step(%{flow: flow}, step_id) when is_list(flow) do
+    Enum.find(flow, &(to_string(&1.id) == to_string(step_id))) || List.first(flow)
+  end
+
+  defp find_flow_step(_scenario, _step_id), do: nil
+
+  defp clear_scenario_state(socket) do
+    socket
+    |> assign(
+      selected_scenario_id: nil,
+      active_scenario_step_id: nil,
+      drawer_open: false,
+      drawer_tab: :details
+    )
+    |> push_event("graph:clear_overlay", %{})
   end
 end
