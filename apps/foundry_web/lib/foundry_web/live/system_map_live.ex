@@ -26,6 +26,7 @@ defmodule FoundryWeb.SystemMapLive do
       {:ok, context} ->
         context_json = Jason.encode!(Foundry.Context.Compact.compact(context))
         nodes = context.nodes || []
+        scenarios = context.scenarios || []
 
         # Organize nodes by domain
         nodes_by_domain =
@@ -40,6 +41,11 @@ defmodule FoundryWeb.SystemMapLive do
           end)
           |> Enum.into(%{})
 
+        # Organize scenarios by category
+        scenarios_by_category =
+          Enum.group_by(scenarios, & &1.category)
+          |> Map.new(fn {cat, scens} -> {cat, Enum.sort_by(scens, & &1.name)} end)
+
         # Count compliance coverage gaps: declared requirements without linked E2E coverage
         gap_count =
           Enum.count(nodes, fn n ->
@@ -50,12 +56,19 @@ defmodule FoundryWeb.SystemMapLive do
         # Count migrations
         migration_count = Enum.count(nodes, fn n -> n.pending_migrations end)
 
+        # Calculate domain coverage
+        domain_coverage = calculate_domain_coverage(nodes, scenarios)
+
         {:ok, socket} =
           socket
           |> assign(
             context_json: context_json,
             nodes_by_domain: nodes_by_domain,
             all_nodes: nodes,
+            scenarios: scenarios,
+            scenarios_by_category: scenarios_by_category,
+            domain_coverage: domain_coverage,
+            selected_scenario_id: nil,
             gap_count: gap_count,
             migration_count: migration_count,
             project_name: Path.basename(project_root),
@@ -82,6 +95,10 @@ defmodule FoundryWeb.SystemMapLive do
             context_json: nil,
             nodes_by_domain: %{},
             all_nodes: [],
+            scenarios: [],
+            scenarios_by_category: %{},
+            domain_coverage: %{},
+            selected_scenario_id: nil,
             gap_count: 0,
             migration_count: 0,
             project_name: Path.basename(project_root),
@@ -321,5 +338,71 @@ defmodule FoundryWeb.SystemMapLive do
       "shortcuts" => :shortcuts,
       "authorization" => :authorization
     }
+  end
+
+  def handle_event("select_scenario", %{"id" => scenario_id}, socket) do
+    scenarios = socket.assigns.scenarios
+    scenario = Enum.find(scenarios, &(&1.id == scenario_id))
+
+    case scenario do
+      nil ->
+        {:noreply, socket}
+
+      scen ->
+        socket =
+          socket
+          |> assign(selected_scenario_id: scenario_id)
+          |> push_event("graph:scenario_overlay", %{
+            nodes: scen.nodes,
+            path: scen.graph_path,
+            start: List.first(scen.graph_path),
+            end: List.last(scen.graph_path)
+          })
+          |> push_event("drawer:open_flow", %{})
+
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("clear_scenario", _params, socket) do
+    socket =
+      socket
+      |> assign(selected_scenario_id: nil)
+      |> push_event("graph:clear_overlay", %{})
+
+    {:noreply, socket}
+  end
+
+  defp calculate_domain_coverage(nodes, scenarios) do
+    domains = Enum.map(nodes, & &1.domain) |> Enum.uniq()
+
+    domain_scores =
+      Enum.reduce(domains, %{}, fn domain, acc ->
+        domain_nodes = Enum.filter(nodes, &(&1.domain == domain))
+        domain_scenario_count = count_scenarios_for_domain(domain_nodes, scenarios)
+        score = if Enum.empty?(domain_nodes), do: 0, else: min(domain_scenario_count / 4 * 100, 100)
+        Map.put(acc, domain, score)
+      end)
+
+    # Calculate weighted mean (all domains equal weight for now)
+    overall_score =
+      if Enum.empty?(domain_scores) do
+        0
+      else
+        scores = Map.values(domain_scores)
+        Enum.sum(scores) / Enum.count(scores)
+      end
+
+    domain_scores
+    |> Map.put(:overall_score, overall_score)
+    |> Map.put(:below_threshold, overall_score < 80)
+  end
+
+  defp count_scenarios_for_domain(nodes, scenarios) do
+    node_ids = Enum.map(nodes, & &1.module)
+
+    Enum.count(scenarios, fn scen ->
+      Enum.any?(scen.nodes, &(&1 in node_ids))
+    end)
   end
 end

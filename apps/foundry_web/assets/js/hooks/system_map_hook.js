@@ -77,9 +77,25 @@ export const SystemMapHook = {
         }
       })
 
+      this.handleEvent('graph:scenario_overlay', ({ nodes, path, start, end }) => {
+        if (this.graph) {
+          this.graph.applyScenarioOverlay({ nodes, path, start, end })
+        }
+        if (this.drawer) {
+          this.drawer.switchTab('flow')
+        }
+      })
+
+      this.handleEvent('drawer:open_flow', () => {
+        if (this.drawer) {
+          this.drawer.switchTab('flow')
+          this.drawer.open()
+        }
+      })
+
       this.handleEvent('graph:clear_overlay', () => {
         if (this.graph) {
-          this.graph.clearProposalOverlay()
+          this.graph.clearScenarioOverlay()
         }
       })
 

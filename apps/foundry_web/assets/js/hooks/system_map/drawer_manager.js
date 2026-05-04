@@ -523,15 +523,85 @@ export class DrawerManager {
     panel.innerHTML = html
   }
 
+  renderForScenario(scenario) {
+    if (!scenario) return
+    this._renderScenarioFlowPanel(scenario)
+    this.open()
+    this.switchTab('flow')
+  }
+
+  _renderScenarioFlowPanel(scenario) {
+    const panel = document.getElementById(SELECTORS.panelFlow)
+    if (!panel) return
+
+    const renderSteps = (title, steps) => {
+      if (!steps || steps.length === 0) return ''
+      return `
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content">${title}</p>
+          <ul class="mt-1 space-y-1">
+            ${steps.map(step => `<li class="flex gap-2 text-xs text-base-content/80"><span>•</span><span>${this._esc(step)}</span></li>`).join('')}
+          </ul>
+        </div>
+      `
+    }
+
+    const nodes_html = scenario.nodes && scenario.nodes.length ? `
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content">Participating Nodes</p>
+        <div class="mt-1 flex flex-wrap gap-1">
+          ${scenario.nodes.map(n => `<span class="inline-block rounded bg-base-300 px-2 py-1 text-[10px] text-base-content/70">${this._esc(n)}</span>`).join('')}
+        </div>
+      </div>
+    ` : ''
+
+    const compliance_html = scenario.compliance_links && scenario.compliance_links.length ? `
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content">Compliance</p>
+        <div class="mt-1 flex flex-wrap gap-1">
+          ${scenario.compliance_links.map(link => `<span class="inline-block rounded bg-warning/20 px-2 py-1 text-[10px] font-mono text-warning">${this._esc(link)}</span>`).join('')}
+        </div>
+      </div>
+    ` : ''
+
+    panel.innerHTML = `
+      <div class="space-y-3">
+        ${renderSteps('GIVEN', scenario.steps?.given || [])}
+        ${renderSteps('WHEN', scenario.steps?.when || [])}
+        ${renderSteps('THEN', scenario.steps?.then || [])}
+        ${nodes_html}
+        ${compliance_html}
+      </div>
+    `
+  }
+
   _renderFlowPanel(n) {
     const panel = document.getElementById(SELECTORS.panelFlow)
     if (!panel) return
 
-    panel.innerHTML = `
-      <div class="text-center py-6">
-        <p class="text-xs text-base-content/50">No scenarios defined yet</p>
-      </div>
-    `
+    // If node has scenario_origins, list them
+    if (n.scenario_origins && n.scenario_origins.length > 0) {
+      const html = `
+        <div class="space-y-2">
+          <p class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content">Scenarios Involving This Node</p>
+          <div class="space-y-1">
+            ${n.scenario_origins.map(scen_id => `
+              <button class="w-full rounded-box border border-base-300/50 bg-base-300/30 px-2 py-1.5 text-left text-xs text-base-content hover:bg-base-300/60 transition-colors"
+                      phx-click="select_scenario" phx-value-id="${this._esc(scen_id)}">
+                ${this._esc(scen_id)}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      `
+      panel.innerHTML = html
+    } else {
+      panel.innerHTML = `
+        <div class="text-center py-6">
+          <p class="text-xs text-base-content/50">No scenarios defined for this node yet</p>
+        </div>
+      `
+    }
   }
 
   _renderActionsPanel(n) {

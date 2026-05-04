@@ -198,6 +198,77 @@ export class CytoscapeGraph {
     this.cy.elements().filter(ele => ele.data('state') === 'phantom').remove()
   }
 
+  clearScenarioOverlay() {
+    this.cy.nodes().style('opacity', 1)
+    this.cy.nodes().style('filter', 'none')
+    this.cy.nodes().style('border-width', '1px')
+    this.cy.nodes().style('border-color', '#000000')
+    this.cy.edges().style('opacity', 1)
+    this.cy.edges().style('line-color', '')
+    this.cy.edges().style('width', '')
+  }
+
+  applyScenarioOverlay({ nodes, path, start, end }) {
+    if (!nodes || nodes.length === 0) return
+
+    const nodeSet = new Set(nodes)
+
+    // Dim nodes not in scenario
+    this.cy.nodes().forEach(node => {
+      const id = node.id()
+      if (nodeSet.has(id)) {
+        node.style('opacity', 1)
+        node.style('filter', 'none')
+      } else {
+        node.style('opacity', 0.15)
+        node.style('filter', 'grayscale(100%)')
+      }
+    })
+
+    // Highlight path edges
+    if (path && path.length > 1) {
+      this.cy.edges().forEach(edge => {
+        const source = edge.source().id()
+        const target = edge.target().id()
+        const isInPath = path.includes(source) && path.includes(target)
+
+        if (isInPath) {
+          edge.style('line-color', 'rgb(34, 211, 238)')
+          edge.style('width', '2px')
+          edge.style('opacity', 1)
+        } else {
+          edge.style('opacity', 0.15)
+        }
+      })
+    }
+
+    // Add START badge
+    if (start) {
+      const startNode = this.cy.getElementById(start)
+      if (startNode.length > 0) {
+        startNode.style('border-color', '#10b981')
+        startNode.style('border-width', '3px')
+      }
+    }
+
+    // Add END badge
+    if (end) {
+      const endNode = this.cy.getElementById(end)
+      if (endNode.length > 0) {
+        endNode.style('border-color', '#ef4444')
+        endNode.style('border-width', '3px')
+      }
+    }
+
+    // Auto-fit to scenario subgraph
+    if (nodes.length > 0) {
+      const scenarioNodes = this.cy.nodes().filter(n => nodeSet.has(n.id()))
+      if (scenarioNodes.length > 0) {
+        this.cy.fit(scenarioNodes, 50)
+      }
+    }
+  }
+
   selectNode(id) {
     const node = this.cy.getElementById(id)
     if (node.length > 0) {

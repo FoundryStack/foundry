@@ -103,6 +103,70 @@ compliance E2E and Transfer property tests are the most critical to have.
 A score below 0.8 triggers a warning in CI. Below 0.6 fails CI if the project manifest
 has `coverage_gate: true` (default false for new projects, recommended true before go-live).
 
+## BDD Scenario Format: Given/When/Then Annotation Convention
+
+All generated test skeletons include scenario metadata via `@moduletag` annotations. This enables test visualization in Studio (ADR-025).
+
+### Annotation Table
+
+| Scenario Type | `@moduletag category:` | `@moduletag nodes:` | `@moduletag graph_path:` | `@moduletag steps:` |
+|---|---|---|---|---|
+| Property test (Transfer + rule) | `:property` | List of Transfer + relevant Rule node IDs | Ordered path through involved rules | `%{given: [...], when: [...], then: [...]}` |
+| Invariant test (Rule spec_invariants) | `:invariant` | List of Rule node IDs | Rule + dependencies | `%{given: state, when: action, then: assertion}` |
+| State machine test (AshStateMachine) | `:state_machine` | StateMachine resource node ID | Source → destination | `%{given: initial_state, when: transition, then: end_state}` |
+| E2E scenario (RG-* requirement) | `:compliance` | All involved resource node IDs | User journey path | `%{given: preconditions, when: user_actions, then: outcomes}` |
+| LiveResource integration | `:property` or `:invariant` | LiveResource node ID | Component + backend flow | `%{given: page_state, when: user_interaction, then: UI_state}` |
+
+### Annotation Convention Example
+
+```elixir
+describe "RG-UK-014 — Withdrawal limits enforced" do
+  @moduletag category: :compliance
+  @moduletag compliance_links: ["RG-UK-014"]
+  @moduletag nodes: ["Finance.WithdrawalTransfer", "Finance.Rules.WithdrawalLimitNotExceeded",
+                     "Players.Player", "Finance.Wallet"]
+  @moduletag graph_path: ["Players.Player", "Finance.WithdrawalTransfer",
+                          "Finance.Rules.WithdrawalLimitNotExceeded", "Finance.Wallet"]
+  @moduletag steps: %{
+    given: [
+      "A player with KYC-verified status",
+      "A wallet with balance >= daily limit",
+      "The player has not reached their daily withdrawal limit"
+    ],
+    when: [
+      "The player requests a withdrawal within their daily limit"
+    ],
+    then: [
+      "The withdrawal request is approved",
+      "The daily limit counter is incremented",
+      "A compliance audit event is logged"
+    ]
+  }
+  
+  test "approves withdrawal within limit" do
+    :ok  # Stub before implementation
+  end
+end
+```
+
+### Copilot Generation Rules
+
+When generating test skeletons, the copilot:
+1. Declares `@moduletag category:` based on test type (`:property`, `:invariant`, `:compliance`, `:state_machine`)
+2. Declares `@moduletag nodes:` by parsing module aliases and cross-referencing `ProjectContext.nodes/0`
+3. Declares `@moduletag graph_path:` by analyzing execution flow through involved nodes (transfer → rules → resources)
+4. Declares `@moduletag steps:` with Given/When/Then prose — sufficient detail that a domain expert understands the scenario without reading code
+5. Declares `@moduletag compliance_links:` when the test satisfies one or more RG-* requirements
+
+Per INV-023, these annotations are committed **before** test implementation code. The test body is stubbed (`:ok`). Developers implement assertions in Phase 2; copilot generates implementation code in Phase 3.
+
+### Scenario Visualization in Studio
+
+Test annotations enable ADR-025 features:
+- **Coverage Tab**: Scenarios grouped by category, domain coverage score calculated from scenario participation
+- **Graph Overlay**: Clicking a scenario highlights participating nodes and execution path on the system map
+- **Flow Drawer Tab**: Displays Given/When/Then steps, participating nodes, and compliance links — no code reading required
+
 ## Consequences
 
 - Line coverage metrics are not the primary measure — domain coverage is (see Studio's Test Coverage Map panel)
@@ -111,3 +175,5 @@ has `coverage_gate: true` (default false for new projects, recommended true befo
 - The copilot can generate tests on demand: "generate tests for the withdrawal flow" → complete test module as diff
 - `bypass` is the mechanism for adapter contract tests; the copilot knows to include it when generating adapter test modules
 - The copilot reads the project's generator module before generating any test that references fixtures
+- Test skeletons include BDD scenario annotations before implementation (per INV-023 and ADR-025)
+- Tests are reviewable in Studio without reading source files — non-technical reviewers can understand intent via Given/When/Then

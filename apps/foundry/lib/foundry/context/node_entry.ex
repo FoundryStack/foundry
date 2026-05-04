@@ -84,7 +84,8 @@ defmodule Foundry.Context.NodeEntry do
     test_coverage: %{
       property_tests: false,
       scenario_tests: false,
-      e2e_tests: false
+      e2e_tests: false,
+      scenario_count: 0
     },
     data_layer: nil,
     pending_migrations: false,
