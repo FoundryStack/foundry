@@ -981,6 +981,51 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
       assert scenario.category == :property
     end
+
+    test "scenario entries remain Jason encodable when flow uses Step structs" do
+      tmpdir = tmp_project_root()
+
+      write_test_file(
+        tmpdir,
+        "json_scenario_test.exs",
+        """
+        defmodule IgamingRef.Promotions.JsonScenarioTest do
+          use ExUnit.Case, async: true
+
+          alias IgamingRef.Promotions.BonusEvent
+
+          describe "JSON scenario" do
+            test "invokes the ingest action with canonical trigger attributes" do
+              Ash.create(
+                BonusEvent,
+                %{kind: :deposit_completed},
+                action: :ingest,
+                actor: %{is_system: true}
+              )
+            end
+          end
+        end
+        """
+      )
+
+      nodes = [
+        %NodeEntry{
+          id: "IgamingRef.Promotions.BonusEvent",
+          module: "IgamingRef.Promotions.BonusEvent",
+          type: "resource",
+          domain: "Promotions",
+          description: "Bonus event",
+          actions: [%{name: "ingest", type: "create"}]
+        }
+      ]
+
+      [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+      encoded = Jason.encode!(scenario)
+
+      assert encoded =~ "\"flow\""
+      assert encoded =~ "\"kind\":\"action_execute\""
+      assert encoded =~ "\"node_id\":\"IgamingRef.Promotions.BonusEvent\""
+    end
   end
 
   defp node(module_name, type) do
