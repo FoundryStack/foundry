@@ -47,24 +47,6 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
     run(fn inputs, _ ->
       req_id = Map.fetch!(inputs, :withdrawal_request_id)
 
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.WithdrawalTransfer", %{
-        type: :entry,
-        kind: :action_execute,
-        label: "Enter WithdrawalTransfer pipeline",
-        module_function: "Reactor.run",
-        source_snippet: "Reactor.run(WithdrawalTransfer, ...)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:0"
-      })
-
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.WithdrawalRequest", %{
-        type: :reaction,
-        kind: :read,
-        label: "Load WithdrawalRequest by id",
-        module_function: "Ash.get",
-        source_snippet: "Ash.get(WithdrawalRequest, req_id, actor: :system)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:0"
-      })
-
       case Ash.get(WithdrawalRequest, req_id, actor: %{is_system: true}) do
         {:ok, req} when req.status == :approved ->
           {:ok, req}
@@ -85,26 +67,9 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
     run(fn inputs, _ ->
       req = Map.fetch!(inputs, :request)
 
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.Wallet", %{
-        type: :reaction,
-        kind: :read,
-        label: "Load Wallet for withdrawal rule evaluation",
-        module_function: "Ash.get",
-        source_snippet: "Ash.get(Wallet, req.wallet_id, actor: :system)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:1"
-      })
-
-      Foundry.TestScenario.trace_node("IgamingRef.Players.Player", %{
-        type: :reaction,
-        kind: :read,
-        label: "Load Player for withdrawal rule evaluation",
-        module_function: "Ash.get",
-        source_snippet: "Ash.get(IgamingRef.Players.Player, req.player_id, actor: :system)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:1"
-      })
-
       with {:ok, wallet} <- Ash.get(Wallet, req.wallet_id, actor: %{is_system: true}),
-           {:ok, player} <- Ash.get(IgamingRef.Players.Player, req.player_id, actor: %{is_system: true}) do
+           {:ok, player} <-
+             Ash.get(IgamingRef.Players.Player, req.player_id, actor: %{is_system: true}) do
         {:ok, %{wallet: wallet, player: player}}
       end
     end)
@@ -121,42 +86,6 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
     run(fn inputs, _ ->
       req = Map.fetch!(inputs, :request)
       %{wallet: wallet, player: player} = Map.fetch!(inputs, :context)
-
-      Foundry.TestScenario.trace_node("IgamingRef.Players.Rules.PlayerNotSelfExcluded", %{
-        type: :command,
-        kind: :rule_check,
-        label: "Verify PlayerNotSelfExcluded before funds move",
-        module_function: "evaluate/2",
-        source_snippet: "PlayerNotSelfExcluded.evaluate(rule_context, nil)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:2"
-      })
-
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.Rules.PlayerKYCVerified", %{
-        type: :command,
-        kind: :rule_check,
-        label: "Verify PlayerKYCVerified before provider submission",
-        module_function: "evaluate/2",
-        source_snippet: "PlayerKYCVerified.evaluate(rule_context, nil)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:2"
-      })
-
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.Rules.SufficientBalance", %{
-        type: :command,
-        kind: :rule_check,
-        label: "Verify SufficientBalance before debiting the wallet",
-        module_function: "evaluate/2",
-        source_snippet: "SufficientBalance.evaluate(rule_context, nil)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:2"
-      })
-
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded", %{
-        type: :command,
-        kind: :rule_check,
-        label: "Verify WithdrawalLimitNotExceeded for the current player risk profile",
-        module_function: "evaluate/2",
-        source_snippet: "WithdrawalLimitNotExceeded.evaluate(rule_context, nil)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:2"
-      })
 
       daily_used = fetch_daily_withdrawal_total(player.id)
 
@@ -191,15 +120,6 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
       req = Map.fetch!(inputs, :request)
       wallet = Map.fetch!(inputs, :wallet)
 
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.Wallet", %{
-        type: :reaction,
-        kind: :write,
-        label: "Debit Wallet for the approved withdrawal amount",
-        module_function: "Ash.update",
-        source_snippet: "Ash.update(wallet, :debit, arguments: %{amount: req.amount}, actor: :system)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:3"
-      })
-
       wallet
       |> Ash.Changeset.for_update(:debit, %{amount: req.amount})
       |> Ash.update(actor: %{is_system: true})
@@ -220,15 +140,6 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
 
     run(fn inputs, _ ->
       req = Map.fetch!(inputs, :request)
-
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.LedgerEntry", %{
-        type: :reaction,
-        kind: :write,
-        label: "Create immutable LedgerEntry for the withdrawal debit",
-        module_function: "Ash.create",
-        source_snippet: "Ash.create(LedgerEntry, :record, ...)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:4"
-      })
 
       LedgerEntry
       |> Ash.Changeset.for_create(:record, %{
@@ -254,15 +165,6 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
     run(fn inputs, _ ->
       req = Map.fetch!(inputs, :request)
 
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.WithdrawalRequest", %{
-        type: :event,
-        kind: :action_execute,
-        label: "Submit the approved withdrawal to the configured provider adapter",
-        module_function: "submit_withdrawal/1",
-        source_snippet: "provider_module(req.provider).submit_withdrawal(req)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalTransfer:step:5"
-      })
-
       provider_module = provider_module(req.provider)
       provider_module.submit_withdrawal(req)
     end)
@@ -276,15 +178,6 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
     run(fn inputs, _ ->
       req = Map.fetch!(inputs, :request)
       resp = Map.fetch!(inputs, :provider_response)
-
-      Foundry.TestScenario.trace_node("IgamingRef.Finance.WithdrawalRequest", %{
-        type: :assertion,
-        kind: :write,
-        label: "Mark WithdrawalRequest as processing with the provider reference",
-        module_function: "Ash.update",
-        source_snippet: "Ash.update(req, :mark_processing, arguments: %{provider_reference: resp.reference}, actor: :system)",
-        focus_node_id: "IgamingRef.Finance.WithdrawalRequest:action:mark_processing"
-      })
 
       req
       |> Ash.Changeset.for_update(:mark_processing, %{provider_reference: resp.reference})
@@ -359,22 +252,6 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
     description("Load player, campaign, wallet, and existing grants for rule evaluation.")
 
     run(fn %{player_id: pid, campaign_id: cid}, _ ->
-      Foundry.TestScenario.trace_node("IgamingRef.Promotions.BonusGrantTransfer", %{
-        type: :entry,
-        kind: :action_execute,
-        label: "Enter BonusGrantTransfer pipeline",
-        module_function: "Reactor.run",
-        source_snippet: "Reactor.run(BonusGrantTransfer, ...)"
-      })
-
-      Foundry.TestScenario.trace_node("IgamingRef.Players.Player", %{
-        type: :reaction,
-        kind: :read,
-        label: "Load player for grant evaluation",
-        module_function: "Ash.get",
-        source_snippet: "Ash.get(IgamingRef.Players.Player, pid, actor: :system)"
-      })
-
       with {:ok, player} <- Ash.get(IgamingRef.Players.Player, pid, actor: :system),
            {:ok, campaign} <- Ash.get(BonusCampaign, cid, actor: :system),
            {:ok, wallet} <- primary_wallet(pid),

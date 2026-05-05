@@ -46,16 +46,6 @@ defmodule IgamingRef.Finance.WithdrawalTransferIntegrationTest do
           |> Ash.Changeset.for_update(:credit, %{amount: Money.new(1_000_00, :GBP)})
           |> Ash.update(actor: %{is_system: true})
 
-        trace_node("IgamingRef.Finance.WithdrawalRequest", %{
-          type: :entry,
-          kind: :action_execute,
-          action: "create",
-          label: "Create a pending WithdrawalRequest for the player",
-          module_function: "Ash.create",
-          source_snippet: "Ash.create(WithdrawalRequest, ..., action: :create)",
-          focus_node_id: "IgamingRef.Finance.WithdrawalRequest:action:create"
-        })
-
         {:ok, withdrawal_request} =
           Ash.create(
             WithdrawalRequest,
@@ -69,17 +59,6 @@ defmodule IgamingRef.Finance.WithdrawalTransferIntegrationTest do
           )
 
         assert withdrawal_request.status == :pending
-
-        trace_node("IgamingRef.Finance.WithdrawalRequest", %{
-          type: :command,
-          kind: :action_execute,
-          action: "approve",
-          label: "Approve the WithdrawalRequest and select the provider",
-          module_function: "Ash.update",
-          source_snippet:
-            "Ash.update(withdrawal_request, :approve, %{provider: \"stripe\"}, actor: %{role: :operator})",
-          focus_node_id: "IgamingRef.Finance.WithdrawalRequest:action:approve"
-        })
 
         {:ok, approved_request} =
           withdrawal_request

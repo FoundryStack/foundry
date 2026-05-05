@@ -129,7 +129,7 @@ defmodule Foundry.Context.ScenarioExtractorTest do
                  step.status == :short_circuit
              end)
 
-      refute Enum.any?(scenario.flow, &(&1.label == "Persist webhook event"))
+      refute Enum.any?(scenario.flow, &(&1.provenance == :expanded and &1.kind == :write))
 
       assert Enum.any?(scenario.flow, fn step ->
                step.provenance == :branch and String.contains?(step.label, "failure")
@@ -219,6 +219,54 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       assert Enum.any?(scenario.flow, fn step ->
                step.provenance == :branch and
                  String.contains?(step.result || "", ":campaign_max_redemptions_reached")
+             end)
+    end
+
+    test "infers piped Ash.Changeset calls as executable action preparation steps" do
+      tmpdir = tmp_project_root()
+
+      write_test_file(
+        tmpdir,
+        "piped_changeset_scenario.exs",
+        """
+        defmodule IgamingRef.Finance.PipedChangesetScenarioTest do
+          use ExUnit.Case, async: true
+          use Foundry.TestScenario
+
+          alias IgamingRef.Finance.WithdrawalRequest
+
+          describe "Piped changeset flow" do
+            @scenario category: :compliance
+
+            test "prepares an approval changeset through a pipeline" do
+              %{}
+              |> Ash.Changeset.for_update(WithdrawalRequest, :approve, %{provider: "stripe"})
+
+              assert true
+            end
+          end
+        end
+        """
+      )
+
+      nodes = [
+        %NodeEntry{
+          id: "IgamingRef.Finance.WithdrawalRequest",
+          module: "IgamingRef.Finance.WithdrawalRequest",
+          type: "resource",
+          domain: "Finance",
+          description: "Withdrawal request",
+          actions: [%{name: "approve", type: "update"}]
+        }
+      ]
+
+      [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert Enum.any?(scenario.flow, fn step ->
+               step.provenance == :executed and
+                 step.kind == :action_prepare and
+                 step.node_id == "IgamingRef.Finance.WithdrawalRequest" and
+                 step.action == "approve"
              end)
     end
 
@@ -532,6 +580,254 @@ defmodule Foundry.Context.ScenarioExtractorTest do
                "IgamingRef.Finance.WithdrawalWebhookEvent:action:receive",
                "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook"
              ]
+    end
+
+    test "expands automatic runtime entrypoints through the graph without manual trace boilerplate" do
+      tmpdir = tmp_project_root()
+
+      write_lib_file(
+        tmpdir,
+        "finance/withdrawal_webhook.ex",
+        """
+        defmodule IgamingRef.Finance.WithdrawalWebhook do
+          alias IgamingRef.Finance.WithdrawalWebhookEvent
+          alias IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook
+
+          def handle_webhook(provider, signature, body) do
+            with :ok <- verify_signature(provider, signature, body),
+                 {:ok, event} <- parse_event(provider, body),
+                 {:ok, persisted} <- persist_event(event),
+                 {:ok, _job} <- dispatch_async_job(event) do
+              {:ok, persisted}
+            else
+              error -> {:error, error}
+            end
+          end
+
+          defp verify_signature(_provider, _signature, _body), do: :ok
+          defp parse_event(_provider, _body), do: {:ok, %{reference: "wh_123"}}
+
+          defp persist_event(event) do
+            WithdrawalWebhookEvent
+            |> Ash.Changeset.for_create(:receive, %{provider_reference: event.reference})
+            |> Ash.create(actor: %{is_system: true})
+          end
+
+          defp dispatch_async_job(event) do
+            args = %{"provider_reference" => event.reference}
+            Oban.insert(ProcessWithdrawalWebhook.new(args))
+          end
+        end
+
+        defmodule IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook do
+          def new(args), do: args
+          def perform(_job), do: :ok
+        end
+
+        defmodule IgamingRef.Finance.WithdrawalWebhookEvent do
+        end
+        """
+      )
+
+      write_test_file(
+        tmpdir,
+        "automatic_runtime_webhook_scenario.exs",
+        """
+        defmodule IgamingRef.Finance.AutomaticRuntimeWebhookScenarioTest do
+          use ExUnit.Case, async: true
+          use Foundry.TestScenario
+
+          alias IgamingRef.Finance.WithdrawalWebhook
+
+          describe "Automatic runtime-backed webhook flow" do
+            @scenario category: :compliance
+
+            test "executes the webhook entrypoint" do
+              assert {:ok, _} = WithdrawalWebhook.handle_webhook("stripe", "sig", "{}")
+            end
+          end
+        end
+        """
+      )
+
+      write_trace_file(
+        tmpdir,
+        "automatic_runtime_webhook_trace.json",
+        %{
+          "scenario_id" =>
+            "IgamingRef.Finance.AutomaticRuntimeWebhookScenarioTest.automatic_runtime_backed_webhook_flow",
+          "test_name" => "Automatic runtime-backed webhook flow executes the webhook entrypoint",
+          "events" => [
+            %{
+              "type" => "entry",
+              "kind" => "trigger_receive",
+              "node_id" => "IgamingRef.Finance.WithdrawalWebhook",
+              "focus_node_id" => "IgamingRef.Finance.WithdrawalWebhook",
+              "module_function" => "IgamingRef.Finance.WithdrawalWebhook.handle_webhook",
+              "capture_origin" => "automatic"
+            }
+          ]
+        }
+      )
+
+      nodes = [
+        node("IgamingRef.Finance.WithdrawalWebhook", "trigger"),
+        %NodeEntry{
+          id: "IgamingRef.Finance.WithdrawalWebhookEvent",
+          module: "IgamingRef.Finance.WithdrawalWebhookEvent",
+          type: "resource",
+          domain: "Finance",
+          description: "Webhook event",
+          actions: [%{name: "receive", type: "create"}]
+        },
+        node("IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook", "job")
+      ]
+
+      [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert scenario.evidence_mode == :runtime
+      assert scenario.trace_status == :captured
+      assert scenario.expansion_mode == :runtime
+
+      assert scenario.nodes == [
+               "IgamingRef.Finance.WithdrawalWebhook",
+               "IgamingRef.Finance.WithdrawalWebhookEvent",
+               "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook"
+             ]
+
+      assert Enum.any?(scenario.flow, fn step ->
+               step.provenance == :expanded and
+                 step.kind == :write and
+                 step.node_id == "IgamingRef.Finance.WithdrawalWebhookEvent"
+             end)
+
+      assert Enum.any?(scenario.flow, fn step ->
+               step.provenance == :expanded and
+                 step.kind == :job_enqueue and
+                 step.node_id == "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook"
+             end)
+    end
+
+    test "resolves local helper expansion against the current module instead of hardcoded domains" do
+      tmpdir = tmp_project_root()
+
+      write_lib_file(
+        tmpdir,
+        "operations/provider_callback.ex",
+        """
+        defmodule Demo.Operations.ProviderCallback do
+          alias Demo.Operations.ProviderEvent
+          alias Demo.Operations.Jobs.ProcessProviderCallback
+
+          def handle_webhook(provider, signature, body) do
+            with :ok <- verify_signature(provider, signature, body),
+                 {:ok, event} <- parse_event(provider, body),
+                 {:ok, persisted} <- persist_event(event),
+                 {:ok, _job} <- dispatch_async_job(event) do
+              {:ok, persisted}
+            else
+              error -> {:error, error}
+            end
+          end
+
+          defp verify_signature(_provider, _signature, _body), do: :ok
+          defp parse_event(_provider, _body), do: {:ok, %{reference: "cb_123"}}
+
+          defp persist_event(event) do
+            ProviderEvent
+            |> Ash.Changeset.for_create(:receive, %{provider_reference: event.reference})
+            |> Ash.create(actor: %{is_system: true})
+          end
+
+          defp dispatch_async_job(event) do
+            args = %{"provider_reference" => event.reference}
+            Oban.insert(ProcessProviderCallback.new(args))
+          end
+        end
+
+        defmodule Demo.Operations.Jobs.ProcessProviderCallback do
+          def new(args), do: args
+          def perform(_job), do: :ok
+        end
+
+        defmodule Demo.Operations.ProviderEvent do
+        end
+        """
+      )
+
+      write_test_file(
+        tmpdir,
+        "provider_callback_scenario.exs",
+        """
+        defmodule Demo.Operations.ProviderCallbackScenarioTest do
+          use ExUnit.Case, async: true
+          use Foundry.TestScenario
+
+          alias Demo.Operations.ProviderCallback
+
+          describe "Provider callback flow" do
+            @scenario category: :compliance
+
+            test "expands local helper targets from the current module" do
+              assert {:ok, _} = ProviderCallback.handle_webhook("demo", "sig", "{}")
+            end
+          end
+        end
+        """
+      )
+
+      write_trace_file(
+        tmpdir,
+        "provider_callback_trace.json",
+        %{
+          "scenario_id" => "Demo.Operations.ProviderCallbackScenarioTest.provider_callback_flow",
+          "test_name" =>
+            "Provider callback flow expands local helper targets from the current module",
+          "events" => [
+            %{
+              "type" => "entry",
+              "kind" => "trigger_receive",
+              "node_id" => "Demo.Operations.ProviderCallback",
+              "focus_node_id" => "Demo.Operations.ProviderCallback",
+              "module_function" => "Demo.Operations.ProviderCallback.handle_webhook",
+              "capture_origin" => "automatic"
+            }
+          ]
+        }
+      )
+
+      nodes = [
+        node("Demo.Operations.ProviderCallback", "trigger"),
+        %NodeEntry{
+          id: "Demo.Operations.ProviderEvent",
+          module: "Demo.Operations.ProviderEvent",
+          type: "resource",
+          domain: "Operations",
+          description: "Provider event",
+          actions: [%{name: "receive", type: "create"}]
+        },
+        node("Demo.Operations.Jobs.ProcessProviderCallback", "job")
+      ]
+
+      [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert scenario.nodes == [
+               "Demo.Operations.ProviderCallback",
+               "Demo.Operations.ProviderEvent",
+               "Demo.Operations.Jobs.ProcessProviderCallback"
+             ]
+
+      assert Enum.any?(scenario.flow, fn step ->
+               step.provenance == :expanded and
+                 step.kind == :write and
+                 step.node_id == "Demo.Operations.ProviderEvent"
+             end)
+
+      assert Enum.any?(scenario.flow, fn step ->
+               step.provenance == :expanded and
+                 step.kind == :job_enqueue and
+                 step.node_id == "Demo.Operations.Jobs.ProcessProviderCallback"
+             end)
     end
 
     test "collapses duplicate adjacent runtime steps while preserving the canonical later event" do

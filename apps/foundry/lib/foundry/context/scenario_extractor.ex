@@ -128,7 +128,7 @@ defmodule Foundry.Context.ScenarioExtractor do
 
       runtime_flow =
         traced_tests
-        |> Enum.flat_map(&runtime_flow_for_test(&1, scenario_id))
+        |> Enum.flat_map(&runtime_flow_for_test(&1, scenario_id, node_lookup))
         |> assign_step_ids()
         |> attach_focus_targets()
 
@@ -207,37 +207,56 @@ defmodule Foundry.Context.ScenarioExtractor do
     |> Map.put(:provenance, :executed)
   end
 
-  defp runtime_flow_for_test(%{runtime_trace: nil}, _scenario_id), do: []
+  defp runtime_flow_for_test(%{runtime_trace: nil}, _scenario_id, _node_lookup), do: []
 
-  defp runtime_flow_for_test(%{runtime_trace: runtime_trace, test_case: test_case}, _scenario_id) do
-    runtime_trace
-    |> Map.get("events", [])
-    |> Enum.sort_by(&Map.get(&1, "sequence", 0))
-    |> Enum.map(fn event ->
-      %{
-        id: nil,
-        type: normalize_runtime_atom(Map.get(event, "type"), :reaction),
-        kind: normalize_runtime_atom(Map.get(event, "kind"), :observation),
-        label: Map.get(event, "label") || runtime_label(event),
-        node_id: Map.get(event, "node_id"),
-        focus_node_id: Map.get(event, "focus_node_id") || Map.get(event, "node_id"),
-        focus_targets: normalize_string_list(Map.get(event, "focus_targets")),
-        emits: normalize_string_list(Map.get(event, "emits")),
-        reacts_to: Map.get(event, "reacts_to"),
-        action: Map.get(event, "action"),
-        actor: Map.get(event, "actor"),
-        provenance: :executed,
-        status: normalize_runtime_atom(Map.get(event, "status"), :passed),
-        module_function: Map.get(event, "module_function"),
-        source_snippet: Map.get(event, "source_snippet"),
-        result: normalize_optional_string(Map.get(event, "result")),
-        details: normalize_optional_string(Map.get(event, "details")),
-        line: Map.get(event, "line") || test_case.line,
-        test_name: test_case.name,
-        test_kind: test_case.kind
-      }
-    end)
+  defp runtime_flow_for_test(
+         %{runtime_trace: runtime_trace, test_case: test_case},
+         _scenario_id,
+         node_lookup
+       ) do
+    steps =
+      runtime_trace
+      |> Map.get("events", [])
+      |> Enum.sort_by(&Map.get(&1, "sequence", 0))
+      |> Enum.map(fn event ->
+        %{
+          id: nil,
+          type: normalize_runtime_atom(Map.get(event, "type"), :reaction),
+          kind: normalize_runtime_atom(Map.get(event, "kind"), :observation),
+          label: Map.get(event, "label") || runtime_label(event),
+          node_id: Map.get(event, "node_id"),
+          focus_node_id: Map.get(event, "focus_node_id") || Map.get(event, "node_id"),
+          focus_targets: normalize_string_list(Map.get(event, "focus_targets")),
+          emits: normalize_string_list(Map.get(event, "emits")),
+          reacts_to: Map.get(event, "reacts_to"),
+          action: Map.get(event, "action"),
+          actor: Map.get(event, "actor"),
+          provenance: :executed,
+          status: normalize_runtime_atom(Map.get(event, "status"), :passed),
+          module_function: Map.get(event, "module_function"),
+          source_snippet: Map.get(event, "source_snippet"),
+          result: normalize_optional_string(Map.get(event, "result")),
+          details: normalize_optional_string(Map.get(event, "details")),
+          line: Map.get(event, "line") || test_case.line,
+          test_name: test_case.name,
+          test_kind: test_case.kind,
+          capture_origin: normalize_optional_string(Map.get(event, "capture_origin"))
+        }
+      end)
+
+    steps
+    |> maybe_expand_automatic_runtime_steps(node_lookup)
     |> collapse_duplicate_runtime_steps()
+  end
+
+  defp maybe_expand_automatic_runtime_steps(steps, node_lookup) do
+    Enum.flat_map(steps, fn step ->
+      if Map.get(step, :capture_origin) == "automatic" do
+        expand_step(step, node_lookup)
+      else
+        [step]
+      end
+    end)
   end
 
   defp runtime_label(event) do
@@ -342,6 +361,23 @@ defmodule Foundry.Context.ScenarioExtractor do
          assertion_context
        ) do
     Macro.prewalk(ast, [], fn
+      {:|>, meta, [left, {{:., _, [module_ast, fun]}, _call_meta, args}]} = node, acc ->
+        step =
+          infer_call_step(
+            module_ast,
+            fun,
+            [left | args || []],
+            alias_map,
+            node_lookup,
+            default_line,
+            meta[:line] || default_line,
+            test_block.name,
+            test_block.kind,
+            assertion_context
+          )
+
+        {node, if(step, do: acc ++ [step], else: acc)}
+
       {{:., meta, [module_ast, fun]}, _call_meta, args} = node, acc ->
         step =
           infer_call_step(
@@ -784,6 +820,7 @@ defmodule Foundry.Context.ScenarioExtractor do
             clause,
             index,
             alias_map,
+            node.module,
             node_lookup,
             index == reached_count - 1
           )
@@ -800,19 +837,36 @@ defmodule Foundry.Context.ScenarioExtractor do
          {:<-, _, [_pattern, expr]},
          index,
          alias_map,
+         current_module,
          node_lookup,
          last_reached?
        ) do
-    expand_with_expr(step, expr, index, alias_map, node_lookup, last_reached?)
+    expand_with_expr(step, expr, index, alias_map, current_module, node_lookup, last_reached?)
   end
 
-  defp expand_with_clause(step, expr, index, alias_map, node_lookup, last_reached?) do
-    expand_with_expr(step, expr, index, alias_map, node_lookup, last_reached?)
+  defp expand_with_clause(
+         step,
+         expr,
+         index,
+         alias_map,
+         current_module,
+         node_lookup,
+         last_reached?
+       ) do
+    expand_with_expr(step, expr, index, alias_map, current_module, node_lookup, last_reached?)
   end
 
-  defp expand_with_expr(step, expr, _index, alias_map, node_lookup, last_reached?) do
+  defp expand_with_expr(
+         step,
+         expr,
+         _index,
+         alias_map,
+         current_module,
+         node_lookup,
+         last_reached?
+       ) do
     %{label: label, node_id: node_id, focus_node_id: focus_node_id, kind: kind, details: details} =
-      summarize_with_expr(expr, alias_map, node_lookup)
+      summarize_with_expr(expr, alias_map, current_module, node_lookup)
 
     expanded_step(step, %{
       type: :reaction,
@@ -1165,10 +1219,10 @@ defmodule Foundry.Context.ScenarioExtractor do
     end
   end
 
-  defp summarize_with_expr(expr, alias_map, node_lookup) do
+  defp summarize_with_expr(expr, alias_map, current_module, node_lookup) do
     case expr do
       {fun, _, args} when is_atom(fun) and is_list(args) ->
-        summarize_local_with_expr(fun, alias_map, node_lookup, expr)
+        summarize_local_with_expr(fun, alias_map, current_module, node_lookup, expr)
 
       {{:., _, [module_ast, fun]}, _, _args} ->
         module_name = resolve_module_name(module_ast, alias_map)
@@ -1236,7 +1290,7 @@ defmodule Foundry.Context.ScenarioExtractor do
     end
   end
 
-  defp summarize_local_with_expr(fun, _alias_map, node_lookup, expr) do
+  defp summarize_local_with_expr(fun, _alias_map, current_module, node_lookup, expr) do
     fun_name = to_string(fun)
 
     cond do
@@ -1259,11 +1313,10 @@ defmodule Foundry.Context.ScenarioExtractor do
         }
 
       fun_name == "persist_event" ->
-        target =
-          helper_focus_node("IgamingRef.Finance.WithdrawalWebhook", :persist_event, node_lookup)
+        target = helper_focus_node(current_module, :persist_event, node_lookup)
 
         %{
-          label: "Persist webhook event",
+          label: "Persist event",
           node_id: target,
           focus_node_id: target,
           kind: :write,
@@ -1271,15 +1324,10 @@ defmodule Foundry.Context.ScenarioExtractor do
         }
 
       fun_name == "dispatch_async_job" ->
-        target =
-          helper_focus_node(
-            "IgamingRef.Finance.WithdrawalWebhook",
-            :dispatch_async_job,
-            node_lookup
-          )
+        target = helper_focus_node(current_module, :dispatch_async_job, node_lookup)
 
         %{
-          label: "Enqueue webhook processor job",
+          label: "Enqueue async job",
           node_id: target,
           focus_node_id: target,
           kind: :job_enqueue,
@@ -1297,11 +1345,11 @@ defmodule Foundry.Context.ScenarioExtractor do
     end
   end
 
-  defp helper_focus_node(module_name, helper_name, node_lookup) do
+  defp helper_focus_node(module_name, helper_name, node_lookup) when is_binary(module_name) do
     with {:ok, module_ast, alias_map} <- fetch_module_ast(module_name, node_lookup),
          {:ok, body} <- find_function_body(module_ast, helper_name) do
-      body
-      |> collect_call_steps(
+      collect_call_steps(
+        body,
         alias_map,
         node_lookup,
         %{name: Atom.to_string(helper_name), kind: :test, line: nil},
@@ -1309,9 +1357,80 @@ defmodule Foundry.Context.ScenarioExtractor do
         nil
       )
       |> Enum.find_value(&(&1.focus_node_id || &1.node_id))
+      |> Kernel.||(helper_focus_fallback(body, alias_map, node_lookup))
       |> base_node_id()
     end
   end
+
+  defp helper_focus_node(_module_name, _helper_name, _node_lookup), do: nil
+
+  defp helper_focus_fallback(body, alias_map, node_lookup) do
+    Macro.prewalk(body, nil, fn
+      {:|>, _, [left, {{:., _, [{:__aliases__, _, [:Ash, :Changeset]}, fun]}, _, args}]} = node,
+      nil
+      when fun in @ash_changeset_funs ->
+        focus =
+          left
+          |> resolve_module_name(alias_map)
+          |> resolve_optional_node_id(node_lookup)
+
+        {node, focus || helper_focus_from_args(args || [], alias_map, node_lookup)}
+
+      {:|>, _, [left, {{:., _, [{:__aliases__, _, [:Ash]}, fun]}, _, args}]} = node, nil
+      when fun in @ash_funs ->
+        focus =
+          left
+          |> resolve_module_name(alias_map)
+          |> resolve_optional_node_id(node_lookup)
+
+        {node, focus || helper_focus_from_args(args || [], alias_map, node_lookup)}
+
+      {{:., _, [{:__aliases__, _, [:Ash, :Changeset]}, fun]}, _, [resource_ast | _rest]} = node,
+      nil
+      when fun in @ash_changeset_funs ->
+        focus =
+          resource_ast
+          |> resolve_module_name(alias_map)
+          |> resolve_optional_node_id(node_lookup)
+
+        {node, focus}
+
+      {{:., _, [{:__aliases__, _, [:Ash]}, fun]}, _, [resource_ast | _rest]} = node, nil
+      when fun in @ash_funs ->
+        focus =
+          resource_ast
+          |> resolve_module_name(alias_map)
+          |> resolve_optional_node_id(node_lookup)
+
+        {node, focus}
+
+      {{:., _, [{:__aliases__, _, [:Oban]}, :insert]}, _, [job_ast]} = node, nil ->
+        focus =
+          case job_ast do
+            {{:., _, [module_ast, :new]}, _, _args} ->
+              module_ast
+              |> resolve_module_name(alias_map)
+              |> resolve_optional_node_id(node_lookup)
+
+            _ ->
+              nil
+          end
+
+        {node, focus}
+
+      node, acc ->
+        {node, acc}
+    end)
+    |> elem(1)
+  end
+
+  defp helper_focus_from_args([resource_ast | _rest], alias_map, node_lookup) do
+    resource_ast
+    |> resolve_module_name(alias_map)
+    |> resolve_optional_node_id(node_lookup)
+  end
+
+  defp helper_focus_from_args(_args, _alias_map, _node_lookup), do: nil
 
   defp extract_scenario_metadata(body) do
     Macro.prewalk(body, [], fn
@@ -1421,6 +1540,8 @@ defmodule Foundry.Context.ScenarioExtractor do
 
   defp runtime_step_key(step) do
     {
+      step.provenance,
+      step.type,
       step.node_id,
       step.focus_node_id,
       step.kind,

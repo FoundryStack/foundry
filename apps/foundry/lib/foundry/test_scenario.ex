@@ -6,6 +6,10 @@ defmodule Foundry.TestScenario do
   primary source of truth; the attribute only adds labels or exact-focus hints
   where code alone is ambiguous.
 
+  `capture/2` automatically records executable entrypoints inside the wrapped
+  test body. `trace_node/2` remains available as a compatibility escape hatch
+  for flows that cannot yet be inferred automatically.
+
   Example:
 
       use Foundry.TestScenario
@@ -24,7 +28,7 @@ defmodule Foundry.TestScenario do
                 ]
   """
 
-  @trace_key :foundry_test_scenario_trace
+  alias Foundry.TestScenario.RuntimeCapture
 
   defmacro __using__(_opts) do
     quote do
@@ -33,145 +37,251 @@ defmodule Foundry.TestScenario do
     end
   end
 
-  def capture(context, fun) when is_map(context) and is_function(fun, 0) do
-    metadata = trace_metadata(context)
-    Process.put(@trace_key, %{metadata: metadata, events: [], sequence: 0})
+  defmacro capture(context, fun_ast) do
+    case fun_ast do
+      {:fn, _meta, [{:->, _arrow_meta, [[], body]}]} ->
+        instrumented_body = instrument_capture_body(body, __CALLER__)
 
-    try do
-      result = fun.()
-      flush_trace(:ok)
-      result
-    catch
-      kind, reason ->
-        flush_trace({kind, reason})
-        :erlang.raise(kind, reason, __STACKTRACE__)
-    after
-      Process.delete(@trace_key)
+        quote do
+          Foundry.TestScenario.__capture__(unquote(context), fn ->
+            unquote(instrumented_body)
+          end)
+        end
+
+      _ ->
+        quote do
+          Foundry.TestScenario.__capture__(unquote(context), unquote(fun_ast))
+        end
     end
   end
 
-  def trace_node(node_id), do: trace_node(node_id, %{})
+  def __capture__(context, fun) when is_map(context) and is_function(fun, 0) do
+    RuntimeCapture.capture(context, fun)
+  end
 
-  def trace_node(node_id, attrs) when is_binary(node_id) do
-    case Process.get(@trace_key) do
-      %{events: events, sequence: sequence} = trace ->
-        normalized_attrs =
-          attrs
-          |> Enum.into(%{})
-          |> normalize_trace_attrs()
-
-        event =
-          normalized_attrs
-          |> Map.put(:node_id, node_id)
-          |> Map.put_new(:focus_node_id, Map.get(normalized_attrs, :focus_node_id, node_id))
-          |> Map.put_new(:status, :passed)
-          |> Map.put_new(:provenance, :executed)
-          |> Map.put_new(:sequence, sequence + 1)
-
-        Process.put(@trace_key, %{trace | events: events ++ [event], sequence: sequence + 1})
-        :ok
+  @doc false
+  def trace_call(attrs, fun) when is_map(attrs) and is_function(fun, 0) do
+    case Map.pop(attrs, :node_id) do
+      {node_id, event_attrs} when is_binary(node_id) ->
+        trace_node(node_id, event_attrs)
 
       _ ->
         :ok
     end
+
+    fun.()
   end
 
-  defp flush_trace(outcome) do
-    case Process.get(@trace_key) do
-      %{metadata: metadata, events: events} when events != [] ->
-        trace_dir = Path.join(File.cwd!(), ".foundry/scenario_traces")
-        File.mkdir_p!(trace_dir)
-        cleanup_existing_traces(trace_dir, metadata)
+  @doc """
+  Manually append a scenario runtime event.
 
-        payload =
-          metadata
-          |> Map.put(:outcome, normalize_outcome(outcome))
-          |> Map.put(:captured_at, DateTime.utc_now() |> DateTime.to_iso8601())
-          |> Map.put(:events, events)
+  Deprecated for ordinary test authoring. Prefer `capture/2`, which automatically
+  records executable entrypoints and lets the extractor expand them through the
+  graph without leaking Foundry-specific calls into domain code.
+  """
+  def trace_node(node_id), do: RuntimeCapture.trace_node(node_id)
+  def trace_node(node_id, attrs), do: RuntimeCapture.trace_node(node_id, attrs)
 
-        file_name = "#{safe_segment(metadata.scenario_id)}--#{trace_hash(metadata)}.json"
+  defp instrument_capture_body(body, caller) do
+    Macro.prewalk(body, fn
+      {:|>, _meta, [left, {{:., _, [module_ast, fun]}, _call_meta, args}]} = pipe_ast ->
+        case infer_trace_attrs(module_ast, fun, [left | args || []], pipe_ast, caller) do
+          nil ->
+            pipe_ast
 
-        File.write!(Path.join(trace_dir, file_name), Jason.encode!(payload, pretty: true))
+          attrs ->
+            quote do
+              Foundry.TestScenario.trace_call(unquote(Macro.escape(attrs)), fn ->
+                unquote(pipe_ast)
+              end)
+            end
+        end
 
-      _ ->
-        :ok
-    end
-  end
+      {{:., _meta, [module_ast, fun]}, _call_meta, args} = call_ast ->
+        case infer_trace_attrs(module_ast, fun, args || [], call_ast, caller) do
+          nil ->
+            call_ast
 
-  defp trace_metadata(context) do
-    source_module = context.module |> Atom.to_string() |> String.trim_leading("Elixir.")
-    describe_name = context[:describe] || "Scenario"
-    test_name = normalize_test_name(context[:test])
+          attrs ->
+            quote do
+              Foundry.TestScenario.trace_call(unquote(Macro.escape(attrs)), fn ->
+                unquote(call_ast)
+              end)
+            end
+        end
 
-    %{
-      scenario_id: scenario_id(source_module, describe_name),
-      source_module: source_module,
-      describe_name: describe_name,
-      test_name: test_name,
-      file: context[:file],
-      line: context[:line]
-    }
-  end
-
-  defp normalize_test_name(nil), do: "scenario"
-
-  defp normalize_test_name(test_name) do
-    test_name
-    |> to_string()
-    |> String.replace_prefix("test ", "")
-    |> String.replace_prefix("property ", "")
-  end
-
-  defp scenario_id(source_module, describe_name) do
-    suffix =
-      describe_name
-      |> to_string()
-      |> String.downcase()
-      |> String.replace(~r/[^a-z0-9]+/u, "_")
-      |> String.trim("_")
-
-    "#{source_module}.#{suffix}"
-  end
-
-  defp normalize_outcome(:ok), do: "ok"
-  defp normalize_outcome({kind, reason}), do: "#{kind}:#{Exception.format_banner(kind, reason)}"
-
-  defp normalize_trace_attrs(attrs) do
-    Enum.into(attrs, %{}, fn
-      {key, value} when is_atom(key) -> {key, value}
-      {key, value} when is_binary(key) -> {String.to_atom(key), value}
+      node ->
+        node
     end)
   end
 
-  defp safe_segment(value) do
-    value
-    |> to_string()
-    |> String.downcase()
-    |> String.replace(~r/[^a-z0-9]+/u, "_")
-    |> String.trim("_")
+  defp infer_trace_attrs(module_ast, fun, args, call_ast, caller) do
+    module_name = resolve_module_name(module_ast, caller)
+    fun_name = to_string(fun)
+
+    cond do
+      module_name == "Ash" and fun in [:get, :read, :read_one, :create, :update, :destroy] ->
+        infer_ash_trace(args, fun_name, call_ast, caller)
+
+      module_name == "Ash.Changeset" and
+          fun in [:for_create, :for_update, :for_read, :for_destroy] ->
+        infer_changeset_trace(args, fun_name, call_ast, caller)
+
+      module_name == "Reactor" and fun == :run ->
+        infer_reactor_trace(args, call_ast, caller)
+
+      is_binary(module_name) ->
+        infer_module_trace(module_name, fun_name, call_ast)
+
+      true ->
+        nil
+    end
   end
 
-  defp trace_hash(metadata) do
-    metadata
-    |> Map.take([:scenario_id, :test_name, :line])
-    |> :erlang.term_to_binary()
-    |> :erlang.phash2()
-    |> Integer.to_string(36)
+  defp infer_ash_trace([resource_ast | rest], fun_name, call_ast, caller) do
+    with resource_name when is_binary(resource_name) <- resolve_module_name(resource_ast, caller) do
+      action =
+        case fun_name do
+          "create" -> extract_action_from_keyword(rest)
+          "update" -> extract_action_from_args(rest)
+          "destroy" -> extract_action_from_args(rest)
+          _ -> nil
+        end
+
+      {type, kind} =
+        case fun_name do
+          "get" -> {:observation, :read}
+          "read" -> {:observation, :read}
+          "read_one" -> {:observation, :read}
+          "create" -> {:entry, :action_execute}
+          "update" -> {:entry, :action_execute}
+          "destroy" -> {:entry, :action_execute}
+        end
+
+      build_trace_attrs(resource_name, %{
+        type: type,
+        kind: kind,
+        action: action,
+        module_function: "Ash.#{fun_name}",
+        source_snippet: Macro.to_string(call_ast),
+        focus_node_id: action_focus(resource_name, action)
+      })
+    else
+      _ -> nil
+    end
   end
 
-  defp cleanup_existing_traces(trace_dir, metadata) do
-    trace_dir
-    |> Path.join("*.json")
-    |> Path.wildcard()
-    |> Enum.each(fn path ->
-      with {:ok, content} <- File.read(path),
-           {:ok, payload} <- Jason.decode(content),
-           true <- payload["scenario_id"] == metadata.scenario_id,
-           true <- payload["test_name"] == metadata.test_name do
-        File.rm(path)
-      else
-        _ -> :ok
+  defp infer_ash_trace(_, _, _, _), do: nil
+
+  defp infer_changeset_trace([resource_ast | rest], fun_name, call_ast, caller) do
+    with resource_name when is_binary(resource_name) <- resolve_module_name(resource_ast, caller) do
+      action =
+        case rest do
+          [action_ast | _] -> literal_action_name(action_ast)
+          _ -> nil
+        end
+
+      build_trace_attrs(resource_name, %{
+        type: :entry,
+        kind: :action_prepare,
+        action: action,
+        module_function: "Ash.Changeset.#{fun_name}",
+        source_snippet: Macro.to_string(call_ast),
+        focus_node_id: action_focus(resource_name, action),
+        details: "Only action preparation executed"
+      })
+    else
+      _ -> nil
+    end
+  end
+
+  defp infer_changeset_trace(_, _, _, _), do: nil
+
+  defp infer_reactor_trace([module_ast | _rest], call_ast, caller) do
+    with module_name when is_binary(module_name) <- resolve_module_name(module_ast, caller) do
+      build_trace_attrs(module_name, %{
+        type: :entry,
+        kind: :action_execute,
+        module_function: "Reactor.run",
+        source_snippet: Macro.to_string(call_ast)
+      })
+    else
+      _ -> nil
+    end
+  end
+
+  defp infer_reactor_trace(_, _, _), do: nil
+
+  defp infer_module_trace(module_name, fun_name, call_ast) do
+    {type, kind, action} =
+      cond do
+        fun_name == "evaluate" ->
+          {:assertion, :rule_check, fun_name}
+
+        fun_name == "handle_webhook" ->
+          {:entry, :trigger_receive, fun_name}
+
+        fun_name == "perform" ->
+          {:job, :job_execute, fun_name}
+
+        true ->
+          {:entry, :action_execute, fun_name}
       end
-    end)
+
+    build_trace_attrs(module_name, %{
+      type: type,
+      kind: kind,
+      action: action,
+      module_function: "#{module_name}.#{fun_name}",
+      source_snippet: Macro.to_string(call_ast),
+      focus_node_id: action_focus(module_name, action)
+    })
   end
+
+  defp build_trace_attrs(node_id, attrs) when is_binary(node_id) do
+    attrs
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+    |> Map.put(:node_id, node_id)
+    |> Map.put(:capture_origin, :automatic)
+  end
+
+  defp action_focus(node_id, nil), do: node_id
+  defp action_focus(node_id, action), do: "#{node_id}:action:#{action}"
+
+  defp resolve_module_name(ast, caller) do
+    expanded = Macro.expand(ast, caller)
+
+    cond do
+      is_atom(expanded) ->
+        expanded
+        |> Atom.to_string()
+        |> String.trim_leading("Elixir.")
+
+      match?({:__aliases__, _, _}, ast) ->
+        ast
+        |> Macro.to_string()
+        |> String.trim_leading("Elixir.")
+
+      true ->
+        nil
+    end
+  end
+
+  defp extract_action_from_keyword(rest) do
+    rest
+    |> Enum.find_value(fn
+      keyword when is_list(keyword) -> Keyword.get(keyword, :action)
+      _ -> nil
+    end)
+    |> literal_action_name()
+  end
+
+  defp extract_action_from_args([action_ast | _rest]), do: literal_action_name(action_ast)
+  defp extract_action_from_args(_args), do: nil
+
+  defp literal_action_name(value) when is_atom(value), do: Atom.to_string(value)
+  defp literal_action_name(value) when is_binary(value), do: value
+  defp literal_action_name({name, _, _}) when is_atom(name), do: Atom.to_string(name)
+  defp literal_action_name(_value), do: nil
 end

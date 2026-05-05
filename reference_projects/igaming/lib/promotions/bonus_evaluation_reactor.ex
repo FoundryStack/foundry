@@ -36,22 +36,6 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
     description("Load inbound BonusEvent by ID.")
 
     run(fn %{event_id: event_id}, _ ->
-      Foundry.TestScenario.trace_node("IgamingRef.Promotions.BonusEvaluationReactor", %{
-        type: :entry,
-        kind: :action_execute,
-        label: "Enter BonusEvaluationReactor pipeline",
-        module_function: "Reactor.run",
-        source_snippet: "Reactor.run(BonusEvaluationReactor, ...)"
-      })
-
-      Foundry.TestScenario.trace_node("IgamingRef.Promotions.BonusEvent", %{
-        type: :reaction,
-        kind: :read,
-        label: "Load BonusEvent by id",
-        module_function: "Ash.get",
-        source_snippet: "Ash.get(BonusEvent, event_id, actor: :system)"
-      })
-
       Ash.get(BonusEvent, event_id, actor: :system)
     end)
   end

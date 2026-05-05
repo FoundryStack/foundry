@@ -16,16 +16,6 @@ defmodule IgamingRef.Promotions.BonusScenarioTest do
         player = player_fixture()
         wallet = wallet_fixture(%{player_id: player.id})
 
-        trace_node("IgamingRef.Promotions.BonusEvent", %{
-          type: :entry,
-          kind: :action_prepare,
-          action: "ingest",
-          label: "Prepare BonusEvent.ingest changeset",
-          module_function: "Ash.Changeset.for_create",
-          source_snippet: "Ash.Changeset.for_create(BonusEvent, :ingest, ...)",
-          focus_node_id: "IgamingRef.Promotions.BonusEvent:action:ingest"
-        })
-
         changeset =
           Ash.Changeset.for_create(
             BonusEvent,
@@ -57,16 +47,6 @@ defmodule IgamingRef.Promotions.BonusScenarioTest do
       capture(context, fn ->
         player = player_fixture()
         wallet = wallet_fixture(%{player_id: player.id})
-
-        trace_node("IgamingRef.Promotions.BonusEvent", %{
-          type: :entry,
-          kind: :action_execute,
-          action: "ingest",
-          label: "Invoke BonusEvent.ingest action",
-          module_function: "Ash.create",
-          source_snippet: "Ash.create(BonusEvent, ..., action: :ingest)",
-          focus_node_id: "IgamingRef.Promotions.BonusEvent:action:ingest"
-        })
 
         repo_unavailable =
           try do
@@ -100,14 +80,6 @@ defmodule IgamingRef.Promotions.BonusScenarioTest do
 
     test "executes the bonus evaluation reactor entrypoint", context do
       capture(context, fn ->
-        trace_node("IgamingRef.Promotions.BonusEvaluationReactor", %{
-          type: :entry,
-          kind: :action_execute,
-          label: "Invoke BonusEvaluationReactor entrypoint",
-          module_function: "Reactor.run",
-          source_snippet: "Reactor.run(BonusEvaluationReactor, ...)"
-        })
-
         assert {:error, _} =
                  Reactor.run(BonusEvaluationReactor, %{
                    event_id: "bonus-event-1",
@@ -122,14 +94,6 @@ defmodule IgamingRef.Promotions.BonusScenarioTest do
 
     test "executes the bonus grant transfer entrypoint", context do
       capture(context, fn ->
-        trace_node("IgamingRef.Promotions.BonusGrantTransfer", %{
-          type: :entry,
-          kind: :action_execute,
-          label: "Invoke BonusGrantTransfer entrypoint",
-          module_function: "Reactor.run",
-          source_snippet: "Reactor.run(BonusGrantTransfer, ...)"
-        })
-
         assert {:error, _} =
                  Reactor.run(BonusGrantTransfer, %{
                    player_id: "player-1",

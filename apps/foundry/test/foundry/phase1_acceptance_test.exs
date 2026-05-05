@@ -6,6 +6,8 @@ defmodule Foundry.Phase1AcceptanceTest do
 
   # Pre-compute expensive operations once at module load time, then share across all tests
   setup_all do
+    write_runtime_trace_fixtures!()
+
     # Load code path once
     :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/dev/lib/igaming_ref/ebin")))
     :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/test/lib/igaming_ref/ebin")))
@@ -26,6 +28,146 @@ defmodule Foundry.Phase1AcceptanceTest do
     status = Foundry.Status.build(@ref_root)
 
     {:ok, context: context, lint_report: lint_report, status: status}
+  end
+
+  defp write_runtime_trace_fixtures! do
+    trace_dir = Path.join(@ref_root, ".foundry/scenario_traces")
+    File.rm_rf(trace_dir)
+    File.mkdir_p!(trace_dir)
+
+    runtime_traces()
+    |> Enum.each(fn {filename, payload} ->
+      path = Path.join(trace_dir, filename)
+      File.write!(path, Jason.encode!(payload))
+    end)
+  end
+
+  defp runtime_traces do
+    [
+      {"withdrawal_webhook_runtime_trace.json",
+       %{
+         "scenario_id" =>
+           "IgamingRef.Finance.WithdrawalScenarioTest.flow_provider_webhook_reaches_persistence_and_processor_entrypoints",
+         "test_name" =>
+           "executes webhook receive, event persistence, and job processing entrypoints",
+         "captured_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+         "events" => [
+           %{
+             "type" => "entry",
+             "kind" => "trigger_receive",
+             "node_id" => "IgamingRef.Finance.WithdrawalWebhook",
+             "focus_node_id" => "IgamingRef.Finance.WithdrawalWebhook",
+             "module_function" => "IgamingRef.Finance.WithdrawalWebhook.handle_webhook",
+             "status" => "passed",
+             "capture_origin" => "automatic",
+             "sequence" => 1
+           },
+           %{
+             "type" => "job",
+             "kind" => "job_execute",
+             "node_id" => "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook",
+             "focus_node_id" => "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook",
+             "module_function" => "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook.perform",
+             "status" => "passed",
+             "capture_origin" => "automatic",
+             "sequence" => 2
+           }
+         ]
+       }},
+      {"withdrawal_transfer_runtime_trace.json",
+       %{
+         "scenario_id" =>
+           "IgamingRef.Finance.WithdrawalTransferIntegrationTest.flow_player_withdrawal_request_is_approved_and_enters_provider_processing",
+         "test_name" =>
+           "creates, approves, and processes a withdrawal through the provider boundary",
+         "captured_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+         "events" => [
+           %{
+             "type" => "entry",
+             "kind" => "action_execute",
+             "node_id" => "IgamingRef.Finance.WithdrawalRequest",
+             "focus_node_id" => "IgamingRef.Finance.WithdrawalRequest:action:create",
+             "module_function" => "Ash.create",
+             "action" => "create",
+             "status" => "passed",
+             "sequence" => 1
+           },
+           %{
+             "type" => "entry",
+             "kind" => "action_execute",
+             "node_id" => "IgamingRef.Finance.WithdrawalTransfer",
+             "focus_node_id" => "IgamingRef.Finance.WithdrawalTransfer",
+             "module_function" => "Reactor.run",
+             "status" => "passed",
+             "sequence" => 2
+           },
+           %{
+             "type" => "reaction",
+             "kind" => "read",
+             "node_id" => "IgamingRef.Finance.Wallet",
+             "focus_node_id" => "IgamingRef.Finance.Wallet",
+             "module_function" => "Ash.get",
+             "status" => "passed",
+             "sequence" => 3
+           },
+           %{
+             "type" => "reaction",
+             "kind" => "read",
+             "node_id" => "IgamingRef.Players.Player",
+             "focus_node_id" => "IgamingRef.Players.Player",
+             "module_function" => "Ash.get",
+             "status" => "passed",
+             "sequence" => 4
+           },
+           %{
+             "type" => "assertion",
+             "kind" => "rule_check",
+             "node_id" => "IgamingRef.Players.Rules.PlayerNotSelfExcluded",
+             "focus_node_id" => "IgamingRef.Players.Rules.PlayerNotSelfExcluded",
+             "module_function" => "IgamingRef.Players.Rules.PlayerNotSelfExcluded.evaluate",
+             "status" => "passed",
+             "sequence" => 5
+           },
+           %{
+             "type" => "assertion",
+             "kind" => "rule_check",
+             "node_id" => "IgamingRef.Finance.Rules.PlayerKYCVerified",
+             "focus_node_id" => "IgamingRef.Finance.Rules.PlayerKYCVerified",
+             "module_function" => "IgamingRef.Finance.Rules.PlayerKYCVerified.evaluate",
+             "status" => "passed",
+             "sequence" => 6
+           },
+           %{
+             "type" => "assertion",
+             "kind" => "rule_check",
+             "node_id" => "IgamingRef.Finance.Rules.SufficientBalance",
+             "focus_node_id" => "IgamingRef.Finance.Rules.SufficientBalance",
+             "module_function" => "IgamingRef.Finance.Rules.SufficientBalance.evaluate",
+             "status" => "passed",
+             "sequence" => 7
+           },
+           %{
+             "type" => "assertion",
+             "kind" => "rule_check",
+             "node_id" => "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
+             "focus_node_id" => "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
+             "module_function" => "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded.evaluate",
+             "status" => "passed",
+             "sequence" => 8
+           },
+           %{
+             "type" => "reaction",
+             "kind" => "write",
+             "node_id" => "IgamingRef.Finance.LedgerEntry",
+             "focus_node_id" => "IgamingRef.Finance.LedgerEntry:action:record",
+             "module_function" => "Ash.create",
+             "action" => "record",
+             "status" => "passed",
+             "sequence" => 9
+           }
+         ]
+       }}
+    ]
   end
 
   # Helpers
@@ -315,6 +457,12 @@ defmodule Foundry.Phase1AcceptanceTest do
 
       assert Enum.count(scenario["graph_path"]) > 5
       assert Enum.count(scenario["flow"]) > 5
+    end
+
+    test "project context snippets stay free of Foundry.TestScenario leakage", %{context: ctx} do
+      refute Enum.any?(ctx["nodes"], fn node ->
+               String.contains?(node["source_snippet"] || "", "Foundry.TestScenario.trace_node")
+             end)
     end
 
     test "CatalogSyncJob → ProviderSyncReactor (async) edge exists", %{context: ctx} do
