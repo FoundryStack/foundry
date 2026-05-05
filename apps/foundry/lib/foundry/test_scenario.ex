@@ -28,6 +28,7 @@ defmodule Foundry.TestScenario do
                 ]
   """
 
+  alias Foundry.Context.Scenarios.CallClassifier
   alias Foundry.TestScenario.RuntimeCapture
 
   defmacro __using__(_opts) do
@@ -85,7 +86,13 @@ defmodule Foundry.TestScenario do
   defp instrument_capture_body(body, caller) do
     Macro.prewalk(body, fn
       {:|>, _meta, [left, {{:., _, [module_ast, fun]}, _call_meta, args}]} = pipe_ast ->
-        case infer_trace_attrs(module_ast, fun, [left | args || []], pipe_ast, caller) do
+        case CallClassifier.runtime_trace_attrs(
+               module_ast,
+               fun,
+               [left | args || []],
+               pipe_ast,
+               caller
+             ) do
           nil ->
             pipe_ast
 
@@ -98,7 +105,7 @@ defmodule Foundry.TestScenario do
         end
 
       {{:., _meta, [module_ast, fun]}, _call_meta, args} = call_ast ->
-        case infer_trace_attrs(module_ast, fun, args || [], call_ast, caller) do
+        case CallClassifier.runtime_trace_attrs(module_ast, fun, args || [], call_ast, caller) do
           nil ->
             call_ast
 
@@ -114,174 +121,4 @@ defmodule Foundry.TestScenario do
         node
     end)
   end
-
-  defp infer_trace_attrs(module_ast, fun, args, call_ast, caller) do
-    module_name = resolve_module_name(module_ast, caller)
-    fun_name = to_string(fun)
-
-    cond do
-      module_name == "Ash" and fun in [:get, :read, :read_one, :create, :update, :destroy] ->
-        infer_ash_trace(args, fun_name, call_ast, caller)
-
-      module_name == "Ash.Changeset" and
-          fun in [:for_create, :for_update, :for_read, :for_destroy] ->
-        infer_changeset_trace(args, fun_name, call_ast, caller)
-
-      module_name == "Reactor" and fun == :run ->
-        infer_reactor_trace(args, call_ast, caller)
-
-      is_binary(module_name) ->
-        infer_module_trace(module_name, fun_name, call_ast)
-
-      true ->
-        nil
-    end
-  end
-
-  defp infer_ash_trace([resource_ast | rest], fun_name, call_ast, caller) do
-    with resource_name when is_binary(resource_name) <- resolve_module_name(resource_ast, caller) do
-      action =
-        case fun_name do
-          "create" -> extract_action_from_keyword(rest)
-          "update" -> extract_action_from_args(rest)
-          "destroy" -> extract_action_from_args(rest)
-          _ -> nil
-        end
-
-      {type, kind} =
-        case fun_name do
-          "get" -> {:observation, :read}
-          "read" -> {:observation, :read}
-          "read_one" -> {:observation, :read}
-          "create" -> {:entry, :action_execute}
-          "update" -> {:entry, :action_execute}
-          "destroy" -> {:entry, :action_execute}
-        end
-
-      build_trace_attrs(resource_name, %{
-        type: type,
-        kind: kind,
-        action: action,
-        module_function: "Ash.#{fun_name}",
-        source_snippet: Macro.to_string(call_ast),
-        focus_node_id: action_focus(resource_name, action)
-      })
-    else
-      _ -> nil
-    end
-  end
-
-  defp infer_ash_trace(_, _, _, _), do: nil
-
-  defp infer_changeset_trace([resource_ast | rest], fun_name, call_ast, caller) do
-    with resource_name when is_binary(resource_name) <- resolve_module_name(resource_ast, caller) do
-      action =
-        case rest do
-          [action_ast | _] -> literal_action_name(action_ast)
-          _ -> nil
-        end
-
-      build_trace_attrs(resource_name, %{
-        type: :entry,
-        kind: :action_prepare,
-        action: action,
-        module_function: "Ash.Changeset.#{fun_name}",
-        source_snippet: Macro.to_string(call_ast),
-        focus_node_id: action_focus(resource_name, action),
-        details: "Only action preparation executed"
-      })
-    else
-      _ -> nil
-    end
-  end
-
-  defp infer_changeset_trace(_, _, _, _), do: nil
-
-  defp infer_reactor_trace([module_ast | _rest], call_ast, caller) do
-    with module_name when is_binary(module_name) <- resolve_module_name(module_ast, caller) do
-      build_trace_attrs(module_name, %{
-        type: :entry,
-        kind: :action_execute,
-        module_function: "Reactor.run",
-        source_snippet: Macro.to_string(call_ast)
-      })
-    else
-      _ -> nil
-    end
-  end
-
-  defp infer_reactor_trace(_, _, _), do: nil
-
-  defp infer_module_trace(module_name, fun_name, call_ast) do
-    {type, kind, action} =
-      cond do
-        fun_name == "evaluate" ->
-          {:assertion, :rule_check, fun_name}
-
-        fun_name == "handle_webhook" ->
-          {:entry, :trigger_receive, fun_name}
-
-        fun_name == "perform" ->
-          {:job, :job_execute, fun_name}
-
-        true ->
-          {:entry, :action_execute, fun_name}
-      end
-
-    build_trace_attrs(module_name, %{
-      type: type,
-      kind: kind,
-      action: action,
-      module_function: "#{module_name}.#{fun_name}",
-      source_snippet: Macro.to_string(call_ast),
-      focus_node_id: action_focus(module_name, action)
-    })
-  end
-
-  defp build_trace_attrs(node_id, attrs) when is_binary(node_id) do
-    attrs
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
-    |> Map.put(:node_id, node_id)
-    |> Map.put(:capture_origin, :automatic)
-  end
-
-  defp action_focus(node_id, nil), do: node_id
-  defp action_focus(node_id, action), do: "#{node_id}:action:#{action}"
-
-  defp resolve_module_name(ast, caller) do
-    expanded = Macro.expand(ast, caller)
-
-    cond do
-      is_atom(expanded) ->
-        expanded
-        |> Atom.to_string()
-        |> String.trim_leading("Elixir.")
-
-      match?({:__aliases__, _, _}, ast) ->
-        ast
-        |> Macro.to_string()
-        |> String.trim_leading("Elixir.")
-
-      true ->
-        nil
-    end
-  end
-
-  defp extract_action_from_keyword(rest) do
-    rest
-    |> Enum.find_value(fn
-      keyword when is_list(keyword) -> Keyword.get(keyword, :action)
-      _ -> nil
-    end)
-    |> literal_action_name()
-  end
-
-  defp extract_action_from_args([action_ast | _rest]), do: literal_action_name(action_ast)
-  defp extract_action_from_args(_args), do: nil
-
-  defp literal_action_name(value) when is_atom(value), do: Atom.to_string(value)
-  defp literal_action_name(value) when is_binary(value), do: value
-  defp literal_action_name({name, _, _}) when is_atom(name), do: Atom.to_string(name)
-  defp literal_action_name(_value), do: nil
 end
