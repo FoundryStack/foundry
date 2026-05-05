@@ -15,6 +15,15 @@ defmodule IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook do
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"provider_reference" => _provider_reference, "status" => _status}}) do
+    Foundry.TestScenario.trace_node("IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook", %{
+      type: :entry,
+      kind: :job_execute,
+      label: "Execute ProcessWithdrawalWebhook.perform/1",
+      module_function: "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook.perform",
+      source_snippet: "perform(%Oban.Job{...})",
+      details: "Job implementation is currently stubbed."
+    })
+
     # In production this would load the matching request and update its status.
     :ok
   end

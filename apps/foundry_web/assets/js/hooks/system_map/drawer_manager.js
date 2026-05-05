@@ -591,44 +591,74 @@ export class DrawerManager {
     const activeStepId = scenario.active_step_id || scenario.active_step?.id || flow[0]?.id || null
     const startNode = flow[0]?.focus_node_id || flow[0]?.node_id || null
     const endNode = flow[flow.length - 1]?.focus_node_id || flow[flow.length - 1]?.node_id || null
+    const evidenceSummary = scenario.evidence_summary || {}
+    const evidenceMode = scenario.evidence_mode || 'static'
+    const traceStatus = scenario.trace_status || 'missing'
+    const overlayEdgeMode = scenario.overlay_edge_mode || 'hybrid'
+    const syntheticTransitionCount = Number(scenario.synthetic_transition_count || 0)
+    const structuralTransitionCount = Number(scenario.structural_transition_count || 0)
+    const groupedFlow = this._groupScenarioSteps(flow)
+    const coveredNodeCount = Array.isArray(scenario.nodes) ? scenario.nodes.length : 0
 
     const timelineHtml = flow.length > 0 ? `
       <div class="space-y-2">
-        ${flow.map((step, index) => {
-          const isActive = step.id === activeStepId
-          const focusTargets = Array.isArray(step.focus_targets) ? step.focus_targets : []
-          const emits = Array.isArray(step.emits) ? step.emits : []
-          const focusNodeId = step.focus_node_id || step.node_id || null
-          const exactFocus = focusNodeId && focusNodeId !== step.node_id
+        ${groupedFlow.map(({ testName, testKind, steps }) => `
+          <div class="rounded-box border border-base-300/60 bg-base-100/35 p-3">
+            <div class="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <p class="text-xs font-medium text-base-content">${this._esc(testName || 'Scenario flow')}</p>
+                ${testKind ? `<p class="text-[11px] text-base-content/55">${this._esc(String(testKind))}</p>` : ''}
+              </div>
+              <span class="rounded-full border border-base-300/70 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-base-content/55">${this._esc(String(steps.length))} steps</span>
+            </div>
+            <div class="space-y-2">
+              ${steps.map((step, stepIndex) => {
+                const isActive = step.id === activeStepId
+                const focusTargets = Array.isArray(step.focus_targets) ? step.focus_targets : []
+                const emits = Array.isArray(step.emits) ? step.emits : []
+                const focusNodeId = step.focus_node_id || step.node_id || null
+                const exactFocus = focusNodeId && focusNodeId !== step.node_id
 
-          return `
-            <button
-              class="w-full cursor-pointer rounded-box border px-3 py-3 text-left shadow-sm transition-all ${isActive ? 'border-info bg-info/12 ring-2 ring-info/25' : 'border-base-300/70 bg-base-100/75 hover:border-info/40 hover:bg-base-100'}"
-              data-scenario-id="${this._esc(scenario.id)}"
-              data-scenario-step-id="${this._esc(step.id)}"
-              aria-pressed="${isActive ? 'true' : 'false'}"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <p class="text-[11px] font-semibold uppercase tracking-[0.12em] ${isActive ? 'text-info' : 'text-base-content/50'}">Step ${index + 1}</p>
-                  <p class="mt-1 text-sm font-medium text-base-content">${this._esc(step.label || `Step ${index + 1}`)}</p>
-                </div>
-                <span class="rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${isActive ? 'border-info/40 text-info' : 'border-base-300/80 text-base-content/55'}">${this._esc(String(step.type || 'reaction'))}</span>
-              </div>
-              <div class="mt-2 space-y-1 text-xs text-base-content/75">
-                ${step.node_id ? `<p><span class="text-base-content/50">Node:</span> <span class="font-mono">${this._esc(step.node_id)}</span></p>` : ''}
-                ${focusNodeId ? `<p><span class="text-base-content/50">Focuses:</span> <span class="font-mono">${this._esc(focusNodeId)}</span></p>` : ''}
-                ${step.action ? `<p><span class="text-base-content/50">Action:</span> <span class="font-mono">${this._esc(step.action)}</span></p>` : ''}
-                ${step.actor ? `<p><span class="text-base-content/50">Actor:</span> ${this._esc(step.actor)}</p>` : ''}
-                ${step.reacts_to ? `<p><span class="text-base-content/50">Reacts to:</span> ${this._esc(step.reacts_to)}</p>` : ''}
-                ${emits.length > 0 ? `<p><span class="text-base-content/50">Emits:</span> ${emits.map(event => `<span class="font-mono">${this._esc(event)}</span>`).join(', ')}</p>` : ''}
-                ${focusTargets.length > 0 ? `<p><span class="text-base-content/50">Focuses next:</span> ${focusTargets.map(node => `<span class="font-mono">${this._esc(node)}</span>`).join(', ')}</p>` : ''}
-                ${exactFocus ? `<p class="pt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-info/80">Exact graph step focus</p>` : ''}
-                ${step.details ? `<p class="pt-1 leading-5 text-base-content/80">${this._esc(step.details)}</p>` : ''}
-              </div>
-            </button>
-          `
-        }).join('')}
+                return `
+                  <button
+                    class="w-full cursor-pointer rounded-box border px-3 py-3 text-left shadow-sm transition-all ${isActive ? 'border-info bg-info/12 ring-2 ring-info/25' : 'border-base-300/70 bg-base-100/75 hover:border-info/40 hover:bg-base-100'}"
+                    data-scenario-id="${this._esc(scenario.id)}"
+                    data-scenario-step-id="${this._esc(step.id)}"
+                    aria-pressed="${isActive ? 'true' : 'false'}"
+                  >
+                    <div class="flex items-start justify-between gap-3">
+                      <div>
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] ${isActive ? 'text-info' : 'text-base-content/50'}">Step ${this._esc(String(stepIndex + 1))}</p>
+                        <p class="mt-1 text-sm font-medium text-base-content">${this._esc(step.label || `Step ${stepIndex + 1}`)}</p>
+                      </div>
+                      <div class="flex flex-wrap justify-end gap-1">
+                        ${this._scenarioPill(step.provenance || 'executed', 'neutral')}
+                        ${this._scenarioPill(this._scenarioStatusLabel(step.status || 'matched'), this._scenarioStatusTone(step.status || 'matched'))}
+                        ${this._scenarioPill(step.kind || step.type || 'reaction', 'subtle')}
+                      </div>
+                    </div>
+                    <div class="mt-2 space-y-1 text-xs text-base-content/75">
+                      ${step.node_id ? `<p><span class="text-base-content/50">Node:</span> <span class="font-mono">${this._esc(step.node_id)}</span></p>` : ''}
+                      ${focusNodeId ? `<p><span class="text-base-content/50">Focuses:</span> <span class="font-mono">${this._esc(focusNodeId)}</span></p>` : ''}
+                      ${step.action ? `<p><span class="text-base-content/50">Action:</span> <span class="font-mono">${this._esc(step.action)}</span></p>` : ''}
+                      ${step.module_function ? `<p><span class="text-base-content/50">Call:</span> <span class="font-mono">${this._esc(step.module_function)}</span></p>` : ''}
+                      ${step.actor ? `<p><span class="text-base-content/50">Actor:</span> ${this._esc(step.actor)}</p>` : ''}
+                      ${step.reacts_to ? `<p><span class="text-base-content/50">Reacts to:</span> ${this._esc(step.reacts_to)}</p>` : ''}
+                      ${step.test_name ? `<p><span class="text-base-content/50">Test:</span> ${this._esc(step.test_name)}${step.test_kind ? ` <span class="font-mono text-[11px]">(${this._esc(String(step.test_kind))})</span>` : ''}</p>` : ''}
+                      ${step.line ? `<p><span class="text-base-content/50">Source line:</span> <span class="font-mono">${this._esc(String(step.line))}</span></p>` : ''}
+                      ${step.result ? `<p><span class="text-base-content/50">Result:</span> <span class="font-mono">${this._esc(step.result)}</span></p>` : ''}
+                      ${step.source_snippet ? `<p><span class="text-base-content/50">Snippet:</span> ${this._esc(step.source_snippet)}</p>` : ''}
+                      ${emits.length > 0 ? `<p><span class="text-base-content/50">Emits:</span> ${emits.map(event => `<span class="font-mono">${this._esc(event)}</span>`).join(', ')}</p>` : ''}
+                      ${focusTargets.length > 0 ? `<p><span class="text-base-content/50">Focuses next:</span> ${focusTargets.map(node => `<span class="font-mono">${this._esc(node)}</span>`).join(', ')}</p>` : ''}
+                      ${exactFocus ? `<p class="pt-1 text-[11px] font-medium uppercase tracking-[0.08em] text-info/80">Exact graph step focus</p>` : ''}
+                      ${step.details ? `<p class="pt-1 leading-5 text-base-content/80">${this._esc(step.details)}</p>` : ''}
+                    </div>
+                  </button>
+                `
+              }).join('')}
+            </div>
+          </div>
+        `).join('')}
       </div>
     ` : `
       <div class="rounded-box border border-dashed border-base-300/70 bg-base-100/40 px-3 py-4 text-xs text-base-content/60">
@@ -638,7 +668,11 @@ export class DrawerManager {
 
     const nodes_html = scenario.nodes && scenario.nodes.length ? `
       <div class="rounded-box border border-base-300/60 bg-base-100/40 p-3">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/70">Participating Nodes</p>
+        <div class="flex items-center justify-between gap-2">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/70">Covered By Scenario</p>
+          <span class="rounded-full border border-base-300/70 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-base-content/60">${this._esc(String(coveredNodeCount))} ${coveredNodeCount === 1 ? 'node' : 'nodes'}</span>
+        </div>
+        <p class="mt-2 text-[11px] text-base-content/55">These nodes stay highlighted for the whole scenario. The selected step below is a stronger focus, not the only covered node.</p>
         <div class="mt-2 flex flex-wrap gap-1">
           ${scenario.nodes.map(n => `<span class="inline-block rounded bg-base-300 px-2 py-1 text-[10px] text-base-content/70">${this._esc(n)}</span>`).join('')}
         </div>
@@ -654,34 +688,109 @@ export class DrawerManager {
       </div>
     ` : ''
 
+    const testsHtml = scenario.tests && scenario.tests.length ? `
+      <div class="rounded-box border border-base-300/60 bg-base-100/40 p-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/70">Verified Tests</p>
+        <div class="mt-2 space-y-2">
+          ${scenario.tests.map(testCase => `
+            <div class="rounded border border-base-300/60 bg-base-100/80 px-2 py-2 text-xs text-base-content/75">
+              <p class="font-medium text-base-content">${this._esc(testCase.name || 'test')}</p>
+              <p class="mt-1 font-mono text-[11px] text-base-content/60">${this._esc(testCase.kind || 'test')} · ${this._esc(testCase.file || 'unknown file')}${testCase.line ? `:${this._esc(String(testCase.line))}` : ''}</p>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''
+
     panel.innerHTML = `
       <div class="space-y-3">
         <div>
           <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/55">Scenario Flow</p>
           <h3 class="mt-1 text-sm font-semibold text-base-content">${this._esc(scenario.name || 'Scenario')}</h3>
           <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-base-content/60">
+            ${scenario.level ? this._scenarioPill(`${scenario.level} scenario`, 'accent') : ''}
+            ${this._scenarioPill(evidenceMode === 'runtime' ? 'runtime evidence' : 'static evidence only', evidenceMode === 'runtime' ? 'success' : 'warning')}
+            ${this._scenarioPill(`trace ${traceStatus}`, traceStatus === 'captured' ? 'success' : 'warning')}
+            ${this._scenarioPill(`${overlayEdgeMode} overlay`, overlayEdgeMode === 'hybrid' ? 'accent' : 'neutral')}
+            ${this._scenarioPill(`${structuralTransitionCount} structural edges`, structuralTransitionCount > 0 ? 'success' : 'subtle')}
+            ${this._scenarioPill(`${syntheticTransitionCount} synthetic edges`, syntheticTransitionCount > 0 ? (evidenceMode === 'runtime' ? 'accent' : 'warning') : 'subtle')}
+            ${this._scenarioPill(`${evidenceSummary.failed_steps || 0} failed`, (evidenceSummary.failed_steps || 0) > 0 ? 'error' : 'subtle')}
+            ${this._scenarioPill(`${evidenceSummary.short_circuit_steps || 0} short-circuit`, (evidenceSummary.short_circuit_steps || 0) > 0 ? 'warning' : 'subtle')}
+            ${this._scenarioPill(`${coveredNodeCount} covered ${coveredNodeCount === 1 ? 'node' : 'nodes'}`, 'neutral')}
             <span class="rounded-full border border-success/30 px-2 py-1">starts here: <span class="font-mono">${this._esc(startNode || 'unknown')}</span></span>
             <span class="rounded-full border border-error/30 px-2 py-1">ends here: <span class="font-mono">${this._esc(endNode || 'unknown')}</span></span>
+            ${this._scenarioPill(`${evidenceSummary.executed_steps || 0} executed`, 'neutral')}
+            ${this._scenarioPill(`${evidenceSummary.expanded_steps || 0} expanded`, 'subtle')}
+            ${this._scenarioPill(`${evidenceSummary.branch_steps || 0} branch`, 'accent')}
           </div>
         </div>
         ${timelineHtml}
+        ${testsHtml}
         ${nodes_html}
         ${compliance_html}
       </div>
     `
   }
 
+  _groupScenarioSteps(flow) {
+    const grouped = new Map()
+
+    ;(flow || []).forEach(step => {
+      const key = `${step.test_name || 'scenario'}|${step.test_kind || 'test'}`
+      if (!grouped.has(key)) {
+        grouped.set(key, {
+          testName: step.test_name || 'Scenario flow',
+          testKind: step.test_kind || null,
+          steps: [],
+        })
+      }
+      grouped.get(key).steps.push(step)
+    })
+
+    return [...grouped.values()]
+  }
+
+  _scenarioPill(text, tone = 'neutral') {
+    const classes = {
+      neutral: 'border-base-300/70 text-base-content/60',
+      accent: 'border-info/30 text-info/80',
+      subtle: 'border-base-300/60 text-base-content/50',
+      success: 'border-success/30 text-success/80',
+      warning: 'border-warning/30 text-warning/80',
+      error: 'border-error/30 text-error/80',
+    }
+
+    return `<span class="rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${classes[tone] || classes.neutral}">${this._esc(String(text))}</span>`
+  }
+
+  _scenarioStatusTone(status) {
+    switch (String(status || 'matched')) {
+      case 'failed':
+        return 'error'
+      case 'short_circuit':
+        return 'warning'
+      case 'passed':
+        return 'success'
+      default:
+        return 'accent'
+    }
+  }
+
+  _scenarioStatusLabel(status) {
+    return String(status || 'matched').replaceAll('_', ' ')
+  }
+
   _renderFlowPanel(n) {
     const panel = document.getElementById(SELECTORS.panelFlow)
     if (!panel) return
 
-    // If node has scenario_origins, list them
-    if (n.scenario_origins && n.scenario_origins.length > 0) {
+    // If node has scenario_refs, list them
+    if (n.scenario_refs && n.scenario_refs.length > 0) {
       const html = `
         <div class="space-y-2">
           <p class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content">Scenarios Involving This Node</p>
           <div class="space-y-1">
-            ${n.scenario_origins.map(scen_id => `
+            ${n.scenario_refs.map(scen_id => `
               <button class="w-full rounded-box border border-base-300/50 bg-base-300/30 px-2 py-1.5 text-left text-xs text-base-content hover:bg-base-300/60 transition-colors"
                       data-scenario-id="${this._esc(scen_id)}">
                 ${this._esc(scen_id)}

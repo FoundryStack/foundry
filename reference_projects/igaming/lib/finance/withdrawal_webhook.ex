@@ -29,6 +29,14 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
   Returns {:ok, request} with 200 response immediately, then processes async.
   """
   def handle_webhook(provider, signature, body) do
+    Foundry.TestScenario.trace_node("IgamingRef.Finance.WithdrawalWebhook", %{
+      type: :entry,
+      kind: :trigger_receive,
+      label: "Receive provider withdrawal webhook",
+      module_function: "IgamingRef.Finance.WithdrawalWebhook.handle_webhook",
+      source_snippet: "handle_webhook/3"
+    })
+
     # In a real app, verify_signature/3 checks HMAC against the provider's key
     with :ok <- verify_signature(provider, signature, body),
          {:ok, event} <- parse_event(provider, body),
@@ -43,6 +51,14 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
   # ─── Private helpers ──────────────────────────────────────────────────────
 
   defp verify_signature(provider, signature, body) do
+    Foundry.TestScenario.trace_node("IgamingRef.Finance.WithdrawalWebhook", %{
+      type: :reaction,
+      kind: :rule_check,
+      label: "Verify provider signature",
+      module_function: "IgamingRef.Finance.WithdrawalWebhook.verify_signature",
+      source_snippet: "verify_signature(provider, signature, body)"
+    })
+
     # Stub: real implementation uses provider-specific HMAC verification
     # e.g., Stripe uses HMAC-SHA256 with Stripe-Signature header
     case provider do
@@ -64,6 +80,14 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
   end
 
   defp parse_event(provider, body) do
+    Foundry.TestScenario.trace_node("IgamingRef.Finance.WithdrawalWebhook", %{
+      type: :reaction,
+      kind: :trigger_receive,
+      label: "Normalize provider payload into canonical webhook event",
+      module_function: "IgamingRef.Finance.WithdrawalWebhook.parse_event",
+      source_snippet: "parse_event(provider, body)"
+    })
+
     # Parse provider-specific webhook payload into a canonical event struct
     case provider do
       "stripe" -> parse_stripe_event(body)
@@ -120,21 +144,36 @@ defmodule IgamingRef.Finance.WithdrawalWebhook do
   defp paypal_status(_), do: :unknown
 
   defp persist_event(event) do
-    Ash.create(
-      WithdrawalWebhookEvent,
-      %{
-        provider: event.provider,
-        provider_reference: event.reference,
-        event_type: event.event_type,
-        status: event.status,
-        payload: event.payload || %{}
-      },
-      action: :receive,
-      actor: :system
-    )
+    Foundry.TestScenario.trace_node("IgamingRef.Finance.WithdrawalWebhookEvent", %{
+      type: :reaction,
+      kind: :action_execute,
+      label: "Invoke WithdrawalWebhookEvent.receive",
+      action: "receive",
+      module_function: "Ash.create",
+      source_snippet: "Ash.create(WithdrawalWebhookEvent, ..., action: :receive)",
+      focus_node_id: "IgamingRef.Finance.WithdrawalWebhookEvent:action:receive"
+    })
+
+    WithdrawalWebhookEvent
+    |> Ash.Changeset.for_create(:receive, %{
+      provider: event.provider,
+      provider_reference: event.reference,
+      event_type: event.event_type,
+      status: event.status,
+      payload: event.payload || %{}
+    })
+    |> Ash.create(actor: %{is_system: true})
   end
 
   defp dispatch_async_job(event) do
+    Foundry.TestScenario.trace_node("IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook", %{
+      type: :reaction,
+      kind: :job_enqueue,
+      label: "Enqueue ProcessWithdrawalWebhook job",
+      module_function: "Oban.insert",
+      source_snippet: "Oban.insert(ProcessWithdrawalWebhook.new(args))"
+    })
+
     args = %{
       "provider" => event.provider,
       "event_type" => event.event_type,

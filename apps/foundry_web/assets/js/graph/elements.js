@@ -326,6 +326,12 @@ export function buildCytoscapeElements(nodes, edges) {
     }
   })
 
+  const validNodeIds = new Set(
+    elements
+      .filter(element => element.group === 'nodes')
+      .map(element => element.data.id),
+  )
+
   // Edges
   const edgeElementsById = new Map()
 
@@ -342,6 +348,10 @@ export function buildCytoscapeElements(nodes, edges) {
     const source = routed.source
     const target = routed.target
     if (source === target) return
+    if (!validNodeIds.has(source) || !validNodeIds.has(target)) {
+      console.warn('Skipping graph edge with unresolved endpoint', { edge, routed })
+      return
+    }
 
     const id = `${source}->${target}:${edge.relation}`
     const existing = edgeElementsById.get(id)

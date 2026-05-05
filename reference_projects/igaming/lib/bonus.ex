@@ -26,6 +26,7 @@ defmodule IgamingRef.Promotions.BonusCampaign do
   end
 
   state_machine do
+    state_attribute(:status)
     initial_states([:draft])
     default_initial_state(:draft)
 
@@ -239,6 +240,7 @@ defmodule IgamingRef.Promotions.BonusGrant do
   end
 
   state_machine do
+    state_attribute(:status)
     initial_states([:active])
     default_initial_state(:active)
 

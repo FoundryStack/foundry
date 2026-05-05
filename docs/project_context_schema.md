@@ -52,6 +52,7 @@ all source files. CI enforces freshness via `--check`.
   "domain_type": "igaming",
   "nodes": [ ...NodeEntry... ],
   "edges": [ ...EdgeEntry... ],
+  "scenarios": [ ...VerifiedScenarioEntry... ],
   "spec_kit": { ...SpecKitIndex... },
   "graph_delta": null
 }
@@ -65,6 +66,7 @@ all source files. CI enforces freshness via `--check`.
 | `domain_type` | string | From manifest; `null` if absent |
 | `nodes` | NodeEntry[] | One entry per module — alphabetical by FQN |
 | `edges` | EdgeEntry[] | Derived from DSL declarations — ordered by from FQN, then to FQN |
+| `scenarios` | VerifiedScenarioEntry[] | Executable test traces derived from real test/property bodies |
 | `spec_kit` | SpecKitIndex | Index metadata only; full parsed document fetched on demand |
 | `graph_delta` | GraphDelta \| null | Present when a session state exists; shows changes vs session start |
 
@@ -152,6 +154,7 @@ per-module context into the graph.
   "json_api_routes": [
     { "method": "post", "path": "/wallets/:id/withdraw", "action": "withdraw" }
   ],
+  "scenario_refs": ["MyApp.Finance.WithdrawalScenarioTest.withdrawal_guards_reject"],
   "vectorized": false
 }
 ```
@@ -194,6 +197,7 @@ per-module context into the graph.
 | `auth_strategies` | AuthStrategyEntry[] | AshAuthentication strategies on resource |
 | `rule_compliance_links` | RuleComplianceLink[] | Links from rules to compliance requirements |
 | `scenario_origins` | ScenarioEntry[] | Trigger/API route origins for Scenario perspective |
+| `scenario_refs` | string[] | IDs of verified executable scenarios that touch this node |
 | `graphql_mutations` | GraphqlMutation[] | AshGraphql mutation declarations |
 | `json_api_routes` | JsonApiRoute[] | AshJsonApi route declarations |
 | `vectorized` | boolean | Whether resource has `ash_ai` vectorize block declared |
@@ -347,6 +351,60 @@ Each entry in `NodeEntry.scenario_origins[]`:
 
 `scenario_origins` is `[]` (empty list) when a resource has no scenario-origin declarations.
 This field is non-breaking — existing renderers that do not read it ignore it.
+
+## VerifiedScenarioEntry Schema
+
+Each entry in top-level `scenarios[]` is a verified executable test trace:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | Stable scenario ID derived from source module + describe block |
+| `name` | string | Human-readable scenario name |
+| `category` | `"invariant" \| "state_machine" \| "compliance" \| "property"` | Metadata hint or inferred category |
+| `level` | `"rule" \| "action" \| "transfer" \| "reactor" \| "webhook" \| "job"` | Highest-level executable entrypoint proven by the scenario |
+| `source_file` | string | Test file path |
+| `source_module` | string | ExUnit module containing the scenario |
+| `evidence_mode` | `"runtime" \| "static"` | Whether the graph overlay came from captured runtime traces or direct AST evidence |
+| `trace_status` | `"captured" \| "missing" \| "stale"` | Runtime trace availability for this scenario |
+| `nodes` | string[] | Scenario-wide declarative graph nodes highlighted in the overlay |
+| `graph_path` | string[] | Ordered graph IDs used for scenario-path highlighting; preserved alongside `nodes` for canvas rendering |
+| `compliance_links` | string[] | Optional requirement IDs from metadata |
+| `tests` | TestTrace[] | Executable `test` / `property` cases that back the scenario |
+| `flow` | FlowTraceStep[] | Ordered steps derived from real code calls, optionally refined by hints |
+| `expansion_mode` | `"hybrid" \| "runtime"` | Flow combines direct evidence with static expansion, or comes directly from runtime traces |
+| `evidence_summary` | object | Counts of executed, expanded, and branch-derived steps |
+| `entry_points` | object[] | Top-level executable calls that seeded the flow expansion |
+
+`tests[]` entries carry `name`, `kind`, `file`, and `line`.
+`nodes` and `graph_path` are the scenario-wide overlay inputs. `flow` remains the
+detailed per-step trace used for drawer rendering and active-step emphasis. Studio
+uses `level` and the `nodes` count to distinguish single-node rule scenarios from
+broader multi-node flow scenarios without fabricating extra coverage.
+
+When `evidence_mode` is `"runtime"`, `nodes` and `graph_path` come from captured
+`.foundry/scenario_traces/*.json` artifacts written during test execution. When
+`evidence_mode` is `"static"`, overlay coverage falls back to the directly executed
+declarative nodes proven by AST extraction only.
+
+`flow[]` entries carry the traced graph focus plus source anchors such as `line`,
+`test_name`, and `test_kind`, plus visualization metadata:
+
+| Flow field | Type | Notes |
+|---|---|---|
+| `provenance` | `"executed" \| "expanded" \| "branch"` | Whether the step came from direct test evidence, structural expansion, or matched branch logic |
+| `kind` | string | Semantic step family such as `rule_check`, `rule_branch`, `action_prepare`, `action_execute`, `job_execute`, `job_enqueue`, `read`, `write`, `assert_result` |
+| `status` | string | `matched`, `passed`, `failed`, `short_circuit`, or `potential` |
+| `module_function` | string\|null | Exact called function when available |
+| `source_snippet` | string\|null | Short summarized code snippet or DSL description |
+| `result` | string\|null | Normalized asserted outcome, when inferred |
+
+`expansion_mode: "hybrid"` means Foundry preserves directly executed calls and then
+adds clearly-marked structural or branch detail without claiming that unrealized
+success-path work actually ran.
+
+`expansion_mode: "runtime"` means the flow itself came from runtime-captured trace
+events, so the overlay and drawer reflect only the nodes and steps the test run
+actually reached.
 
 ---
 

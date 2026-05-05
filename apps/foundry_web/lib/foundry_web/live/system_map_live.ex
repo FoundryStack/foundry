@@ -65,6 +65,7 @@ defmodule FoundryWeb.SystemMapLive do
             context_json: context_json,
             nodes_by_domain: nodes_by_domain,
             all_nodes: nodes,
+            all_edges: context.edges || [],
             scenarios: scenarios,
             scenarios_by_category: scenarios_by_category,
             domain_coverage: domain_coverage,
@@ -96,6 +97,7 @@ defmodule FoundryWeb.SystemMapLive do
             context_json: nil,
             nodes_by_domain: %{},
             all_nodes: [],
+            all_edges: [],
             scenarios: [],
             scenarios_by_category: %{},
             domain_coverage: %{},
@@ -153,7 +155,8 @@ defmodule FoundryWeb.SystemMapLive do
     next_socket = assign_known(socket, :sidebar_tab, t, sidebar_tabs())
 
     socket =
-      if socket.assigns.sidebar_tab == :test_coverage and next_socket.assigns.sidebar_tab != :test_coverage do
+      if socket.assigns.sidebar_tab == :test_coverage and
+           next_socket.assigns.sidebar_tab != :test_coverage do
         clear_scenario_state(next_socket)
       else
         next_socket
@@ -260,7 +263,7 @@ defmodule FoundryWeb.SystemMapLive do
 
       scen ->
         active_step_id = default_active_step_id(scen)
-        payload = scenario_overlay_payload(scen, active_step_id)
+        payload = scenario_overlay_payload(scen, active_step_id, socket.assigns.all_edges)
 
         socket =
           socket
@@ -290,7 +293,7 @@ defmodule FoundryWeb.SystemMapLive do
         {:noreply, socket}
 
       scen ->
-        payload = scenario_overlay_payload(scen, step_id)
+        payload = scenario_overlay_payload(scen, step_id, socket.assigns.all_edges)
 
         socket =
           socket
@@ -464,16 +467,31 @@ defmodule FoundryWeb.SystemMapLive do
     end)
   end
 
-  defp scenario_overlay_payload(scenario, active_step_id) do
+  defp scenario_overlay_payload(scenario, active_step_id, edges) do
     active_step = find_flow_step(scenario, active_step_id)
+    overlay_transitions = build_overlay_transitions(scenario, edges)
+    synthetic_transition_count = Enum.count(overlay_transitions, & &1.synthetic)
+    structural_transition_count = Enum.count(overlay_transitions, &(!&1.synthetic))
 
     %{
       id: scenario.id,
       category: scenario.category,
+      level: Map.get(scenario, :level),
       nodes: scenario.nodes,
+      graph_path: scenario.graph_path,
       name: scenario.name,
       compliance_links: scenario.compliance_links,
       flow: scenario.flow,
+      evidence_mode: Map.get(scenario, :evidence_mode),
+      trace_status: Map.get(scenario, :trace_status),
+      expansion_mode: Map.get(scenario, :expansion_mode),
+      evidence_summary: Map.get(scenario, :evidence_summary, %{}),
+      entry_points: Map.get(scenario, :entry_points, []),
+      tests: Map.get(scenario, :tests, []),
+      overlay_transitions: overlay_transitions,
+      overlay_edge_mode: :hybrid,
+      synthetic_transition_count: synthetic_transition_count,
+      structural_transition_count: structural_transition_count,
       active_step: active_step,
       active_step_id: active_step && active_step.id
     }
@@ -489,6 +507,194 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   defp find_flow_step(_scenario, _step_id), do: nil
+
+  defp build_overlay_transitions(scenario, edges) do
+    evidence_mode = Map.get(scenario, :evidence_mode)
+    structural_edges = structural_edge_set(edges)
+
+    scenario
+    |> overlay_transition_candidates()
+    |> Enum.reduce([], fn candidate, acc ->
+      transition = build_overlay_transition(candidate, evidence_mode, structural_edges)
+
+      case transition do
+        nil ->
+          acc
+
+        %{source: source, target: target} = transition ->
+          case List.last(acc) do
+            %{
+              source: ^source,
+              target: ^target,
+              kind: kind,
+              status: status,
+              provenance: provenance
+            }
+            when kind == transition.kind and status == transition.status and
+                   provenance == transition.provenance ->
+              acc
+
+            _ ->
+              acc ++ [transition]
+          end
+      end
+    end)
+  end
+
+  defp overlay_transition_candidates(scenario) do
+    flow = List.wrap(Map.get(scenario, :flow))
+    path_flow = Enum.reject(flow, &(Map.get(&1, :type) == :observation))
+    graph_path = List.wrap(Map.get(scenario, :graph_path))
+
+    consecutive_flow =
+      path_flow
+      |> Enum.map(&(Map.get(&1, :focus_node_id) || Map.get(&1, :node_id)))
+      |> Enum.filter(& &1)
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [source, target] ->
+        %{
+          source: source,
+          target: target,
+          kind: :sequence,
+          status: nil,
+          provenance: flow_provenance(path_flow, source, target)
+        }
+      end)
+
+    explicit_targets =
+      Enum.flat_map(path_flow, fn step ->
+        source = Map.get(step, :focus_node_id) || Map.get(step, :node_id)
+
+        step
+        |> Map.get(:focus_targets, [])
+        |> List.wrap()
+        |> Enum.filter(& &1)
+        |> Enum.map(fn target ->
+          %{
+            source: source,
+            target: target,
+            kind: Map.get(step, :kind) || Map.get(step, :type) || :transition,
+            status: Map.get(step, :status),
+            provenance: Map.get(step, :provenance)
+          }
+        end)
+      end)
+
+    contextual_step_edges =
+      Enum.flat_map(path_flow, fn step ->
+        source = Map.get(step, :focus_node_id) || Map.get(step, :node_id)
+        target = Map.get(step, :node_id)
+
+        if source in [nil, ""] or target in [nil, ""] or base_graph_node_id(source) == target do
+          []
+        else
+          [
+            %{
+              source: source,
+              target: target,
+              kind: :context,
+              status: Map.get(step, :status),
+              provenance: Map.get(step, :provenance)
+            }
+          ]
+        end
+      end)
+
+    graph_path_fallback =
+      graph_path
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [source, target] ->
+        %{
+          source: source,
+          target: target,
+          kind: :graph_path,
+          status: nil,
+          provenance: if(evidence_mode(scenario) == :runtime, do: :executed, else: :expanded)
+        }
+      end)
+
+    flow_candidates = consecutive_flow ++ explicit_targets ++ contextual_step_edges
+
+    if flow_candidates == [] do
+      graph_path_fallback
+    else
+      flow_candidates
+    end
+  end
+
+  defp flow_provenance(flow, source, target) do
+    Enum.find_value(flow, :executed, fn step ->
+      step_source = Map.get(step, :focus_node_id) || Map.get(step, :node_id)
+
+      if step_source == source and target in List.wrap(Map.get(step, :focus_targets, [])) do
+        Map.get(step, :provenance)
+      end
+    end)
+  end
+
+  defp evidence_mode(scenario), do: Map.get(scenario, :evidence_mode, :static)
+
+  defp build_overlay_transition(
+         %{source: source, target: target},
+         _evidence_mode,
+         _structural_edges
+       )
+       when source in [nil, ""] or target in [nil, ""] or source == target,
+       do: nil
+
+  defp build_overlay_transition(candidate, evidence_mode, structural_edges) do
+    source_base = base_graph_node_id(candidate.source)
+    target_base = base_graph_node_id(candidate.target)
+
+    exact_match? = MapSet.member?(structural_edges, {candidate.source, candidate.target})
+    normalized_match? = MapSet.member?(structural_edges, {source_base, target_base})
+    synthetic? = not exact_match?
+
+    reason =
+      cond do
+        exact_match? ->
+          :structural_match
+
+        normalized_match? ->
+          :normalized_structural_match
+
+        evidence_mode == :static ->
+          :static_logical_transition
+
+        true ->
+          :runtime_transition_missing_structural_edge
+      end
+
+    %{
+      source: candidate.source,
+      target: candidate.target,
+      source_base: source_base,
+      target_base: target_base,
+      kind: candidate.kind,
+      status: candidate.status,
+      provenance: candidate.provenance,
+      synthetic: synthetic?,
+      reason: reason
+    }
+  end
+
+  defp structural_edge_set(edges) do
+    edges
+    |> List.wrap()
+    |> Enum.reduce(MapSet.new(), fn edge, acc ->
+      MapSet.put(acc, {Map.get(edge, :from), Map.get(edge, :to)})
+    end)
+  end
+
+  defp base_graph_node_id(graph_id) when is_binary(graph_id) do
+    graph_id
+    |> String.split(":step:")
+    |> List.first()
+    |> String.split(":action:")
+    |> List.first()
+  end
+
+  defp base_graph_node_id(graph_id), do: graph_id
 
   defp clear_scenario_state(socket) do
     socket

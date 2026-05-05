@@ -115,7 +115,7 @@
                       ></div>
                     </div>
                     <span class="w-10 text-right text-xs text-neutral-content">
-                      {Float.round(score, 0) |> trunc()}%
+                      {round(score)}%
                     </span>
                   </div>
                 <% end %>
@@ -155,6 +155,16 @@
                       <span class="text-xs font-medium text-base-content">
                         {scenario.name}
                       </span>
+                      <div class="flex flex-wrap items-center gap-1">
+                        <%= if scenario.level do %>
+                          <span class="inline-block rounded text-[10px] border border-info/30 px-1.5 py-0.5 text-info uppercase tracking-[0.08em]">
+                            {scenario.level}
+                          </span>
+                        <% end %>
+                        <span class="inline-block rounded text-[10px] border border-base-300/70 px-1.5 py-0.5 text-base-content/65">
+                          {Enum.count(scenario.nodes)} covered {if Enum.count(scenario.nodes) == 1, do: "node", else: "nodes"}
+                        </span>
+                      </div>
                       <%= if not Enum.empty?(scenario.nodes) do %>
                         <div class="flex flex-wrap gap-1">
                           <%= for node_id <- Enum.take(scenario.nodes, 3) do %>

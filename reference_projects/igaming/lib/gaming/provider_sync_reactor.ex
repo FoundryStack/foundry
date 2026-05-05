@@ -62,7 +62,9 @@ defmodule IgamingRef.Gaming.ProviderSyncReactor do
     run(fn %{provider_id: pid, games: game_list}, _ ->
       results =
         Enum.map(game_list, fn game_data ->
-          Ash.create(Game, :sync, Map.merge(game_data, %{provider_id: pid}), actor: :system)
+          Game
+          |> Ash.Changeset.for_create(:sync, Map.merge(game_data, %{provider_id: pid}))
+          |> Ash.create(actor: %{is_system: true})
         end)
 
       case Enum.filter(results, &match?({:error, _}, &1)) do

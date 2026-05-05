@@ -31,7 +31,7 @@ defmodule IgamingRef.Finance.WithdrawalTransferTest do
   #   "rule passes when amount == current balance (exact drain)"
   # ---------------------------------------------------------------------------
 
-  describe "SufficientBalance" do
+  describe "Rule: SufficientBalance" do
     @scenario category: :invariant
 
     property "rejects when amount exceeds balance" do
@@ -75,7 +75,7 @@ defmodule IgamingRef.Finance.WithdrawalTransferTest do
   #   "rule passes when player.status == :active with no active exclusion record"
   # ---------------------------------------------------------------------------
 
-  describe "PlayerNotSelfExcluded" do
+  describe "Rule: PlayerNotSelfExcluded" do
     @scenario category: :invariant
 
     test "rejects self-excluded players" do
@@ -100,7 +100,7 @@ defmodule IgamingRef.Finance.WithdrawalTransferTest do
   #   "high-risk players have lower daily_limit than low-risk players"
   # ---------------------------------------------------------------------------
 
-  describe "WithdrawalLimitNotExceeded" do
+  describe "Rule: WithdrawalLimitNotExceeded" do
     @scenario category: :invariant
 
     test "rejects when high-risk player exceeds £500 limit" do
@@ -161,7 +161,9 @@ defmodule IgamingRef.Finance.WithdrawalTransferTest do
     end
   end
 
-  describe "PlayerKYCVerified" do
+  describe "Rule: PlayerKYCVerified" do
+    @scenario category: :invariant
+
     test "passes for verified players" do
       player = player_fixture(%{kyc_status: :verified})
       assert :ok = PlayerKYCVerified.evaluate(%{player: player}, nil)
@@ -181,13 +183,16 @@ defmodule IgamingRef.Promotions.BonusGrantTransferTest do
 
   use ExUnit.Case, async: true
   use ExUnitProperties
+  use Foundry.TestScenario
 
   import IgamingRefTest.Generators
 
   alias IgamingRef.Promotions.Rules.{PlayerEligibleForCampaign, CampaignNotExpired}
   alias IgamingRef.Players.Rules.PlayerNotSelfExcluded
 
-  describe "CampaignNotExpired" do
+  describe "Rule: CampaignNotExpired" do
+    @scenario category: :invariant
+
     test "rejects expired campaigns" do
       campaign = expired_campaign_fixture()
 
@@ -201,7 +206,9 @@ defmodule IgamingRef.Promotions.BonusGrantTransferTest do
     end
   end
 
-  describe "PlayerEligibleForCampaign" do
+  describe "Rule: PlayerEligibleForCampaign" do
+    @scenario category: :invariant
+
     test "rejects when player already has an active grant" do
       player = player_fixture()
       campaign = campaign_fixture()

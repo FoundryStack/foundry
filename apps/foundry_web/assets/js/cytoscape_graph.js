@@ -199,7 +199,15 @@ export class CytoscapeGraph {
     this.cy.elements().filter(ele => ele.data('state') === 'phantom').remove()
   }
 
-  applyScenarioOverlay({ flow, active_step: activeStep, active_step_id: activeStepId }) {
+  applyScenarioOverlay({
+    nodes,
+    graph_path: graphPath,
+    flow,
+    overlay_transitions: overlayTransitions,
+    overlay_edge_mode: overlayEdgeMode,
+    active_step: activeStep,
+    active_step_id: activeStepId,
+  }) {
     if (!Array.isArray(flow) || flow.length === 0) return
 
     this.clearScenarioOverlay()
@@ -209,13 +217,22 @@ export class CytoscapeGraph {
       flow.find(step => step.id === activeStepId) ||
       flow[0]
 
-    const transitions = this._scenarioTransitions(flow)
-    const scenarioNodeIds = this._scenarioStepNodeIds(flow)
+    const transitions =
+      Array.isArray(overlayTransitions) && overlayTransitions.length > 0
+        ? overlayTransitions
+        : [...this._graphPathTransitions(graphPath), ...this._scenarioTransitions(flow)]
+    const scenarioNodeIds = this._scenarioOverlayNodeIds(nodes, graphPath, flow)
+    const executedNodeIds = this._scenarioStepNodeIdsByProvenance(flow, ['executed'])
+    const expandedNodeIds = this._scenarioStepNodeIdsByProvenance(flow, ['expanded', 'branch'])
+    const failedNodeIds = this._scenarioStepNodeIdsByStatus(flow, ['failed'])
+    const shortCircuitNodeIds = this._scenarioStepNodeIdsByStatus(flow, ['short_circuit'])
     const activeNodeIds = this._scenarioActiveNodeIds(currentActiveStep)
     const activeEdgeSet = this._scenarioActiveEdges(currentActiveStep)
     const transitionEdgeSet = new Set()
     const contextNodeIds = this._scenarioContextNodeIds(scenarioNodeIds)
+    const activeTone = this._scenarioStatusTone(currentActiveStep?.status)
 
+    this._activeScenarioOverlayMode = overlayEdgeMode || null
     this._ensureScenarioOverlayEdges(transitions, activeEdgeSet, transitionEdgeSet)
 
     this.cy.elements().unselect()
@@ -225,14 +242,41 @@ export class CytoscapeGraph {
       const isActiveFocus = activeNodeIds.has(id)
       const inScenario = scenarioNodeIds.has(id)
       const inContext = contextNodeIds.has(id)
+      const isExecuted = executedNodeIds.has(id)
+      const isExpandedOnly = !isExecuted && expandedNodeIds.has(id)
+      const isFailed = failedNodeIds.has(id)
+      const isShortCircuit = shortCircuitNodeIds.has(id)
 
       if (isActiveFocus) {
         node.select()
         node.style('opacity', 1)
         node.style('border-width', node.isParent() ? '3px' : '2.5px')
+        node.style('border-color', activeTone.border)
+        node.style('background-color', activeTone.fill)
         node.style('z-index', 999)
-      } else if (inScenario || inContext) {
+      } else if (isFailed) {
         node.style('opacity', 1)
+        node.style('border-width', node.isParent() ? '2.5px' : '2px')
+        node.style('border-color', '#dc2626')
+        node.style('background-color', 'rgba(220, 38, 38, 0.12)')
+        node.style('z-index', 900)
+      } else if (isShortCircuit) {
+        node.style('opacity', 1)
+        node.style('border-width', node.isParent() ? '2.5px' : '2px')
+        node.style('border-color', '#d97706')
+        node.style('background-color', 'rgba(217, 119, 6, 0.1)')
+        node.style('z-index', 880)
+      } else if (isExecuted) {
+        node.style('opacity', 1)
+        node.style('border-width', node.isParent() ? '2.5px' : '2px')
+        node.style('border-color', '#16a34a')
+        node.style('z-index', 850)
+      } else if (isExpandedOnly) {
+        node.style('opacity', 0.72)
+        node.style('border-width', node.isParent() ? '1.5px' : '1px')
+        node.style('z-index', 820)
+      } else if (inScenario || inContext) {
+        node.style('opacity', 0.92)
         node.style('border-width', null)
         node.style('z-index', 800)
       } else {
@@ -250,17 +294,29 @@ export class CytoscapeGraph {
         transitionEdgeSet.has(`${target}|${source}`)
       const isActiveEdge = activeEdgeSet.has(edgeKey)
       const isSyntheticScenarioEdge = edge.data('state') === 'scenario-overlay'
+      const overlayReason = edge.data('overlay_reason')
+      const isLogicalStaticEdge = overlayReason === 'static_logical_transition'
+      const touchesExecuted =
+        executedNodeIds.has(source) && executedNodeIds.has(target)
+      const edgeTone = this._scenarioEdgeTone(source, target, failedNodeIds, shortCircuitNodeIds)
 
       if (isActiveEdge) {
         edge.select()
         edge.style('line-style', 'solid')
         edge.style('width', '4px')
         edge.style('opacity', 1)
+        edge.style('line-color', activeTone.line)
+        edge.style('target-arrow-color', activeTone.line)
         edge.style('z-index', 999)
       } else if (isScenarioEdge) {
-        edge.style('line-style', isSyntheticScenarioEdge ? 'dashed' : 'solid')
-        edge.style('width', '2.5px')
-        edge.style('opacity', 1)
+        edge.style(
+          'line-style',
+          isLogicalStaticEdge ? 'dotted' : isSyntheticScenarioEdge ? 'dashed' : 'solid',
+        )
+        edge.style('width', touchesExecuted ? '2.5px' : '1.5px')
+        edge.style('opacity', isLogicalStaticEdge ? 0.62 : touchesExecuted ? 1 : 0.7)
+        edge.style('line-color', edgeTone.line)
+        edge.style('target-arrow-color', edgeTone.line)
         edge.style('z-index', 850)
       } else {
         edge.style('opacity', 0.12)
@@ -268,21 +324,23 @@ export class CytoscapeGraph {
       }
     })
 
-    const focusSet = activeNodeIds.size > 0 ? activeNodeIds : scenarioNodeIds
-    const scenarioNodes = this.cy.nodes().filter(n => focusSet.has(n.id()))
+    const scenarioNodes = this.cy.nodes().filter(n => scenarioNodeIds.has(n.id()))
 
     if (scenarioNodes.length > 0) {
-      this.cy.fit(scenarioNodes, activeNodeIds.size > 0 ? 80 : 50)
+      this.cy.fit(scenarioNodes, 60)
     }
   }
 
   clearScenarioOverlay() {
     this.cy.elements().filter(ele => ele.data('state') === 'scenario-overlay').remove()
     this.cy.elements().unselect()
+    this._activeScenarioOverlayMode = null
 
     this.cy.nodes().forEach(node => {
       node.style('opacity', null)
       node.style('border-width', null)
+      node.style('border-color', null)
+      node.style('background-color', null)
       node.style('z-index', null)
     })
 
@@ -290,6 +348,8 @@ export class CytoscapeGraph {
       edge.style('line-style', null)
       edge.style('width', null)
       edge.style('opacity', null)
+      edge.style('line-color', null)
+      edge.style('target-arrow-color', null)
       edge.style('z-index', null)
     })
 
@@ -304,8 +364,11 @@ export class CytoscapeGraph {
     if (!activeStep) return ids
 
     if (activeStep.node_id) ids.add(activeStep.node_id)
+    if (activeStep.node_id) ids.add(this._baseScenarioNodeId(activeStep.node_id))
     if (activeStep.focus_node_id) ids.add(activeStep.focus_node_id)
+    if (activeStep.focus_node_id) ids.add(this._baseScenarioNodeId(activeStep.focus_node_id))
     ;(activeStep.focus_targets || []).forEach(id => ids.add(id))
+    ;(activeStep.focus_targets || []).forEach(id => ids.add(this._baseScenarioNodeId(id)))
 
     return ids
   }
@@ -316,6 +379,7 @@ export class CytoscapeGraph {
     if (!source) return edges
 
     ;(activeStep.focus_targets || []).forEach(target => {
+      if (!target || target === source) return
       edges.add(`${source}|${target}`)
     })
 
@@ -336,6 +400,64 @@ export class CytoscapeGraph {
     return ids
   }
 
+  _scenarioOverlayNodeIds(nodes, graphPath, flow) {
+    const ids = new Set()
+
+    ;(nodes || []).forEach(id => {
+      if (!id) return
+      ids.add(id)
+      ids.add(this._baseScenarioNodeId(id))
+    })
+
+    ;(graphPath || []).forEach(id => {
+      if (!id) return
+      ids.add(id)
+      ids.add(this._baseScenarioNodeId(id))
+    })
+
+    this._scenarioStepNodeIds(flow).forEach(id => ids.add(id))
+
+    ids.delete(null)
+    ids.delete(undefined)
+    ids.delete('')
+
+    return ids
+  }
+
+  _scenarioStepNodeIdsByProvenance(flow, provenances) {
+    const allowed = new Set(provenances || [])
+    const ids = new Set()
+
+    ;(flow || []).forEach(step => {
+      if (!allowed.has(step?.provenance)) return
+
+      if (step?.node_id) ids.add(step.node_id)
+      if (step?.focus_node_id) ids.add(step.focus_node_id)
+      ;(step?.focus_targets || []).forEach(id => {
+        if (id) ids.add(id)
+      })
+    })
+
+    return ids
+  }
+
+  _scenarioStepNodeIdsByStatus(flow, statuses) {
+    const allowed = new Set((statuses || []).map(status => String(status)))
+    const ids = new Set()
+
+    ;(flow || []).forEach(step => {
+      if (!allowed.has(String(step?.status || ''))) return
+
+      if (step?.node_id) ids.add(step.node_id)
+      if (step?.focus_node_id) ids.add(step.focus_node_id)
+      ;(step?.focus_targets || []).forEach(id => {
+        if (id) ids.add(id)
+      })
+    })
+
+    return ids
+  }
+
   _scenarioTransitions(flow) {
     return (flow || []).flatMap(step => {
       const source = step.focus_node_id || step.node_id
@@ -344,8 +466,23 @@ export class CytoscapeGraph {
       return targets
         .filter(Boolean)
         .map(target => ({ source, target }))
-        .filter(({ source: from, target: to }) => Boolean(from && to))
+        .filter(({ source: from, target: to }) => Boolean(from && to) && from !== to)
     })
+  }
+
+  _graphPathTransitions(graphPath) {
+    const path = (graphPath || []).filter(Boolean)
+    const transitions = []
+
+    for (let index = 0; index < path.length - 1; index += 1) {
+      const source = path[index]
+      const target = path[index + 1]
+
+      if (!(source && target) || source === target) continue
+      transitions.push({ source, target })
+    }
+
+    return transitions
   }
 
   _scenarioContextNodeIds(nodeIds) {
@@ -362,8 +499,9 @@ export class CytoscapeGraph {
   }
 
   _ensureScenarioOverlayEdges(transitions, activeEdgeSet, transitionEdgeSet) {
-    ;(transitions || []).forEach(({ source, target }, index) => {
-      if (!(source && target)) return
+    ;(transitions || []).forEach((transition, index) => {
+      const { source, target } = transition
+      if (!(source && target) || source === target) return
 
       transitionEdgeSet.add(`${source}|${target}`)
 
@@ -384,9 +522,43 @@ export class CytoscapeGraph {
           target,
           relation: 'scenario_overlay',
           state: 'scenario-overlay',
+          overlay_kind: transition.kind || 'transition',
+          overlay_status: transition.status || null,
+          overlay_provenance: transition.provenance || null,
+          overlay_reason: transition.reason || null,
+          overlay_edge_mode: this._activeScenarioOverlayMode || null,
         },
       })
     })
+  }
+
+  _baseScenarioNodeId(graphId) {
+    if (!graphId || typeof graphId !== 'string') return graphId
+
+    return graphId.split(':step:')[0].split(':action:')[0]
+  }
+
+  _scenarioStatusTone(status) {
+    switch (String(status || 'passed')) {
+      case 'failed':
+        return { border: '#dc2626', fill: 'rgba(220, 38, 38, 0.14)', line: '#dc2626' }
+      case 'short_circuit':
+        return { border: '#d97706', fill: 'rgba(217, 119, 6, 0.12)', line: '#d97706' }
+      default:
+        return { border: '#2563eb', fill: 'rgba(37, 99, 235, 0.1)', line: '#2563eb' }
+    }
+  }
+
+  _scenarioEdgeTone(source, target, failedNodeIds, shortCircuitNodeIds) {
+    if (failedNodeIds.has(source) || failedNodeIds.has(target)) {
+      return { line: '#dc2626' }
+    }
+
+    if (shortCircuitNodeIds.has(source) || shortCircuitNodeIds.has(target)) {
+      return { line: '#d97706' }
+    }
+
+    return { line: '#2563eb' }
   }
 
   selectNode(id) {

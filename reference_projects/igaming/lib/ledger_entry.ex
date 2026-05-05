@@ -29,6 +29,10 @@ defmodule IgamingRef.Finance.LedgerEntry do
     repo(IgamingRef.Repo)
   end
 
+  paper_trail do
+    change_tracking_mode(:snapshot)
+  end
+
   attributes do
     uuid_primary_key(:id)
 
@@ -122,6 +126,11 @@ defmodule IgamingRef.Finance.LedgerEntry do
     policy action_type(:read) do
       description("Operators and the wallet owner may read ledger entries.")
       authorize_if(IgamingRef.Policies.OwnerOrOperator)
+    end
+
+    policy action_type(:read) do
+      description("Internal system actors may read ledger entries for transfer reconciliation.")
+      authorize_if(IgamingRef.Policies.InternalSystemActor)
     end
 
     policy action(:record) do

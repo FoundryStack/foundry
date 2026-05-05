@@ -94,6 +94,18 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"/, html)
       assert Regex.match?(~r/id="fm-drawer"[\s\S]*data-open="false"/, html)
     end
+
+    test "project context edges resolve to renderable graph node ids", %{project_context: context} do
+      valid_ids = context.nodes |> Enum.map(& &1.id) |> MapSet.new()
+
+      Enum.each(context.edges, fn edge ->
+        assert MapSet.member?(valid_ids, edge.from),
+               "Studio graph source is unresolved: #{inspect(edge)}"
+
+        assert MapSet.member?(valid_ids, edge.to),
+               "Studio graph target is unresolved: #{inspect(edge)}"
+      end)
+    end
   end
 
   describe "handle_event node_selected" do
@@ -687,6 +699,38 @@ defmodule FoundryWeb.SystemMapLiveTest do
       end)
     end
 
+    test "verified scenarios carry source-backed test anchors", %{
+      conn: conn,
+      project_context: context
+    } do
+      {:ok, _live, _html} = live(conn, "/studio")
+
+      assert Enum.any?(context.scenarios, fn scenario ->
+               Enum.any?(scenario.tests || [], fn test_case ->
+                 is_binary(test_case.name) and is_binary(test_case.file) and
+                   is_integer(test_case.line)
+               end)
+             end)
+
+      assert Enum.any?(context.scenarios, fn scenario ->
+               Enum.any?(scenario.flow || [], fn step ->
+                 is_integer(step.line) and is_binary(step.test_name)
+               end)
+             end)
+    end
+
+    test "nodes use scenario_refs for verified test links without overloading scenario_origins",
+         %{
+           conn: conn,
+           project_context: context
+         } do
+      {:ok, _live, _html} = live(conn, "/studio")
+
+      assert Enum.any?(context.nodes, fn node ->
+               (node.scenario_refs || []) != [] and (node.scenario_origins || []) == []
+             end)
+    end
+
     test "compliance scenarios are tagged with compliance_links", %{
       conn: conn,
       project_context: context
@@ -761,23 +805,65 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       # Check all required fields are present
       assert Map.has_key?(payload, :nodes)
+      assert Map.has_key?(payload, :graph_path)
       assert Map.has_key?(payload, :id)
       assert Map.has_key?(payload, :category)
+      assert Map.has_key?(payload, :level)
       assert Map.has_key?(payload, :name)
       assert Map.has_key?(payload, :compliance_links)
       assert Map.has_key?(payload, :flow)
+      assert Map.has_key?(payload, :evidence_mode)
+      assert Map.has_key?(payload, :trace_status)
+      assert Map.has_key?(payload, :expansion_mode)
+      assert Map.has_key?(payload, :evidence_summary)
+      assert Map.has_key?(payload, :entry_points)
+      assert Map.has_key?(payload, :tests)
+      assert Map.has_key?(payload, :overlay_transitions)
+      assert Map.has_key?(payload, :overlay_edge_mode)
+      assert Map.has_key?(payload, :synthetic_transition_count)
+      assert Map.has_key?(payload, :structural_transition_count)
       assert Map.has_key?(payload, :active_step)
       assert Map.has_key?(payload, :active_step_id)
 
       # Verify nodes is the correct set
       assert payload.nodes == scenario.nodes
+      assert payload.graph_path == scenario.graph_path
       assert payload.id == scenario.id
       assert payload.category == scenario.category
+      assert payload.level == scenario.level
       assert payload.name == scenario.name
       assert payload.flow == scenario.flow
+      assert payload.evidence_mode == scenario.evidence_mode
+      assert payload.trace_status == scenario.trace_status
+      assert payload.expansion_mode == scenario.expansion_mode
+      assert payload.evidence_summary == scenario.evidence_summary
+      assert payload.entry_points == scenario.entry_points
+      assert payload.tests == scenario.tests
+      assert payload.overlay_edge_mode == :hybrid
+      assert is_list(payload.overlay_transitions)
+
+      assert payload.synthetic_transition_count + payload.structural_transition_count ==
+               length(payload.overlay_transitions)
+
       assert payload.active_step_id == List.first(scenario.flow).id
       assert Map.has_key?(List.first(payload.flow), :focus_node_id)
       assert Map.has_key?(List.first(payload.flow), :focus_targets)
+      assert Map.has_key?(List.first(payload.flow), :provenance)
+      assert Map.has_key?(List.first(payload.flow), :kind)
+      assert Map.has_key?(List.first(payload.flow), :status)
+
+      if List.first(payload.overlay_transitions) do
+        transition = List.first(payload.overlay_transitions)
+        assert Map.has_key?(transition, :source)
+        assert Map.has_key?(transition, :target)
+        assert Map.has_key?(transition, :source_base)
+        assert Map.has_key?(transition, :target_base)
+        assert Map.has_key?(transition, :kind)
+        assert Map.has_key?(transition, :status)
+        assert Map.has_key?(transition, :provenance)
+        assert Map.has_key?(transition, :synthetic)
+        assert Map.has_key?(transition, :reason)
+      end
     end
 
     test "timeline step selection updates the active overlay state", %{
@@ -795,6 +881,8 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       selected_step = Enum.at(scenario.flow, 1)
       selected_step_id = selected_step.id
+      scenario_nodes = scenario.nodes
+      scenario_graph_path = scenario.graph_path
 
       render_click(live, "select_scenario_step", %{
         "scenario_id" => scenario.id,
@@ -802,9 +890,141 @@ defmodule FoundryWeb.SystemMapLiveTest do
       })
 
       assert_push_event(live, "graph:scenario_overlay", %{
+        nodes: ^scenario_nodes,
+        graph_path: ^scenario_graph_path,
         active_step_id: ^selected_step_id,
         active_step: ^selected_step
       })
+    end
+
+    test "scenario overlay payload never requires self-loop synthetic edges", %{
+      conn: conn,
+      project_context: context
+    } do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      scenario =
+        Enum.find(context.scenarios, fn scenario ->
+          Enum.any?(scenario.flow || [], fn step ->
+            source = step.focus_node_id || step.node_id
+            Enum.any?(step.focus_targets || [], &(&1 == source))
+          end)
+        end)
+
+      assert scenario, "expected a scenario with repeated same-node focus detail"
+
+      render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", payload)
+
+      refute Enum.any?(overlay_transitions(payload), fn {source, target} -> source == target end),
+             "overlay transitions should filter self-loops for #{inspect(scenario.name)}"
+    end
+
+    test "multi-step scenarios expose hybrid overlay transitions with structural and synthetic metadata",
+         %{
+           conn: conn,
+           project_context: context
+         } do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      scenario =
+        Enum.find(context.scenarios, fn scenario ->
+          length(scenario.graph_path || []) > 1
+        end)
+
+      assert scenario
+
+      render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", payload)
+
+      assert payload.overlay_edge_mode == :hybrid
+      assert payload.overlay_transitions != []
+      assert Enum.any?(payload.overlay_transitions, &(Map.get(&1, :synthetic) in [true, false]))
+
+      assert Enum.all?(payload.overlay_transitions, fn transition ->
+               transition.reason in [
+                 :structural_match,
+                 :static_logical_transition,
+                 :normalized_structural_match,
+                 :runtime_transition_missing_structural_edge
+               ]
+             end)
+    end
+
+    test "static scenarios label logical overlay transitions explicitly", %{
+      conn: conn,
+      project_context: context
+    } do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      scenario =
+        Enum.find(context.scenarios, fn scenario ->
+          scenario.name ==
+            "Rule: RG-UK-014 — Withdrawal guards reject an over-limit request before funds move"
+        end)
+
+      assert scenario
+
+      render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", payload)
+
+      assert payload.overlay_edge_mode == :hybrid
+
+      assert Enum.any?(payload.overlay_transitions, fn transition ->
+               transition.reason == :static_logical_transition
+             end)
+    end
+
+    test "static reactor flows expose contextual step-to-node transitions", %{
+      conn: conn,
+      project_context: context
+    } do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      scenario =
+        Enum.find(context.scenarios, fn scenario ->
+          scenario.name == "Flow: BonusEvaluationReactor reaches the evaluation pipeline"
+        end)
+
+      assert scenario
+
+      render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", payload)
+
+      assert Enum.any?(payload.overlay_transitions, fn transition ->
+               transition.kind == :context and
+                 transition.source == "IgamingRef.Promotions.BonusEvaluationReactor:step:0" and
+                 transition.target == "IgamingRef.Promotions.BonusEvent"
+             end)
+
+      assert Enum.any?(payload.overlay_transitions, fn transition ->
+               transition.kind == :context and
+                 transition.source == "IgamingRef.Promotions.BonusEvaluationReactor:step:1" and
+                 transition.target == "IgamingRef.Players.Player"
+             end)
+    end
+
+    test "observation-only verification reads do not extend the overlay path", %{
+      conn: conn,
+      project_context: context
+    } do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      scenario =
+        Enum.find(context.scenarios, fn scenario ->
+          scenario.name ==
+            "Flow: Player withdrawal request is approved and enters provider processing"
+        end)
+
+      assert scenario
+
+      render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", payload)
+
+      refute Enum.any?(payload.overlay_transitions, fn transition ->
+               transition.source == "IgamingRef.Finance.Wallet" and
+                 transition.target == "IgamingRef.Finance.WithdrawalRequest"
+             end)
     end
 
     test "clear_scenario properly clears overlay and resets graph state", %{
@@ -876,5 +1096,11 @@ defmodule FoundryWeb.SystemMapLiveTest do
       [node.id | step_ids ++ action_ids]
     end)
     |> MapSet.new()
+  end
+
+  defp overlay_transitions(payload) do
+    payload
+    |> Map.get(:overlay_transitions, [])
+    |> Enum.map(fn transition -> {transition.source, transition.target} end)
   end
 end

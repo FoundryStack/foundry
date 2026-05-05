@@ -16,7 +16,6 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
 
   use Reactor
 
-  alias IgamingRef.Players.Player
   alias IgamingRef.Players.Rules.PlayerNotSelfExcluded
 
   alias IgamingRef.Promotions.{
@@ -37,6 +36,22 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
     description("Load inbound BonusEvent by ID.")
 
     run(fn %{event_id: event_id}, _ ->
+      Foundry.TestScenario.trace_node("IgamingRef.Promotions.BonusEvaluationReactor", %{
+        type: :entry,
+        kind: :action_execute,
+        label: "Enter BonusEvaluationReactor pipeline",
+        module_function: "Reactor.run",
+        source_snippet: "Reactor.run(BonusEvaluationReactor, ...)"
+      })
+
+      Foundry.TestScenario.trace_node("IgamingRef.Promotions.BonusEvent", %{
+        type: :reaction,
+        kind: :read,
+        label: "Load BonusEvent by id",
+        module_function: "Ash.get",
+        source_snippet: "Ash.get(BonusEvent, event_id, actor: :system)"
+      })
+
       Ash.get(BonusEvent, event_id, actor: :system)
     end)
   end
@@ -46,7 +61,7 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
     argument(:event, result(:load_event))
 
     run(fn %{event: event}, _ ->
-      Ash.get(Player, event.player_id, actor: :system)
+      Ash.get(IgamingRef.Players.Player, event.player_id, actor: :system)
     end)
   end
 
@@ -96,7 +111,9 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
     wait_for(:execute_campaigns)
 
     run(fn %{event: event}, _ ->
-      Ash.update(event, :mark_processed, actor: :system)
+      event
+      |> Ash.Changeset.for_update(:mark_processed, %{})
+      |> Ash.update(actor: :system)
     end)
   end
 
