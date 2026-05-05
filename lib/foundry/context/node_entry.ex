@@ -117,6 +117,7 @@ defmodule Foundry.Context.NodeEntry do
     trigger_kind: nil,
     rule_compliance_links: [],
     # Phase B extensions
+    scenario_refs: [],
     scenario_origins: [],
     graphql_mutations: [],
     json_api_routes: [],

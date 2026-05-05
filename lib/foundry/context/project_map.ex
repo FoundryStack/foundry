@@ -7,12 +7,8 @@ defmodule Foundry.Context.ProjectMap do
   Builds the complete project context map and applies structural compaction.
   """
   def build_all(project_root) do
-    {:ok, manifest} = Foundry.Manifest.Parser.read(project_root)
-
-    {nodes, edges} = Foundry.Context.GraphBuilder.build(project_root, manifest)
-    spec_kit = Foundry.Context.SpecKitIndexBuilder.build(project_root)
-
-    assemble(manifest, nodes, edges, spec_kit)
+    {:ok, context} = Foundry.Context.ProjectContext.build_map(project_root)
+    Foundry.Context.Compact.compact(context)
   end
 
   def assemble(manifest, nodes, edges, spec_kit) do

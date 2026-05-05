@@ -77,6 +77,17 @@ defmodule Foundry.SparkMetaCompatibilityTest do
     assert Enum.any?(info.steps, &(&1.name == :load_provider and &1.step_kind == :read))
   end
 
+  test "trace metadata strings do not leak short resource aliases into reactor facts" do
+    info = Foundry.SparkMeta.walk(IgamingRef.Promotions.BonusGrantTransfer)
+
+    load_context = Enum.find(info.steps, &(&1.name == :load_context))
+    assert load_context
+
+    assert "IgamingRef.Players.Player" in load_context.read_targets
+    refute "Player" in load_context.read_targets
+    refute load_context.target_resource == "Player"
+  end
+
   test "oban workers preserve queue and performs metadata" do
     info = Foundry.SparkMeta.walk(IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook)
 

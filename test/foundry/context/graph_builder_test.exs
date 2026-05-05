@@ -365,6 +365,32 @@ defmodule Foundry.Context.GraphBuilderTest do
     end)
   end
 
+  test "all graph edges resolve to existing nodes", %{edges: edges, nodes: nodes} do
+    valid_ids = nodes |> Enum.map(& &1.id) |> MapSet.new()
+
+    Enum.each(edges, fn edge ->
+      assert MapSet.member?(valid_ids, edge.from),
+             "Unresolved edge source #{inspect(edge.from)} for #{inspect(edge)}"
+
+      assert MapSet.member?(valid_ids, edge.to),
+             "Unresolved edge target #{inspect(edge.to)} for #{inspect(edge)}"
+    end)
+  end
+
+  test "reactor fact extraction does not keep short alias targets from trace strings", %{
+    node_map: nm
+  } do
+    transfer = nm["IgamingRef.Promotions.BonusGrantTransfer"]
+    assert transfer != nil
+
+    load_context = Enum.find(transfer.steps, &(&1.name == :load_context))
+    assert load_context != nil
+
+    assert "IgamingRef.Players.Player" in load_context.read_targets
+    refute "Player" in load_context.read_targets
+    refute load_context.target_resource == "Player"
+  end
+
   test "reactor and transfer guard edges are inferred from source rule calls", %{edges: edges} do
     assert find_edge(
              edges,

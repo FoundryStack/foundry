@@ -16,37 +16,39 @@ defmodule Foundry.Context.ProjectContext do
   - generated_at: timestamp
   - project, project_type, domain_type: manifest data
   - spec_kit: spec-kit index
+  - scenarios: verified executable test traces
   """
   def build(project_root) do
     try do
-      case Foundry.Manifest.Parser.read(project_root) do
-        {:ok, manifest} ->
-          {nodes, edges} = Foundry.Context.GraphBuilder.build(project_root, manifest)
-          spec_kit = Foundry.Context.SpecKitIndexBuilder.build(project_root)
-          scenarios = Foundry.Context.ScenarioExtractor.extract(project_root, nodes)
-
-          # Populate scenario_origins and scenario_count in nodes
-          nodes_with_scenarios = enrich_nodes_with_scenarios(nodes, scenarios)
-
-          context = %{
-            generated_at: DateTime.utc_now() |> DateTime.to_iso8601(),
-            project: Keyword.get(manifest, :project_name, ""),
-            project_type: Keyword.get(manifest, :project_type, "standard"),
-            domain_type: Keyword.get(manifest, :domain_type, ""),
-            nodes: nodes_with_scenarios,
-            edges: edges,
-            spec_kit: spec_kit,
-            scenarios: scenarios
-          }
-
-          {:ok, context}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+      build_map(project_root)
     rescue
       e ->
         {:error, Exception.message(e)}
+    end
+  end
+
+  def build_map(project_root) do
+    case Foundry.Manifest.Parser.read(project_root) do
+      {:ok, manifest} ->
+        {nodes, edges} = Foundry.Context.GraphBuilder.build(project_root, manifest)
+        spec_kit = Foundry.Context.SpecKitIndexBuilder.build(project_root)
+        scenarios = Foundry.Context.ScenarioExtractor.extract(project_root, nodes)
+        nodes_with_scenarios = enrich_nodes_with_scenarios(nodes, scenarios)
+
+        {:ok,
+         %{
+           generated_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+           project: Keyword.get(manifest, :project_name, ""),
+           project_type: Keyword.get(manifest, :project_type, "standard"),
+           domain_type: Keyword.get(manifest, :domain_type, ""),
+           nodes: nodes_with_scenarios,
+           edges: edges,
+           spec_kit: spec_kit,
+           scenarios: scenarios
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -61,25 +63,20 @@ defmodule Foundry.Context.ProjectContext do
 
       %{
         node
-        | scenario_origins: scenario_ids,
+        | scenario_refs: scenario_ids,
           test_coverage: updated_coverage
       }
     end)
   end
 
   defp update_test_coverage_with_scenarios(coverage, scenarios) do
-    {scenario_tests, e2e_tests, property_tests} =
-      Enum.reduce(scenarios, {false, false, false}, fn scenario, {st, e2e, pt} ->
-        st = st or scenario.category in [:invariant, :state_machine]
-        e2e = e2e or scenario.category == :compliance
-        pt = pt or scenario.category == :property
-        {st, e2e, pt}
-      end)
-
     coverage
-    |> Map.put(:scenario_tests, scenario_tests or coverage.scenario_tests)
-    |> Map.put(:e2e_tests, e2e_tests or coverage.e2e_tests)
-    |> Map.put(:property_tests, property_tests or coverage.property_tests)
+    |> Map.put(
+      :scenario_tests,
+      Enum.any?(scenarios, &(&1.category in [:invariant, :state_machine]))
+    )
+    |> Map.put(:e2e_tests, Enum.any?(scenarios, &(&1.category == :compliance)))
+    |> Map.put(:property_tests, Enum.any?(scenarios, &(&1.category == :property)))
     |> Map.put(:scenario_count, Enum.count(scenarios))
   end
 

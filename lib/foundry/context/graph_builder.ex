@@ -41,7 +41,11 @@ defmodule Foundry.Context.GraphBuilder do
     # Add external infrastructure nodes and their edges (Phase C)
     {external_nodes, external_edges} = derive_external_nodes_and_edges(nodes)
     all_nodes = Enum.sort_by(nodes ++ external_nodes, & &1.id)
-    all_edges = Enum.sort_by(edges ++ external_edges, &{&1.from, &1.to})
+    all_edges =
+      edges
+      |> Kernel.++(external_edges)
+      |> filter_resolvable_edges(all_nodes)
+      |> Enum.sort_by(&{&1.from, &1.to})
 
     {all_nodes, all_edges}
   end
@@ -244,7 +248,7 @@ defmodule Foundry.Context.GraphBuilder do
       |> Enum.flat_map(fn side_effect ->
         case side_effect.type do
           :oban_emit ->
-            target = normalize_emitted_target(side_effect.name)
+            target = resolve_emitted_target(side_effect.name, node_map)
 
             if Map.has_key?(node_map, target) do
               [EdgeEntry.new(trigger.module, target, :enqueues)]
@@ -381,6 +385,21 @@ defmodule Foundry.Context.GraphBuilder do
     case String.starts_with?(target, "Elixir.") do
       true -> String.replace_prefix(target, "Elixir.", "")
       false -> target
+    end
+  end
+
+  defp resolve_emitted_target(target, node_map) when is_binary(target) do
+    normalized = normalize_emitted_target(target)
+
+    cond do
+      Map.has_key?(node_map, normalized) ->
+        normalized
+
+      true ->
+        case Enum.filter(Map.keys(node_map), &String.ends_with?(&1, "." <> normalized)) do
+          [resolved] -> resolved
+          _ -> normalized
+        end
     end
   end
 
@@ -681,6 +700,17 @@ defmodule Foundry.Context.GraphBuilder do
     external_nodes = postgres_nodes ++ oban_node ++ adapter_nodes
 
     {external_nodes, external_edges}
+  end
+
+  defp filter_resolvable_edges(edges, nodes) do
+    valid_ids =
+      nodes
+      |> Enum.map(& &1.id)
+      |> MapSet.new()
+
+    Enum.filter(edges, fn edge ->
+      MapSet.member?(valid_ids, edge.from) and MapSet.member?(valid_ids, edge.to)
+    end)
   end
 
   # Extract adapter name from an adapter node
