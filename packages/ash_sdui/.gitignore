@@ -1,0 +1,6 @@
+.specstory/
+.vscode/
+.elixir_ls/
+_build/
+deps/
+docs/
