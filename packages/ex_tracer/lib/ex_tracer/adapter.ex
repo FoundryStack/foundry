@@ -1,6 +1,18 @@
 defmodule ExTracer.Adapter do
   @moduledoc """
-  Domain adapter for AST call classification and step expansion.
+  Pluggable behaviour for domain-specific call classification and step expansion.
+
+  Adapters examine AST expressions and classify function calls into typed Steps.
+  They can also expand steps (e.g., breaking a helper invocation into its
+  constituent lower-level calls) and define focus targets for linking to
+  graph nodes.
+
+  Implement this behaviour to extract domain semantics from your test calls,
+  mapping them onto your application's resource graph. See the README for
+  a full example building an Accounts adapter.
+
+  The adapter dispatcher (`ExTracer.AdapterDispatcher`) manages registration
+  and invocation of multiple adapters in sequence.
   """
 
   alias ExTracer.Lookup

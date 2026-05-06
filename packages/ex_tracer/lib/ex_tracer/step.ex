@@ -1,5 +1,17 @@
 defmodule ExTracer.Step do
-  @moduledoc false
+  @moduledoc """
+  A single meaningful call or assertion captured from test code.
+
+  Steps are the atomic building blocks of scenarios. Each step represents a
+  classifiable action: an API call, database query, assertion, or helper
+  invocation. They carry metadata for linking to AST source, runtime traces,
+  and domain-specific focus nodes — and flow information like dependencies
+  (`:reacts_to`) and emissions (`:emits`).
+
+  Steps are created by `ExTracer.FlowExpander` using `ExTracer.Adapter` implementations
+  to classify calls in test ASTs. At runtime, their execution is tracked by `ExTracer.CallTracer`
+  and matched against persisted traces by `ExTracer.TraceStore` implementations.
+  """
 
   @type t :: %__MODULE__{
           id: String.t() | nil,

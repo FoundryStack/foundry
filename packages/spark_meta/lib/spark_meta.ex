@@ -1,28 +1,60 @@
 defmodule SparkMeta do
   @moduledoc """
-  Generic Spark DSL walker → struct tree.
+  Generic Spark DSL walker and introspection library.
 
-  Provides introspection of Spark DSL modules with an opt-in `SparkMeta.Extension`
-  hook for richer output. Unknown extensions get a raw key-value fallback.
+  Provides a unified way to inspect any [Spark](https://hexdocs.pm/spark)-based DSL
+  module — extracting extensions, entities, options, and persisted state — with an
+  opt-in handler system for richer, extension-specific output.
 
-  ## Usage
+  ## Key modules
 
-      {:ok, state} = SparkMeta.walk(MyResource)
-      # state.extensions contains all Spark extensions
-      # state.extension_data contains output from registered SparkMeta.Extension handlers
+  - `SparkMeta.Walker` — low-level DSL introspection delegated from this module
+  - `SparkMeta.DslState` — normalized struct produced by `walk/1`
+  - `SparkMeta.Pipeline` — runs an ordered list of analyzers against a module
+  - `SparkMeta.Analysis` — typed result struct with facts and diagnostics
+  - `SparkMeta.Context` — carries the target module, DSL state, and source material
+  - `SparkMeta.Analyzer` — behaviour for implementing custom analyzers
+  - `SparkMeta.Extension` — behaviour for extension-specific extraction handlers
+  - `SparkMeta.Registry` — ETS-backed registry mapping extensions to handlers
+  - `SparkMeta.SourceProvider` — behaviour for fetching source text/AST
 
-      # Register a handler for a specific extension:
+  ## Walking a Spark module
+
+      {:ok, state} = SparkMeta.walk(MyApp.Accounts.User)
+
+      state.extensions     # => [Ash.Resource, ...]
+      state.sections       # => %{[:attributes] => [%Ash.Resource.Attribute{...}, ...]}
+      state.options        # => %{[:attributes] => %{allow_nil?: false}}
+      state.persisted      # => %{domain: MyApp.Domain}
+      state.extension_data # => %{Ash.Resource => %{attributes: [...], actions: [...]}}
+
+  ## Analyzer pipeline
+
+      {:ok, analysis} = SparkMeta.analyze(MyApp.Accounts.User)
+
+      analysis.facts[:attributes]  # => [%{name: :email, type: :string}, ...]
+      analysis.diagnostics         # => []
+
+  Run with custom analyzers:
+
+      {:ok, analysis} = SparkMeta.analyze(MyApp.Accounts.User,
+        analyzers: SparkMeta.default_analyzers() ++ [MyApp.Analyzers.Compliance]
+      )
+
+  ## Registering extension handlers
+
       SparkMeta.Registry.register(MyExtension, MyExtensionHandler)
 
-      # MyExtensionHandler must implement SparkMeta.Extension behaviour:
       defmodule MyExtensionHandler do
         @behaviour SparkMeta.Extension
 
+        @impl true
         def extract(extension_module, dsl_state) do
-          # Return rich data about the extension
           %{custom: "output"}
         end
       end
+
+  See the [README](https://hexdocs.pm/spark_meta) for full usage and built-in analyzers.
   """
 
   defdelegate walk(module), to: SparkMeta.Walker

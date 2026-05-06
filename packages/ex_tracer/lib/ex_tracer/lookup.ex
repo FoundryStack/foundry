@@ -1,5 +1,17 @@
 defmodule ExTracer.Lookup do
-  @moduledoc false
+  @moduledoc """
+  Cross-reference index linking steps to code, graph nodes, and runtime traces.
+
+  Built once from code-loaded modules and passed through the analysis pipeline,
+  Lookup enables adapters to:
+  - Resolve function calls to their source AST and modules (`:code`)
+  - Map calls to domain graph nodes (`:by_id`)
+  - Match executed test steps against recorded traces (`:runtime`)
+  - Resolve module aliases (`:aliases`)
+
+  Constructed by the application calling the extraction pipeline.
+  See `ScenarioTracer.MixTask` for an example builder.
+  """
 
   alias ExTracer.RuntimeTrace
 

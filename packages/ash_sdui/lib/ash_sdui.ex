@@ -1,8 +1,25 @@
 defmodule AshSDUI do
   @moduledoc """
-  Server-Driven UI library for Phoenix LiveView applications backed by Ash resources.
+  Server-Driven UI for Phoenix LiveView applications backed by Ash resources.
+
+  AshSDUI lets you define UI layouts as data — either in code or persisted in your
+  database — and render them dynamically in LiveView without redeploying.
+
+  ## Key modules
+
+  - `AshSDUI.Component` — macro for declaring and registering SDUI components
+  - `AshSDUI.Registry` — ETS-backed registry of all discovered components
+  - `AshSDUI.Layout` — code-based layout registry for static or config-driven screens
+  - `AshSDUI.UINode` — Ash resource for persisting dynamic layout trees
+  - `AshSDUI.Renderer` — builds a `TreeNode` tree from a layout name or `UINode` records
+  - `AshSDUI.Cache` — ETS-backed cache with automatic invalidation on `UINode` changes
+  - `AshSDUI.Notifier` — Ash notifier that evicts cache entries on resource changes
+  - `AshSDUI.Calculations.ResolveSubject` — resolves `{subject_resource, subject_id}` to a live record
+  - `AshSDUI.Components.SDUIRoot` — Phoenix component that recursively renders a tree
 
   ## Usage in a LiveView
+
+  Add `use AshSDUI` with a lookup strategy and call `<.sdui_root />` in your template:
 
       defmodule MyAppWeb.Live.PlayerDashboard do
         use MyAppWeb, :live_view
@@ -13,20 +30,48 @@ defmodule AshSDUI do
           <%= if @__sdui_tree__ do %>
             <.sdui_root />
           <% else %>
-            <div>Loading...</div>
+            <div>Layout not found</div>
           <% end %>
           \"""
         end
       end
 
-  The key is that you must reference `@__sdui_tree__` in your render template
-  (even if just for the conditional check) so that Phoenix includes it in the
-  assigns passed to the `sdui_root` component.
+  You must reference `@__sdui_tree__` in your template so Phoenix includes it in the
+  assigns passed to `sdui_root`. The injected `mount/3` is declared `defoverridable`
+  — you can override it to add your own socket assigns.
 
   ## Lookup strategies
 
-  - `{:from_params, :name}` — reads the layout name from socket params
+  - `{:from_params, :name}` — reads the layout name from the socket params map
   - `{:static, "layout-name"}` — always renders the named layout
+
+  ## Defining a component
+
+      defmodule MyAppWeb.Components.Player.ScoreCard do
+        use MyAppWeb, :live_component
+        use AshSDUI.Component, fragment: \"""
+          fragment PlayerScoreCardData on Player {
+            displayName
+            currentScore
+          }
+        \"""
+
+        def render(assigns) do
+          ~H\"""
+          <div>
+            <h2><%= @subject.display_name %></h2>
+            <p>Score: <%= @subject.current_score %></p>
+          </div>
+          \"""
+        end
+      end
+
+  Components are registered automatically under a name derived from the module
+  (e.g., `"Player.ScoreCard@v1"`). Set `@version "v2"` before `use AshSDUI.Component`
+  to override the default version suffix.
+
+  See the [README](https://hexdocs.pm/ash_sdui) for full usage, layout definitions,
+  UINode actions, and caching details.
   """
 
   defmacro __using__(opts) do
