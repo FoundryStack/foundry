@@ -3,6 +3,7 @@ defmodule FoundryWeb.SystemMapLive do
   alias FoundryWeb.ChatSession
   alias Foundry.Context.ScenarioCache
   alias Foundry.Context.ProjectContext
+  alias ExTracer.Report
 
   @impl true
   def mount(_params, session, socket) do
@@ -33,15 +34,11 @@ defmodule FoundryWeb.SystemMapLive do
         coverage = if(report, do: report.coverage, else: %{})
         performance = if(report, do: report.performance, else: %{})
         scenario_warnings = if(report, do: report.warnings || [], else: [])
-
-        scenarios =
-          case report do
-            %{scenarios: report_scenarios} when is_list(report_scenarios) and report_scenarios != [] ->
-              report_scenarios
-
-            _ ->
-              context.scenarios || []
-          end
+        all_scenarios = scenarios_for_context(context, report)
+        node_index = scenario_node_index(report, all_scenarios)
+        filtered_scenarios = all_scenarios
+        scenarios_by_category = grouped_scenarios(filtered_scenarios)
+        uncovered_node_ids = coverage_uncovered_node_ids(coverage)
 
         # Organize nodes by domain
         nodes_by_domain =
@@ -56,11 +53,6 @@ defmodule FoundryWeb.SystemMapLive do
           end)
           |> Enum.into(%{})
 
-        # Organize scenarios by category
-        scenarios_by_category =
-          Enum.group_by(scenarios, & &1.category)
-          |> Map.new(fn {cat, scens} -> {cat, Enum.sort_by(scens, & &1.name)} end)
-
         # Count compliance coverage gaps: declared requirements without linked E2E coverage
         gap_count =
           Enum.count(nodes, fn n ->
@@ -72,7 +64,7 @@ defmodule FoundryWeb.SystemMapLive do
         migration_count = Enum.count(nodes, fn n -> n.pending_migrations end)
 
         # Calculate domain coverage
-        domain_coverage = calculate_domain_coverage(nodes, scenarios)
+        domain_coverage = calculate_domain_coverage(nodes, all_scenarios)
 
         {:ok, socket} =
           socket
@@ -81,15 +73,19 @@ defmodule FoundryWeb.SystemMapLive do
             nodes_by_domain: nodes_by_domain,
             all_nodes: nodes,
             all_edges: context.edges || [],
-            scenarios: scenarios,
+            all_scenarios: all_scenarios,
+            scenarios: filtered_scenarios,
             scenarios_by_category: scenarios_by_category,
             coverage: coverage,
             performance: performance,
             scenario_warnings: scenario_warnings,
             slow_test_durations: slow_test_durations(performance),
+            node_index: node_index,
+            uncovered_node_ids: uncovered_node_ids,
             domain_coverage: domain_coverage,
             selected_scenario_id: nil,
             active_scenario_step_id: nil,
+            selected_node_scenario_count: nil,
             gap_count: gap_count,
             migration_count: migration_count,
             project_name: Path.basename(project_root),
@@ -117,15 +113,19 @@ defmodule FoundryWeb.SystemMapLive do
             nodes_by_domain: %{},
             all_nodes: [],
             all_edges: [],
+            all_scenarios: [],
             scenarios: [],
             scenarios_by_category: %{},
             coverage: %{},
             performance: %{},
             scenario_warnings: [],
             slow_test_durations: %{},
+            node_index: %{},
+            uncovered_node_ids: [],
             domain_coverage: %{},
             selected_scenario_id: nil,
             active_scenario_step_id: nil,
+            selected_node_scenario_count: nil,
             gap_count: 0,
             migration_count: 0,
             project_name: Path.basename(project_root),
@@ -169,7 +169,22 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
-  def handle_event("node_selected", _params, socket) do
+  def handle_event("node_selected", %{"id" => node_id}, socket) do
+    normalized_node_id = normalize_graph_node_id(node_id)
+    filtered_scenarios = scenarios_for_selected_node(socket.assigns.all_scenarios, socket.assigns.node_index, normalized_node_id)
+    filtered_scenario_ids = MapSet.new(Enum.map(filtered_scenarios, & &1.id))
+
+    socket =
+      socket
+      |> assign(
+        sidebar_tab: :test_coverage,
+        selected_node: normalized_node_id,
+        selected_node_scenario_count: length(filtered_scenarios),
+        scenarios: filtered_scenarios,
+        scenarios_by_category: grouped_scenarios(filtered_scenarios)
+      )
+      |> clear_selected_scenario_if_filtered_out(filtered_scenario_ids)
+
     {:noreply, socket}
   end
 
@@ -338,18 +353,39 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
-  def handle_info({:scenarios_updated, report}, socket) do
-    scenarios = report.scenarios || []
-
+  def handle_event("clear_node_filter", _params, socket) do
     {:noreply,
      assign(socket,
-       scenarios: scenarios,
-       scenarios_by_category: Enum.group_by(scenarios, & &1.category),
+       selected_node: nil,
+       selected_node_scenario_count: nil,
+       scenarios: socket.assigns.all_scenarios,
+       scenarios_by_category: grouped_scenarios(socket.assigns.all_scenarios)
+     )}
+  end
+
+  @impl true
+  def handle_info({:scenarios_updated, report}, socket) do
+    all_scenarios = List.wrap(report.scenarios)
+    node_index = scenario_node_index(report, all_scenarios)
+    filtered_scenarios = scenarios_for_selected_node(all_scenarios, node_index, socket.assigns.selected_node)
+    filtered_scenario_ids = MapSet.new(Enum.map(filtered_scenarios, & &1.id))
+
+    {:noreply,
+     socket
+     |> assign(
+       all_scenarios: all_scenarios,
+       scenarios: filtered_scenarios,
+       scenarios_by_category: grouped_scenarios(filtered_scenarios),
        coverage: report.coverage || %{},
        performance: report.performance || %{},
        scenario_warnings: report.warnings || [],
-       slow_test_durations: slow_test_durations(report.performance || %{})
-     )}
+       slow_test_durations: slow_test_durations(report.performance || %{}),
+       node_index: node_index,
+       uncovered_node_ids: coverage_uncovered_node_ids(report.coverage || %{}),
+       selected_node_scenario_count: if(socket.assigns.selected_node, do: length(filtered_scenarios), else: nil)
+     )
+     |> clear_selected_scenario_if_filtered_out(filtered_scenario_ids)
+     |> push_event("graph:coverage_overlay", %{uncovered_node_ids: coverage_uncovered_node_ids(report.coverage || %{})})}
   end
 
   @impl true
@@ -516,6 +552,78 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   defp slow_test_durations(_performance), do: %{}
+
+  defp scenarios_for_context(_context, %Report{scenarios: report_scenarios})
+       when is_list(report_scenarios) and report_scenarios != [] do
+    report_scenarios
+  end
+
+  defp scenarios_for_context(context, _report), do: context.scenarios || []
+
+  defp scenario_node_index(%Report{node_index: node_index}, _scenarios) when map_size(node_index) > 0,
+    do: normalize_node_index(node_index)
+
+  defp scenario_node_index(_report, scenarios), do: build_node_index(scenarios)
+
+  defp normalize_node_index(node_index) do
+    Map.new(node_index, fn {node_id, scenario_ids} ->
+      {normalize_graph_node_id(node_id), Enum.uniq(List.wrap(scenario_ids))}
+    end)
+  end
+
+  defp build_node_index(scenarios) do
+    Enum.reduce(scenarios, %{}, fn scenario, acc ->
+      Enum.reduce(List.wrap(scenario.nodes), acc, fn node_id, inner ->
+        normalized_node_id = normalize_graph_node_id(node_id)
+        Map.update(inner, normalized_node_id, [scenario.id], &[scenario.id | &1])
+      end)
+    end)
+    |> Map.new(fn {node_id, scenario_ids} -> {node_id, Enum.uniq(scenario_ids)} end)
+  end
+
+  defp scenarios_for_selected_node(scenarios, _node_index, nil), do: scenarios
+
+  defp scenarios_for_selected_node(scenarios, node_index, node_id) do
+    scenario_ids =
+      node_index
+      |> Map.get(node_id, [])
+      |> MapSet.new()
+
+    Enum.filter(scenarios, &MapSet.member?(scenario_ids, &1.id))
+  end
+
+  defp grouped_scenarios(scenarios) do
+    scenarios
+    |> Enum.group_by(& &1.category)
+    |> Map.new(fn {cat, scens} -> {cat, Enum.sort_by(scens, & &1.name)} end)
+  end
+
+  defp coverage_uncovered_node_ids(%{uncovered_node_ids: uncovered_node_ids}) when is_list(uncovered_node_ids),
+    do: uncovered_node_ids
+
+  defp coverage_uncovered_node_ids(_coverage), do: []
+
+  defp normalize_graph_node_id(graph_id) when is_binary(graph_id) do
+    graph_id
+    |> String.split(":step:")
+    |> List.first()
+    |> String.split(":action:")
+    |> List.first()
+    |> String.split(":state:")
+    |> List.first()
+  end
+
+  defp normalize_graph_node_id(graph_id), do: graph_id
+
+  defp clear_selected_scenario_if_filtered_out(socket, visible_scenario_ids) do
+    selected_scenario_id = socket.assigns.selected_scenario_id
+
+    if selected_scenario_id && not MapSet.member?(visible_scenario_ids, selected_scenario_id) do
+      clear_scenario_state(socket)
+    else
+      socket
+    end
+  end
 
   defp scenario_overlay_payload(scenario, active_step_id, edges) do
     active_step = find_flow_step(scenario, active_step_id)

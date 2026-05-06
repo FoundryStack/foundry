@@ -127,6 +127,13 @@ export const STATIC_STYLES = [
     },
   },
   {
+    selector: 'node.coverage-uncovered',
+    style: {
+      'border-width': 2.5,
+      'border-style': 'dashed',
+    },
+  },
+  {
     selector: 'node[type="external"]',
     style: { 'border-style': 'dashed', 'border-width': 1, 'opacity': 0.7 },
   },
@@ -221,22 +228,32 @@ export function dynamicStyles(c) {
   return [
     {
       selector: 'node',
-    style: {
-      'background-color': c.nodeBg,
-      'border-color': c.b1,
-      'color': c.tx,
+      style: {
+        'background-color': c.nodeBg,
+        'border-color': c.b1,
+        'color': c.tx,
+      },
     },
-  },
     { selector: 'node.compliance-gap, node.gap', style: { 'border-color': c.yw } },
+    {
+      selector: 'node.coverage-uncovered',
+      style: {
+        'border-color': c.yw,
+        'background-blacken': 0.08,
+      },
+    },
     { selector: 'node.sensitive', style: { 'border-width': 2, 'border-color': c.rd } },
     {
       selector: 'node[nodeKind="cluster"]',
-    style: {
-      'background-color': 'data(fillColor)',
-      'border-color': c.b1,
+      style: {
+        'background-color': 'data(fillColor)',
+        'border-color': c.b1,
+      },
     },
-  },
-    { selector: 'node.domain-cluster', style: { 'background-color': 'data(fillColor)', 'border-color': 'data(typeColor)' } },
+    {
+      selector: 'node.domain-cluster',
+      style: { 'background-color': 'data(fillColor)', 'border-color': 'data(typeColor)' },
+    },
     ...kindSelectors,
     { selector: 'node:selected', style: { 'border-color': c.ac } },
     {

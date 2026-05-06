@@ -126,6 +126,35 @@ defmodule FoundryWeb.SystemMapLiveTest do
       # Verify the click was processed
       assert result != nil
     end
+
+    test "switches to Coverage and filters scenarios by selected node", %{
+      conn: conn,
+      project_context: context
+    } do
+      {node_id, scenario_ids} = node_with_partial_scenario_coverage(context.scenarios)
+      Foundry.Context.ScenarioCache.update(scenario_report(context.scenarios, node_index: build_node_index(context.scenarios)))
+
+      {:ok, live, _html} = live(conn, "/studio")
+
+      html = render_click(live, "node_selected", %{"id" => node_id})
+
+      assert html =~ "Scenario Filter"
+      assert html =~ node_id
+
+      Enum.each(scenario_ids, fn scenario_id ->
+        assert Regex.match?(~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(scenario_id)}"/, html)
+      end)
+
+      non_matching_scenarios =
+        Enum.reject(context.scenarios, &(&1.id in scenario_ids))
+
+      if non_matching_scenarios != [] do
+        refute Regex.match?(
+                 ~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(hd(non_matching_scenarios).id)}"/,
+                 html
+               )
+      end
+    end
   end
 
   describe "handle_event fetch_node_detail" do
@@ -425,6 +454,46 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
   defp restore_env(app, key, nil), do: Application.delete_env(app, key)
   defp restore_env(app, key, value), do: Application.put_env(app, key, value)
+
+  defp scenario_report(scenarios, attrs) do
+    struct!(
+      ExTracer.Report,
+      Keyword.merge(
+        [
+          extracted_at: DateTime.utc_now(),
+          duration_ms: 0,
+          scenarios: scenarios,
+          coverage: %ExTracer.CoverageReport{},
+          performance: %ExTracer.PerformanceReport{},
+          node_index: %{},
+          warnings: []
+        ],
+        attrs
+      )
+    )
+  end
+
+  defp build_node_index(scenarios) do
+    Enum.reduce(scenarios, %{}, fn scenario, acc ->
+      Enum.reduce(scenario.nodes || [], acc, fn node_id, inner ->
+        Map.update(inner, node_id, [scenario.id], &[scenario.id | &1])
+      end)
+    end)
+    |> Map.new(fn {node_id, scenario_ids} -> {node_id, Enum.uniq(scenario_ids)} end)
+  end
+
+  defp node_with_partial_scenario_coverage(scenarios) do
+    node_index = build_node_index(scenarios)
+    total = length(scenarios)
+
+    Enum.find_value(node_index, fn {node_id, scenario_ids} ->
+      unique_ids = Enum.uniq(scenario_ids)
+
+      if length(unique_ids) > 0 and length(unique_ids) < total do
+        {node_id, unique_ids}
+      end
+    end) || raise "expected a node with partial scenario coverage"
+  end
 
   defp put_chat_hooks(overrides \\ []) do
     Application.put_env(
@@ -788,6 +857,21 @@ defmodule FoundryWeb.SystemMapLiveTest do
       # Should contain scenario groupings
       assert coverage_html =~ "INVARIANT" or coverage_html =~ "COMPLIANCE" or
                coverage_html =~ "STATE_MACHINE" or coverage_html =~ "PROPERTY"
+    end
+
+    test "coverage metadata includes uncovered node ids for graph highlighting", %{conn: conn} do
+      Foundry.Context.ScenarioCache.update(
+        scenario_report([],
+          coverage: %ExTracer.CoverageReport{
+            uncovered_node_ids: ["Finance.Wallet", "Payments.Transfer"]
+          }
+        )
+      )
+
+      {:ok, _live, html} = live(conn, "/studio")
+
+      assert html =~
+               ~s(data-uncovered-node-ids="[&quot;Finance.Wallet&quot;,&quot;Payments.Transfer&quot;]")
     end
 
     test "graph:scenario_overlay event includes all required fields for drawer rendering", %{

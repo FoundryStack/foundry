@@ -53,6 +53,7 @@ export class CytoscapeGraph {
     this.currentLayout = null
     this.layoutOptions = { ...DEFAULT_LAYOUT_OPTIONS, ...layoutOptions }
     this.compoundCompaction = { ...DEFAULT_COMPOUND_COMPACTION, ...compoundCompaction }
+    this._coverageOverlayState = { uncoveredNodeIds: new Set() }
 
     // Initialize callback properties with no-op defaults
     this.onNodeClick = () => {}
@@ -197,6 +198,14 @@ export class CytoscapeGraph {
 
   clearProposalOverlay() {
     this.cy.elements().filter(ele => ele.data('state') === 'phantom').remove()
+  }
+
+  applyCoverageOverlay({ uncovered_node_ids: uncoveredNodeIds } = {}) {
+    this._coverageOverlayState = {
+      uncoveredNodeIds: new Set(Array.isArray(uncoveredNodeIds) ? uncoveredNodeIds : []),
+    }
+
+    this._applyCoverageOverlayStyles()
   }
 
   applyScenarioOverlay({
@@ -353,9 +362,23 @@ export class CytoscapeGraph {
       edge.style('z-index', null)
     })
 
+    this._applyCoverageOverlayStyles()
+
     if (this.cy.elements().length > 0) {
       this.cy.fit(this.cy.elements(), this.layoutOptions.padding)
     }
+  }
+
+  _applyCoverageOverlayStyles() {
+    const uncoveredNodeIds = this._coverageOverlayState?.uncoveredNodeIds || new Set()
+
+    this.cy.nodes().forEach(node => {
+      if (uncoveredNodeIds.has(node.id())) {
+        node.addClass('coverage-uncovered')
+      } else {
+        node.removeClass('coverage-uncovered')
+      }
+    })
   }
 
   _scenarioActiveNodeIds(activeStep) {

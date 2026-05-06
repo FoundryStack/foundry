@@ -97,6 +97,12 @@ export const SystemMapHook = {
         }
       })
 
+      this.handleEvent('graph:coverage_overlay', (payload) => {
+        if (this.graph) {
+          this.graph.applyCoverageOverlay(payload)
+        }
+      })
+
       this.handleEvent('drawer:open_flow', () => {
         if (this.drawer) {
           this.drawer.switchTab('flow')
@@ -136,6 +142,8 @@ export const SystemMapHook = {
     } catch (error) {
       console.error('SystemMapHook init error:', error)
     }
+
+    this._syncCoverageOverlay()
   },
 
   _handleNodeSelected(nodeId, nodeData = null) {
@@ -389,11 +397,26 @@ export const SystemMapHook = {
     return String(name).replace(/^:/, '')
   },
 
+  _syncCoverageOverlay() {
+    if (!this.graph) return
+
+    const metadata = document.getElementById('system-map-metadata')
+    if (!metadata) return
+
+    try {
+      const uncoveredNodeIds = JSON.parse(metadata.dataset.uncoveredNodeIds || '[]')
+      this.graph.applyCoverageOverlay({ uncovered_node_ids: uncoveredNodeIds })
+    } catch (error) {
+      console.error('SystemMapHook coverage sync error:', error)
+    }
+  },
+
   updated() {
     try {
       this.feed?.sync()
       this.drawer?.sync()
       this.sidebar?.sync()
+      this._syncCoverageOverlay()
     } catch (error) {
       console.error('SystemMapHook update error:', error)
     }

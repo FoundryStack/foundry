@@ -97,6 +97,31 @@
           <% below_threshold = @domain_coverage[:below_threshold] %>
           <% uncovered_count = Enum.count(Map.get(@coverage || %{}, :uncovered_node_ids, [])) %>
 
+          <%= if @selected_node do %>
+            <div class="rounded-box border border-secondary/30 bg-secondary/10 p-3">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-[0.12em] text-secondary">
+                    Scenario Filter
+                  </p>
+                  <p class="mt-1 text-sm text-base-content">
+                    Showing scenarios covering
+                    <span class="font-mono text-secondary">{@selected_node}</span>
+                  </p>
+                  <p class="mt-1 text-xs text-neutral-content">
+                    {@selected_node_scenario_count || 0} matching scenarios from `report.node_index`
+                  </p>
+                </div>
+                <button
+                  class="rounded border border-secondary/30 bg-base-100/70 px-2 py-1 text-[11px] font-medium text-secondary transition-colors hover:bg-base-100"
+                  phx-click="clear_node_filter"
+                >
+                  Show All
+                </button>
+              </div>
+            </div>
+          <% end %>
+
           <%= if @scenario_warnings != [] do %>
             <div class="rounded-box border border-warning/40 bg-warning/10 p-3">
               <div class="flex items-center justify-between gap-2">
@@ -161,6 +186,12 @@
           </div>
 
           <div class="space-y-2">
+            <%= if @scenarios_by_category == %{} do %>
+              <div class="rounded-box border border-dashed border-base-300/70 bg-base-200/30 p-4 text-sm text-neutral-content">
+                No extracted scenarios cover this node yet.
+              </div>
+            <% end %>
+
             <%= for {category, scenarios} <- @scenarios_by_category do %>
               <details class="group" open>
                 <summary class="flex cursor-pointer items-center gap-2 rounded-box border border-base-300/50 bg-base-200/50 px-3 py-2 select-none">
@@ -341,6 +372,12 @@
 
       <div class="relative min-w-0 flex-1 overflow-hidden bg-base-100">
         <%= if @context_json do %>
+          <div
+            id="system-map-metadata"
+            class="hidden"
+            data-uncovered-node-ids={Jason.encode!(@uncovered_node_ids || [])}
+          >
+          </div>
           <div
             phx-hook="SystemMap"
             id="system-map"
