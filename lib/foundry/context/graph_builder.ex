@@ -595,19 +595,12 @@ defmodule Foundry.Context.GraphBuilder do
   # ---------------------------------------------------------------------------
 
   defp derive_external_nodes_and_edges(nodes) do
-    # Collect edges to external systems, grouped by domain for postgres
-    postgres_by_domain =
+    # Collect edges to external postgres (single canonical node)
+    postgres_edges =
       for n <- nodes,
           n.type == "resource",
           n.data_layer && String.contains?(to_string(n.data_layer), "AshPostgres"),
-          reduce: %{} do
-        acc ->
-          domain = n.domain
-          edge = EdgeEntry.new(n.module, "external:postgres:#{domain}", :persists_to)
-          Map.update(acc, domain, [edge], fn edges -> edges ++ [edge] end)
-      end
-
-    postgres_edges = postgres_by_domain |> Map.values() |> Enum.concat()
+          do: EdgeEntry.new(n.module, "external:postgres", :persists_to)
 
     oban_edges =
       for n <- nodes,
@@ -628,46 +621,49 @@ defmodule Foundry.Context.GraphBuilder do
 
     external_edges = postgres_edges ++ oban_edges ++ adapter_edges
 
-    # Create external postgres nodes for each domain that has AshPostgres resources
+    # Create external postgres node (single canonical node if there are postgres resources)
     postgres_nodes =
-      postgres_by_domain
-      |> Enum.map(fn {domain, _edges} ->
-        %NodeEntry{
-          module: "external:postgres:#{domain}",
-          id: "external:postgres:#{domain}",
-          type: "external",
-          domain: "Infrastructure",
-          description: "PostgreSQL - #{domain} domain tables (AshPostgres)",
-          app: nil,
-          sensitive: false,
-          attributes: [],
-          actions: [],
-          rules: [],
-          compliance: [],
-          adrs: [],
-          runbook: nil,
-          test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
-          data_layer: nil,
-          pending_migrations: false,
-          paper_trail: false,
-          archival: false,
-          state_machine: nil,
-          api_routes: [],
-          telemetry_prefix: nil,
-          money_attributes: [],
-          authentication_subject: false,
-          oban_queues: [],
-          rate_limited: false,
-          feature_flags: [],
-          steps: [],
-          performs: nil,
-          outputs: [],
-          agent_steps: [],
-          relationships: [],
-          auth_strategies: [],
-          last_modified: nil
-        }
-      end)
+      if length(postgres_edges) > 0 do
+        [
+          %NodeEntry{
+            module: "external:postgres",
+            id: "external:postgres",
+            type: "external",
+            domain: "Infrastructure",
+            description: "PostgreSQL database",
+            app: nil,
+            sensitive: false,
+            attributes: [],
+            actions: [],
+            rules: [],
+            compliance: [],
+            adrs: [],
+            runbook: nil,
+            test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
+            data_layer: nil,
+            pending_migrations: false,
+            paper_trail: false,
+            archival: false,
+            state_machine: nil,
+            api_routes: [],
+            telemetry_prefix: nil,
+            money_attributes: [],
+            authentication_subject: false,
+            oban_queues: [],
+            rate_limited: false,
+            feature_flags: [],
+            steps: [],
+            performs: nil,
+            outputs: [],
+            agent_steps: [],
+            relationships: [],
+            auth_strategies: [],
+            last_modified: nil
+          }
+        ]
+      else
+        []
+      end
 
     # Oban external node (singleton)
     oban_node =
