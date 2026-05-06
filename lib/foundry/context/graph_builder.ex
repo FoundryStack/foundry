@@ -80,13 +80,8 @@ defmodule Foundry.Context.GraphBuilder do
     |> Enum.flat_map(fn reactor ->
       reactor.steps
       |> Enum.flat_map(fn step ->
-        read_targets =
-          Map.get(step, :read_targets) || Map.get(step, "read_targets") ||
-            fallback_targets(step, :read)
-
-        write_targets =
-          Map.get(step, :write_targets) || Map.get(step, "write_targets") ||
-            fallback_targets(step, :write)
+        read_targets = step_targets(step, :read_targets, :read)
+        write_targets = step_targets(step, :write_targets, :write)
 
         step_name = Map.get(step, :name) || Map.get(step, "name")
         step_index = Map.get(step, :step_index) || Map.get(step, "step_index")
@@ -263,9 +258,19 @@ defmodule Foundry.Context.GraphBuilder do
     end)
   end
 
+  defp step_targets(step, key, expected_kind) do
+    case Map.get(step, key) || Map.get(step, to_string(key)) do
+      targets when is_list(targets) and targets != [] -> targets
+      target when is_binary(target) -> [target]
+      _ -> fallback_targets(step, expected_kind)
+    end
+  end
+
   defp fallback_targets(step, expected_kind) do
     target_resource = Map.get(step, :target_resource) || Map.get(step, "target_resource")
     step_kind = Map.get(step, :step_kind) || Map.get(step, "step_kind")
+    read_targets = Map.get(step, :read_targets) || Map.get(step, "read_targets") || []
+    source_snippet = Map.get(step, :source_snippet) || Map.get(step, "source_snippet")
 
     cond do
       expected_kind == :read and step_kind in [:read, "read"] and is_binary(target_resource) ->
@@ -273,6 +278,53 @@ defmodule Foundry.Context.GraphBuilder do
 
       expected_kind == :write and step_kind in [:write, "write"] and is_binary(target_resource) ->
         [target_resource]
+
+      expected_kind == :write ->
+        infer_write_targets_from_source(source_snippet, read_targets)
+
+      true ->
+        []
+    end
+  end
+
+  defp infer_write_targets_from_source(nil, _read_targets), do: []
+
+  defp infer_write_targets_from_source(source_snippet, read_targets) when is_binary(source_snippet) do
+    explicit_targets =
+      Regex.scan(
+        ~r/([A-Z][A-Za-z0-9_.]*)\s*\|>\s*Ash\.Changeset\.for_(?:create|update|destroy)\(/,
+        source_snippet
+      )
+      |> Enum.map(fn [_, target] -> target end)
+
+    inferred_variable_targets =
+      Regex.scan(
+        ~r/(\w+)\s*\|>\s*Ash\.Changeset\.for_(?:update|destroy)\(/,
+        source_snippet
+      )
+      |> Enum.flat_map(fn [_, variable] -> infer_variable_write_targets(variable, read_targets) end)
+
+    Enum.uniq(explicit_targets ++ inferred_variable_targets)
+  end
+
+  defp infer_write_targets_from_source(_source_snippet, _read_targets), do: []
+
+  defp infer_variable_write_targets(variable, read_targets) do
+    inferred =
+      Enum.filter(read_targets, fn resource ->
+        resource
+        |> String.split(".")
+        |> List.last()
+        |> Macro.underscore()
+        |> Kernel.==(variable)
+      end)
+
+    cond do
+      inferred != [] ->
+        inferred
+
+      length(Enum.uniq(read_targets)) == 1 ->
+        read_targets
 
       true ->
         []
@@ -446,7 +498,16 @@ defmodule Foundry.Context.GraphBuilder do
                ) do
           action_name
         else
-          _ -> nil
+          _ ->
+            with [_, action_name] <-
+                   Regex.run(
+                     ~r/Ash\.Changeset\.for_(?:create|update|destroy)\(\s*:(\w+)/m,
+                     source_snippet
+                   ) do
+              action_name
+            else
+              _ -> nil
+            end
         end
     end
   end

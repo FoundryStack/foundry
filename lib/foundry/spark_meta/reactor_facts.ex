@@ -367,15 +367,78 @@ defmodule Foundry.SparkMeta.ReactorFacts do
     explicit_write_targets =
       extract_resource_refs(snippet, ~r/Ash\.(?:create|update|destroy)\(\s*([^,\s)]+)/, alias_map)
 
+    piped_module_write_targets =
+      extract_resource_refs(
+        snippet,
+        ~r/([A-Z][A-Za-z0-9_.]*)\s*\|>\s*Ash\.Changeset\.for_(?:create|update|destroy)\(/,
+        alias_map
+      ) ++
+        extract_resource_refs(
+          snippet,
+          ~r/([A-Z][A-Za-z0-9_.]*)\s*\|>\s*Ash\.(?:create|update|destroy)\(/,
+          alias_map
+        )
+
     variable_write_targets =
-      ~r/Ash\.(?:update|destroy)\(\s*(\w+),/
-      |> Regex.scan(snippet)
-      |> Enum.flat_map(fn [_, variable] -> Map.get(variable_resources, variable, []) end)
+      infer_variable_write_targets(
+        snippet,
+        ~r/Ash\.(?:update|destroy)\(\s*(\w+),/,
+        variable_resources,
+        read_targets
+      )
+
+    piped_variable_write_targets =
+      infer_variable_write_targets(
+        snippet,
+        ~r/(\w+)\s*\|>\s*Ash\.Changeset\.for_(?:update|destroy)\(/,
+        variable_resources,
+        read_targets
+      )
 
     %StepFacts{
       read_targets: Enum.uniq(read_targets),
-      write_targets: Enum.uniq(explicit_write_targets ++ variable_write_targets)
+      write_targets:
+        Enum.uniq(
+          explicit_write_targets ++
+            piped_module_write_targets ++ variable_write_targets ++ piped_variable_write_targets
+        )
     }
+  end
+
+  defp infer_variable_write_targets(snippet, pattern, variable_resources, read_targets) do
+    pattern
+    |> Regex.scan(snippet)
+    |> Enum.flat_map(fn [_, variable] ->
+      infer_variable_resource_targets(variable, variable_resources, read_targets)
+    end)
+  end
+
+  defp infer_variable_resource_targets(variable, variable_resources, read_targets) do
+    case Map.get(variable_resources, variable, []) do
+      [] ->
+        inferred_from_name =
+          Enum.filter(read_targets, fn resource ->
+            resource
+            |> String.split(".")
+            |> List.last()
+            |> Macro.underscore()
+            |> Kernel.==(variable)
+          end)
+
+        cond do
+          inferred_from_name != [] ->
+            inferred_from_name
+
+          length(Enum.uniq(read_targets)) == 1 ->
+            read_targets
+
+          true ->
+            []
+        end
+
+      resources ->
+        resources
+    end
   end
 
   defp extract_rules_from_step_source(nil, _alias_map), do: []
