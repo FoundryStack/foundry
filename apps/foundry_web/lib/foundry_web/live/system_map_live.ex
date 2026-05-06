@@ -1,10 +1,13 @@
 defmodule FoundryWeb.SystemMapLive do
   use FoundryWeb, :live_view
   alias FoundryWeb.ChatSession
+  alias Foundry.Context.ScenarioCache
   alias Foundry.Context.ProjectContext
 
   @impl true
   def mount(_params, session, socket) do
+    if connected?(socket), do: ScenarioCache.subscribe()
+
     hooks = Application.get_env(:foundry_web, :system_map_live_hooks, [])
     build_context = Keyword.get(hooks, :build_context, &ProjectContext.build/1)
 
@@ -26,7 +29,8 @@ defmodule FoundryWeb.SystemMapLive do
       {:ok, context} ->
         context_json = Jason.encode!(Foundry.Context.Compact.compact(context))
         nodes = context.nodes || []
-        scenarios = context.scenarios || []
+        report = ScenarioCache.get()
+        scenarios = if(report, do: report.scenarios, else: context.scenarios || [])
 
         # Organize nodes by domain
         nodes_by_domain =
@@ -68,6 +72,7 @@ defmodule FoundryWeb.SystemMapLive do
             all_edges: context.edges || [],
             scenarios: scenarios,
             scenarios_by_category: scenarios_by_category,
+            coverage: if(report, do: report.coverage, else: %{}),
             domain_coverage: domain_coverage,
             selected_scenario_id: nil,
             active_scenario_step_id: nil,
@@ -312,6 +317,18 @@ defmodule FoundryWeb.SystemMapLive do
   @impl true
   def handle_event("clear_scenario", _params, socket) do
     {:noreply, clear_scenario_state(socket)}
+  end
+
+  @impl true
+  def handle_info({:scenarios_updated, report}, socket) do
+    scenarios = report.scenarios || []
+
+    {:noreply,
+     assign(socket,
+       scenarios: scenarios,
+       scenarios_by_category: Enum.group_by(scenarios, & &1.category),
+       coverage: report.coverage || %{}
+     )}
   end
 
   @impl true
