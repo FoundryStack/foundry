@@ -814,9 +814,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert Map.has_key?(payload, :flow)
       assert Map.has_key?(payload, :evidence_mode)
       assert Map.has_key?(payload, :trace_status)
-      assert Map.has_key?(payload, :expansion_mode)
       assert Map.has_key?(payload, :evidence_summary)
-      assert Map.has_key?(payload, :entry_points)
       assert Map.has_key?(payload, :tests)
       assert Map.has_key?(payload, :overlay_transitions)
       assert Map.has_key?(payload, :overlay_edge_mode)
@@ -835,9 +833,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert payload.flow == scenario.flow
       assert payload.evidence_mode == scenario.evidence_mode
       assert payload.trace_status == scenario.trace_status
-      assert payload.expansion_mode == scenario.expansion_mode
       assert payload.evidence_summary == scenario.evidence_summary
-      assert payload.entry_points == scenario.entry_points
       assert payload.tests == scenario.tests
       assert payload.overlay_edge_mode == :hybrid
       assert is_list(payload.overlay_transitions)

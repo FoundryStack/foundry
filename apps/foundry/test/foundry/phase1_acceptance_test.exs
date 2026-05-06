@@ -238,15 +238,17 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert scenario
       assert scenario["evidence_mode"] in ["runtime", "static"]
       assert scenario["trace_status"] in ["captured", "missing", "stale"]
-      assert scenario["expansion_mode"] in ["hybrid", "runtime"]
       assert scenario["level"] in ["rule", "action", "transfer", "reactor", "webhook", "job"]
       assert is_map(scenario["evidence_summary"])
-      assert is_list(scenario["entry_points"])
+      refute Map.has_key?(scenario, "expansion_mode")
+      refute Map.has_key?(scenario, "entry_points")
 
       step = List.first(scenario["flow"])
       assert is_binary(step["provenance"])
       assert is_binary(step["kind"])
       assert step["status"] in [nil, "matched", "passed", "failed", "short_circuit", "potential"]
+      refute Map.has_key?(step, "assertion_context")
+      refute Map.has_key?(step, "capture_origin")
     end
 
     test "nodes count matches fixture", %{context: ctx} do
@@ -441,7 +443,7 @@ defmodule Foundry.Phase1AcceptanceTest do
 
       assert scenario["evidence_mode"] == "runtime"
       assert scenario["trace_status"] == "captured"
-      assert scenario["expansion_mode"] == "runtime"
+      refute Map.has_key?(scenario, "expansion_mode")
 
       assert scenario["nodes"] == [
                "IgamingRef.Finance.WithdrawalRequest",

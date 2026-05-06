@@ -42,7 +42,7 @@ defmodule Foundry.Context.ScenarioEntry do
           line: pos_integer() | nil
         }
 
-  @derive Jason.Encoder
+  @derive {Jason.Encoder, except: [:source_module]}
 
   @enforce_keys [:id, :name, :category, :source_file, :source_module]
   defstruct [
@@ -54,13 +54,11 @@ defmodule Foundry.Context.ScenarioEntry do
     :source_module,
     :evidence_mode,
     :trace_status,
-    :expansion_mode,
     nodes: [],
     graph_path: [],
     compliance_links: [],
     flow: [],
     evidence_summary: %{},
-    entry_points: [],
     tests: [],
     tags: []
   ]
@@ -74,13 +72,11 @@ defmodule Foundry.Context.ScenarioEntry do
           source_module: String.t(),
           evidence_mode: evidence_mode() | String.t() | nil,
           trace_status: trace_status() | String.t() | nil,
-          expansion_mode: atom() | String.t() | nil,
           nodes: [String.t()],
           graph_path: [String.t()],
           compliance_links: [String.t()],
           flow: [flow_step()],
           evidence_summary: map(),
-          entry_points: [map()],
           tests: [test_case()],
           tags: [atom() | {atom(), any()}]
         }

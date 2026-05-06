@@ -22,9 +22,7 @@ defmodule Foundry.Context.Scenarios.Step do
              :details,
              :line,
              :test_name,
-             :test_kind,
-             :assertion_context,
-             :capture_origin
+             :test_kind
            ]}
 
   @type t :: %__MODULE__{

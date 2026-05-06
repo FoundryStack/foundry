@@ -114,7 +114,6 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
       assert scenario.category == :compliance
       assert scenario.level == :webhook
-      assert scenario.expansion_mode == :hybrid
       assert scenario.evidence_summary.executed_steps >= 1
       assert scenario.evidence_summary.expanded_steps >= 1
       assert scenario.evidence_summary.branch_steps >= 1
@@ -567,7 +566,6 @@ defmodule Foundry.Context.ScenarioExtractorTest do
 
       assert scenario.evidence_mode == :runtime
       assert scenario.trace_status == :captured
-      assert scenario.expansion_mode == :runtime
 
       assert scenario.nodes == [
                "IgamingRef.Finance.WithdrawalWebhook",
@@ -687,7 +685,6 @@ defmodule Foundry.Context.ScenarioExtractorTest do
 
       assert scenario.evidence_mode == :runtime
       assert scenario.trace_status == :captured
-      assert scenario.expansion_mode == :runtime
 
       assert scenario.nodes == [
                "IgamingRef.Finance.WithdrawalWebhook",

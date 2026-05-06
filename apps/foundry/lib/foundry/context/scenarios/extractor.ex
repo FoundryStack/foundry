@@ -112,14 +112,12 @@ defmodule Foundry.Context.Scenarios.Extractor do
             source_module: source_module,
             evidence_mode: if(runtime_flow == [], do: :static, else: :runtime),
             trace_status: if(runtime_flow == [], do: :missing, else: :captured),
-            expansion_mode: if(runtime_flow == [], do: :hybrid, else: :runtime),
             nodes: nodes,
             graph_path: graph_path,
             compliance_links:
               Utils.normalize_string_list(Utils.first_present(scenario_meta, [:compliance_links])),
             flow: flow,
             evidence_summary: FlowSummary.summarize_evidence(flow),
-            entry_points: Enum.flat_map(traced_tests, &Map.get(&1, :entry_points, [])),
             tests: Enum.map(traced_tests, & &1.test_case),
             tags: TestScanner.normalize_tags(Utils.first_present(scenario_meta, [:tags]) || [])
           }
@@ -172,9 +170,12 @@ defmodule Foundry.Context.Scenarios.Extractor do
   end
 
   defp infer_level(traced_tests, lookup) do
-    levels =
+    entry_points =
       traced_tests
       |> Enum.flat_map(&Map.get(&1, :entry_points, []))
+
+    levels =
+      entry_points
       |> Enum.map(&ModuleIndex.entry_point_level(&1, lookup))
       |> Enum.reject(&is_nil/1)
 
