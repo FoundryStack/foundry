@@ -32,7 +32,8 @@ defmodule Foundry.Context.ProjectContext do
       {:ok, manifest} ->
         {nodes, edges} = Foundry.Context.GraphBuilder.build(project_root, manifest)
         spec_kit = Foundry.Context.SpecKitIndexBuilder.build(project_root)
-        scenarios = Foundry.Context.ScenarioExtractor.extract(project_root, nodes)
+        report = Foundry.Context.ScenarioCache.get()
+        scenarios = if(report, do: report.scenarios, else: [])
         nodes_with_scenarios = enrich_nodes_with_scenarios(nodes, scenarios)
 
         {:ok,

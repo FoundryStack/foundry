@@ -12,7 +12,8 @@ defmodule Foundry.Application do
 
     children = [
       {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Foundry.PubSub}
+      {Phoenix.PubSub, name: Foundry.PubSub},
+      Foundry.Context.ScenarioCache
       # Start a worker by calling: Foundry.Worker.start_link(arg)
       # {Foundry.Worker, arg}
     ]
