@@ -19,7 +19,7 @@ defmodule Foundry.Context.ScenarioCache do
 
   def init(_opts) do
     send(self(), :extract_static)
-    {:ok, %{report: nil}}
+    {:ok, %{report: nil, project_root: File.cwd!()}}
   end
 
   def handle_call(:get, _from, state), do: {:reply, state.report, state}
@@ -30,12 +30,29 @@ defmodule Foundry.Context.ScenarioCache do
   end
 
   def handle_info(:extract_static, state) do
-    project_root = File.cwd!()
-
     report =
-      ScenarioTracer.MixTask.run(Mix.Tasks.Foundry.Scenarios.Extract, [:static_only])
+      try do
+        ScenarioTracer.MixTask.run(Mix.Tasks.Foundry.Scenarios.Extract, [:static_only])
+      rescue
+        error ->
+          require Logger
+
+          Logger.warning("""
+          ScenarioCache static extraction failed: #{Exception.message(error)}
+          """)
+
+          %ExTracer.Report{
+            extracted_at: DateTime.utc_now(),
+            duration_ms: 0,
+            scenarios: [],
+            coverage: %ExTracer.CoverageReport{},
+            performance: %ExTracer.PerformanceReport{},
+            node_index: %{},
+            warnings: ["static extraction failed: #{Exception.message(error)}"]
+          }
+      end
 
     Phoenix.PubSub.broadcast(Foundry.PubSub, "scenarios", {:scenarios_updated, report})
-    {:noreply, %{state | report: report, project_root: project_root}}
+    {:noreply, %{state | report: report}}
   end
 end

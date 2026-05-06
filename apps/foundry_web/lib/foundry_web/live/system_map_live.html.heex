@@ -95,6 +95,25 @@
         <div class="flex flex-col gap-3 overflow-y-auto p-3">
           <% overall = @domain_coverage[:overall_score] || 0 %>
           <% below_threshold = @domain_coverage[:below_threshold] %>
+          <% uncovered_count = Enum.count(Map.get(@coverage || %{}, :uncovered_node_ids, [])) %>
+
+          <%= if @scenario_warnings != [] do %>
+            <div class="rounded-box border border-warning/40 bg-warning/10 p-3">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-semibold uppercase tracking-[0.12em] text-warning">
+                  Trace Warnings
+                </p>
+                <span class="rounded bg-warning/20 px-1.5 py-0.5 text-[10px] font-mono text-warning">
+                  {Enum.count(@scenario_warnings)}
+                </span>
+              </div>
+              <div class="mt-2 space-y-1">
+                <%= for warning <- Enum.take(@scenario_warnings, 3) do %>
+                  <p class="text-xs text-warning/90">{warning}</p>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
 
           <div class="rounded-box border border-base-300/80 bg-base-100/60 p-3">
             <p class="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-content">
@@ -133,6 +152,11 @@
                   ⚠ Below 80% target
                 </p>
               <% end %>
+              <%= if uncovered_count > 0 do %>
+                <p class="mt-1 text-xs text-neutral-content">
+                  {uncovered_count} nodes still have no scenario coverage
+                </p>
+              <% end %>
             </div>
           </div>
 
@@ -164,6 +188,11 @@
                         <span class="inline-block rounded text-[10px] border border-base-300/70 px-1.5 py-0.5 text-base-content/65">
                           {Enum.count(scenario.nodes)} covered {if Enum.count(scenario.nodes) == 1, do: "node", else: "nodes"}
                         </span>
+                        <%= if duration_ms = @slow_test_durations[scenario.id] do %>
+                          <span class="inline-block rounded text-[10px] border border-secondary/30 bg-secondary/10 px-1.5 py-0.5 font-mono text-secondary">
+                            {duration_ms}ms
+                          </span>
+                        <% end %>
                       </div>
                       <%= if not Enum.empty?(scenario.nodes) do %>
                         <div class="flex flex-wrap gap-1">

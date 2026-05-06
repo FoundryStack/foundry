@@ -30,7 +30,18 @@ defmodule FoundryWeb.SystemMapLive do
         context_json = Jason.encode!(Foundry.Context.Compact.compact(context))
         nodes = context.nodes || []
         report = ScenarioCache.get()
-        scenarios = if(report, do: report.scenarios, else: context.scenarios || [])
+        coverage = if(report, do: report.coverage, else: %{})
+        performance = if(report, do: report.performance, else: %{})
+        scenario_warnings = if(report, do: report.warnings || [], else: [])
+
+        scenarios =
+          case report do
+            %{scenarios: report_scenarios} when is_list(report_scenarios) and report_scenarios != [] ->
+              report_scenarios
+
+            _ ->
+              context.scenarios || []
+          end
 
         # Organize nodes by domain
         nodes_by_domain =
@@ -72,7 +83,10 @@ defmodule FoundryWeb.SystemMapLive do
             all_edges: context.edges || [],
             scenarios: scenarios,
             scenarios_by_category: scenarios_by_category,
-            coverage: if(report, do: report.coverage, else: %{}),
+            coverage: coverage,
+            performance: performance,
+            scenario_warnings: scenario_warnings,
+            slow_test_durations: slow_test_durations(performance),
             domain_coverage: domain_coverage,
             selected_scenario_id: nil,
             active_scenario_step_id: nil,
@@ -105,6 +119,10 @@ defmodule FoundryWeb.SystemMapLive do
             all_edges: [],
             scenarios: [],
             scenarios_by_category: %{},
+            coverage: %{},
+            performance: %{},
+            scenario_warnings: [],
+            slow_test_durations: %{},
             domain_coverage: %{},
             selected_scenario_id: nil,
             active_scenario_step_id: nil,
@@ -327,7 +345,10 @@ defmodule FoundryWeb.SystemMapLive do
      assign(socket,
        scenarios: scenarios,
        scenarios_by_category: Enum.group_by(scenarios, & &1.category),
-       coverage: report.coverage || %{}
+       coverage: report.coverage || %{},
+       performance: report.performance || %{},
+       scenario_warnings: report.warnings || [],
+       slow_test_durations: slow_test_durations(report.performance || %{})
      )}
   end
 
@@ -483,6 +504,18 @@ defmodule FoundryWeb.SystemMapLive do
       Enum.any?(scen.nodes, &MapSet.member?(node_ids, &1))
     end)
   end
+
+  defp slow_test_durations(%{slowest_tests: slowest_tests}) when is_list(slowest_tests) do
+    Enum.reduce(slowest_tests, %{}, fn
+      {scenario_id, _test_name, duration_ms}, acc when is_binary(scenario_id) and is_integer(duration_ms) ->
+        Map.update(acc, scenario_id, duration_ms, &max(&1, duration_ms))
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp slow_test_durations(_performance), do: %{}
 
   defp scenario_overlay_payload(scenario, active_step_id, edges) do
     active_step = find_flow_step(scenario, active_step_id)

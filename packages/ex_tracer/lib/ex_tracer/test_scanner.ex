@@ -12,12 +12,32 @@ defmodule ExTracer.TestScanner do
       {:describe, _meta, [describe_name, [do: body]]} = node, acc ->
         {node,
          acc ++
-           [callback.(describe_name, body, source_module, file_path, alias_map, metadata_attrs, test_kinds)]}
+           List.wrap(
+             callback.(
+               describe_name,
+               body,
+               source_module,
+               file_path,
+               alias_map,
+               metadata_attrs,
+               test_kinds
+             )
+           )}
 
       {:describe, _meta, [describe_name, body]} = node, acc ->
         {node,
          acc ++
-           [callback.(describe_name, body, source_module, file_path, alias_map, metadata_attrs, test_kinds)]}
+           List.wrap(
+             callback.(
+               describe_name,
+               body,
+               source_module,
+               file_path,
+               alias_map,
+               metadata_attrs,
+               test_kinds
+             )
+           )}
 
       node, acc ->
         {node, acc}

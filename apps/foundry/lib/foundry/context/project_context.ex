@@ -33,7 +33,7 @@ defmodule Foundry.Context.ProjectContext do
         {nodes, edges} = Foundry.Context.GraphBuilder.build(project_root, manifest)
         spec_kit = Foundry.Context.SpecKitIndexBuilder.build(project_root)
         report = Foundry.Context.ScenarioCache.get()
-        scenarios = if(report, do: report.scenarios, else: [])
+        scenarios = cached_or_extracted_scenarios(report, project_root, nodes)
         nodes_with_scenarios = enrich_nodes_with_scenarios(nodes, scenarios)
 
         {:ok,
@@ -68,6 +68,15 @@ defmodule Foundry.Context.ProjectContext do
           test_coverage: updated_coverage
       }
     end)
+  end
+
+  defp cached_or_extracted_scenarios(%{scenarios: scenarios}, _project_root, _nodes)
+       when is_list(scenarios) and scenarios != [] do
+    scenarios
+  end
+
+  defp cached_or_extracted_scenarios(_report, project_root, nodes) do
+    Foundry.Context.ScenarioExtractor.extract(project_root, nodes)
   end
 
   defp update_test_coverage_with_scenarios(coverage, scenarios) do
