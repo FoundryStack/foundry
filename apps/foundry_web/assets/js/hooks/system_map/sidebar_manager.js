@@ -14,6 +14,7 @@ export class SidebarManager {
     this.graph = graph
     this.normalizedNodes = normalizedNodes
     this.onNodeSelect = null
+    this.onFilter = null
     this._panel = new ResizablePanel({
       elementId: 'fm-sidebar',
       handleId: 'sidebar-resize-handle',
@@ -41,9 +42,6 @@ export class SidebarManager {
       if (item) {
         const nodeId = item.getAttribute(SELECTORS.nodeItemAttr)
         if (nodeId) {
-          this.highlightNode(nodeId)
-          this.graph.selectNode(nodeId)
-          this.graph.centerOn(nodeId)
           this.onNodeSelect?.(nodeId)
         }
       }
@@ -84,26 +82,12 @@ export class SidebarManager {
       const query = evt.target.value.trim()
 
       this._searchTimeout = setTimeout(() => {
-        const list = document.getElementById(SELECTORS.sidebarList)
-        if (!list) return
-
-        const items = list.querySelectorAll(`.${SELECTORS.nodeItem}`)
-        items.forEach(item => {
-          const nodeId = item.getAttribute(SELECTORS.nodeItemAttr)
-          const node = this.normalizedNodes.get(nodeId)
-
-          if (!node) {
-            item.style.display = 'none'
-            return
-          }
-
-          const match = searchMatch(node, query)
-          item.style.display = match ? '' : 'none'
-        })
+        this._applySearch(query)
       }, UI_CONFIG.searchDebounce)
     }
     searchInput.addEventListener('input', this._searchInputHandler)
     this._boundSearchInput = searchInput
+    this._applySearch(searchInput.value.trim())
   }
 
   sync() {
@@ -125,5 +109,50 @@ export class SidebarManager {
     this._boundList = null
     this._boundSearchInput = null
     this._panel.destroy()
+  }
+
+  _applySearch(query) {
+    const list = document.getElementById(SELECTORS.sidebarList)
+    if (!list) return
+
+    const items = list.querySelectorAll(`.${SELECTORS.nodeItem}`)
+    const matchingIds = new Set()
+
+    items.forEach(item => {
+      const nodeId = item.getAttribute(SELECTORS.nodeItemAttr)
+      const node = this.normalizedNodes.get(nodeId)
+
+      if (!node) {
+        item.style.display = 'none'
+        return
+      }
+
+      const match = searchMatch(node, query)
+      item.style.display = match ? '' : 'none'
+      if (match) matchingIds.add(nodeId)
+    })
+
+    list.querySelectorAll('.fm-domain-group').forEach(group => {
+      let sibling = group.nextElementSibling
+      let hasVisibleItems = false
+
+      while (sibling && !sibling.classList.contains('fm-domain-group')) {
+        if (sibling.classList.contains(SELECTORS.nodeItem) && sibling.style.display !== 'none') {
+          hasVisibleItems = true
+          break
+        }
+        sibling = sibling.nextElementSibling
+      }
+
+      group.style.display = hasVisibleItems || query === '' ? '' : 'none'
+    })
+
+    if (query === '') {
+      this.graph.clearSearch()
+    } else {
+      this.graph.applySearchFilter(matchingIds)
+    }
+
+    this.onFilter?.(query, matchingIds)
   }
 }

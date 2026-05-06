@@ -1,5 +1,5 @@
-import { _resolveColor, _resolveBg } from '../css_utils'
-import { getActionTypeColor as getSemanticActionTypeColor, getTypeColor as getSemanticTypeColor } from './semantics'
+import { _resolveColor, _resolveBg } from '../css_utils.js'
+import { getActionTypeColor as getSemanticActionTypeColor, getTypeColor as getSemanticTypeColor } from './semantics.js'
 
 export function extractColors() {
   return {
@@ -19,6 +19,8 @@ export function extractColors() {
     yw:   _resolveColor('--fg-yw'),
     rd:   _resolveColor('--fg-rd'),
     pu:   _resolveColor('--fg-pu'),
+    sidebarPu: _resolveColor('--pu'),
+    step: _resolveColor('--fg-step'),
     cy:   _resolveColor('--fg-cy'),
     pk:   _resolveColor('--fg-pk'),
     or:   _resolveColor('--fg-or'),
@@ -106,22 +108,24 @@ export function getDomainColor(domain) {
 }
 
 export function covColor(c) {
-  if (c >= 80) return 'var(--fg-gn)'
-  if (c >= 50) return 'var(--fg-yw)'
-  return 'var(--fg-rd)'
+  if (c >= 80) return _resolveColor('--fg-gn')
+  if (c >= 50) return _resolveColor('--fg-yw')
+  return _resolveColor('--fg-rd')
 }
 
 export function getTypeColor(type) {
-  return getSemanticTypeColor(type)
+  return toRgbColor(getSemanticTypeColor(type))
 }
 
 export function getActionTypeColor(actionType) {
-  return getSemanticActionTypeColor(actionType)
+  return toRgbColor(getSemanticActionTypeColor(actionType))
 }
 
 export function domainCoverage(nodes) {
   const byDomain = {}
-  nodes.forEach(n => {
+  nodes
+    .filter(n => n.nodeKind === 'entity' || (n.nodeKind === 'cluster' && !String(n.id || '').startsWith('domain:')))
+    .forEach(n => {
     if (!byDomain[n.domain]) byDomain[n.domain] = []
     byDomain[n.domain].push(n.cov)
   })

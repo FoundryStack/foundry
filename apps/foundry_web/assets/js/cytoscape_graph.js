@@ -54,6 +54,7 @@ export class CytoscapeGraph {
     this.layoutOptions = { ...DEFAULT_LAYOUT_OPTIONS, ...layoutOptions }
     this.compoundCompaction = { ...DEFAULT_COMPOUND_COMPACTION, ...compoundCompaction }
     this._coverageOverlayState = { uncoveredNodeIds: new Set() }
+    this._hiddenRelations = new Set()
 
     // Initialize callback properties with no-op defaults
     this.onNodeClick = () => {}
@@ -219,7 +220,11 @@ export class CytoscapeGraph {
   }) {
     if (!Array.isArray(flow) || flow.length === 0) return
 
-    this.clearScenarioOverlay()
+    if (!this._scenarioViewportBeforeOverlay) {
+      this._scenarioViewportBeforeOverlay = this._captureViewport()
+    }
+
+    this.clearScenarioOverlay({ restoreViewport: false, preserveViewportSnapshot: true })
 
     const currentActiveStep =
       activeStep ||
@@ -333,14 +338,22 @@ export class CytoscapeGraph {
       }
     })
 
+    const activeScenarioNodes = this.cy.nodes().filter(n => activeNodeIds.has(n.id()))
     const scenarioNodes = this.cy.nodes().filter(n => scenarioNodeIds.has(n.id()))
+    const focusNodes =
+      activeScenarioNodes.length > 0
+        ? activeScenarioNodes.union(activeScenarioNodes.neighborhood('node'))
+        : scenarioNodes
 
-    if (scenarioNodes.length > 0) {
-      this.cy.fit(scenarioNodes, 60)
-    }
+    this._focusElements(focusNodes.length > 0 ? focusNodes : scenarioNodes, {
+      padding: 128,
+      maxZoom: 0.92,
+      minZoom: 0.5,
+      duration: 420,
+    })
   }
 
-  clearScenarioOverlay() {
+  clearScenarioOverlay({ restoreViewport = true, preserveViewportSnapshot = false } = {}) {
     this.cy.elements().filter(ele => ele.data('state') === 'scenario-overlay').remove()
     this.cy.elements().unselect()
     this._activeScenarioOverlayMode = null
@@ -364,8 +377,12 @@ export class CytoscapeGraph {
 
     this._applyCoverageOverlayStyles()
 
-    if (this.cy.elements().length > 0) {
-      this.cy.fit(this.cy.elements(), this.layoutOptions.padding)
+    if (restoreViewport && this._scenarioViewportBeforeOverlay) {
+      this._restoreViewport(this._scenarioViewportBeforeOverlay)
+    }
+
+    if (!preserveViewportSnapshot) {
+      this._scenarioViewportBeforeOverlay = null
     }
   }
 
@@ -558,7 +575,7 @@ export class CytoscapeGraph {
   _baseScenarioNodeId(graphId) {
     if (!graphId || typeof graphId !== 'string') return graphId
 
-    return graphId.split(':step:')[0].split(':action:')[0]
+    return graphId.split(':step:')[0].split(':action:')[0].split(':state:')[0]
   }
 
   _scenarioStatusTone(status) {
@@ -592,6 +609,14 @@ export class CytoscapeGraph {
     }
   }
 
+  focusNode(id) {
+    const node = this.cy.getElementById(id)
+    if (node.length === 0) return
+
+    this.selectNode(id)
+    this._centerElementsPreservingZoom(node, { duration: 260 })
+  }
+
   clearSelection() {
     this.cy.elements().unselect()
   }
@@ -599,19 +624,68 @@ export class CytoscapeGraph {
   centerOn(id) {
     const ele = this.cy.getElementById(id)
     if (ele.length > 0) {
-      this.cy.animate({ center: { eles: ele }, zoom: 1.5, duration: 500 })
+      this._centerElementsPreservingZoom(ele, { duration: 260 })
     }
   }
 
   // Dims non-matching nodes by id set. Caller decides what matches.
   applySearchFilter(matchingIds) {
+    const visibleNodes = new Set()
+
     this.cy.nodes().forEach(node => {
-      node.style('opacity', matchingIds.has(node.id()) ? 1 : 0.2)
+      const isTopLevelMatch = matchingIds.has(node.id()) || matchingIds.has(this._baseScenarioNodeId(node.id()))
+      const parentId = node.parent()?.id()
+      const isChildOfMatch = parentId && matchingIds.has(parentId)
+
+      if (isTopLevelMatch || isChildOfMatch) {
+        visibleNodes.add(node.id())
+      }
+    })
+
+    this.cy.nodes('node:parent').forEach(parent => {
+      const hasVisibleChild = parent.children().toArray().some(child => visibleNodes.has(child.id()))
+      const isDomainCluster = parent.id().startsWith('domain:')
+      const isMatchedDomain = isDomainCluster && [...visibleNodes].some(id => this.cy.getElementById(id).data('domain') === parent.data('domain'))
+
+      if (hasVisibleChild || isMatchedDomain || matchingIds.has(parent.id())) {
+        visibleNodes.add(parent.id())
+      }
+    })
+
+    this.cy.nodes().forEach(node => {
+      node.style('opacity', visibleNodes.has(node.id()) ? 1 : 0.16)
+    })
+
+    this.cy.edges().forEach(edge => {
+      const isVisible =
+        visibleNodes.has(edge.source().id()) &&
+        visibleNodes.has(edge.target().id()) &&
+        !this._hiddenRelations.has(edge.data('relation'))
+
+      edge.style('opacity', isVisible ? null : 0.06)
     })
   }
 
   clearSearch() {
-    this.cy.elements().style('opacity', 1)
+    this.cy.nodes().forEach(node => node.style('opacity', 1))
+    this._applyRelationVisibility()
+  }
+
+  toggleEdgeRelation(relation) {
+    if (!relation) return false
+
+    if (this._hiddenRelations.has(relation)) {
+      this._hiddenRelations.delete(relation)
+    } else {
+      this._hiddenRelations.add(relation)
+    }
+
+    this._applyRelationVisibility()
+    return !this._hiddenRelations.has(relation)
+  }
+
+  isEdgeRelationVisible(relation) {
+    return !this._hiddenRelations.has(relation)
   }
 
   destroy() {
@@ -633,6 +707,72 @@ export class CytoscapeGraph {
   expandOnly(id) {
     this.expandNode(id)
     this._expandedNodeId = id
+  }
+
+  _applyRelationVisibility() {
+    this.cy.edges().forEach(edge => {
+      const hidden = this._hiddenRelations.has(edge.data('relation'))
+      edge.style('display', hidden ? 'none' : 'element')
+      if (!hidden && edge.style('opacity') === '0.06') {
+        edge.style('opacity', null)
+      }
+    })
+  }
+
+  _captureViewport() {
+    return {
+      zoom: this.cy.zoom(),
+      pan: { ...this.cy.pan() },
+    }
+  }
+
+  _restoreViewport(viewport) {
+    if (!viewport) return
+
+    this.cy.animate({
+      zoom: viewport.zoom,
+      pan: viewport.pan,
+      duration: 320,
+    })
+  }
+
+  _getSidebarOffset() {
+    const raw = getComputedStyle(document.documentElement)
+      .getPropertyValue('--foundry-sidebar-width').trim()
+    const width = parseInt(raw, 10)
+    return Number.isFinite(width) ? width / 2 : 120
+  }
+
+  _centerElementsPreservingZoom(elements, { duration = 260 } = {}) {
+    if (!elements || elements.length === 0) return
+
+    const zoom = this.cy.zoom()
+    const bb = elements.boundingBox()
+    const sidebarOffset = this._getSidebarOffset()
+    const panX = (this.cy.width() / 2) + sidebarOffset - (bb.x1 + bb.w / 2) * zoom
+    const panY = (this.cy.height() / 2) - (bb.y1 + bb.h / 2) * zoom
+
+    this.cy.animate({ pan: { x: panX, y: panY }, duration })
+  }
+
+  _focusElements(elements, { padding = 96, maxZoom = 1, minZoom = 0.35, duration = 320 } = {}) {
+    if (!elements || elements.length === 0) return
+
+    const viewport = this.cy.getFitViewport(elements, padding)
+
+    if (!viewport) {
+      this.cy.animate({ fit: { eles: elements, padding }, duration })
+      return
+    }
+
+    const zoom = Math.max(minZoom, Math.min(maxZoom, viewport.zoom))
+    const sidebarOffset = this._getSidebarOffset()
+
+    this.cy.animate({
+      pan: { x: viewport.pan.x + sidebarOffset, y: viewport.pan.y },
+      zoom,
+      duration,
+    })
   }
 
   _runLocalLayout(parentId) {
@@ -660,7 +800,7 @@ export class CytoscapeGraph {
       const separated = this._separateOverlappingDomainClusters()
 
       if ((compacted || separated) && this.layoutOptions.fit !== false) {
-        this.cy.fit(this.cy.elements(), this.layoutOptions.padding)
+        this._focusElements(this.cy.elements(), { padding: this.layoutOptions.padding, duration: 0 })
       }
     })
     this.currentLayout.run()

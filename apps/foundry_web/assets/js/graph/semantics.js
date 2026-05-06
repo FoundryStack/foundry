@@ -2,119 +2,119 @@ export const NODE_KIND_META = {
   resource: {
     label: 'Resource',
     tooltipLabel: 'resource',
-    icon: '⬡',
+    icon: 'hero-square-3-stack-3d-solid',
     color: 'var(--fg-bl)',
     colorToken: 'bl',
   },
   transfer: {
     label: 'Transfer',
     tooltipLabel: 'transfer',
-    icon: '⇄',
+    icon: 'hero-arrows-right-left-solid',
     color: 'var(--fg-gn)',
     colorToken: 'gn',
   },
   rule: {
     label: 'Rule',
     tooltipLabel: 'rule',
-    icon: '◆',
+    icon: 'hero-shield-check-solid',
     color: 'var(--fg-yw)',
     colorToken: 'yw',
   },
   reactor: {
     label: 'Reactor',
     tooltipLabel: 'reactor',
-    icon: '◈',
-    color: 'var(--fg-pu)',
-    colorToken: 'pu',
+    icon: 'hero-bolt-solid',
+    color: 'var(--pu)',
+    colorToken: 'sidebarPu',
   },
   job: {
     label: 'Job',
     tooltipLabel: 'job',
-    icon: '↯',
+    icon: 'hero-bolt-solid',
     color: 'var(--fg-or)',
     colorToken: 'or',
   },
   liveview: {
     label: 'LiveView',
     tooltipLabel: 'liveview',
-    icon: '▣',
+    icon: 'hero-window-solid',
     color: 'var(--fg-cy)',
     colorToken: 'cy',
   },
   trigger: {
     label: 'Trigger',
     tooltipLabel: 'trigger',
-    icon: '▶',
+    icon: 'hero-play-solid',
     color: 'var(--fg-ac)',
     colorToken: 'ac',
   },
   output: {
     label: 'Output',
     tooltipLabel: 'output',
-    icon: '⟐',
+    icon: 'hero-sparkles-solid',
     color: 'var(--fg-t2)',
     colorToken: 't2',
   },
   liveresource: {
     label: 'LiveResource',
     tooltipLabel: 'liveresource',
-    icon: '⊞',
+    icon: 'hero-plus-circle-solid',
     color: 'var(--fg-pk)',
     colorToken: 'pk',
   },
   blueprint: {
     label: 'Blueprint (legacy)',
     tooltipLabel: 'blueprint',
-    icon: '◇',
+    icon: 'hero-swatch-solid',
     color: 'var(--fg-or)',
     colorToken: 'or',
   },
   adapter: {
     label: 'Adapter',
     tooltipLabel: 'adapter',
-    icon: '⬚',
+    icon: 'hero-squares-2x2-solid',
     color: 'var(--fg-ac)',
     colorToken: 'ac',
   },
   step: {
     label: 'Step',
     tooltipLabel: 'step',
-    icon: '⇄',
-    color: 'var(--fg-gn)',
-    colorToken: 'gn',
+    icon: 'hero-queue-list-solid',
+    color: 'var(--fg-step)',
+    colorToken: 'step',
   },
   state: {
     label: 'State',
     tooltipLabel: 'state',
-    icon: '○',
+    icon: 'hero-stop-circle-solid',
     color: 'var(--fg-bl)',
     colorToken: 'bl',
   },
   action: {
     label: 'Action',
     tooltipLabel: 'action',
-    icon: '◆',
-    color: 'var(--fg-gn)',
-    colorToken: 'gn',
+    icon: 'hero-bolt-solid',
+    color: 'var(--fg-cy)',
+    colorToken: 'cy',
   },
   agent: {
     label: 'Agent Step',
     tooltipLabel: 'agent step',
-    icon: '⊕',
+    icon: 'hero-cpu-chip-solid',
     color: 'var(--fg-pu)',
     colorToken: 'pu',
   },
   external: {
     label: 'External',
     tooltipLabel: 'external',
-    icon: '↗',
-    color: 'var(--fg-t3)',
-    colorToken: 't3',
+    icon: 'hero-arrow-top-right-on-square-solid',
+    color: 'var(--fg-pk)',
+    colorToken: 'pk',
   },
   cluster: {
     label: 'Boundary',
     tooltipLabel: 'boundary',
-    icon: '◇',
+    icon: 'hero-view-columns-solid',
     color: 'var(--fg-t2)',
     colorToken: 't2',
   },
@@ -255,6 +255,40 @@ export function getTypeColorToken(type) {
   return getNodeKindMeta(type).colorToken || 't2'
 }
 
+export function formatNodeDisplayLabel(id) {
+  if (!id) return id
+  if (id.startsWith('external:')) return id.replace('external:', '')
+  const parts = String(id).split('.')
+  return parts.length > 2 ? parts.slice(1).join('.') : id
+}
+
+export function formatStepKindLabel(value) {
+  const normalized = String(value || 'step').replace(/^:/, '').replace(/_/g, ' ').trim()
+  if (!normalized) return 'Step'
+  return normalized.replace(/\b\w/g, char => char.toUpperCase())
+}
+
+export function renderHeroIcon(iconClass, sizeClass = 'size-3') {
+  return `<span class="${iconClass} ${sizeClass}"></span>`
+}
+
+export function getClusterIcon(node) {
+  if (isDomainClusterNode(node)) return 'hero-squares-2x2-solid'
+
+  const label = String(node?.name || node?.label || node?.id || '').toLowerCase()
+
+  if (label.includes('ops')) return 'hero-command-line-solid'
+  if (label.includes('infrastructure') || label.includes('infra')) return 'hero-server-stack-solid'
+
+  const type = normalizeGraphNodeType(node?.type || node?.nodeKind || 'cluster')
+  return getNodeKindMeta(type).icon
+}
+
+export function isInfrastructureClusterNode(node) {
+  const label = String(node?.name || node?.label || node?.id || '').toLowerCase()
+  return label.includes('infrastructure') || label.includes('infra')
+}
+
 export function getActionTypeColor(actionType) {
   return ACTION_TYPE_COLOR[actionType] || NODE_KIND_META.action.color
 }
@@ -265,7 +299,7 @@ export function getNodeKindLegend() {
     return {
       type,
       label: meta.label,
-      icon: meta.icon,
+      iconClass: meta.icon,
       color: meta.color,
     }
   })

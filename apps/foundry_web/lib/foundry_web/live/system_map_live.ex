@@ -26,10 +26,14 @@ defmodule FoundryWeb.SystemMapLive do
       Code.append_path(ebin_path)
     end
 
+    project_name = Path.basename(project_root)
+
     case build_context.(project_root) do
       {:ok, context} ->
-        context_json = Jason.encode!(Foundry.Context.Compact.compact(context))
         nodes = context.nodes || []
+        ui_nodes = Enum.map(nodes, &serialize_node/1)
+        ui_edges = Enum.map(context.edges || [], &serialize_edge/1)
+        context_json = Jason.encode!(%{nodes: ui_nodes, edges: ui_edges})
         report = ScenarioCache.get()
         coverage = if(report, do: report.coverage, else: %{})
         performance = if(report, do: report.performance, else: %{})
@@ -40,18 +44,7 @@ defmodule FoundryWeb.SystemMapLive do
         scenarios_by_category = grouped_scenarios(filtered_scenarios)
         uncovered_node_ids = coverage_uncovered_node_ids(coverage)
 
-        # Organize nodes by domain
-        nodes_by_domain =
-          Enum.group_by(nodes, & &1.domain)
-          |> Enum.map(fn {domain, ns} ->
-            {domain,
-             Enum.map(ns, fn node ->
-               node
-               |> Map.from_struct()
-               |> Map.new(fn {k, v} -> {to_string(k), v} end)
-             end)}
-          end)
-          |> Enum.into(%{})
+        nodes_by_domain = build_nodes_by_domain(ui_nodes)
 
         # Count compliance coverage gaps: declared requirements without linked E2E coverage
         gap_count =
@@ -70,6 +63,7 @@ defmodule FoundryWeb.SystemMapLive do
           socket
           |> assign(
             context_json: context_json,
+            ui_nodes: ui_nodes,
             nodes_by_domain: nodes_by_domain,
             all_nodes: nodes,
             all_edges: context.edges || [],
@@ -86,9 +80,10 @@ defmodule FoundryWeb.SystemMapLive do
             selected_scenario_id: nil,
             active_scenario_step_id: nil,
             selected_node_scenario_count: nil,
+            coverage_filtered_node: nil,
             gap_count: gap_count,
             migration_count: migration_count,
-            project_name: Path.basename(project_root),
+            project_name: project_name,
             sidebar_tab: :system_map,
             lens: :default,
             system_map_view: :graph,
@@ -110,6 +105,7 @@ defmodule FoundryWeb.SystemMapLive do
           socket
           |> assign(
             context_json: nil,
+            ui_nodes: [],
             nodes_by_domain: %{},
             all_nodes: [],
             all_edges: [],
@@ -126,9 +122,10 @@ defmodule FoundryWeb.SystemMapLive do
             selected_scenario_id: nil,
             active_scenario_step_id: nil,
             selected_node_scenario_count: nil,
+            coverage_filtered_node: nil,
             gap_count: 0,
             migration_count: 0,
-            project_name: Path.basename(project_root),
+            project_name: project_name,
             sidebar_tab: :system_map,
             lens: :default,
             system_map_view: :graph,
@@ -171,14 +168,37 @@ defmodule FoundryWeb.SystemMapLive do
   @impl true
   def handle_event("node_selected", %{"id" => node_id}, socket) do
     normalized_node_id = normalize_graph_node_id(node_id)
-    filtered_scenarios = scenarios_for_selected_node(socket.assigns.all_scenarios, socket.assigns.node_index, normalized_node_id)
+
+    socket =
+      socket
+      |> assign(
+        selected_id: normalized_node_id,
+        selected_node: normalized_node_id,
+        drawer_open: true,
+        drawer_tab: :details
+      )
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("show_node_coverage", %{"id" => node_id}, socket) do
+    normalized_node_id = normalize_graph_node_id(node_id)
+
+    filtered_scenarios =
+      scenarios_for_selected_node(
+        socket.assigns.all_scenarios,
+        socket.assigns.node_index,
+        normalized_node_id
+      )
+
     filtered_scenario_ids = MapSet.new(Enum.map(filtered_scenarios, & &1.id))
 
     socket =
       socket
       |> assign(
         sidebar_tab: :test_coverage,
-        selected_node: normalized_node_id,
+        coverage_filtered_node: normalized_node_id,
         selected_node_scenario_count: length(filtered_scenarios),
         scenarios: filtered_scenarios,
         scenarios_by_category: grouped_scenarios(filtered_scenarios)
@@ -236,7 +256,11 @@ defmodule FoundryWeb.SystemMapLive do
 
   @impl true
   def handle_event("filter_nodes", %{"value" => q}, socket) do
-    {:noreply, assign(socket, filter_query: q)}
+    {:noreply,
+     assign(socket,
+       filter_query: q,
+       nodes_by_domain: build_nodes_by_domain(socket.assigns.ui_nodes, q)
+     )}
   end
 
   @impl true
@@ -248,7 +272,7 @@ defmodule FoundryWeb.SystemMapLive do
 
     case build_node.(project_root, module_id) do
       {:ok, node} ->
-        {:noreply, push_event(socket, "node_detail", %{node: node})}
+        {:noreply, push_event(socket, "node_detail", %{node: serialize_node(node)})}
 
       {:error, _} ->
         {:noreply, socket}
@@ -356,7 +380,7 @@ defmodule FoundryWeb.SystemMapLive do
   def handle_event("clear_node_filter", _params, socket) do
     {:noreply,
      assign(socket,
-       selected_node: nil,
+       coverage_filtered_node: nil,
        selected_node_scenario_count: nil,
        scenarios: socket.assigns.all_scenarios,
        scenarios_by_category: grouped_scenarios(socket.assigns.all_scenarios)
@@ -367,7 +391,14 @@ defmodule FoundryWeb.SystemMapLive do
   def handle_info({:scenarios_updated, report}, socket) do
     all_scenarios = List.wrap(report.scenarios)
     node_index = scenario_node_index(report, all_scenarios)
-    filtered_scenarios = scenarios_for_selected_node(all_scenarios, node_index, socket.assigns.selected_node)
+
+    filtered_scenarios =
+      scenarios_for_selected_node(
+        all_scenarios,
+        node_index,
+        socket.assigns.coverage_filtered_node
+      )
+
     filtered_scenario_ids = MapSet.new(Enum.map(filtered_scenarios, & &1.id))
 
     {:noreply,
@@ -382,10 +413,13 @@ defmodule FoundryWeb.SystemMapLive do
        slow_test_durations: slow_test_durations(report.performance || %{}),
        node_index: node_index,
        uncovered_node_ids: coverage_uncovered_node_ids(report.coverage || %{}),
-       selected_node_scenario_count: if(socket.assigns.selected_node, do: length(filtered_scenarios), else: nil)
+       selected_node_scenario_count:
+         if(socket.assigns.coverage_filtered_node, do: length(filtered_scenarios), else: nil)
      )
      |> clear_selected_scenario_if_filtered_out(filtered_scenario_ids)
-     |> push_event("graph:coverage_overlay", %{uncovered_node_ids: coverage_uncovered_node_ids(report.coverage || %{})})}
+     |> push_event("graph:coverage_overlay", %{
+       uncovered_node_ids: coverage_uncovered_node_ids(report.coverage || %{})
+     })}
   end
 
   @impl true
@@ -418,21 +452,39 @@ defmodule FoundryWeb.SystemMapLive do
   def type_badge_style(type) do
     {background, foreground} =
       case type do
-        "resource" -> {"var(--color-info)", "#fff"}
-        "transfer" -> {"var(--color-success)", "#fff"}
-        "reactor" -> {"var(--pu)", "#fff"}
-        "rule" -> {"var(--color-warning)", "#000"}
-        "job" -> {"var(--color-error)", "#fff"}
-        "liveview" -> {"#22d3ee", "#000"}
-        "liveresource" -> {"#f472b6", "#fff"}
-        "blueprint" -> {"#fb923c", "#000"}
-        "adapter" -> {"var(--color-secondary)", "#fff"}
-        "trigger" -> {"#fde047", "#000"}
-        "terminal" -> {"var(--color-neutral)", "#fff"}
+        "resource"     -> {"var(--fg-bl)", "#fff"}
+        "transfer"     -> {"var(--fg-gn)", "#000"}
+        "reactor"      -> {"var(--pu)", "#fff"}
+        "rule"         -> {"var(--fg-yw)", "#000"}
+        "job"          -> {"var(--fg-or)", "#000"}
+        "liveview"     -> {"var(--fg-cy)", "#000"}
+        "liveresource" -> {"var(--fg-pk)", "#fff"}
+        "blueprint"    -> {"var(--fg-or)", "#000"}
+        "adapter"      -> {"var(--fg-ac)", "#fff"}
+        "trigger"      -> {"var(--fg-ac)", "#fff"}
+        "external"     -> {"var(--fg-pk)", "#fff"}
+        "terminal"     -> {"var(--color-neutral)", "#fff"}
         _ -> {"var(--color-neutral)", "#fff"}
       end
 
     "--badge-bg: #{background}; --badge-fg: #{foreground};"
+  end
+
+  def type_icon_name(type) do
+    case type do
+      "resource" -> "hero-square-3-stack-3d-solid"
+      "transfer" -> "hero-arrow-right-circle-solid"
+      "reactor" -> "hero-bolt-solid"
+      "rule" -> "hero-shield-check-solid"
+      "job" -> "hero-clock-solid"
+      "liveview" -> "hero-window-solid"
+      "liveresource" -> "hero-rectangle-group-solid"
+      "blueprint" -> "hero-document-duplicate-solid"
+      "adapter" -> "hero-plug-solid"
+      "trigger" -> "hero-play-solid"
+      "terminal" -> "hero-command-line-solid"
+      _ -> "hero-cube-solid"
+    end
   end
 
   def pip_status_class(node) do
@@ -507,10 +559,7 @@ defmodule FoundryWeb.SystemMapLive do
     domain_scores =
       Enum.reduce(domains, %{}, fn domain, acc ->
         domain_nodes = Enum.filter(nodes, &(&1.domain == domain))
-        domain_scenario_count = count_scenarios_for_domain(domain_nodes, scenarios)
-
-        score =
-          if Enum.empty?(domain_nodes), do: 0, else: min(domain_scenario_count / 4 * 100, 100)
+        score = calculate_domain_score(domain_nodes, scenarios)
 
         Map.put(acc, domain, score)
       end)
@@ -529,21 +578,36 @@ defmodule FoundryWeb.SystemMapLive do
     |> Map.put(:below_threshold, overall_score < 80)
   end
 
-  defp count_scenarios_for_domain(nodes, scenarios) do
-    node_ids =
+  defp calculate_domain_score([], _scenarios), do: 0
+
+  defp calculate_domain_score(nodes, scenarios) do
+    domain_node_ids =
       nodes
       |> Enum.flat_map(&[&1.id, &1.module])
       |> Enum.reject(&is_nil/1)
       |> MapSet.new()
 
-    Enum.count(scenarios, fn scen ->
-      Enum.any?(scen.nodes, &MapSet.member?(node_ids, &1))
-    end)
+    covered_node_ids =
+      scenarios
+      |> Enum.flat_map(fn scenario -> List.wrap(scenario.nodes) end)
+      |> Enum.map(&normalize_graph_node_id/1)
+      |> Enum.filter(&MapSet.member?(domain_node_ids, &1))
+      |> MapSet.new()
+
+    covered_count = MapSet.size(covered_node_ids)
+    total_count = max(length(nodes), 1)
+
+    covered_count
+    |> Kernel./(total_count)
+    |> Kernel.*(100)
+    |> min(100.0)
+    |> max(0.0)
   end
 
   defp slow_test_durations(%{slowest_tests: slowest_tests}) when is_list(slowest_tests) do
     Enum.reduce(slowest_tests, %{}, fn
-      {scenario_id, _test_name, duration_ms}, acc when is_binary(scenario_id) and is_integer(duration_ms) ->
+      {scenario_id, _test_name, duration_ms}, acc
+      when is_binary(scenario_id) and is_integer(duration_ms) ->
         Map.update(acc, scenario_id, duration_ms, &max(&1, duration_ms))
 
       _, acc ->
@@ -560,8 +624,9 @@ defmodule FoundryWeb.SystemMapLive do
 
   defp scenarios_for_context(context, _report), do: context.scenarios || []
 
-  defp scenario_node_index(%Report{node_index: node_index}, _scenarios) when map_size(node_index) > 0,
-    do: normalize_node_index(node_index)
+  defp scenario_node_index(%Report{node_index: node_index}, _scenarios)
+       when map_size(node_index) > 0,
+       do: normalize_node_index(node_index)
 
   defp scenario_node_index(_report, scenarios), do: build_node_index(scenarios)
 
@@ -598,8 +663,9 @@ defmodule FoundryWeb.SystemMapLive do
     |> Map.new(fn {cat, scens} -> {cat, Enum.sort_by(scens, & &1.name)} end)
   end
 
-  defp coverage_uncovered_node_ids(%{uncovered_node_ids: uncovered_node_ids}) when is_list(uncovered_node_ids),
-    do: uncovered_node_ids
+  defp coverage_uncovered_node_ids(%{uncovered_node_ids: uncovered_node_ids})
+       when is_list(uncovered_node_ids),
+       do: uncovered_node_ids
 
   defp coverage_uncovered_node_ids(_coverage), do: []
 
@@ -630,6 +696,7 @@ defmodule FoundryWeb.SystemMapLive do
     overlay_transitions = build_overlay_transitions(scenario, edges)
     synthetic_transition_count = Enum.count(overlay_transitions, & &1.synthetic)
     structural_transition_count = Enum.count(overlay_transitions, &(!&1.synthetic))
+    primary_test = scenario_primary_test(scenario)
 
     %{
       id: scenario.id,
@@ -644,6 +711,9 @@ defmodule FoundryWeb.SystemMapLive do
       trace_status: Map.get(scenario, :trace_status),
       evidence_summary: Map.get(scenario, :evidence_summary, %{}),
       tests: Map.get(scenario, :tests, []),
+      test_header: primary_test[:header],
+      test_subheader: primary_test[:subheader],
+      verified_test_command: primary_test[:command],
       overlay_transitions: overlay_transitions,
       overlay_edge_mode: :hybrid,
       synthetic_transition_count: synthetic_transition_count,
@@ -861,5 +931,119 @@ defmodule FoundryWeb.SystemMapLive do
       drawer_tab: :details
     )
     |> push_event("graph:clear_overlay", %{})
+  end
+
+  defp build_nodes_by_domain(nodes, query \\ "") do
+    normalized_query = query |> to_string() |> String.trim() |> String.downcase()
+
+    nodes
+    |> Enum.filter(&node_matches_filter?(&1, normalized_query))
+    |> Enum.group_by(&Map.get(&1, "domain"))
+    |> Enum.map(fn {domain, ns} ->
+      {domain, Enum.sort_by(ns, &display_node_label(Map.get(&1, "id")))}
+    end)
+    |> Enum.sort_by(fn {domain, _nodes} -> domain || "" end)
+    |> Enum.into(%{})
+  end
+
+  defp node_matches_filter?(_node, ""), do: true
+
+  defp node_matches_filter?(node, query) do
+    [
+      Map.get(node, "id"),
+      Map.get(node, "type"),
+      Map.get(node, "domain"),
+      Map.get(node, "description"),
+      display_node_label(Map.get(node, "id")),
+      Enum.join(Map.get(node, "compliance", []), " ")
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&String.downcase(to_string(&1)))
+    |> Enum.any?(&String.contains?(&1, query))
+  end
+
+  defp serialize_node(node) do
+    node
+    |> Map.from_struct()
+    |> Map.take([
+      :id,
+      :type,
+      :domain,
+      :description,
+      :compliance,
+      :test_coverage,
+      :sensitive,
+      :paper_trail,
+      :archival,
+      :data_layer,
+      :rate_limited,
+      :state_machine,
+      :actions,
+      :steps,
+      :agent_steps,
+      :api_routes,
+      :money_attributes,
+      :feature_flags,
+      :runbook,
+      :adrs,
+      :pending_migrations,
+      :last_modified,
+      :schedule,
+      :oban_queues,
+      :performs,
+      :module,
+      :scenario_refs,
+      :rules
+    ])
+    |> stringify_map_keys()
+  end
+
+  defp serialize_edge(edge) do
+    edge
+    |> Map.from_struct()
+    |> Map.take([:from, :to, :relation, :step_index, :step_name, :action_name])
+  end
+
+  defp display_node_label(nil), do: nil
+  defp display_node_label("external:" <> rest), do: rest
+
+  defp display_node_label(id) do
+    case String.split(id, ".") do
+      [_prefix | rest] when length(rest) >= 2 -> Enum.join(rest, ".")
+      _ -> id
+    end
+  end
+
+  defp stringify_map_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} ->
+      {to_string(key), stringify_value(value)}
+    end)
+  end
+
+  defp stringify_value(%_{} = value), do: value |> Map.from_struct() |> stringify_map_keys()
+  defp stringify_value(value) when is_map(value), do: stringify_map_keys(value)
+  defp stringify_value(value) when is_list(value), do: Enum.map(value, &stringify_value/1)
+  defp stringify_value(value), do: value
+
+  defp scenario_primary_test(scenario) do
+    first_test = List.first(List.wrap(Map.get(scenario, :tests)))
+    first_step = List.first(List.wrap(Map.get(scenario, :flow)))
+    header = Map.get(scenario, :name) || "Scenario"
+    subheader = first_step && Map.get(first_step, :test_name)
+    test_file = first_test && Map.get(first_test, :file)
+    test_line = first_test && Map.get(first_test, :line)
+
+    command =
+      case {test_file, test_line} do
+        {file, line} when is_binary(file) and is_integer(line) -> "mix test #{file}:#{line}"
+        {file, _line} when is_binary(file) -> "mix test #{file}"
+        _ -> nil
+      end
+
+    %{
+      header: header,
+      subheader: subheader,
+      command: command
+    }
   end
 end

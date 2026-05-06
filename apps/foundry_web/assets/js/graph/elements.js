@@ -1,6 +1,6 @@
 import { normalizeActionName, normalizeActionType, buildStateNodeId, buildActionNodeId } from './normalizers'
 import { getActionTypeColor, getDomainColor, getTypeColor, toRgbColor } from './colors'
-import { shortLabel } from './templates'
+import { formatNodeDisplayLabel } from './semantics'
 
 const STRUCTURAL_RELATIONS = new Set(['references', 'referenced_by'])
 
@@ -21,29 +21,6 @@ export function getFsmResourceIds(nodes) {
   return new Set(nodes.filter(n => n.type === 'resource' && n.sm).map(n => n.id))
 }
 
-export function consolidateExternalNodes(nodes) {
-  const edgeMap = {}
-  const seen = new Set()
-  const result = []
-
-  for (const n of nodes) {
-    if (n.type === 'external') {
-      const match = n.id.match(/^(external:[^:]+):/)
-      if (match) {
-        const collapsedId = match[1]
-        edgeMap[n.id] = collapsedId
-        if (!seen.has(collapsedId)) {
-          seen.add(collapsedId)
-          result.push({ ...n, id: collapsedId, label: collapsedId.replace('external:', '') })
-        }
-        continue
-      }
-    }
-    result.push(n)
-  }
-
-  return { nodes: result, edgeMap }
-}
 
 export function buildResourceActionIndex(nodes) {
   const actionIndex = new Map()
@@ -107,8 +84,7 @@ export function buildCytoscapeElements(nodes, edges) {
   const elements = []
   const behavioralRelations = new Set(['reads', 'writes'])
 
-  const { nodes: consolidatedNodes, edgeMap: externalEdgeMap } = consolidateExternalNodes(nodes)
-  nodes = consolidatedNodes
+  const externalEdgeMap = {}
 
   // Domain cluster compounds
   const domains = new Set(nodes.map(n => n.domain).filter(Boolean))
@@ -162,7 +138,7 @@ export function buildCytoscapeElements(nodes, edges) {
       data: {
         ...node,
         id: node.id,
-        label: shortLabel(node.id),
+        label: node.display_label || formatNodeDisplayLabel(node.id),
         nodeKind: 'cluster',
         parent: node.domain ? `domain:${node.domain}` : null,
         typeColor: clusterColor,

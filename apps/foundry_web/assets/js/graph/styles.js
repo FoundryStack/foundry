@@ -1,16 +1,17 @@
-import { EDGE_CATALOG, edgeRelationSelector, edgeStaticStyle } from './edge_catalog'
-import { getTypeColorToken } from './semantics'
+import { EDGE_CATALOG, edgeRelationSelector, edgeStaticStyle } from './edge_catalog.js'
+import { withAlpha } from './colors.js'
+import { getTypeColorToken } from './semantics.js'
 
 const FONT = 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif'
 
 export const FOUNDRY_LAYOUT_OPTIONS = {
   randomize: false,
-  idealEdgeLength: 58,
-  nodeRepulsion: 3900,
+  idealEdgeLength: 70,
+  nodeRepulsion: 4600,
   edgeElasticity: 0.2,
-  padding: 32,
+  padding: 44,
   gravity: 0.35,
-  gravityCompound: 1.0,
+  gravityCompound: 0.95,
   nestingFactor: 0.18,
 }
 
@@ -19,12 +20,12 @@ export const FOUNDRY_COMPOUND_COMPACTION = {
   selector: 'node.domain-cluster, node.transfer-cluster, node.resource-cluster, node.fsm-cluster',
   maxChildren: 12,
   minOccupancy: 0.32,
-  spacing: 40,
-  padding: 48,
+  spacing: 52,
+  padding: 64,
   separateDomains: true,
-  domainGap: 52,
+  domainGap: 110,
   domainLabelBufferX: 132,
-  domainLabelBufferY: 72,
+  domainLabelBufferY: 104,
   domainIterations: 8,
 }
 
@@ -64,7 +65,7 @@ export const STATIC_STYLES = [
       'shape': 'round-rectangle',
       'min-width': 180,
       'min-height': 96,
-      'padding': 42,
+      'padding': 58,
       'border-style': 'dashed',
       'border-width': 1.5,
       'border-opacity': 0.75,
@@ -82,7 +83,7 @@ export const STATIC_STYLES = [
       'background-opacity': 'data(fillOpacity)',
       'min-width': 240,
       'min-height': 140,
-      'padding': 96,
+      'padding': 144,
     },
   },
   {
@@ -115,7 +116,10 @@ export const STATIC_STYLES = [
   },
   {
     selector: 'node:selected',
-    style: { 'border-width': 1.5 },
+    style: {
+      'border-width': 2,
+      'background-opacity': 0.8,
+    },
   },
   {
     selector: 'node.phantom-node',
@@ -244,23 +248,35 @@ export function dynamicStyles(c) {
     },
     { selector: 'node.sensitive', style: { 'border-width': 2, 'border-color': c.rd } },
     {
-      selector: 'node[nodeKind="cluster"]',
+      selector: 'node[nodeKind="cluster"][fillColor]',
       style: {
         'background-color': 'data(fillColor)',
         'border-color': c.b1,
       },
     },
     {
-      selector: 'node.domain-cluster',
+      selector: 'node.domain-cluster[typeColor][fillColor]',
       style: { 'background-color': 'data(fillColor)', 'border-color': 'data(typeColor)' },
     },
     ...kindSelectors,
-    { selector: 'node:selected', style: { 'border-color': c.ac } },
+    {
+      selector: 'node:selected[typeColor]',
+      style: {
+        'border-color': 'data(typeColor)',
+        'background-color': 'data(typeColor)',
+        'background-opacity': 0.5,
+      },
+    },
     {
       selector: 'node[type="external"]',
-      style: { 'background-color': c.s3, 'border-color': c.t3 },
+      style: {
+        'background-color': c.nodeBg,
+        'border-color': c.pk,
+        'color': c.tx,
+      },
     },
     { selector: 'node[nodeKind="step"], node[nodeKind="action"], node[nodeKind="state"]', style: { 'color': c.tx } },
+    { selector: 'node[nodeKind="step"][fillColor]', style: { 'background-color': 'data(fillColor)', 'background-opacity': 1 } },
     { selector: 'node[type="job"]',       style: { 'border-color': c.pu } },
     { selector: 'node[type="trigger"]',   style: { 'border-color': c.ac } },
     {
@@ -269,7 +285,10 @@ export function dynamicStyles(c) {
     },
     {
       selector: 'node[nodeKind="cluster"][type="reactor"]',
-      style: { 'border-color': c.pu },
+      style: {
+        'border-color': c.sidebarPu,
+        'background-color': withAlpha(c.sidebarPu, 0.14),
+      },
     },
     { selector: 'node[nodeKind="step"][has_declared_se="true"]',
       style: { 'border-color': c.gn } },

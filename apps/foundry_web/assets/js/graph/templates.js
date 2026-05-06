@@ -2,17 +2,17 @@ import { covColor, getActionTypeColor, getTypeColor } from './colors'
 import {
   STATUS_META,
   canShowGovernanceIndicators,
+  formatNodeDisplayLabel,
+  getClusterIcon,
   getTypeDisplayLabel,
   getTypeIcon,
+  renderHeroIcon,
   shouldShowComplianceGap,
   shouldShowCoverageIndicator,
 } from './semantics'
 
-export function shortLabel(id) {
-  if (!id) return id
-  if (id.startsWith('external:')) return id.replace('external:', '')
-  const parts = id.split('.')
-  return parts[parts.length - 1]
+function nodeLabel(value, fallbackId) {
+  return value || formatNodeDisplayLabel(fallbackId)
 }
 
 function escHtml(value) {
@@ -102,7 +102,7 @@ function compactChildTpl(data, opts = {}) {
   return `
     <div class="cy-node-html cy-node-sm">
       <div class="title-row">
-        <span class="type-icon" style="color:${escHtml(color)}">${escHtml(icon)}</span>
+        <span class="type-icon" style="color:${escHtml(color)}">${renderHeroIcon(icon)}</span>
         <span class="title" style="color:${escHtml(color)}">${escHtml(label)}</span>
       </div>
     </div>
@@ -113,9 +113,13 @@ export function entityTpl(data) {
   const n = data
 
   if (n.type === 'external') {
+    const color = escHtml(n.typeColor || getTypeColor('external'))
     return `
       <div class="cy-node-html cy-external-node">
-        <span class="title">${shortLabel(n.id)}</span>
+        <div class="title-row">
+          <span class="type-icon" style="color:${color}">${renderHeroIcon(getTypeIcon('external'))}</span>
+          <span class="title" style="color:${color}">${nodeLabel(n.display_label, n.id)}</span>
+        </div>
       </div>
     `
   }
@@ -132,16 +136,13 @@ export function entityTpl(data) {
     <div class="cy-node-html">
       ${buildIndicators(n)}
       <div class="domain-row">
-        <span class="domain-dot" style="background: ${covColor(n.cov)}"></span>
         <span style="color: var(--fg-t2)">${n.domain || 'N/A'}</span>
       </div>
       <div class="title-row">
-        <span class="type-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <circle cx="12" cy="12" r="10"></circle>
-          </svg>
+        <span class="type-icon" style="color:${escHtml(n.typeColor || getTypeColor(n.type))}">
+          ${renderHeroIcon(getTypeIcon(n.type))}
         </span>
-        <span class="title">${shortLabel(n.id)}</span>
+        <span class="title">${escHtml(nodeLabel(n.display_label, n.id))}</span>
       </div>
       ${jobAnnotation}
       ${triggerAnnotation}
@@ -158,20 +159,20 @@ export function clusterTpl(data) {
   const n = data
 
   const color = n.typeColor || getTypeColor(n.type || 'cluster')
-  const name = n.name || n.label || shortLabel(n.id)
+  const name = n.name || n.label || n.display_label || formatNodeDisplayLabel(n.id)
   const cov = n.cov ?? 0
   const isDomainCluster = getTypeDisplayLabel(n) === 'domain'
   const titleRowClass = isDomainCluster
     ? 'title-row boundary-title-row boundary-title-row-domain'
     : 'title-row boundary-title-row boundary-title-row-subcluster'
 
-  const icon = getTypeIcon(getTypeDisplayLabel(n) === 'domain' ? 'cluster' : (n.type || 'cluster'))
+  const icon = getClusterIcon(n)
 
   return `
     <div class="cy-node-html cy-node-boundary">
       ${buildIndicators(n)}
       <div class="${titleRowClass}">
-        <span class="type-icon" style="color:${escHtml(color)}">${escHtml(icon)}</span>
+        <span class="type-icon" style="color:${escHtml(color)}">${renderHeroIcon(icon, 'size-4')}</span>
         <span class="title" style="color:${escHtml(color)}">${escHtml(name)}</span>
       </div>
       ${cov > 0 ? `<div class="req-badges"><div style="width:${cov}%; height:3px; background:${covColor(cov)}; border-radius:1px"></div></div>` : ''}

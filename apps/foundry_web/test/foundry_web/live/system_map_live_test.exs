@@ -109,40 +109,73 @@ defmodule FoundryWeb.SystemMapLiveTest do
   end
 
   describe "handle_event node_selected" do
-    test "stores selected node in assigns", %{conn: conn} do
+    test "opens details without switching to Coverage", %{conn: conn} do
       {:ok, live, _html} = live(conn, "/studio")
 
-      # Simulate node selection
-      result =
-        render_click(live, "node_selected", %{
-          "id" => "Finance.Wallet",
-          "data" => %{
-            "id" => "Finance.Wallet",
-            "type" => "resource",
-            "description" => "User wallet"
-          }
-        })
+      html = render_click(live, "node_selected", %{"id" => "Finance.Wallet"})
 
-      # Verify the click was processed
-      assert result != nil
+      assert html =~ ~s(id="fm-drawer")
+      assert html =~ ~s(data-open="true")
+      refute html =~ "Scenario Filter"
     end
 
-    test "switches to Coverage and filters scenarios by selected node", %{
+    test "does not filter scenarios automatically", %{
       conn: conn,
       project_context: context
     } do
       {node_id, scenario_ids} = node_with_partial_scenario_coverage(context.scenarios)
-      Foundry.Context.ScenarioCache.update(scenario_report(context.scenarios, node_index: build_node_index(context.scenarios)))
+
+      Foundry.Context.ScenarioCache.update(
+        scenario_report(context.scenarios, node_index: build_node_index(context.scenarios))
+      )
 
       {:ok, live, _html} = live(conn, "/studio")
 
-      html = render_click(live, "node_selected", %{"id" => node_id})
+      _html = render_click(live, "node_selected", %{"id" => node_id})
+      html = render_click(live, "set_sidebar_tab", %{"tab" => "test_coverage"})
+
+      Enum.each(scenario_ids, fn scenario_id ->
+        assert Regex.match?(
+                 ~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(scenario_id)}"/,
+                 html
+               )
+      end)
+
+      non_matching_scenarios =
+        Enum.reject(context.scenarios, &(&1.id in scenario_ids))
+
+      if non_matching_scenarios != [] do
+        assert Regex.match?(
+                 ~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(hd(non_matching_scenarios).id)}"/,
+                 html
+               )
+      end
+    end
+  end
+
+  describe "handle_event show_node_coverage" do
+    test "switches to Coverage and filters scenarios explicitly", %{
+      conn: conn,
+      project_context: context
+    } do
+      {node_id, scenario_ids} = node_with_partial_scenario_coverage(context.scenarios)
+
+      Foundry.Context.ScenarioCache.update(
+        scenario_report(context.scenarios, node_index: build_node_index(context.scenarios))
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+
+      html = render_click(live, "show_node_coverage", %{"id" => node_id})
 
       assert html =~ "Scenario Filter"
       assert html =~ node_id
 
       Enum.each(scenario_ids, fn scenario_id ->
-        assert Regex.match?(~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(scenario_id)}"/, html)
+        assert Regex.match?(
+                 ~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(scenario_id)}"/,
+                 html
+               )
       end)
 
       non_matching_scenarios =
@@ -154,6 +187,45 @@ defmodule FoundryWeb.SystemMapLiveTest do
                  html
                )
       end
+    end
+
+    test "clear_node_filter restores all scenarios", %{
+      conn: conn,
+      project_context: context
+    } do
+      {node_id, _scenario_ids} = node_with_partial_scenario_coverage(context.scenarios)
+
+      Foundry.Context.ScenarioCache.update(
+        scenario_report(context.scenarios, node_index: build_node_index(context.scenarios))
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+
+      filtered_html = render_click(live, "show_node_coverage", %{"id" => node_id})
+      assert filtered_html =~ "Scenario Filter"
+
+      html = render_click(live, "clear_node_filter", %{})
+
+      refute html =~ "Scenario Filter"
+
+      Enum.each(context.scenarios, fn scenario ->
+        assert Regex.match?(
+                 ~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(scenario.id)}"/,
+                 html
+               )
+      end)
+    end
+  end
+
+  describe "handle_event filter_nodes" do
+    test "filters the system map list and preserves the current query", %{conn: conn} do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      html = render_keyup(live, "filter_nodes", %{"value" => "wallet"})
+
+      assert html =~ ~s(value="wallet")
+      assert html =~ "Wallet"
+      refute html =~ "BonusEngine"
     end
   end
 

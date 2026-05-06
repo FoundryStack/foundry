@@ -1,4 +1,10 @@
-import { computeCoverageScore, getComplianceStatus, normalizeGraphNodeType } from './semantics'
+import {
+  computeCoverageScore,
+  formatNodeDisplayLabel,
+  formatStepKindLabel,
+  getComplianceStatus,
+  normalizeGraphNodeType,
+} from './semantics'
 
 export function normalizeStateName(value) {
   if (value == null) return null
@@ -85,6 +91,7 @@ export function normalizeNode(raw) {
 
   const steps = (raw.steps || []).map(s => ({
     ...s,
+    display_kind: formatStepKindLabel(s.step_kind || s.type || 'step'),
     agent: (raw.agent_steps || []).find(a => a.step_id === s.id),
   }))
 
@@ -95,6 +102,7 @@ export function normalizeNode(raw) {
   return {
     ...raw,
     id: raw.id,
+    display_label: formatNodeDisplayLabel(raw.id),
     type,
     domain: raw.domain,
     description,
@@ -116,6 +124,7 @@ export function normalizeNode(raw) {
     routes: raw.api_routes || [],
     money: raw.money_attributes || [],
     flags: raw.feature_flags || [],
+    rules: raw.rules || [],
     runbook: raw.runbook,
     adrs: raw.adrs || [],
     pending_migrations: raw.pending_migrations,

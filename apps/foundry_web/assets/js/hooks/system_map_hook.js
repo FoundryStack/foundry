@@ -1,5 +1,10 @@
 import { mountFoundryGraph, covColor, getActionTypeColor, getTypeColor } from '../foundry_graph'
-import { getComplianceStatus, getTypeDisplayLabel, shouldShowComplianceIndicator } from '../graph/semantics'
+import {
+  formatNodeDisplayLabel,
+  getComplianceStatus,
+  getTypeDisplayLabel,
+  shouldShowComplianceIndicator,
+} from '../graph/semantics'
 import { UI_CONFIG } from '../graph/config'
 import { DrawerManager } from './system_map/drawer_manager'
 import { FeedManager } from './system_map/feed_manager'
@@ -35,24 +40,31 @@ export const SystemMapHook = {
       this.graph = mountFoundryGraph(this.el, contextJson)
 
       // Initialize managers
-      this.drawer = new DrawerManager(this.graph.normalizedNodes, (event, payload) => {
+      const pushEvent = (event, payload) => {
         this.pushEvent(event, payload)
+      }
+      this.drawer = new DrawerManager(this.graph.normalizedNodes, pushEvent, {
+        onNodeSelect: nodeId => {
+          const nodeData = this.graph.normalizedNodes.get(nodeId)
+          this._selectNode(nodeId, nodeData, { pushSelection: true })
+        },
       })
       this.sidebar = new SidebarManager(this.graph, this.graph.normalizedNodes)
 
       // Wire sidebar node select callback
       this.sidebar.onNodeSelect = (nodeId) => {
         const nodeData = this.graph.normalizedNodes.get(nodeId)
-        this._handleNodeSelected(nodeId, nodeData)
-        this.pushEvent('node_selected', { id: nodeId })
+        this._selectNode(nodeId, nodeData, { pushSelection: true })
       }
 
       // Wire node click handler
       this.graph.onNodeClick = (nodeId, nodeData) => {
+        const resolvedNodeData = nodeData || this.graph.normalizedNodes.get(nodeId)
+
         if (contextJson.nodes.length <= UI_CONFIG.nodeThreshold) {
-          this.pushEvent('node_selected', { id: nodeId, data: nodeData })
-          this._handleNodeSelected(nodeId, nodeData)
+          this._selectNode(nodeId, resolvedNodeData, { pushSelection: true })
         } else {
+          this._selectNode(nodeId, resolvedNodeData, { pushSelection: true })
           this.pushEvent('fetch_node_detail', { id: nodeId })
         }
       }
@@ -104,10 +116,7 @@ export const SystemMapHook = {
       })
 
       this.handleEvent('drawer:open_flow', () => {
-        if (this.drawer) {
-          this.drawer.switchTab('flow')
-          this.drawer.open()
-        }
+        this.drawer?.open()
       })
 
       this.handleEvent('graph:clear_overlay', () => {
@@ -126,7 +135,7 @@ export const SystemMapHook = {
 
       this.handleEvent('node_detail', (payload) => {
         if (payload.node) {
-          this._handleNodeSelected(payload.node.id, payload.node)
+          this._hydrateNodeDetail(payload.node)
         }
       })
 
@@ -150,7 +159,32 @@ export const SystemMapHook = {
     this.sidebar.highlightNode(nodeId)
     this.drawer.open()
     this.drawer.renderForNode(nodeId, nodeData)
-    this.graph.expandOnly(nodeId)
+    this.graph.focusNode(nodeId)
+  },
+
+  _selectNode(nodeId, nodeData = null, { pushSelection = false } = {}) {
+    if (nodeData) {
+      this.graph.normalizedNodes.set(nodeId, nodeData)
+    }
+
+    this._selectedNodeId = nodeId
+    this._handleNodeSelected(nodeId, nodeData)
+
+    if (pushSelection) {
+      this.pushEvent('node_selected', { id: nodeId, data: nodeData })
+    }
+  },
+
+  _hydrateNodeDetail(nodeData) {
+    if (!nodeData?.id) return
+
+    this.graph.normalizedNodes.set(nodeData.id, nodeData)
+
+    if (this._selectedNodeId === nodeData.id) {
+      this.sidebar.highlightNode(nodeData.id)
+      this.drawer.open()
+      this.drawer.renderForNode(nodeData.id, nodeData)
+    }
   },
 
   _showHoverCard(nodeId, nodeData = null, event = null) {
@@ -319,7 +353,7 @@ export const SystemMapHook = {
     if (!node) return null
     return {
       id: node.id || nodeId,
-      name: node.name || node.label || node.id || nodeId,
+      name: node.name || node.label || node.display_label || formatNodeDisplayLabel(node.id || nodeId),
       type: node.type || node.nodeKind || 'node',
       typeColor: node.typeColor || getTypeColor(node.type),
       domain: node.domain,

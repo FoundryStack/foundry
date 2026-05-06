@@ -49,7 +49,7 @@ export function mountFoundryGraph(container, contextJson) {
   const htmlLabels = HTML_LABEL_CONFIG.map((cfg, i) => ({ ...cfg, tpl: templates[i] }))
   graph.setupHtmlLabels(htmlLabels)
 
-  buildCanvasOverlays(container, normalizedNodes)
+  buildCanvasOverlays(container, normalizedNodes, graph)
 
   graph.normalizedNodes = new Map(normalizedNodes.map(n => [n.id, n]))
 
