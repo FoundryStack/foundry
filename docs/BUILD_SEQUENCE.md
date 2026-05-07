@@ -139,6 +139,12 @@ Every team member immediately benefits. Builds trust in the platform before it c
 - inotify file watcher → invalidates ETS cache → live reload on source change
 - `mix foundry.project.context --check` running in CI (INV-008 enforcement via
   `.foundry/context.lock` comparison)
+- **UI surface nodes** (ADR-027): LiveView (▣) nodes derived from Phoenix router walk,
+  SDUI subtype detection, Sourceror action-call scanning, `calls_action` and
+  `feature_flagged_by` edges, `external:feature_flag:*` synthetic nodes
+- **igaming web layer** (ADR-027): `reference_projects/igaming/lib/web/` — Home, Game,
+  Login, Deposit, Withdrawal pages using AshSDUI; Phoenix.LiveViewTest scenario tests
+  in `test/pages/`; `Foundry.PreviewServer` on-demand dev server for sidebar preview
 
 **UX specification:** ADR-012. All interaction details, performance budgets, and
 accessibility requirements in that document govern Phase 2 implementation.
@@ -147,7 +153,9 @@ accessibility requirements in that document govern Phase 2 implementation.
 
 **Done when:** The iGaming reference project's system map opens, shows all domains, all
 resources clickable with correct detail panels, updates within 2 seconds of a file save,
-passes WCAG 2.1 AA audit (ADR-012 §Accessibility), and meets all ADR-012 §Performance Budgets.
+passes WCAG 2.1 AA audit (ADR-012 §Accessibility), meets all ADR-012 §Performance Budgets,
+AND LiveView page nodes appear with correct route labels, `calls_action` edges to Ash
+resources, feature flag external nodes, and a functioning sidebar Preview button.
 
 ---
 

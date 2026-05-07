@@ -2,6 +2,7 @@
 
 **Status:** Accepted — §Data Source amended by ADR-020; §Zoom/C4, §Compound Nodes, §Scenario Perspective, §Clarity Patterns amended 2026-04
 **Amended:** 2026-04 by ADR-022 (step sub-graph side-effect pills, status indicator for undeclared side effects)
+**Amended:** 2026-05 by ADR-027 (LiveView node extended: SDUI subtype, router-inferred routes, `calls_action`+`feature_flagged_by` edges, dev server preview)
 **Date:** 2026-03
 **Deciders:** Platform team
 **Supersedes:** ADR-008 (retained for historical record)

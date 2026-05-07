@@ -116,7 +116,19 @@ defmodule Foundry.Context.ModuleContext do
 
     # Feature flags
     # [String] — flag names referenced in this module
-    feature_flags: []
+    feature_flags: [],
+
+    # Page metadata (Phase D)
+    # String | nil — route path e.g. "/games/:id"
+    page_route: nil,
+    # atom | nil — :player | :operator | :anonymous | :admin
+    page_group: nil,
+    # boolean — true if route has :param segments
+    page_dynamic: false,
+    # atom | nil — :sdui | nil
+    page_subtype: nil,
+    # [tuple] — [{resource_module, action_type}] called in this page
+    calls_actions: []
   ]
 end
 

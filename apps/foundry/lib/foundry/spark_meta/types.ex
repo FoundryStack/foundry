@@ -47,7 +47,12 @@ defmodule Foundry.SparkMeta.ModuleInfo do
     auth_strategies: [],
     side_effects: [],
     trigger_kind: nil,
-    diagnostics: []
+    diagnostics: [],
+    page_route: nil,
+    page_group: nil,
+    page_dynamic: false,
+    page_subtype: nil,
+    calls_actions: []
   ]
 
   @type t :: %__MODULE__{}

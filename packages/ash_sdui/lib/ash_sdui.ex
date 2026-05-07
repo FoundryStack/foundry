@@ -99,6 +99,10 @@ defmodule AshSDUI do
           Map.put(assigns, :tree, tree)
         )
       end
+
+      def __sdui_lookup__ do
+        unquote(lookup)
+      end
     end
   end
 

@@ -48,7 +48,12 @@ defmodule Foundry.Context.NodeBuilder do
       auth_strategies: info.auth_strategies,
       side_effects: info.side_effects,
       trigger_kind: Map.get(info, :trigger_kind),
-      last_modified: format_mtime(info.last_modified)
+      last_modified: format_mtime(info.last_modified),
+      page_route: info.page_route,
+      page_group: info.page_group,
+      page_dynamic: info.page_dynamic,
+      page_subtype: info.page_subtype,
+      calls_actions: info.calls_actions
     }
   end
 

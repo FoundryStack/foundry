@@ -731,11 +731,12 @@ The pre-generation checklist items INV-014..017 apply to this syntax:
 | ADR-013 | copilot-agent-behavior | Epistemic contract, confidence states, clarifying question UX, error recovery, phase-gated behaviour |
 | ADR-014 | proposal-lifecycle | Proposal state machine, dual approval mechanics, ADR linking for :compliance, apply step, compilation failure path |
 | ADR-015 | storage-model | Git-backed files + ETS only — no Postgres dependency for Foundry itself |
-| ADR-016 | visualization-paradigm-v2 | Four C4 levels, 11 node types, 8 edge types, authorization matrix view, agent node type (⊕). Data source: `mix foundry.project.context` (amended by ADR-020). JS architecture: `CytoscapeGraph` (pure wrapper) + `FoundryGraph` (Foundry config layer). |
+| ADR-016 | visualization-paradigm-v2 | Four C4 levels, 11 node types, 8 edge types, authorization matrix view, agent node type (⊕). Data source: `mix foundry.project.context` (amended by ADR-020). JS architecture: `CytoscapeGraph` (pure wrapper) + `FoundryGraph` (Foundry config layer). Amended by ADR-027 (LiveView node extensions). |
 | ADR-017 | agent-injection-governance | AshAI integration model, 10 agent types, human-in-the-loop gate spec, change classification for agent constructs |
 | ADR-020 | project-context-filesystem-umbrella | Unified `mix foundry.project.context` command, `Foundry.FileSystem` read boundary, umbrella and related-project support, `snapshot` → `status` rename |
 | ADR-022 | side-effect-governance-and-copilot-precision | `SideEffectEntry` in NodeEntry/StepEntry; INV-019/020/021; BLOCKER/REFUSE distinction; epistemic markers; pre-mortem block; spec-gap escalation |
 | ADR-024 | mcp-server-architecture | Foundry IS the MCP server; external agents connect to it; AshAi.Mcp.Router; Tidewave complement; optional internal LLM |
+| ADR-027 | ui-surface-nodes | LiveView (▣) node extended with SDUI subtype, router-inferred routes, Sourceror action call scanning, `calls_action`+`feature_flagged_by` edges, dev server preview, igaming web layer |
 
 ---
 
@@ -1015,6 +1016,7 @@ docs/
     ADR-015-storage-model.md
     ADR-016-visualization-paradigm-v2.md
     ADR-017-agent-injection-governance.md
+    ADR-027-ui-surface-nodes.md
   regulations/
     platform_invariants.md
   runbooks/

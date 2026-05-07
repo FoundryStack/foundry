@@ -75,6 +75,9 @@ defmodule IgamingRef.MixProject do
       # Foundry — meta-framework for governance
       {:foundry, path: "../../apps/foundry"},
 
+      # Server-Driven UI
+      {:ash_sdui, path: "../../packages/ash_sdui"},
+
       # Serialisation
       {:jason, "~> 1.4"},
 
