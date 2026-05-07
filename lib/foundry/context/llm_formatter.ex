@@ -300,6 +300,7 @@ defmodule Foundry.Context.LLMFormatter do
         format_doc_section("AGENTS", spec_kit["agents"]),
         format_doc_section("ADRs", spec_kit["adrs"]),
         format_doc_section("Runbooks", spec_kit["runbooks"]),
+        format_doc_section("Findings", spec_kit["findings"]),
         format_doc_section("Regulations", spec_kit["regulations"]),
         format_doc_section("Usage Rules", spec_kit["usage_rules"])
       ]
@@ -316,6 +317,7 @@ defmodule Foundry.Context.LLMFormatter do
         {"AGENTS", count_docs(spec_kit["agents"])},
         {"ADRs", count_docs(spec_kit["adrs"])},
         {"Runbooks", count_docs(spec_kit["runbooks"])},
+        {"Findings", count_docs(spec_kit["findings"])},
         {"Regulations", count_docs(spec_kit["regulations"])},
         {"Usage Rules", count_docs(spec_kit["usage_rules"])}
       ]
@@ -397,7 +399,7 @@ defmodule Foundry.Context.LLMFormatter do
   defp count_docs(docs), do: length(List.wrap(docs))
 
   defp collect_tags(spec_kit) do
-    ["adrs", "runbooks", "regulations", "usage_rules"]
+    ["adrs", "runbooks", "findings", "regulations", "usage_rules"]
     |> Enum.flat_map(fn key ->
       spec_kit
       |> Map.get(key, [])

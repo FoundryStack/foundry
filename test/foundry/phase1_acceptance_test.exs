@@ -262,7 +262,7 @@ defmodule Foundry.Phase1AcceptanceTest do
 
     test "8 distinct domains", %{context: ctx} do
       domains = ctx["nodes"] |> Enum.map(& &1["domain"]) |> Enum.uniq() |> Enum.sort()
-      assert length(domains) == 8
+      assert length(domains) == 9
 
       assert Enum.all?(
                ~w[Accounts Finance Gaming Infrastructure Ops Players Policies Promotions],
@@ -491,6 +491,8 @@ defmodule Foundry.Phase1AcceptanceTest do
       for key <- ~w[index_token_count index_token_limit adrs runbooks regulations] do
         assert Map.has_key?(sk, key), "spec_kit missing: #{key}"
       end
+
+      assert Map.get(sk, "findings", []) == []
     end
 
     test "spec_kit.adrs non-empty", %{context: ctx} do
@@ -651,8 +653,8 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert s["project"] == "IgamingRef"
     end
 
-    test "domains: 8 entries", %{status: s} do
-      assert length(s["domains"]) == 8
+    test "domains: 9 entries", %{status: s} do
+      assert length(s["domains"]) == 9
     end
 
     test "sensitive_modules contains expected short names", %{status: s} do

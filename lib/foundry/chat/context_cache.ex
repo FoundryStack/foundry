@@ -7,7 +7,7 @@ defmodule Foundry.Chat.ContextCache do
   """
 
   @table :foundry_chat_context_cache
-  @prompt_version 1
+  @prompt_version 2
 
   alias Foundry.Context.ProjectContext
 
@@ -85,6 +85,7 @@ defmodule Foundry.Chat.ContextCache do
   defp spec_kit_manifest(project_root) do
     [
       "docs/adrs/*.md",
+      "docs/findings/*.md",
       "docs/runbooks/*.md",
       "docs/regulations/*.md",
       ".foundry/usage_rules/*.md"

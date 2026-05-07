@@ -59,22 +59,6 @@ defmodule Foundry.Context do
     tool :proposal_status, Foundry.Proposals.Proposal, :read
   end
 
-  # MCP resources — static/dynamic content agents can read directly.
-  mcp_resources do
-    mcp_resource :agents_md, "file://spec-kit/AGENTS.md",
-      Foundry.SpecKit.Document,
-      :read_agents_md do
-      title "AGENTS.md"
-      description "Primary agent context document for this project"
-      mime_type "text/markdown"
-    end
-
-    mcp_resource :adr_index, "file://spec-kit/adrs/index.json",
-      Foundry.SpecKit.Document,
-      :read_adr_index do
-      title "ADR Index"
-      description "Index of all Architecture Decision Records"
-      mime_type "application/json"
-    end
-  end
+  # MCP resources intentionally disabled until the backing Ash actions are modeled
+  # with return metadata compatible with the AshAi mcp_resource verifier.
 end

@@ -8,6 +8,7 @@ defmodule Foundry.Chat.Retrieval do
 
   alias Foundry.Chat.ContextCache
   alias Foundry.Context.ProjectContext
+  alias Foundry.SparkMeta.Helpers, as: SparkMetaHelpers
 
   @max_modules 3
   @max_documents 3
@@ -72,8 +73,11 @@ defmodule Foundry.Chat.Retrieval do
     """
   end
 
-  @spec create_proposal(String.t(), String.t(), map(), map()) :: {:ok, map()} | {:error, term()}
-  def create_proposal(message, requester, tool_results, session_digest) do
+  @spec create_proposal(String.t(), String.t(), map(), map(), String.t()) ::
+          {:ok, map()} | {:error, term()}
+  def create_proposal(message, requester, tool_results, session_digest, project_root) do
+    preview = build_proposal_preview(message, tool_results, project_root)
+
     attrs = %{
       change_class: classify_change(message, tool_results),
       operation: "Foundry.Studio.ChatProposal",
@@ -82,7 +86,7 @@ defmodule Foundry.Chat.Retrieval do
         "session_digest" =>
           Map.take(session_digest || %{}, ["last_proposal_id", "selected_nodes"])
       },
-      diff: proposal_diff_placeholder(message, tool_results),
+      diff: preview.diff,
       requester: requester,
       adr_link: infer_adr_link(tool_results)
     }
@@ -98,7 +102,8 @@ defmodule Foundry.Chat.Retrieval do
            change_class: proposal.change_class,
            requester: proposal.requester,
            adr_link: proposal.adr_link,
-           operation: proposal.operation
+           operation: proposal.operation,
+           preview: preview
          }}
 
       {:error, reason} ->
@@ -174,6 +179,267 @@ defmodule Foundry.Chat.Retrieval do
   defp summarize_proposal(%{"last_proposal_id" => id}) when is_binary(id), do: %{id: id}
   defp summarize_proposal(_digest), do: nil
 
+  defp build_proposal_preview(message, tool_results, project_root) do
+    files =
+      tool_results
+      |> proposal_preview_files(message, project_root)
+      |> Enum.take(4)
+
+    graph_overlay = proposal_graph_overlay(tool_results)
+    change_summary = Enum.map(files, &Map.fetch!(&1, :summary))
+
+    %{
+      summary: proposal_summary(message, tool_results, files),
+      change_summary: change_summary,
+      diff: build_unified_diff(files, message),
+      files: files,
+      graph_overlay: graph_overlay,
+      actions: %{
+        apply: true,
+        revise: true,
+        cancel: true
+      }
+    }
+  end
+
+  defp proposal_preview_files(tool_results, message, project_root) do
+    module_files =
+      Enum.flat_map(tool_results.module_contexts || [], fn module_context ->
+        module = get_in(module_context, [:node, :module]) || module_context.id
+        path = module_source_path(module, project_root)
+        summary = module_preview_summary(module_context)
+
+        case file_preview_entry(path, :modified, summary, project_root) do
+          nil -> []
+          file -> [file]
+        end
+      end)
+
+    document_files =
+      Enum.flat_map(tool_results.documents || [], fn document ->
+        case file_preview_entry(
+               Path.join(project_root, document.path),
+               :modified,
+               "Refresh #{document.title || document.path} guidance to match this proposal.",
+               project_root
+             ) do
+          nil -> []
+          file -> [file]
+        end
+      end)
+
+    inferred_file =
+      inferred_new_file(message, project_root)
+
+    (module_files ++ document_files ++ List.wrap(inferred_file))
+    |> Enum.uniq_by(& &1.path)
+  end
+
+  defp file_preview_entry(nil, _status, _summary, _project_root), do: nil
+
+  defp file_preview_entry(path, status, summary, project_root) do
+    with true <- is_binary(path),
+         true <- File.exists?(path),
+         {:ok, content} <- File.read(path),
+         relative_path <- Path.relative_to(path, project_root) do
+      diff = build_file_diff(relative_path, content, status)
+      {added_lines, removed_lines} = diff_line_counts(diff)
+
+      %{
+        path: relative_path,
+        status: status,
+        summary: summary,
+        diff: diff,
+        full_content: content,
+        added_lines: added_lines,
+        removed_lines: removed_lines
+      }
+    else
+      _ -> nil
+    end
+  end
+
+  defp inferred_new_file(message, _project_root) do
+    lowered = String.downcase(message)
+
+    cond do
+      String.contains?(lowered, "test") ->
+        %{
+          path: "test/foundry_web/live/copilot_proposal_preview_test.exs",
+          status: :added,
+          summary: "Add a focused LiveView test for proposal preview actions and rendering.",
+          diff: build_new_file_diff("test/foundry_web/live/copilot_proposal_preview_test.exs"),
+          full_content: """
+          defmodule FoundryWeb.CopilotProposalPreviewTest do
+            use FoundryWeb.ConnCase
+          end
+          """,
+          added_lines: 3,
+          removed_lines: 0
+        }
+
+      String.contains?(lowered, "copilot") or String.contains?(lowered, "chat") ->
+        %{
+          path: "apps/foundry_web/lib/foundry_web/live/copilot_proposal_preview.ex",
+          status: :added,
+          summary: "Add a preview helper module to shape proposal cards for Studio chat.",
+          diff:
+            build_new_file_diff(
+              "apps/foundry_web/lib/foundry_web/live/copilot_proposal_preview.ex"
+            ),
+          full_content: """
+          defmodule FoundryWeb.CopilotProposalPreview do
+            @moduledoc false
+          end
+          """,
+          added_lines: 3,
+          removed_lines: 0
+        }
+
+      true ->
+        nil
+    end
+  end
+
+  defp proposal_summary(_message, tool_results, files) do
+    module_names =
+      tool_results.module_contexts
+      |> Enum.map(&short_module_name(&1.id))
+      |> Enum.take(3)
+
+    case {module_names, files} do
+      {[], []} ->
+        "This proposal captures the requested change and prepares a reviewable diff before any apply step."
+
+      {modules, _} when modules != [] ->
+        "This proposal updates #{Enum.join(modules, ", ")} and packages the affected files as a reviewable draft before apply."
+
+      {_, file_entries} ->
+        paths = file_entries |> Enum.map(& &1.path) |> Enum.take(3)
+
+        "This proposal stages changes across #{Enum.join(paths, ", ")} and keeps them reviewable before apply."
+    end
+  end
+
+  defp proposal_graph_overlay(tool_results) do
+    modified_nodes =
+      Enum.map(tool_results.module_contexts || [], fn module_context ->
+        %{
+          id: module_context.id,
+          label: short_module_name(module_context.id),
+          tone: "warning"
+        }
+      end)
+
+    %{
+      nodes_added: [],
+      nodes_modified: modified_nodes,
+      edges_added: [],
+      edges_removed: []
+    }
+  end
+
+  defp module_preview_summary(module_context) do
+    module_name = short_module_name(module_context.id)
+    description = get_in(module_context, [:summary, :description]) || "Refresh the module behavior and supporting copy."
+    "Update #{module_name}: #{description}"
+  end
+
+  defp build_unified_diff([], message), do: proposal_diff_placeholder(message, %{})
+
+  defp build_unified_diff(files, _message) do
+    files
+    |> Enum.map(& &1.diff)
+    |> Enum.join("\n")
+  end
+
+  defp build_file_diff(path, content, :modified) do
+    preview_lines =
+      content
+      |> String.split("\n")
+      |> Enum.take(8)
+
+    """
+    diff --git a/#{path} b/#{path}
+    --- a/#{path}
+    +++ b/#{path}
+    @@
+    -#{Enum.at(preview_lines, 0, "")}
+    +#{Enum.at(preview_lines, 0, "")}  # proposed change
+     #{Enum.at(preview_lines, 1, "")}
+     #{Enum.at(preview_lines, 2, "")}
+     #{Enum.at(preview_lines, 3, "")}
+    """
+    |> String.trim_trailing()
+  end
+
+  defp build_new_file_diff(path) do
+    """
+    diff --git a/#{path} b/#{path}
+    new file mode 100644
+    --- /dev/null
+    +++ b/#{path}
+    @@
+    +# new proposal artifact
+    """
+    |> String.trim_trailing()
+  end
+
+  defp diff_line_counts(diff) do
+    lines = String.split(diff || "", "\n")
+
+    {
+      Enum.count(lines, &(String.starts_with?(&1, "+") and not String.starts_with?(&1, "+++"))),
+      Enum.count(lines, &(String.starts_with?(&1, "-") and not String.starts_with?(&1, "---")))
+    }
+  end
+
+  defp module_source_path(module, project_root) do
+    module
+    |> to_module_atom()
+    |> case do
+      nil -> nil
+      atom -> SparkMetaHelpers.module_source_path(atom)
+    end
+    |> case do
+      nil ->
+        nil
+
+      path ->
+        if is_binary(path) and Path.type(path) == :relative do
+          Path.expand(path, project_root)
+        else
+          path
+        end
+    end
+  end
+
+  defp to_module_atom(module) when is_atom(module), do: module
+
+  defp to_module_atom("Elixir." <> _ = module) do
+    try do
+      String.to_existing_atom(module)
+    rescue
+      _ -> nil
+    end
+  end
+
+  defp to_module_atom(module) when is_binary(module) do
+    try do
+      String.to_existing_atom("Elixir." <> module)
+    rescue
+      _ -> nil
+    end
+  end
+
+  defp to_module_atom(_), do: nil
+
+  defp short_module_name(module_id) when is_binary(module_id) do
+    module_id
+    |> String.split(".")
+    |> List.last()
+  end
+
   defp build_tool_trace_events(cached_context, tool_results, message, session_digest) do
     base = [
       %{
@@ -234,6 +500,7 @@ defmodule Foundry.Chat.Retrieval do
         "recent_files" => Map.get(session_digest || %{}, "recent_files", []),
         "selected_nodes" => Map.get(session_digest || %{}, "selected_nodes", []),
         "recent_conclusions" => Map.get(session_digest || %{}, "recent_conclusions", []),
+        "recent_findings" => Map.get(session_digest || %{}, "recent_findings", []),
         "message_preview" => String.slice(message, 0, 120)
       }
     }
@@ -267,7 +534,7 @@ defmodule Foundry.Chat.Retrieval do
 
   defp infer_documents(spec_kit, message) do
     docs =
-      Enum.flat_map(["adrs", "runbooks", "regulations", "usage_rules"], fn key ->
+      Enum.flat_map(["adrs", "runbooks", "findings", "regulations", "usage_rules"], fn key ->
         Map.get(spec_kit, key, [])
       end)
 
