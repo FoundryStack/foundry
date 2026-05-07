@@ -213,6 +213,7 @@ export function dynamicStyles(c) {
     'reactor',
     'rule',
     'job',
+    'page',
     'liveview',
     'liveresource',
     'blueprint',

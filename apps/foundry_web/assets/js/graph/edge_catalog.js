@@ -189,6 +189,28 @@ export const EDGE_CATALOG = [
     lineStyle: 'dotted',
     marker: 'arrow',
   },
+  {
+    relation: 'calls_action',
+    label: 'calls-action',
+    source: 'Page/LiveView action invocation',
+    description: 'A page calls an Ash resource action.',
+    colorVar: '--fg-pu',
+    colorKey: 'pu',
+    width: 1.5,
+    lineStyle: 'dashed',
+    marker: 'arrow',
+  },
+  {
+    relation: 'feature_flagged_by',
+    label: 'feature-flagged-by',
+    source: 'Feature flag dependency',
+    description: 'A page is controlled by a feature flag.',
+    colorVar: '--fg-b2',
+    colorKey: 'b2',
+    width: 1.2,
+    lineStyle: 'dotted',
+    marker: 'arrow',
+  },
 ]
 
 export function edgeRelationSelector(edge) {

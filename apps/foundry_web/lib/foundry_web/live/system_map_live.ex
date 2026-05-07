@@ -993,7 +993,12 @@ defmodule FoundryWeb.SystemMapLive do
       :performs,
       :module,
       :scenario_refs,
-      :rules
+      :rules,
+      :page_route,
+      :page_group,
+      :page_dynamic,
+      :page_subtype,
+      :calls_actions
     ])
     |> stringify_map_keys()
   end

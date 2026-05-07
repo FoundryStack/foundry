@@ -41,6 +41,13 @@ export const NODE_KIND_META = {
     color: 'var(--fg-cy)',
     colorToken: 'cy',
   },
+  page: {
+    label: 'Page',
+    tooltipLabel: 'page',
+    icon: 'hero-document-solid',
+    color: 'var(--fg-in)',
+    colorToken: 'in',
+  },
   trigger: {
     label: 'Trigger',
     tooltipLabel: 'trigger',
@@ -220,6 +227,7 @@ const NODE_KIND_LEGEND_ORDER = [
   'reactor',
   'rule',
   'job',
+  'page',
   'liveview',
   'liveresource',
   'adapter',
