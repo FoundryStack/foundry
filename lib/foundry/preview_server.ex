@@ -85,6 +85,11 @@ defmodule Foundry.PreviewServer do
   end
 
   @impl true
+  def handle_cast({:start, _project_root}, %{state: state} = s)
+      when state in [@state_starting, @state_running] do
+    {:noreply, s}
+  end
+
   def handle_cast({:start, project_root}, state) do
     case load_manifest_config(project_root) do
       {:ok, config} ->
@@ -135,9 +140,21 @@ defmodule Foundry.PreviewServer do
         {:noreply, %{state | state: @state_idle}}
 
       port ->
-        # Send SIGTERM to the port
-        Port.close(port)
+        if is_integer(state.os_pid), do: System.cmd("kill", ["-TERM", "#{state.os_pid}"])
+        if port_open?(port), do: Port.close(port)
         {:noreply, %{state | state: @state_stopping, port: nil}}
+    end
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    # Ensure the preview server process is killed when the GenServer terminates
+    case state.port do
+      nil -> :ok
+      port ->
+        if is_integer(state.os_pid), do: System.cmd("kill", ["-TERM", "#{state.os_pid}"])
+        Port.close(port)
+        :ok
     end
   end
 
@@ -178,6 +195,7 @@ defmodule Foundry.PreviewServer do
         {:noreply, %{state | state: @state_running, last_error: nil}}
 
       startup_timed_out?(state) ->
+        if is_integer(state.os_pid), do: System.cmd("kill", ["-TERM", "#{state.os_pid}"])
         if port_open?(state.port), do: Port.close(state.port)
 
         {:noreply,
@@ -188,7 +206,7 @@ defmodule Foundry.PreviewServer do
              os_pid: nil,
              startup_started_at: nil,
              last_activity_at: nil,
-             last_error: "Preview server startup timed out after #{@startup_timeout_ms}ms"
+             last_error: startup_timeout_error(state)
          }}
 
       port_open?(state.port) ->
@@ -209,6 +227,7 @@ defmodule Foundry.PreviewServer do
         {:noreply, next_state}
 
       error ->
+        if is_integer(next_state.os_pid), do: System.cmd("kill", ["-TERM", "#{next_state.os_pid}"])
         if port_open?(next_state.port), do: Port.close(next_state.port)
 
         {:noreply,
@@ -378,6 +397,30 @@ defmodule Foundry.PreviewServer do
       nil
     end
   end
+
+  defp startup_timeout_error(state) do
+    base =
+      "Preview HTTP port #{state.port_num} did not open within #{@startup_timeout_ms}ms after the last process output."
+
+    cond do
+      is_binary(state.last_error) and state.last_error != "" ->
+        "#{base} Last detected error output: #{state.last_error}"
+
+      last_output_line = last_output_line(state.output) ->
+        "#{base} No explicit error was emitted. Last log line: #{last_output_line}"
+
+      true ->
+        "#{base} No process output was captured."
+    end
+  end
+
+  defp last_output_line(output) when is_binary(output) do
+    output
+    |> String.split("\n", trim: true)
+    |> List.last()
+  end
+
+  defp last_output_line(_output), do: nil
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 
