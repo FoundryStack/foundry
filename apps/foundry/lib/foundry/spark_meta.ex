@@ -17,8 +17,8 @@ defmodule Foundry.SparkMeta do
         Foundry.SparkMeta.Governance,
         Foundry.SparkMeta.ReactorFacts,
         Foundry.SparkMeta.SideEffects,
-        Foundry.SparkMeta.Projector,
-        Foundry.SparkMeta.Analyzers.PageMetadata
+        Foundry.SparkMeta.Analyzers.PageMetadata,
+        Foundry.SparkMeta.Projector
       ]
 
     case SparkMeta.analyze(module, analyzers: analyzers) do

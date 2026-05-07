@@ -214,7 +214,6 @@ export function dynamicStyles(c) {
     'rule',
     'job',
     'page',
-    'liveview',
     'liveresource',
     'blueprint',
     'adapter',

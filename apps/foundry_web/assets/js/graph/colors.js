@@ -24,6 +24,7 @@ export function extractColors() {
     cy:   _resolveColor('--fg-cy'),
     pk:   _resolveColor('--fg-pk'),
     or:   _resolveColor('--fg-or'),
+    page: _resolveColor('--fg-page'),
     ac:   _resolveColor('--fg-ac'),
     edgeSequence:     _resolveColor('--fg-edge-sequence'),
     edgeTrigger:      _resolveColor('--fg-edge-trigger'),

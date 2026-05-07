@@ -39,7 +39,7 @@ defmodule Foundry.Context.NodeBuilder do
       authentication_subject: info.authentication_subject,
       oban_queues: info.oban_queues,
       rate_limited: info.rate_limited,
-      feature_flags: info.feature_flags,
+      feature_flags: ensure_list(info.feature_flags),
       steps: info.steps,
       performs: info.performs,
       outputs: info.outputs,
@@ -70,6 +70,10 @@ defmodule Foundry.Context.NodeBuilder do
   end
 
   defp format_mtime(other), do: other
+
+  defp ensure_list(nil), do: []
+  defp ensure_list(list) when is_list(list), do: list
+  defp ensure_list(value), do: [value]
 
   defp derive_domain(module) do
     # "IgamingRef.Finance.Wallet" → "Finance"

@@ -164,6 +164,10 @@ code {
   --fg-cy:   #22d3ee;
   --fg-pk:   #f472b6;
   --fg-or:   #fb923c;
+  --fg-in:   #6366f1;
+  --fg-inb:  rgba(99, 102, 241, 0.1);
+  --fg-inbd: rgba(99, 102, 241, 0.25);
+  --fg-page: #E3DAC9;
 
   --fg-ac:   var(--color-primary);
   --fg-tx:   var(--color-base-content);
@@ -220,6 +224,10 @@ code {
   --fg-cy:   #0891b2;
   --fg-pk:   #db2777;
   --fg-or:   #ea580c;
+  --fg-in:   #4f46e5;
+  --fg-inb:  rgba(79, 70, 229, 0.1);
+  --fg-inbd: rgba(79, 70, 229, 0.25);
+  --fg-page: #E3DAC9;
 
   --fg-ac:   var(--color-primary);
   --fg-tx:   var(--color-base-content);

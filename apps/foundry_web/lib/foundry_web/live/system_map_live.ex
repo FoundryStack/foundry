@@ -463,6 +463,7 @@ defmodule FoundryWeb.SystemMapLive do
       "reactor" -> "rct"
       "rule" -> "rul"
       "job" -> "job"
+      "page" -> "pg"
       "liveview" -> "lv"
       "liveresource" -> "lr"
       "blueprint" -> "bp"
@@ -481,6 +482,7 @@ defmodule FoundryWeb.SystemMapLive do
         "reactor"      -> {"var(--pu)", "#fff"}
         "rule"         -> {"var(--fg-yw)", "#000"}
         "job"          -> {"var(--fg-or)", "#000"}
+        "page"         -> {"var(--fg-page)", "#000"}
         "liveview"     -> {"var(--fg-cy)", "#000"}
         "liveresource" -> {"var(--fg-pk)", "#fff"}
         "blueprint"    -> {"var(--fg-or)", "#000"}
@@ -501,6 +503,7 @@ defmodule FoundryWeb.SystemMapLive do
       "reactor" -> "hero-bolt-solid"
       "rule" -> "hero-shield-check-solid"
       "job" -> "hero-clock-solid"
+      "page" -> "hero-document-solid"
       "liveview" -> "hero-window-solid"
       "liveresource" -> "hero-rectangle-group-solid"
       "blueprint" -> "hero-document-duplicate-solid"
