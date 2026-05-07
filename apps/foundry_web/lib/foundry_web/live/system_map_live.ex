@@ -164,6 +164,26 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
+  def handle_event("proposal_apply", params, socket) do
+    ChatSession.handle_event("proposal_apply", params, socket)
+  end
+
+  @impl true
+  def handle_event("proposal_revise", params, socket) do
+    ChatSession.handle_event("proposal_revise", params, socket)
+  end
+
+  @impl true
+  def handle_event("proposal_cancel", params, socket) do
+    ChatSession.handle_event("proposal_cancel", params, socket)
+  end
+
+  @impl true
+  def handle_event("open_proposal_file_preview", params, socket) do
+    ChatSession.handle_event("open_proposal_file_preview", params, socket)
+  end
+
+  @impl true
   def handle_event("select_activity_run", params, socket) do
     ChatSession.handle_event("select_activity_run", params, socket)
   end
@@ -391,27 +411,16 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
-  def handle_event("start_preview", _params, socket) do
-    project_root = socket.assigns.project_root
-    Foundry.PreviewServer.start_preview(project_root)
-    {:noreply, socket}
-  end
-
-  @impl true
   def handle_event("stop_preview", _params, socket) do
     Foundry.PreviewServer.stop_preview()
     {:noreply, socket}
   end
 
-  @impl true
-  def handle_event("check_preview_status", _params, socket) do
-    case Foundry.PreviewServer.get_status() do
-      {:ok, status} ->
-        {:noreply, push_event(socket, "preview_status", status)}
 
-      {:error, _reason} ->
-        {:noreply, push_event(socket, "preview_status", %{state: :idle})}
-    end
+  @impl true
+  def terminate(_reason, _socket) do
+    Foundry.PreviewServer.stop_preview()
+    :ok
   end
 
   @impl true

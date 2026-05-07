@@ -6,7 +6,13 @@ defmodule FoundryWeb.PageController do
   end
 
   def preview_launch(conn, params) do
-    Foundry.PreviewServer.start_preview(preview_project_root())
+    case Foundry.PreviewServer.get_status() do
+      {:ok, %{state: state}} when state not in [:starting, :running] ->
+        Foundry.PreviewServer.start_preview(preview_project_root())
+      _ ->
+        :ok
+    end
+
     render(conn, :preview_launch, target_url: preview_target_url(params))
   end
 

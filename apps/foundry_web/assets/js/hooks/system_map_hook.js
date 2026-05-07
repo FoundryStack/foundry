@@ -49,7 +49,9 @@ export const SystemMapHook = {
           const nodeData = this.graph.normalizedNodes.get(nodeId)
           this._selectNode(nodeId, nodeData, { pushSelection: true })
         },
-        onStartPreview: route => this._startPreview(route),
+        onStartPreview: (route) => {
+          this._startPreview(route)
+        },
       })
       this.sidebar = new SidebarManager(this.graph, this.graph.normalizedNodes)
 
@@ -146,6 +148,11 @@ export const SystemMapHook = {
         this.drawer.renderFileContent(payload)
       })
 
+      this.handleEvent('proposal_file_preview', (payload) => {
+        this.drawer.open()
+        this.drawer.renderProposalFilePreview(payload)
+      })
+
       this.handleEvent('file_error', (payload) => {
         this.drawer.open()
         this.drawer.renderFileError(payload)
@@ -190,8 +197,9 @@ export const SystemMapHook = {
   },
 
   _startPreview(route = '/') {
+    const base = this._previewBaseUrl || 'http://localhost:4001'
     const launchUrl = new URL('/preview-launch', window.location.origin)
-    launchUrl.searchParams.set('base', this._previewBaseUrl || 'http://localhost:4001')
+    launchUrl.searchParams.set('base', base)
     launchUrl.searchParams.set('route', route)
     window.open(launchUrl.toString(), '_blank')
   },
