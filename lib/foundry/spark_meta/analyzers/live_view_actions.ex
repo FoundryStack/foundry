@@ -17,14 +17,21 @@ defmodule Foundry.SparkMeta.Analyzers.LiveViewActions do
   - `resource` is the Ash resource module name (string) being acted upon
   - `action` is `:read` or `:write` (or specific action name)
 
-  If the module has a `@calls_actions` attribute, converts it to map format
-  (allows manual override with either tuples or maps).
+  Prioritizes AST scanning for actual Ash calls. Falls back to `@calls_actions`
+  attribute if no calls are found via AST analysis (allows manual override).
   """
   @spec analyze(module()) :: [map()]
   def analyze(mod) do
-    case module_attribute(mod, :calls_actions) do
-      nil -> scan_for_ash_calls(mod)
-      attrs when is_list(attrs) -> normalize_calls_actions(attrs)
+    scanned = scan_for_ash_calls(mod)
+
+    # Prefer AST-scanned results; only use @calls_actions if scanning found nothing
+    if Enum.any?(scanned) do
+      scanned
+    else
+      case module_attribute(mod, :calls_actions) do
+        nil -> []
+        attrs when is_list(attrs) -> normalize_calls_actions(attrs)
+      end
     end
   end
 
@@ -106,12 +113,6 @@ defmodule Foundry.SparkMeta.Analyzers.LiveViewActions do
     [%{"resource" => format_module(module), "action" => action_type}]
   end
 
-  defp format_module(module) when is_atom(module) do
-    module |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
-  end
-
-  defp format_module(module), do: module
-
   # Match: Module |> Ash.read(...) - pipe expression
   defp collect_calls({:|>, _, [_lhs, rhs]}) do
     collect_calls(rhs)
@@ -131,4 +132,10 @@ defmodule Foundry.SparkMeta.Analyzers.LiveViewActions do
   end
 
   defp collect_calls(_), do: []
+
+  defp format_module(module) when is_atom(module) do
+    module |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
+  end
+
+  defp format_module(module), do: module
 end
