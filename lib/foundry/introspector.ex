@@ -249,18 +249,34 @@ defmodule Foundry.Context.Introspector do
 
     # Extract page metadata if this is a page module
     {page_route, page_dynamic, page_group, page_subtype, calls_actions} =
-      if type == :page and Map.has_key?(page_routes_map, mod) do
-        route_info = page_routes_map[mod]
-        page_group = extract_page_group(mod)
-        page_subtype = extract_page_subtype(mod)
+      if type == :page do
+        if Map.has_key?(page_routes_map, mod) do
+          route_info = page_routes_map[mod]
+          page_group = extract_page_group(mod)
+          page_subtype = extract_page_subtype(mod)
 
-        {
-          route_info.path,
-          route_info.dynamic,
-          page_group,
-          page_subtype,
-          extract_calls_actions(mod)
-        }
+          {
+            route_info.path,
+            route_info.dynamic,
+            page_group,
+            page_subtype,
+            extract_calls_actions(mod)
+          }
+        else
+          # Fallback: read @page_route attribute if router discovery fails
+          page_route = extract_page_route(mod)
+          page_group = extract_page_group(mod)
+          page_subtype = extract_page_subtype(mod)
+          page_dynamic = page_route && String.contains?(page_route, ":")
+
+          {
+            page_route,
+            page_dynamic,
+            page_group,
+            page_subtype,
+            extract_calls_actions(mod)
+          }
+        end
       else
         {nil, false, nil, nil, []}
       end
@@ -695,6 +711,20 @@ defmodule Foundry.Context.Introspector do
     try do
       mod.__info__(:attributes)
       |> Keyword.get(:page_group)
+      |> case do
+        nil -> nil
+        [value] -> value
+        value -> value
+      end
+    rescue
+      _ -> nil
+    end
+  end
+
+  defp extract_page_route(mod) do
+    try do
+      mod.__info__(:attributes)
+      |> Keyword.get(:page_route)
       |> case do
         nil -> nil
         [value] -> value
