@@ -194,8 +194,6 @@ export const SystemMapHook = {
     launchUrl.searchParams.set('base', this._previewBaseUrl || 'http://localhost:4001')
     launchUrl.searchParams.set('route', route)
     window.open(launchUrl.toString(), '_blank')
-
-    this.pushEvent('start_preview', { route })
   },
 
   _showHoverCard(nodeId, nodeData = null, event = null) {

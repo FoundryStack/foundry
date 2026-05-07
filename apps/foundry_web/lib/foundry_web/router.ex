@@ -48,6 +48,7 @@ defmodule FoundryWeb.Router do
 
     get "/", PageController, :home
     get "/preview-launch", PageController, :preview_launch
+    get "/preview-status", PageController, :preview_status
     live "/studio", SystemMapLive
   end
 
