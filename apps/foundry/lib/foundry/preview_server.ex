@@ -369,7 +369,8 @@ defmodule Foundry.PreviewServer do
       end
 
     last_error =
-      if Enum.any?(complete_lines, &String.contains?(String.downcase(&1), "error")) do
+      if state.state == @state_starting and
+           Enum.any?(complete_lines, &String.contains?(String.downcase(&1), "error")) do
         List.last(complete_lines)
       else
         state.last_error
