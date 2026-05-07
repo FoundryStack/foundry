@@ -18,6 +18,8 @@ defmodule Foundry.Context.EdgeEntry do
   - `calls_adapter`: transfer step calls integration adapter
   - `triggers`: boundary trigger starts a downstream flow
   - `enqueues`: boundary trigger/job enqueues a job
+  - `calls_action`: LiveView/page invokes a resource action
+  - `feature_flagged_by`: page is gated behind a feature flag
   """
 
   @derive Jason.Encoder
@@ -38,6 +40,8 @@ defmodule Foundry.Context.EdgeEntry do
           | :calls_adapter
           | :triggers
           | :enqueues
+          | :calls_action
+          | :feature_flagged_by
 
   @type t :: %__MODULE__{
           from: String.t(),
