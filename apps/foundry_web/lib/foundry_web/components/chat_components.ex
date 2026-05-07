@@ -34,14 +34,10 @@ defmodule FoundryWeb.ChatComponents do
       data-project-root={@project_root}
       class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-200/30"
     >
-      <div class="border-b border-base-300/80 px-4 py-4">
+      <div class="border-b border-base-300/80 px-4 py-2">
         <div class="flex items-start justify-between gap-3">
           <div class="space-y-1">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-300/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-neutral-content">
-                <span class="size-1.5 rounded-full bg-success"></span>
-                {provider_label(@llm_provider)}
-              </span>
               <%= if @latest_run do %>
                 <span class={mode_badge_class(@latest_run.mode)}>
                   {mode_label(@latest_run.mode)}
@@ -53,32 +49,10 @@ defmodule FoundryWeb.ChatComponents do
                 <% end %>
               <% end %>
             </div>
-
-            <div>
-              <h1 class="text-base font-semibold tracking-[0.01em] text-base-content">
-                Foundry Copilot
-              </h1>
-              <p class="text-xs leading-5 text-neutral-content">
-                Governed studio chat with Foundry-native retrieval, proposal flow, and trace provenance.
-              </p>
-              <%= if sandbox = @llm_diagnostics[:sandbox] do %>
-                <p class="mt-1 text-[11px] text-neutral-content">
-                  sandbox {sandbox}
-                </p>
-              <% end %>
-            </div>
           </div>
-
-          <button
-            type="button"
-            phx-click="toggle_system_context"
-            class="shrink-0 rounded-selector border border-base-300 bg-base-300/70 px-3 py-2 text-xs font-medium text-neutral-content transition-colors hover:border-primary/40 hover:bg-base-300 hover:text-base-content"
-          >
-            {if @show_system_context, do: "Hide context", else: "Show context"}
-          </button>
         </div>
 
-        <div class="mt-3 grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
+        <div class="grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
           <%= if @latest_run do %>
             <div class="grid grid-cols-3 gap-2">
               <.trace_stat label="Last run" value={status_label(@latest_run.status)} />
@@ -112,7 +86,7 @@ defmodule FoundryWeb.ChatComponents do
         </div>
       <% end %>
 
-      <div class="min-h-0 flex-1 px-4 py-4">
+      <div class="min-h-0 flex-1 px-4 pb-4">
         <div class="flex h-full min-h-0 flex-col rounded-box border border-base-300/80 bg-base-100/70 shadow-[0_18px_60px_rgba(0,0,0,0.12)]">
           <div class="border-b border-base-300/80 px-4 py-2.5">
             <div class="flex items-center justify-between gap-3">
@@ -142,6 +116,15 @@ defmodule FoundryWeb.ChatComponents do
                   Session
                 </button>
               </div>
+
+
+          <button
+            type="button"
+            phx-click="toggle_system_context"
+            class="shrink-0 rounded-selector border border-base-300 bg-base-300/70 px-3 py-2 text-xs font-medium text-neutral-content transition-colors hover:border-primary/40 hover:bg-base-300 hover:text-base-content"
+          >
+            {if @show_system_context, do: "Hide context", else: "Show context"}
+          </button>
             </div>
           </div>
 
@@ -238,7 +221,10 @@ defmodule FoundryWeb.ChatComponents do
               ></textarea>
               <div class="mt-3 flex items-center justify-between gap-3">
                 <p class="text-[11px] leading-5 text-neutral-content">
-                  Enter sends. Shift+Enter adds a new line.
+                                <span class="inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-300/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-neutral-content">
+                <span class="size-1.5 rounded-full bg-success"></span>
+                {provider_label(@llm_provider)}
+              </span>
                 </p>
                 <button
                   type="submit"

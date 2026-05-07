@@ -404,16 +404,7 @@
     >
     </div>
     <div class="flex shrink-0 items-center border-b border-white/10 px-3 py-2">
-      <span class="flex-1 text-[11px] font-semibold text-neutral-content">
-        {if @feed_tab == :copilot, do: "Copilot", else: "Activity"}
-      </span>
-      <button
-        class="flex size-7 cursor-pointer items-center justify-center rounded-selector border-0 bg-transparent text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content"
-        phx-click="toggle_feed"
-      >
-        ×
-      </button>
-    </div>
+     
     <div class="flex shrink-0 border-b border-white/10">
       <button
         class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
@@ -430,6 +421,13 @@
         phx-value-tab="copilot"
       >
         Copilot
+      </button>
+    </div>
+      <button
+        class="flex size-7 cursor-pointer items-right justify-center rounded-selector border-0 bg-transparent text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content"
+        phx-click="toggle_feed"
+      >
+        ×
       </button>
     </div>
     <div class="min-h-0 flex-1 overflow-hidden">
