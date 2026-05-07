@@ -2,7 +2,7 @@ defmodule IgamingRef.Web.AuthLive do
   use Phoenix.LiveView
 
   @page_group :anonymous
-  @calls_actions [{IgamingRef.User.Token, :create}]
+  @calls_actions [{IgamingRef.Accounts.Token, :create}]
 
   @moduledoc "AuthLive - #{@page_group} page"
 
@@ -13,7 +13,7 @@ defmodule IgamingRef.Web.AuthLive do
 
   @impl true
   def handle_event("login", %{"email" => email, "password" => password}, socket) do
-    case Ash.create(IgamingRef.User.Token, input: %{email: email, password: password}) do
+    case Ash.create(IgamingRef.Accounts.Token, %{email: email, password: password}) do
       {:ok, _token} ->
         {:noreply, socket |> redirect(to: "/")}
 

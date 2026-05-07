@@ -29,6 +29,7 @@ export class DrawerManager {
     this.normalizedNodes = normalizedNodes
     this._pushEvent = pushEvent || (() => {})
     this._onNodeSelect = options.onNodeSelect || (() => {})
+    this._onStartPreview = options.onStartPreview || (() => {})
     this._panel = new ResizablePanel({
       elementId: SELECTORS.drawer,
       handleId: 'drawer-resize-handle',
@@ -110,6 +111,19 @@ export class DrawerManager {
           if (nodeId) {
             this._pushEvent('show_node_coverage', { id: nodeId })
           }
+          return
+        }
+
+        const startPreviewBtn = event.target.closest('[data-start-preview-route]')
+        if (startPreviewBtn) {
+          this._onStartPreview(startPreviewBtn.dataset.startPreviewRoute || '/')
+          return
+        }
+
+        const stopPreviewBtn = event.target.closest('[data-stop-preview]')
+        if (stopPreviewBtn) {
+          this._pushEvent('stop_preview', {})
+          return
         }
       }
 
@@ -466,14 +480,14 @@ export class DrawerManager {
           <div class="flex flex-wrap gap-2">
             <button
               class="rounded-lg border border-info/30 bg-info/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info transition hover:border-info/50 hover:bg-info/20"
-              phx-click="start_preview"
+              data-start-preview-route="${this._esc(node.page_route || '/')}"
               type="button"
             >
               Start preview
             </button>
             <button
               class="rounded-lg border border-error/30 bg-error/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error transition hover:border-error/50 hover:bg-error/20"
-              phx-click="stop_preview"
+              data-stop-preview="true"
               type="button"
             >
               Stop preview

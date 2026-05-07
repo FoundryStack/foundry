@@ -103,12 +103,26 @@ defmodule Foundry.SparkMeta.Analyzers.LiveViewActions do
     collect_calls(body)
   end
 
-  # Match: Ash.read(Module, ...) or Ash.create(Module, ...) or Ash.read!(Module, ...)
+  # Match: Ash.read(Module, ...) or Ash.create(Module, ...) or Ash.read_one!(Module, ...) etc.
   defp collect_calls(
          {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _, [{:__aliases__, _, module_parts} | _]}
        )
-       when action in [:read, :create, :update, :destroy, :read!, :create!, :update!, :destroy!] do
-    action_type = if action in [:create, :update, :destroy, :create!, :update!, :destroy!], do: :write, else: :read
+       when action in [
+              :read,
+              :read!,
+              :read_one,
+              :read_one!,
+              :get,
+              :get!,
+              :create,
+              :create!,
+              :update,
+              :update!,
+              :destroy,
+              :destroy!
+            ] do
+    action_type =
+      if action in [:create, :create!, :update, :update!, :destroy, :destroy!], do: :write, else: :read
     module = Module.concat(module_parts)
     [%{"resource" => format_module(module), "action" => action_type}]
   end

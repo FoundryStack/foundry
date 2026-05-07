@@ -14,9 +14,23 @@ defmodule IgamingRef.Web.GameLive do
   @impl true
   def mount(%{"id" => game_id}, _session, socket) do
     game = Ash.read_one!(IgamingRef.Gaming.Game, filter: [id: game_id])
-    wallet = Ash.read_one!(IgamingRef.Finance.Wallet, filter: [user_id: socket.assigns.user_id])
+    wallet = Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: socket.assigns.player_id])
 
-    {:ok, socket |> assign(game: game, wallet: wallet)}
+    {:ok, assign(socket, game: game, wallet: wallet, session: nil)}
+  end
+
+  @impl true
+  def handle_event("start_game", _params, socket) do
+    case Ash.create(IgamingRef.Gaming.GameSession, :start, %{
+           player_id: socket.assigns.player_id,
+           game_id: socket.assigns.game.id
+         }) do
+      {:ok, game_session} ->
+        {:noreply, assign(socket, session: game_session)}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Could not start session")}
+    end
   end
 
   @impl true
@@ -24,6 +38,7 @@ defmodule IgamingRef.Web.GameLive do
     ~H"""
     <h1><%= @game.name %></h1>
     <p>Balance: <%= @wallet.balance %></p>
+    <button phx-click="start_game">Play</button>
     """
   end
 end

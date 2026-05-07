@@ -59,6 +59,12 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert Regex.match?(~r/data-context="[^"]+nodes[^"]*"/, html)
     end
 
+    test "embeds preview base url for the system map hook", %{conn: conn} do
+      {:ok, _live, html} = live(conn, "/studio")
+
+      assert html =~ ~s(data-preview-base-url="http://localhost:4000")
+    end
+
     test "shows empty state when context unavailable" do
       # We can't easily test this without mocking, but verify mount doesn't crash
       # when context building fails

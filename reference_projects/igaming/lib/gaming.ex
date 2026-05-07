@@ -18,5 +18,6 @@ defmodule IgamingRef.Gaming do
     resource IgamingRef.Gaming.Game
     resource IgamingRef.Gaming.GameVersion
     resource IgamingRef.Gaming.GameCatalog
+    resource IgamingRef.Gaming.GameSession
   end
 end

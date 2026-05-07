@@ -49,6 +49,18 @@ defmodule Foundry.Context.GraphBuilderTest do
     assert job.performs == "IgamingRef.Gaming.ProviderSyncReactor"
   end
 
+  test "Page nodes create calls_action edges to real resources", %{edges: edges} do
+    calls_action_edges = Enum.filter(edges, &(&1.relation == :calls_action))
+    # Expected edges after igaming page/resource alignment:
+    # - HomeLive → Gaming.Game, Promotions.BonusCampaign
+    # - GameLive → Gaming.Game, Finance.Wallet, Gaming.GameSession
+    # - DepositLive → Finance.Transfer, Finance.Wallet
+    # - AuthLive → Accounts.Token
+    # - WithdrawalLive → Finance.WithdrawalRequest, Finance.Wallet
+    assert length(calls_action_edges) >= 8, "Expected at least 8 calls_action edges"
+  end
+
+
   # Relationship edges: Wallet → Player (references)
   test "Wallet→Player references edge exists", %{edges: edges} do
     assert find_edge(edges, "IgamingRef.Finance.Wallet", "IgamingRef.Players.Player", :references)

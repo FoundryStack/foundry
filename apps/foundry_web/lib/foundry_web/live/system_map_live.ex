@@ -27,6 +27,7 @@ defmodule FoundryWeb.SystemMapLive do
     end
 
     project_name = Path.basename(project_root)
+    preview_base_url = Foundry.PreviewServer.preview_base_url(project_root)
 
     case build_context.(project_root) do
       {:ok, context} ->
@@ -94,7 +95,8 @@ defmodule FoundryWeb.SystemMapLive do
             filter_query: "",
             selected_id: nil,
             selected_node: nil,
-            project_root: project_root
+            project_root: project_root,
+            preview_base_url: preview_base_url
           )
           |> ChatSession.mount(session)
 
@@ -136,7 +138,8 @@ defmodule FoundryWeb.SystemMapLive do
             filter_query: "",
             selected_id: nil,
             selected_node: nil,
-            project_root: project_root
+            project_root: project_root,
+            preview_base_url: preview_base_url
           )
           |> ChatSession.mount(session)
 
@@ -477,19 +480,19 @@ defmodule FoundryWeb.SystemMapLive do
   def type_badge_style(type) do
     {background, foreground} =
       case type do
-        "resource"     -> {"var(--fg-bl)", "#fff"}
-        "transfer"     -> {"var(--fg-gn)", "#000"}
-        "reactor"      -> {"var(--pu)", "#fff"}
-        "rule"         -> {"var(--fg-yw)", "#000"}
-        "job"          -> {"var(--fg-or)", "#000"}
-        "page"         -> {"var(--fg-page)", "#000"}
-        "liveview"     -> {"var(--fg-cy)", "#000"}
+        "resource" -> {"var(--fg-bl)", "#fff"}
+        "transfer" -> {"var(--fg-gn)", "#000"}
+        "reactor" -> {"var(--pu)", "#fff"}
+        "rule" -> {"var(--fg-yw)", "#000"}
+        "job" -> {"var(--fg-or)", "#000"}
+        "page" -> {"var(--fg-page)", "#000"}
+        "liveview" -> {"var(--fg-cy)", "#000"}
         "liveresource" -> {"var(--fg-pk)", "#fff"}
-        "blueprint"    -> {"var(--fg-or)", "#000"}
-        "adapter"      -> {"var(--fg-ac)", "#fff"}
-        "trigger"      -> {"var(--fg-ac)", "#fff"}
-        "external"     -> {"var(--fg-pk)", "#fff"}
-        "terminal"     -> {"var(--color-neutral)", "#fff"}
+        "blueprint" -> {"var(--fg-or)", "#000"}
+        "adapter" -> {"var(--fg-ac)", "#fff"}
+        "trigger" -> {"var(--fg-ac)", "#fff"}
+        "external" -> {"var(--fg-pk)", "#fff"}
+        "terminal" -> {"var(--color-neutral)", "#fff"}
         _ -> {"var(--color-neutral)", "#fff"}
       end
 

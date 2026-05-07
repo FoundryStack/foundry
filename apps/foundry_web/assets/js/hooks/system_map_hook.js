@@ -37,6 +37,7 @@ export const SystemMapHook = {
   _initGraph() {
     try {
       const contextJson = JSON.parse(this.el.dataset.context)
+      this._previewBaseUrl = this.el.dataset.previewBaseUrl || 'http://localhost:4000'
       this.graph = mountFoundryGraph(this.el, contextJson)
 
       // Initialize managers
@@ -48,6 +49,7 @@ export const SystemMapHook = {
           const nodeData = this.graph.normalizedNodes.get(nodeId)
           this._selectNode(nodeId, nodeData, { pushSelection: true })
         },
+        onStartPreview: route => this._startPreview(route),
       })
       this.sidebar = new SidebarManager(this.graph, this.graph.normalizedNodes)
 
@@ -185,6 +187,75 @@ export const SystemMapHook = {
       this.drawer.open()
       this.drawer.renderForNode(nodeData.id, nodeData)
     }
+  },
+
+  _startPreview(route = '/') {
+    const targetUrl = this._buildPreviewUrl(route)
+    const previewWindow = window.open('', '_blank')
+
+    if (previewWindow) {
+      previewWindow.document.write(this._previewLoadingMarkup(targetUrl))
+      previewWindow.document.close()
+    }
+
+    this.pushEvent('start_preview', { route })
+  },
+
+  _buildPreviewUrl(route = '/') {
+    const baseUrl = this._previewBaseUrl || 'http://localhost:4000'
+    const normalizedRoute = route.startsWith('/') ? route : `/${route}`
+    return `${baseUrl}${normalizedRoute}`
+  },
+
+  _previewLoadingMarkup(targetUrl) {
+    const escapedTargetUrl = JSON.stringify(targetUrl)
+
+    return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Starting preview…</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #111827;
+        color: #f9fafb;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+      main {
+        max-width: 40rem;
+        padding: 2rem;
+        text-align: center;
+      }
+      p {
+        color: #9ca3af;
+        line-height: 1.6;
+      }
+      code {
+        color: #93c5fd;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Starting preview…</h1>
+      <p>Waiting for <code>${targetUrl}</code> to become available.</p>
+    </main>
+    <script>
+      const targetUrl = ${escapedTargetUrl};
+      const navigate = () => window.location.replace(targetUrl);
+      const retry = () => {
+        fetch(targetUrl, { mode: 'no-cors', cache: 'no-store' })
+          .then(navigate)
+          .catch(() => window.setTimeout(retry, 500));
+      };
+      retry();
+    </script>
+  </body>
+</html>`
   },
 
   _showHoverCard(nodeId, nodeData = null, event = null) {

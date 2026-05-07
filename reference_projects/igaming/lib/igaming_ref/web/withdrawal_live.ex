@@ -4,24 +4,23 @@ defmodule IgamingRef.Web.WithdrawalLive do
 
   @page_group :player
   @calls_actions [
-    {IgamingRef.Finance.Withdrawal, :create},
-    {IgamingRef.Finance.Wallet, :read},
-    {IgamingRef.Finance.WithdrawalRule, :read}
+    {IgamingRef.Finance.WithdrawalRequest, :create},
+    {IgamingRef.Finance.Wallet, :read}
   ]
 
   @moduledoc "WithdrawalLive - #{@page_group} page"
 
   @impl true
   def mount(_params, _session, socket) do
-    rules = Ash.read!(IgamingRef.Finance.WithdrawalRule)
-    {:ok, socket |> assign(rules: rules)}
+    wallet = Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: socket.assigns.player_id])
+    {:ok, assign(socket, wallet: wallet)}
   end
 
   @impl true
   def handle_event("submit_withdrawal", %{"amount" => amount}, socket) do
-    case Ash.create(IgamingRef.Finance.Withdrawal,
+    case Ash.create(IgamingRef.Finance.WithdrawalRequest,
            input: %{
-             user_id: socket.assigns.user_id,
+             player_id: socket.assigns.player_id,
              amount: Decimal.new(amount)
            }
          ) do
@@ -37,11 +36,7 @@ defmodule IgamingRef.Web.WithdrawalLive do
   def render(assigns) do
     ~H"""
     <h1>Withdraw Funds</h1>
-    <ul>
-      <%= for rule <- @rules do %>
-        <li><%= rule.name %></li>
-      <% end %>
-    </ul>
+    <p>Available balance: <%= @wallet.balance %></p>
     <form phx-submit="submit_withdrawal">
       <input name="amount" type="number" step="0.01" placeholder="Amount" />
       <button type="submit">Withdraw</button>
