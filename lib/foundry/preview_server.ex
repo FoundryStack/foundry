@@ -7,6 +7,7 @@ defmodule Foundry.PreviewServer do
   """
   use GenServer
   require Logger
+  @default_preview_port 4001
 
   # State keys
   @state_idle :idle
@@ -35,11 +36,11 @@ defmodule Foundry.PreviewServer do
   def preview_base_url(project_root) do
     case load_manifest_config(project_root) do
       {:ok, config} ->
-        port = config[:port] || 4000
+        port = config[:port] || @default_preview_port
         "http://localhost:#{port}"
 
       {:error, _reason} ->
-        "http://localhost:4000"
+        "http://localhost:#{@default_preview_port}"
     end
   end
 
@@ -83,7 +84,7 @@ defmodule Foundry.PreviewServer do
             project_root: project_root,
             command: config[:command] || "mix phx.server",
             env: config[:env] || [],
-            port_num: config[:port] || 4000
+            port_num: config[:port] || @default_preview_port
         }
 
         {:noreply, start_server_process(new_state)}
