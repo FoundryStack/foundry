@@ -28,24 +28,35 @@ defmodule Foundry.Context.RouterIntrospector do
   end
 
   @doc """
-  Find the router module for a given app by scanning for `__routes__/0`.
+  Find the router module for a given app by scanning compiled BEAM files for `__routes__/0`.
 
   Returns the module atom or nil if not found.
   """
-  @spec find_router(atom()) :: module() | nil
-  def find_router(app_name) do
-    case Application.spec(app_name, :modules) do
-      modules when is_list(modules) ->
-        Enum.find(modules, fn mod ->
+  @spec find_router(atom(), String.t()) :: module() | nil
+  def find_router(app_name, project_root) do
+    underscored = Macro.underscore(to_string(app_name))
+
+    ebin_path =
+      ["dev", "test"]
+      |> Enum.map(&Path.join([project_root, "_build", &1, "lib", underscored, "ebin"]))
+      |> Enum.find(&File.dir?/1)
+
+    case ebin_path do
+      nil ->
+        nil
+
+      path ->
+        Code.append_path(path)
+
+        Path.wildcard(Path.join(path, "*.beam"))
+        |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
+        |> Enum.find(fn mod ->
           try do
-            function_exported?(mod, :__routes__, 0)
+            Code.ensure_loaded?(mod) and function_exported?(mod, :__routes__, 0)
           rescue
             _ -> false
           end
         end)
-
-      _ ->
-        nil
     end
   end
 end

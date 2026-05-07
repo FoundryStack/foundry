@@ -627,6 +627,43 @@ defmodule Foundry.Context.GraphBuilderTest do
            )
   end
 
+  # Page route tests — these verify that the router is correctly introspected
+  # and page_route is populated from Phoenix router, not from module attributes.
+  test "HomeLive has page_route '/'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.HomeLive"]
+    assert node != nil, "HomeLive node not found"
+    assert node.page_route == "/", "Expected page_route '/' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == false
+  end
+
+  test "DepositLive has page_route '/deposit'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.DepositLive"]
+    assert node != nil, "DepositLive node not found"
+    assert node.page_route == "/deposit", "Expected '/deposit' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == false
+  end
+
+  test "WithdrawalLive has page_route '/withdrawal'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.WithdrawalLive"]
+    assert node != nil, "WithdrawalLive node not found"
+    assert node.page_route == "/withdrawal", "Expected '/withdrawal' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == false
+  end
+
+  test "AuthLive has page_route '/auth'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.AuthLive"]
+    assert node != nil, "AuthLive node not found"
+    assert node.page_route == "/auth", "Expected '/auth' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == false
+  end
+
+  test "GameLive has dynamic page_route '/games/:id'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.GameLive"]
+    assert node != nil, "GameLive node not found"
+    assert node.page_route == "/games/:id", "Expected '/games/:id' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == true
+  end
+
   # Helper to find an edge
   defp find_edge(edges, from, to, relation) do
     Enum.any?(edges, fn edge ->

@@ -33,6 +33,7 @@ defmodule Foundry.Context.Introspector do
   """
 
   alias Foundry.Context.ModuleContext
+  alias Foundry.PageMetadata
 
   @type opts :: [
           manifest_path: String.t(),
@@ -73,12 +74,8 @@ defmodule Foundry.Context.Introspector do
     excluded = excluded_set(manifest)
     app_name = Mix.Project.config()[:app]
 
-    # Discover page metadata from router
-    # Try to load the app to make sure the router is available
-    :ok = Application.ensure_loaded(app_name)
-
     page_routes_map =
-      case Foundry.Context.RouterIntrospector.find_router(app_name) do
+      case Foundry.Context.RouterIntrospector.find_router(app_name, project_root) do
         nil ->
           %{}
 
@@ -99,6 +96,7 @@ defmodule Foundry.Context.Introspector do
           all_modules()
           |> Enum.filter(fn mod ->
             mod_str = to_string(mod)
+
             (String.contains?(mod_str, ".Live.") or String.ends_with?(mod_str, "Live")) and
               page_module?(mod)
           end)
@@ -215,9 +213,13 @@ defmodule Foundry.Context.Introspector do
   defp phoenix_live_view?(mod) do
     try do
       # Check if module has mount/3 function and is a Phoenix.LiveView
-      has_mount = mod.__info__(:functions) |> Enum.any?(fn {name, arity} -> name == :mount and arity == 3 end)
-      has_behaviour = Keyword.has_key?(mod.__info__(:attributes), :behaviour) and
-        :phoenix_live_view in (mod.__info__(:attributes)[:behaviour] || [])
+      has_mount =
+        mod.__info__(:functions)
+        |> Enum.any?(fn {name, arity} -> name == :mount and arity == 3 end)
+
+      has_behaviour =
+        Keyword.has_key?(mod.__info__(:attributes), :behaviour) and
+          :phoenix_live_view in (mod.__info__(:attributes)[:behaviour] || [])
 
       has_mount and has_behaviour
     rescue
@@ -248,37 +250,20 @@ defmodule Foundry.Context.Introspector do
     domain = detect_domain(mod)
 
     # Extract page metadata if this is a page module
-    {page_route, page_dynamic, page_group, page_subtype, calls_actions} =
+    {page_route, page_dynamic, page_group, page_subtype, calls_actions, page_feature_flags} =
       if type == :page do
-        if Map.has_key?(page_routes_map, mod) do
-          route_info = page_routes_map[mod]
-          page_group = extract_page_group(mod)
-          page_subtype = extract_page_subtype(mod)
+        page_meta = PageMetadata.analyze(mod, Map.get(page_routes_map, mod))
 
-          {
-            route_info.path,
-            route_info.dynamic,
-            page_group,
-            page_subtype,
-            extract_calls_actions(mod)
-          }
-        else
-          # Fallback: read @page_route attribute if router discovery fails
-          page_route = extract_page_route(mod)
-          page_group = extract_page_group(mod)
-          page_subtype = extract_page_subtype(mod)
-          page_dynamic = page_route && String.contains?(page_route, ":")
-
-          {
-            page_route,
-            page_dynamic,
-            page_group,
-            page_subtype,
-            extract_calls_actions(mod)
-          }
-        end
+        {
+          page_meta[:page_route],
+          page_meta[:page_dynamic] || false,
+          page_meta[:page_group],
+          page_meta[:page_subtype],
+          page_meta[:calls_actions] || [],
+          page_meta[:feature_flags] || []
+        }
       else
-        {nil, false, nil, nil, []}
+        {nil, false, nil, nil, [], []}
       end
 
     %ModuleContext{
@@ -307,7 +292,7 @@ defmodule Foundry.Context.Introspector do
       authentication_subject: auth_resource?(mod),
       oban_queues: oban_queues(mod, type),
       rate_limited: rate_limited?(mod),
-      feature_flags: feature_flags(mod),
+      feature_flags: if(type == :page, do: page_feature_flags, else: feature_flags(mod)),
       page_route: page_route,
       page_group: page_group,
       page_dynamic: page_dynamic,
@@ -511,7 +496,12 @@ defmodule Foundry.Context.Introspector do
       file_contains_pattern?(test_dir, "#{mod_name}", ":compliance") or
         file_contains_pattern?(test_dir, "#{mod_name}", ":e2e")
 
-    %{property_tests: property_tests, scenario_tests: scenario_tests, e2e_tests: e2e_tests, scenario_count: 0}
+    %{
+      property_tests: property_tests,
+      scenario_tests: scenario_tests,
+      e2e_tests: e2e_tests,
+      scenario_count: 0
+    }
   end
 
   defp file_contains_pattern?(test_dir, module_name, pattern) do
@@ -704,74 +694,6 @@ defmodule Foundry.Context.Introspector do
 
       _ ->
         []
-    end
-  end
-
-  defp extract_page_group(mod) do
-    try do
-      mod.__info__(:attributes)
-      |> Keyword.get(:page_group)
-      |> case do
-        nil -> nil
-        [value] -> value
-        value -> value
-      end
-    rescue
-      _ -> nil
-    end
-  end
-
-  defp extract_page_route(mod) do
-    try do
-      mod.__info__(:attributes)
-      |> Keyword.get(:page_route)
-      |> case do
-        nil -> nil
-        [value] -> value
-        value -> value
-      end
-    rescue
-      _ -> nil
-    end
-  end
-
-  defp extract_page_subtype(mod) do
-    case safe_read_attribute(mod, :page_subtype) do
-      nil -> detect_page_sdui_subtype(mod)
-      subtype -> subtype
-    end
-  end
-
-  defp detect_page_sdui_subtype(mod) do
-    try do
-      if function_exported?(mod, :__sdui_lookup__, 0) do
-        :sdui
-      else
-        nil
-      end
-    rescue
-      _ -> nil
-    end
-  end
-
-  defp extract_calls_actions(mod) do
-    case safe_read_attribute(mod, :calls_actions) do
-      nil -> []
-      actions when is_list(actions) -> actions
-    end
-  end
-
-  defp safe_read_attribute(mod, attr_name) do
-    try do
-      mod.__info__(:attributes)
-      |> Keyword.get(attr_name)
-      |> case do
-        nil -> nil
-        [value] -> value
-        value -> value
-      end
-    rescue
-      _ -> nil
     end
   end
 
