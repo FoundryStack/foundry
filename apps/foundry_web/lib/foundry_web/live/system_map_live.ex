@@ -388,6 +388,30 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
+  def handle_event("start_preview", _params, socket) do
+    project_root = socket.assigns.project_root
+    Foundry.PreviewServer.start_preview(project_root)
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("stop_preview", _params, socket) do
+    Foundry.PreviewServer.stop_preview()
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("check_preview_status", _params, socket) do
+    case Foundry.PreviewServer.get_status() do
+      {:ok, status} ->
+        {:noreply, push_event(socket, "preview_status", status)}
+
+      {:error, _reason} ->
+        {:noreply, push_event(socket, "preview_status", %{state: :idle})}
+    end
+  end
+
+  @impl true
   def handle_info({:scenarios_updated, report}, socket) do
     all_scenarios = List.wrap(report.scenarios)
     node_index = scenario_node_index(report, all_scenarios)

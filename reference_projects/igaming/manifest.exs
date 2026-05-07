@@ -52,5 +52,10 @@
     :ash_money,
     :ash_state_machine,
     :fun_with_flags
+  ],
+  preview_server: [
+    command: "mix phx.server",
+    port: 4000,
+    env: []
   ]
 ]
