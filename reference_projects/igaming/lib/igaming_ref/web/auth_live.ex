@@ -1,7 +1,11 @@
 defmodule IgamingRef.Web.AuthLive do
+  Module.register_attribute(__MODULE__, :page_route, persist: true)
+  Module.register_attribute(__MODULE__, :calls_actions, persist: true)
+
   use Phoenix.LiveView
 
   @page_group :anonymous
+  @page_route "/auth"
   @calls_actions [{IgamingRef.Accounts.Token, :create}]
 
   @moduledoc "AuthLive - #{@page_group} page"

@@ -1,10 +1,14 @@
 defmodule IgamingRef.Web.DepositLive do
+  Module.register_attribute(__MODULE__, :page_route, persist: true)
+  Module.register_attribute(__MODULE__, :calls_actions, persist: true)
+
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "deposit"}
 
   alias IgamingRef.Web.PreviewSupport
 
   @page_group :player
+  @page_route "/deposit"
   @calls_actions [{IgamingRef.Finance.Transfer, :create}, {IgamingRef.Finance.Wallet, :read}]
 
   @moduledoc "DepositLive - #{@page_group} page"

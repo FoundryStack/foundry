@@ -1,10 +1,14 @@
 defmodule IgamingRef.Web.HomeLive do
+  Module.register_attribute(__MODULE__, :page_route, persist: true)
+  Module.register_attribute(__MODULE__, :calls_actions, persist: true)
+
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "home"}
 
   alias IgamingRef.Web.PreviewSupport
 
   @page_group :anonymous
+  @page_route "/"
   @feature_flags [:new_lobby, :personalized_games]
   @calls_actions [{IgamingRef.Gaming.Game, :read}, {IgamingRef.Promotions.BonusCampaign, :read}]
 
