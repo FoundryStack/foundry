@@ -16,6 +16,7 @@ defmodule Foundry.SparkMeta.Projector do
     classifier = Map.get(analysis.facts, :foundry_classifier, %{})
     governance = Map.get(analysis.facts, :foundry_governance, %{})
     reactor = Map.get(analysis.facts, :foundry_reactor, %{steps: []})
+    page_meta = Map.get(analysis.facts, :page_metadata, %{})
 
     state_machine =
       analysis.facts
@@ -59,7 +60,10 @@ defmodule Foundry.SparkMeta.Projector do
       auth_strategies: [],
       side_effects: Map.get(analysis.facts, :foundry_side_effects, []),
       trigger_kind: classifier[:trigger_kind],
-      diagnostics: analysis.diagnostics
+      diagnostics: analysis.diagnostics,
+      page_group: page_meta[:page_group],
+      page_subtype: page_meta[:page_subtype],
+      calls_actions: page_meta[:calls_actions] || []
     }
   end
 

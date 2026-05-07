@@ -121,6 +121,12 @@ defmodule Foundry.Context.NodeEntry do
     scenario_origins: [],
     graphql_mutations: [],
     json_api_routes: [],
-    vectorized: false
+    vectorized: false,
+    # Phase D: Page nodes
+    page_route: nil,
+    page_group: nil,
+    page_dynamic: false,
+    page_subtype: nil,
+    calls_actions: []
   ]
 end

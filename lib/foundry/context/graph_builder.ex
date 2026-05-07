@@ -69,6 +69,7 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list = edge_list ++ derive_policy_edges(nodes, node_map)
     edge_list = edge_list ++ derive_adapter_edges(nodes, node_map)
     edge_list = edge_list ++ derive_trigger_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_page_edges(nodes, node_map)
 
     Enum.uniq(edge_list)
   end
@@ -793,5 +794,44 @@ defmodule Foundry.Context.GraphBuilder do
     |> Enum.reject(&(&1 == ""))
     |> Enum.map(&String.capitalize/1)
     |> Enum.join(" ")
+  end
+
+  # Page edges: page → action (calls_action) and page → feature flag (feature_flagged_by)
+  defp derive_page_edges(nodes, node_map) do
+    edge_list = []
+
+    # calls_action edges: page → resource from calls_actions list
+    edge_list =
+      edge_list ++
+        (nodes
+         |> Enum.filter(&(&1.type == "page"))
+         |> Enum.flat_map(fn page ->
+           page.calls_actions
+           |> Enum.map(fn {resource_module, _action_type} ->
+             resource_str = format_module(resource_module)
+
+             if Map.has_key?(node_map, resource_str) do
+               EdgeEntry.new(page.module, resource_str, :calls_action)
+             else
+               nil
+             end
+           end)
+           |> Enum.reject(&is_nil/1)
+         end))
+
+    # feature_flagged_by edges: page → feature flag
+    edge_list =
+      edge_list ++
+        (nodes
+         |> Enum.filter(&(&1.type == "page"))
+         |> Enum.flat_map(fn page ->
+           page.feature_flags
+           |> Enum.map(fn flag_name ->
+             flag_node_id = "external:feature_flag:#{flag_name}"
+             EdgeEntry.new(page.module, flag_node_id, :feature_flagged_by)
+           end)
+         end))
+
+    edge_list
   end
 end
