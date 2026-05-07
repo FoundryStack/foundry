@@ -32,6 +32,17 @@ defmodule Foundry.PreviewServer do
     GenServer.cast(__MODULE__, :stop)
   end
 
+  def preview_base_url(project_root) do
+    case load_manifest_config(project_root) do
+      {:ok, config} ->
+        port = config[:port] || 4000
+        "http://localhost:#{port}"
+
+      {:error, _reason} ->
+        "http://localhost:4000"
+    end
+  end
+
   @impl true
   def init(_config) do
     {:ok,
@@ -165,18 +176,11 @@ defmodule Foundry.PreviewServer do
   defp start_port(state) do
     full_env =
       state.env
-      |> Kernel.++(
-        [
-          {~c"MIX_ENV", ~c"dev"},
-          {~c"PORT", String.to_charlist("#{state.port_num}")}
-        ]
-      )
-      |> Enum.map(fn {k, v} ->
-        case k do
-          k when is_binary(k) -> {String.to_charlist(k), String.to_charlist(v)}
-          k when is_atom(k) -> {Atom.to_charlist(k), String.to_charlist(v)}
-        end
-      end)
+      |> Kernel.++([
+        {~c"MIX_ENV", ~c"dev"},
+        {~c"PORT", String.to_charlist("#{state.port_num}")}
+      ])
+      |> Enum.map(&normalize_env_entry/1)
 
     opts = [
       :stream,
@@ -205,4 +209,13 @@ defmodule Foundry.PreviewServer do
       _ -> nil
     end
   end
+
+  defp normalize_env_entry({key, value}) do
+    {to_env_charlist(key), to_env_charlist(value)}
+  end
+
+  defp to_env_charlist(value) when is_list(value), do: value
+  defp to_env_charlist(value) when is_binary(value), do: String.to_charlist(value)
+  defp to_env_charlist(value) when is_atom(value), do: Atom.to_charlist(value)
+  defp to_env_charlist(value), do: value |> to_string() |> String.to_charlist()
 end
