@@ -377,6 +377,56 @@ export class DrawerManager {
       `,
     ]
 
+    if (node.page_route) {
+      blocks.push(this._fieldCard(
+        'Route',
+        `<p class="font-mono text-xs text-base-content/80">${this._esc(node.page_route)}</p>`,
+      ))
+    }
+
+    if (node.page_group) {
+      const groupBadges = {
+        anonymous: 'primary',
+        player: 'success',
+        operator: 'info',
+        admin: 'warning',
+      }
+      const tone = groupBadges[node.page_group] || 'neutral'
+      blocks.push(this._fieldCard(
+        'Page group',
+        `<span class="rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" data-step-tone="${tone}">${this._esc(node.page_group)}</span>`,
+      ))
+    }
+
+    if (node.page_subtype || node.type === 'page') {
+      const subtypeBadges = {
+        sdui: 'info',
+      }
+      const subtype = node.page_subtype || 'liveview'
+      const tone = subtypeBadges[subtype] || 'neutral'
+      blocks.push(this._fieldCard(
+        'Implementation',
+        `<span class="rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" data-step-tone="${tone}">${this._esc(subtype)}</span>`,
+      ))
+    }
+
+    if (node.calls_actions?.length) {
+      blocks.push(this._fieldCard(
+        'Called actions',
+        `<div class="space-y-1">${node.calls_actions.map(action => {
+          const [resource, actionType] = Array.isArray(action) ? action : [action, 'unknown']
+          return `<p class="font-mono text-xs text-base-content/80">${this._esc(resource)} <span class="text-base-content/45">(${this._esc(actionType)})</span></p>`
+        }).join('')}</div>`,
+      ))
+    }
+
+    if (node.feature_flags?.length) {
+      blocks.push(this._fieldCard(
+        'Feature flags',
+        `<div class="flex flex-wrap gap-1">${node.feature_flags.map(flag => `<span class="rounded-full border border-info/30 bg-info/10 px-2 py-1 font-mono text-[10px] text-info">${this._esc(flag)}</span>`).join('')}</div>`,
+      ))
+    }
+
     if (node.reqs?.length) {
       blocks.push(this._fieldCard(
         'Compliance',
@@ -407,6 +457,30 @@ export class DrawerManager {
           `<div class="flex flex-wrap gap-2">${relatedNodes.map(relatedNode => this._relatedNodeButton(relatedNode)).join('')}</div>`,
         ))
       }
+    }
+
+    if (node.type === 'page') {
+      blocks.push(this._fieldCard(
+        'Controls',
+        `
+          <div class="flex flex-wrap gap-2">
+            <button
+              class="rounded-lg border border-info/30 bg-info/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info transition hover:border-info/50 hover:bg-info/20"
+              phx-click="start_preview"
+              type="button"
+            >
+              Start preview
+            </button>
+            <button
+              class="rounded-lg border border-error/30 bg-error/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error transition hover:border-error/50 hover:bg-error/20"
+              phx-click="stop_preview"
+              type="button"
+            >
+              Stop preview
+            </button>
+          </div>
+        `,
+      ))
     }
 
     panel.innerHTML = `<div class="space-y-3">${blocks.join('')}</div>`
