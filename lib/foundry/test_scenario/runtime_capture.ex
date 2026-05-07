@@ -10,10 +10,12 @@ defmodule Foundry.TestScenario.RuntimeCapture do
 
     try do
       result = fun.()
+      drain_liveview_events()
       flush_trace(:ok)
       result
     catch
       kind, reason ->
+        drain_liveview_events()
         flush_trace({kind, reason})
         :erlang.raise(kind, reason, __STACKTRACE__)
     after
@@ -135,4 +137,27 @@ defmodule Foundry.TestScenario.RuntimeCapture do
 
   defp restore_previous_trace(nil), do: Process.delete(@trace_key)
   defp restore_previous_trace(previous_trace), do: Process.put(@trace_key, previous_trace)
+
+  defp drain_liveview_events do
+    receive do
+      {:foundry_ash_event, event_attrs} ->
+        case Process.get(@trace_key) do
+          %{events: events, sequence: seq} = trace ->
+            event =
+              event_attrs
+              |> Map.put_new(:status, :passed)
+              |> Map.put_new(:provenance, :executed)
+              |> Map.put_new(:sequence, seq + 1)
+
+            Process.put(@trace_key, %{trace | events: [event | events], sequence: seq + 1})
+
+          _ ->
+            :ok
+        end
+
+        drain_liveview_events()
+    after
+      50 -> :ok
+    end
+  end
 end
