@@ -27,4 +27,13 @@ defmodule FoundryWeb.ConnCase do
   setup _tags do
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
+
+  def build_conn_with_trace do
+    Phoenix.ConnTest.build_conn()
+    |> Plug.Test.init_test_session(%{"foundry_test_pid" => encode_pid(self())})
+  end
+
+  defp encode_pid(pid) do
+    pid |> :erlang.pid_to_list() |> List.to_string()
+  end
 end

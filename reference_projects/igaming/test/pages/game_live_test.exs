@@ -1,87 +1,45 @@
 defmodule IgamingRef.Web.GameLiveTest do
   use IgamingRef.ConnCase, async: false
+  use IgamingRef.DataCase
+
   import Phoenix.LiveViewTest
-  use Foundry.TestScenario
-  @moduletag :scenario
 
-  setup do
-    {:ok, _} = Application.ensure_all_started(:igaming_ref)
-    :ok
+  alias IgamingRef.PageFixtures
+
+  test "loads the routed game and the current player's wallet" do
+    player = PageFixtures.player_fixture()
+    wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "75.50")})
+    game = PageFixtures.game_fixture(%{title: "Mega Volcano"})
+
+    {:ok, view, html} =
+      live(build_conn_with_trace(%{"player_id" => player.id}), "/games/#{game.id}")
+
+    assert html =~ "Mega Volcano"
+    assert html =~ to_string(wallet.balance)
+    assert has_element?(view, "button", "Play")
   end
 
-  @scenario category: :invariant
-  test "game page mounts with dynamic route parameter", context do
-    capture(context, fn ->
-      {:ok, view, html} = live(build_conn_with_trace(), "/games/test-game")
+  test "clicking play creates a game session for the routed game" do
+    player = PageFixtures.player_fixture()
+    _wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "25.00")})
+    game = PageFixtures.game_fixture(%{title: "Crystal River"})
+    {:ok, view, _html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/games/#{game.id}")
 
-      assert view
-      assert html != ""
-    end)
+    html = render_click(element(view, "button", "Play"))
+    session = PageFixtures.session_for(player.id, game.id)
+
+    assert session.status == :active
+    assert PageFixtures.normalize_text(html) =~ "Game session started"
+    assert PageFixtures.normalize_text(render(view)) =~ "Session ID:"
   end
 
-  @scenario category: :invariant
-  test "game page mounts as player only", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/games/test-game")
+  test "preview fallback route still renders and failed start shows an error" do
+    {:ok, view, html} = live(build_conn_with_trace(), "/games/preview")
 
-      # page_group :player means auth required
-      # In test context, mounts successfully
-      assert view |> render() =~ ""
-    end)
+    assert html =~ "Preview Game"
+    assert html =~ "£1,250.00"
+
+    failed_html = render_click(element(view, "button", "Play"))
+    assert PageFixtures.normalize_text(failed_html) =~ "Could not start session"
   end
-
-  @scenario category: :invariant
-  test "game page reads game resource", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/games/test-game")
-
-      # Page calls IgamingRef.Gaming.Game :read
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "game page reads wallet resource", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/games/test-game")
-
-      # Page calls IgamingRef.Finance.Wallet :read
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "game page creates game session", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/games/test-game")
-
-      # Page calls IgamingRef.Gaming.GameSession :create
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "game page accepts dynamic route parameter in SDUI lookup", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/games/my-game-name")
-
-      # use AshSDUI, lookup: {:from_params, :name}
-      # Verifies that route param :id is passed to SDUI lookup
-      assert view |> render() =~ ""
-    end)
-  end
-
-  @scenario category: :invariant,
-            flow: [%{type: :action, node: "Gaming.GameSession", action: "start"}]
-  test "game page starts game session on button click", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/games/test-game")
-      result = render_click(view, "start_game")
-      assert result != ""
-    end)
-  end
-
 end

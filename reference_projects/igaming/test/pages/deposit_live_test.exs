@@ -1,97 +1,51 @@
 defmodule IgamingRef.Web.DepositLiveTest do
   use IgamingRef.ConnCase, async: false
+  use IgamingRef.DataCase
+
   import Phoenix.LiveViewTest
-  use Foundry.TestScenario
-  @moduletag :scenario
 
-  setup do
-    {:ok, _} = Application.ensure_all_started(:igaming_ref)
-    :ok
+  alias IgamingRef.PageFixtures
+
+  test "mounts with the player's real wallet balance and active form controls" do
+    player = PageFixtures.player_fixture()
+    wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "1250.00")})
+
+    {:ok, view, html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/deposit")
+
+    assert html =~ "Deposit Funds"
+    assert html =~ to_string(wallet.balance)
+    assert has_element?(view, "form[phx-submit=submit_deposit]")
+    assert has_element?(view, "input[name=amount][type=number]")
+    assert has_element?(view, "button", "Deposit")
   end
 
-  @scenario category: :invariant
-  test "deposit page mounts and renders deposit form", context do
-    capture(context, fn ->
-      {:ok, view, html} = live(build_conn_with_trace(), "/deposit")
+  test "submitting the form records a deposit transfer and shows success" do
+    player = PageFixtures.player_fixture()
+    wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "100.00")})
+    {:ok, view, _html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/deposit")
 
-      assert view
-      assert html != ""
-    end)
+    html =
+      view
+      |> form("form", %{"amount" => "100.00"})
+      |> render_submit()
+
+    transfer = PageFixtures.transfer_for_wallet(wallet.id)
+
+    assert transfer.reason == "deposit"
+    assert transfer.amount == Money.new(:GBP, "100.00")
+    assert PageFixtures.normalize_text(html) =~ "Deposit successful"
   end
 
-  @scenario category: :invariant
-  test "deposit page requires player authentication", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/deposit")
+  test "preview fallback still mounts safely and failed submission shows an error" do
+    {:ok, view, html} = live(build_conn_with_trace(), "/deposit")
 
-      # page_group :player — auth required
-      assert view |> render() =~ ""
-    end)
+    assert html =~ "£1,250.00"
+
+    failed_html =
+      view
+      |> form("form", %{"amount" => "100.00"})
+      |> render_submit()
+
+    assert PageFixtures.normalize_text(failed_html) =~ "Deposit failed"
   end
-
-  @scenario category: :invariant
-  test "deposit page creates deposit resource", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/deposit")
-
-      # Page calls IgamingRef.Finance.Deposit :create
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "deposit page reads wallet resource", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/deposit")
-
-      # Page calls IgamingRef.Finance.Wallet :read
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "deposit page uses static SDUI layout", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/deposit")
-
-      # use AshSDUI, lookup: {:static, "deposit"}
-      rendered = render(view)
-      assert rendered != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "deposit page form has amount field", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/deposit")
-
-      # Verify form structure exists
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "deposit page validates minimum amount", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/deposit")
-
-      # Test amount validation constraints
-      rendered = render(view)
-      assert rendered != ""
-    end)
-  end
-
-  @scenario category: :invariant,
-            flow: [%{type: :action, node: "Finance.Transfer", action: "record"}]
-  test "deposit page submits deposit form", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/deposit")
-      result = render_submit(view, "submit_deposit", %{"amount" => "100.00"})
-      assert result != ""
-    end)
-  end
-
 end

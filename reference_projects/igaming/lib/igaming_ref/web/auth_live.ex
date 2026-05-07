@@ -12,11 +12,17 @@ defmodule IgamingRef.Web.AuthLive do
 
   @impl true
   def handle_event("login", %{"email" => email, "password" => password}, socket) do
-    case Ash.create(IgamingRef.Accounts.Token, %{email: email, password: password}) do
-      {:ok, _token} ->
+    query =
+      Ash.Query.for_read(IgamingRef.Accounts.User, :sign_in_with_password, %{
+        email: email,
+        password: password
+      })
+
+    case Ash.read_one(query, authorize?: false) do
+      {:ok, _user} ->
         {:noreply, socket |> redirect(to: "/")}
 
-      {:error, _reason} ->
+      _ ->
         {:noreply, socket |> put_flash(:error, "Invalid credentials")}
     end
   end
@@ -25,6 +31,7 @@ defmodule IgamingRef.Web.AuthLive do
   def render(assigns) do
     ~H"""
     <h1>Login</h1>
+    <div :if={@flash[:error]} role="alert">{@flash[:error]}</div>
     <form phx-submit="login">
       <input name="email" type="email" placeholder="Email" />
       <input name="password" type="password" placeholder="Password" />

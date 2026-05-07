@@ -1,97 +1,53 @@
 defmodule IgamingRef.Web.WithdrawalLiveTest do
   use IgamingRef.ConnCase, async: false
+  use IgamingRef.DataCase
+
   import Phoenix.LiveViewTest
-  use Foundry.TestScenario
-  @moduletag :scenario
 
-  setup do
-    {:ok, _} = Application.ensure_all_started(:igaming_ref)
-    :ok
+  alias IgamingRef.PageFixtures
+
+  test "mounts with the player's real wallet balance and active form controls" do
+    player = PageFixtures.player_fixture()
+    wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "215.00")})
+
+    {:ok, view, html} =
+      live(build_conn_with_trace(%{"player_id" => player.id}), "/withdrawal")
+
+    assert html =~ "Withdraw Funds"
+    assert html =~ to_string(wallet.balance)
+    assert has_element?(view, "form[phx-submit=submit_withdrawal]")
+    assert has_element?(view, "input[name=amount][type=number]")
+    assert has_element?(view, "button", "Withdraw")
   end
 
-  @scenario category: :invariant
-  test "withdrawal page mounts and renders withdrawal form", context do
-    capture(context, fn ->
-      {:ok, view, html} = live(build_conn_with_trace(), "/withdrawal")
+  test "submitting the form creates a withdrawal request and shows success" do
+    player = PageFixtures.player_fixture()
+    wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "300.00")})
+    {:ok, view, _html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/withdrawal")
 
-      assert view
-      assert html != ""
-    end)
+    html =
+      view
+      |> form("form", %{"amount" => "50.00"})
+      |> render_submit()
+
+    request = PageFixtures.withdrawal_for_wallet(wallet.id)
+
+    assert request.player_id == player.id
+    assert request.amount == Money.new(:GBP, "50.00")
+    assert request.status == :pending
+    assert PageFixtures.normalize_text(html) =~ "Withdrawal requested"
   end
 
-  @scenario category: :invariant
-  test "withdrawal page requires player authentication", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/withdrawal")
+  test "preview fallback still mounts safely and failed submission shows an error" do
+    {:ok, view, html} = live(build_conn_with_trace(), "/withdrawal")
 
-      # page_group :player — auth required
-      assert view |> render() =~ ""
-    end)
+    assert html =~ "£1,250.00"
+
+    failed_html =
+      view
+      |> form("form", %{"amount" => "50.00"})
+      |> render_submit()
+
+    assert PageFixtures.normalize_text(failed_html) =~ "Withdrawal failed"
   end
-
-  @scenario category: :invariant
-  test "withdrawal page reads withdrawal rules", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/withdrawal")
-
-      # Page calls IgamingRef.Finance.WithdrawalRule :read
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "withdrawal page reads withdrawal requests", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/withdrawal")
-
-      # Page calls IgamingRef.Finance.WithdrawalRequest :read
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "withdrawal page uses static SDUI layout", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/withdrawal")
-
-      # use AshSDUI, lookup: {:static, "withdrawal"}
-      rendered = render(view)
-      assert rendered != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "withdrawal page form has amount field", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/withdrawal")
-
-      # Verify form structure exists
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "withdrawal page enforces withdrawal rules", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/withdrawal")
-
-      # Test withdrawal rule constraints
-      rendered = render(view)
-      assert rendered != ""
-    end)
-  end
-
-  @scenario category: :invariant,
-            flow: [%{type: :action, node: "Finance.WithdrawalRequest", action: "create"}]
-  test "withdrawal page submits withdrawal form", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/withdrawal")
-      result = render_submit(view, "submit_withdrawal", %{"amount" => "50.00"})
-      assert result != ""
-    end)
-  end
-
 end

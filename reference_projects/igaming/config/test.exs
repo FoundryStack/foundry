@@ -12,6 +12,7 @@ test_db_user =
     "postgres"
 
 config :igaming_ref, :foundry_tasks_only, false
+config :igaming_ref, :token_signing_secret, "igaming-ref-test-token-signing-secret"
 
 config :igaming_ref, IgamingRef.Repo,
   url:

@@ -1,5 +1,6 @@
 defmodule FoundryWeb.SystemMapLiveTest do
   use FoundryWeb.ConnCase
+  use Foundry.TestScenario
   import Phoenix.LiveViewTest
 
   setup_all do
@@ -33,6 +34,8 @@ defmodule FoundryWeb.SystemMapLiveTest do
       restore_env(:foundry_web, :chat_live_hooks, chat_live_hooks)
       restore_env(:foundry_web, :system_map_live_hooks, system_map_live_hooks)
     end)
+
+    {:ok, conn: FoundryWeb.ConnCase.build_conn_with_trace()}
   end
 
   setup %{project_context: project_context, project_node: project_node} do
@@ -47,58 +50,64 @@ defmodule FoundryWeb.SystemMapLiveTest do
   end
 
   describe "mount" do
+    @scenario category: :invariant
     test "renders page with data-context attribute when context available", %{conn: conn} do
-      {:ok, _live, html} = live(conn, "/studio")
-      assert html =~ "data-context"
+      capture(%{conn: conn}, fn ->
+        {:ok, _live, html} = live(conn, "/studio")
+        assert html =~ "data-context"
+      end)
     end
 
+    @scenario category: :invariant
     test "embeds valid JSON in data-context attribute", %{conn: conn} do
-      {:ok, _live, html} = live(conn, "/studio")
-
-      # Extract data-context value
-      assert Regex.match?(~r/data-context="[^"]+nodes[^"]*"/, html)
+      capture(%{conn: conn}, fn ->
+        {:ok, _live, html} = live(conn, "/studio")
+        assert Regex.match?(~r/data-context="[^"]+nodes[^"]*"/, html)
+      end)
     end
 
+    @scenario category: :invariant
     test "embeds preview base url for the system map hook", %{conn: conn} do
-      {:ok, _live, html} = live(conn, "/studio")
-
-      assert html =~ ~s(data-preview-base-url="http://localhost:4001")
+      capture(%{conn: conn}, fn ->
+        {:ok, _live, html} = live(conn, "/studio")
+        assert html =~ ~s(data-preview-base-url="http://localhost:4001")
+      end)
     end
 
-    test "shows empty state when context unavailable" do
-      # We can't easily test this without mocking, but verify mount doesn't crash
-      # when context building fails
-      {:ok, _live, html} = live(Phoenix.ConnTest.build_conn(), "/studio")
-      # Should render without crashing
+    test "shows empty state when context unavailable", %{conn: conn} do
+      {:ok, _live, html} = live(conn, "/studio")
       assert html =~ "fm-workspace"
     end
 
+    @scenario category: :invariant
     test "renders the integrated copilot workspace", %{conn: conn} do
-      {:ok, _live, html} = live(conn, "/studio")
+      capture(%{conn: conn}, fn ->
+        {:ok, _live, html} = live(conn, "/studio")
 
-      assert html =~ "Foundry Copilot"
-      assert html =~ "Governed studio chat"
-      assert html =~ "Copilot"
-      assert html =~ ~s(id="fm-feed")
-      assert html =~ ~s(id="fm-drawer")
+        assert html =~ "Foundry Copilot"
+        assert html =~ "Governed studio chat"
+        assert html =~ "Copilot"
+        assert html =~ ~s(id="fm-feed")
+        assert html =~ ~s(id="fm-drawer")
 
-      assert Regex.match?(
-               ~r/id="fm-sidebar"[\s\S]*style="[^"]*width: var\(--foundry-sidebar-width, 240px\);"/,
-               html
-             )
+        assert Regex.match?(
+                 ~r/id="fm-sidebar"[\s\S]*style="[^"]*width: var\(--foundry-sidebar-width, 240px\);"/,
+                 html
+               )
 
-      assert Regex.match?(
-               ~r/id="fm-drawer"[\s\S]*data-open="false"[\s\S]*style="[^"]*width: 0px;"/,
-               html
-             )
+        assert Regex.match?(
+                 ~r/id="fm-drawer"[\s\S]*data-open="false"[\s\S]*style="[^"]*width: 0px;"/,
+                 html
+               )
 
-      assert Regex.match?(
-               ~r/id="fm-feed"[\s\S]*data-open="true"[\s\S]*style="[^"]*width: var\(--foundry-feed-width, 360px\);"/,
-               html
-             )
+        assert Regex.match?(
+                 ~r/id="fm-feed"[\s\S]*data-open="true"[\s\S]*style="[^"]*width: var\(--foundry-feed-width, 360px\);"/,
+                 html
+               )
 
-      assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"/, html)
-      assert Regex.match?(~r/id="fm-drawer"[\s\S]*data-open="false"/, html)
+        assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"/, html)
+        assert Regex.match?(~r/id="fm-drawer"[\s\S]*data-open="false"/, html)
+      end)
     end
 
     test "project context edges resolve to renderable graph node ids", %{project_context: context} do

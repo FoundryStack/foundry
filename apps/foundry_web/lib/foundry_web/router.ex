@@ -43,13 +43,20 @@ defmodule FoundryWeb.Router do
     end
   end
 
+  live_session :default, on_mount: [Foundry.TestScenario.LiveViewHook] do
+    scope "/", FoundryWeb do
+      pipe_through :browser
+
+      live "/studio", SystemMapLive
+    end
+  end
+
   scope "/", FoundryWeb do
     pipe_through :browser
 
     get "/", PageController, :home
     get "/preview-launch", PageController, :preview_launch
     get "/preview-status", PageController, :preview_status
-    live "/studio", SystemMapLive
   end
 
   # MCP server — exposes Foundry.Context tools to external agents

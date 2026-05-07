@@ -4,11 +4,11 @@ defmodule IgamingRef.Web.PreviewSupport do
   def sample_player_id, do: "preview-player"
 
   def sample_wallet do
-    %{id: "preview-wallet", balance: "$1,250.00"}
+    %{id: "preview-wallet", balance: Money.new(:GBP, "1250.00"), currency: "GBP"}
   end
 
   def sample_game(game_id \\ "preview-game") do
-    %{id: game_id, name: "Preview Game"}
+    %{id: game_id, title: "Preview Game"}
   end
 
   def safe_read(fun, fallback) when is_function(fun, 0) do

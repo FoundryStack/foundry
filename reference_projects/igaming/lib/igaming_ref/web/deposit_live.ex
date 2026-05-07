@@ -1,6 +1,7 @@
 defmodule IgamingRef.Web.DepositLive do
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "deposit"}
+  require Ash.Query
 
   alias IgamingRef.Web.PreviewSupport
 
@@ -14,7 +15,11 @@ defmodule IgamingRef.Web.DepositLive do
 
     wallet =
       PreviewSupport.safe_read(
-        fn -> Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: player_id]) end,
+        fn ->
+          IgamingRef.Finance.Wallet
+          |> Ash.Query.filter(player_id: player_id)
+          |> Ash.read_one!(actor: %{id: player_id})
+        end,
         PreviewSupport.sample_wallet()
       )
 
@@ -23,15 +28,20 @@ defmodule IgamingRef.Web.DepositLive do
 
   @impl true
   def handle_event("submit_deposit", %{"amount" => amount}, socket) do
-    case Ash.create(IgamingRef.Finance.Transfer, :record, %{
-           to_wallet_id: socket.assigns.wallet.id,
-           amount: Decimal.new(amount),
-           reason: "deposit"
-         }) do
-      {:ok, _deposit} ->
+    with {:ok, parsed_amount} <- parse_amount(socket.assigns.wallet, amount),
+         {:ok, _deposit} <-
+           Ash.create(
+             IgamingRef.Finance.Transfer,
+             %{
+               to_wallet_id: socket.assigns.wallet.id,
+               amount: parsed_amount,
+               reason: "deposit"
+             },
+             action: :record
+           ) do
         {:noreply, socket |> put_flash(:info, "Deposit successful")}
-
-      {:error, _reason} ->
+    else
+      _ ->
         {:noreply, socket |> put_flash(:error, "Deposit failed")}
     end
   end
@@ -40,11 +50,26 @@ defmodule IgamingRef.Web.DepositLive do
   def render(assigns) do
     ~H"""
     <h1>Deposit Funds</h1>
-    <p>Current balance: {@wallet.balance}</p>
+    <div :if={@flash[:info]} role="status">{@flash[:info]}</div>
+    <div :if={@flash[:error]} role="alert">{@flash[:error]}</div>
+    <p>Current balance: {format_money(@wallet.balance)}</p>
     <form phx-submit="submit_deposit">
       <input name="amount" type="number" step="0.01" placeholder="Amount" />
       <button type="submit">Deposit</button>
     </form>
     """
   end
+
+  defp parse_amount(wallet, amount) do
+    currency = wallet_currency(wallet)
+    {:ok, Money.new(String.to_existing_atom(currency), amount)}
+  rescue
+    _ -> {:error, :invalid_amount}
+  end
+
+  defp wallet_currency(%{currency: currency}) when is_binary(currency), do: currency
+  defp wallet_currency(%{balance: %{currency: currency}}), do: Atom.to_string(currency)
+  defp wallet_currency(_wallet), do: "GBP"
+
+  defp format_money(value), do: to_string(value)
 end

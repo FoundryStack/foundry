@@ -1,66 +1,28 @@
 defmodule IgamingRef.Web.HomeLiveTest do
   use IgamingRef.ConnCase, async: false
+  use IgamingRef.DataCase
+
   import Phoenix.LiveViewTest
-  use Foundry.TestScenario
-  @moduletag :scenario
 
-  setup do
-    {:ok, _} = Application.ensure_all_started(:igaming_ref)
-    :ok
+  alias IgamingRef.PageFixtures
+
+  test "renders featured games and active promotions from live data" do
+    game = PageFixtures.game_fixture(%{title: "Neon Atlas"})
+    campaign = PageFixtures.bonus_campaign_fixture(%{name: "Friday Reload"})
+
+    {:ok, _view, html} = live(build_conn_with_trace(), "/")
+
+    assert html =~ "Welcome to Gaming Platform"
+    assert html =~ "Featured Games"
+    assert html =~ game.title
+    assert html =~ "Active Promotions"
+    assert html =~ campaign.name
   end
 
-  @scenario category: :invariant
-  test "home page mounts and renders initial content", context do
-    capture(context, fn ->
-      {:ok, view, html} = live(build_conn_with_trace(), "/")
+  test "shows stable empty states when no data is available" do
+    {:ok, _view, html} = live(build_conn_with_trace(), "/")
 
-      assert view
-      assert html != ""
-    end)
+    assert html =~ "No featured games available"
+    assert html =~ "No active promotions available"
   end
-
-  @scenario category: :invariant
-  test "home page mounts as anonymous user", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/")
-
-      # Home page should be accessible without authentication
-      # (page_group :anonymous means no auth required)
-      assert view |> render() =~ ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "home page reads games list", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/")
-
-      # Page calls IgamingRef.Gaming.Game :read action
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "home page reads promotions list", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/")
-
-      # Page calls IgamingRef.Promotions.Promotion :read action
-      html = render(view)
-      assert html != ""
-    end)
-  end
-
-  @scenario category: :invariant
-  test "home page feature flag evaluation", context do
-    capture(context, fn ->
-      {:ok, view, _html} = live(build_conn_with_trace(), "/")
-
-      # Page evaluates :new_lobby and :personalized_games feature flags
-      # Content visibility depends on flag state
-      assert view |> render() =~ ""
-    end)
-  end
-
 end

@@ -22,9 +22,9 @@ defmodule IgamingRef.ConnCase do
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 
-  def build_conn_with_trace do
+  def build_conn_with_trace(session \\ %{}) do
     Phoenix.ConnTest.build_conn()
-    |> Plug.Test.init_test_session(%{"foundry_test_pid" => encode_pid(self())})
+    |> Plug.Test.init_test_session(Map.put(session, "foundry_test_pid", encode_pid(self())))
   end
 
   defp encode_pid(pid) do

@@ -1,6 +1,7 @@
 defmodule IgamingRef.Web.WithdrawalLive do
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "withdrawal"}
+  require Ash.Query
 
   alias IgamingRef.Web.PreviewSupport
 
@@ -14,7 +15,11 @@ defmodule IgamingRef.Web.WithdrawalLive do
 
     wallet =
       PreviewSupport.safe_read(
-        fn -> Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: player_id]) end,
+        fn ->
+          IgamingRef.Finance.Wallet
+          |> Ash.Query.filter(player_id: player_id)
+          |> Ash.read_one!(actor: %{id: player_id})
+        end,
         PreviewSupport.sample_wallet()
       )
 
@@ -25,15 +30,21 @@ defmodule IgamingRef.Web.WithdrawalLive do
   def handle_event("submit_withdrawal", %{"amount" => amount}, socket) do
     wallet = socket.assigns.wallet
 
-    case Ash.create(IgamingRef.Finance.WithdrawalRequest, :create, %{
-      player_id: socket.assigns.player_id,
-      wallet_id: wallet.id,
-      amount: Decimal.new(amount)
-    }) do
-      {:ok, _withdrawal} ->
+    with {:ok, parsed_amount} <- parse_amount(wallet, amount),
+         {:ok, _withdrawal} <-
+           Ash.create(
+             IgamingRef.Finance.WithdrawalRequest,
+             %{
+               player_id: socket.assigns.player_id,
+               wallet_id: wallet.id,
+               amount: parsed_amount
+             },
+             action: :create,
+             actor: %{id: socket.assigns.player_id}
+           ) do
         {:noreply, socket |> put_flash(:info, "Withdrawal requested")}
-
-      {:error, _reason} ->
+    else
+      _ ->
         {:noreply, socket |> put_flash(:error, "Withdrawal failed")}
     end
   end
@@ -42,11 +53,26 @@ defmodule IgamingRef.Web.WithdrawalLive do
   def render(assigns) do
     ~H"""
     <h1>Withdraw Funds</h1>
-    <p>Available balance: {@wallet.balance}</p>
+    <div :if={@flash[:info]} role="status">{@flash[:info]}</div>
+    <div :if={@flash[:error]} role="alert">{@flash[:error]}</div>
+    <p>Available balance: {format_money(@wallet.balance)}</p>
     <form phx-submit="submit_withdrawal">
       <input name="amount" type="number" step="0.01" placeholder="Amount" />
       <button type="submit">Withdraw</button>
     </form>
     """
   end
+
+  defp parse_amount(wallet, amount) do
+    currency = wallet_currency(wallet)
+    {:ok, Money.new(String.to_existing_atom(currency), amount)}
+  rescue
+    _ -> {:error, :invalid_amount}
+  end
+
+  defp wallet_currency(%{currency: currency}) when is_binary(currency), do: currency
+  defp wallet_currency(%{balance: %{currency: currency}}), do: Atom.to_string(currency)
+  defp wallet_currency(_wallet), do: "GBP"
+
+  defp format_money(value), do: to_string(value)
 end
