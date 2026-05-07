@@ -88,7 +88,7 @@ defmodule FoundryWeb.ChatComponents do
 
       <div class="min-h-0 flex-1 px-4 pb-4">
         <div class="flex h-full min-h-0 flex-col rounded-box border border-base-300/80 bg-base-100/70 shadow-[0_18px_60px_rgba(0,0,0,0.12)]">
-          <div class="border-b border-base-300/80 px-4 py-2.5">
+          <div>
             <div class="flex items-center justify-between gap-3">
               <div class="inline-flex rounded-selector border border-base-300 bg-base-200/80 p-1">
                 <button
@@ -129,7 +129,7 @@ defmodule FoundryWeb.ChatComponents do
           </div>
 
           <%= if @chat_view == :conversation do %>
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+            <div class="min-h-0 flex-1 overflow-y-auto">
               <div id="studio-chat-conversation" class="space-y-3" aria-live="polite">
                 <%= if Enum.empty?(@messages) do %>
                   <div class="rounded-box border border-dashed border-base-300 bg-base-200/50 px-4 py-6 text-center">
@@ -203,7 +203,7 @@ defmodule FoundryWeb.ChatComponents do
             phx-submit="send_message"
             class="border-t border-base-300/80 px-4 py-4"
           >
-            <div class="rounded-box border border-base-300 bg-base-200/70 p-3">
+            <div>
               <label
                 for="chat-message-studio"
                 class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content"
@@ -214,7 +214,7 @@ defmodule FoundryWeb.ChatComponents do
                 id="chat-message-studio"
                 name="message"
                 rows="3"
-                placeholder="Ask about the system, or request a governed change..."
+                placeholder="Ask about the system, or request a change..."
                 data-role="chat-input"
                 class="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-base-content outline-none placeholder:text-neutral-content/50"
                 disabled={@loading}

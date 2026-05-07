@@ -1,5 +1,7 @@
 defmodule IgamingRef.Web.GameLiveTest do
-  use Phoenix.LiveViewTest
+  use IgamingRef.ConnCase, async: false
+  import Phoenix.LiveViewTest
+  use Foundry.TestScenario
   @moduletag :scenario
 
   setup do
@@ -7,54 +9,79 @@ defmodule IgamingRef.Web.GameLiveTest do
     :ok
   end
 
-  test "game page mounts with dynamic route parameter" do
-    {:ok, view, html} = live(build_conn(), "/games/test-game")
+  @scenario category: :flow
+  test "game page mounts with dynamic route parameter", context do
+    capture(context, fn ->
+      {:ok, view, html} = live(build_conn(), "/games/test-game")
 
-    assert view
-    assert html != ""
+      assert view
+      assert html != ""
+    end)
   end
 
-  test "game page mounts as player only" do
-    {:ok, view, _html} = live(build_conn(), "/games/test-game")
+  @scenario category: :flow
+  test "game page mounts as player only", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/games/test-game")
 
-    # page_group :player means auth required
-    # In test context, mounts successfully
-    assert view |> render() =~ ""
+      # page_group :player means auth required
+      # In test context, mounts successfully
+      assert view |> render() =~ ""
+    end)
   end
 
-  test "game page reads game resource" do
-    {:ok, view, _html} = live(build_conn(), "/games/test-game")
+  @scenario category: :flow
+  test "game page reads game resource", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/games/test-game")
 
-    # Page calls IgamingRef.Gaming.Game :read
-    html = render(view)
-    assert html != ""
+      # Page calls IgamingRef.Gaming.Game :read
+      html = render(view)
+      assert html != ""
+    end)
   end
 
-  test "game page reads wallet resource" do
-    {:ok, view, _html} = live(build_conn(), "/games/test-game")
+  @scenario category: :flow
+  test "game page reads wallet resource", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/games/test-game")
 
-    # Page calls IgamingRef.Finance.Wallet :read
-    html = render(view)
-    assert html != ""
+      # Page calls IgamingRef.Finance.Wallet :read
+      html = render(view)
+      assert html != ""
+    end)
   end
 
-  test "game page creates game session" do
-    {:ok, view, _html} = live(build_conn(), "/games/test-game")
+  @scenario category: :flow
+  test "game page creates game session", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/games/test-game")
 
-    # Page calls IgamingRef.Gaming.GameSession :create
-    html = render(view)
-    assert html != ""
+      # Page calls IgamingRef.Gaming.GameSession :create
+      html = render(view)
+      assert html != ""
+    end)
   end
 
-  test "game page accepts dynamic route parameter in SDUI lookup" do
-    {:ok, view, _html} = live(build_conn(), "/games/my-game-name")
+  @scenario category: :flow
+  test "game page accepts dynamic route parameter in SDUI lookup", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/games/my-game-name")
 
-    # use AshSDUI, lookup: {:from_params, :name}
-    # Verifies that route param :id is passed to SDUI lookup
-    assert view |> render() =~ ""
+      # use AshSDUI, lookup: {:from_params, :name}
+      # Verifies that route param :id is passed to SDUI lookup
+      assert view |> render() =~ ""
+    end)
   end
 
-  defp build_conn do
-    Phoenix.ConnTest.build_conn()
+  @scenario category: :flow,
+            flow: [%{type: :action, node: "Gaming.GameSession", action: "start"}]
+  test "game page starts game session on button click", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/games/test-game")
+      result = render_click(view, "start_game")
+      assert result != ""
+    end)
   end
+
 end

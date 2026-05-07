@@ -9,8 +9,9 @@ defmodule IgamingRef.Web.GameLive do
   @moduledoc "GameLive - #{@page_group} page"
 
   @impl true
-  def mount(%{"id" => game_id}, _session, socket) do
+  def mount(params, _session, socket) do
     player_id = socket.assigns[:player_id] || PreviewSupport.sample_player_id()
+    game_id = Map.get(params, "id", "preview")
 
     game =
       PreviewSupport.safe_read(

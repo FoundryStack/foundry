@@ -1,5 +1,7 @@
 defmodule IgamingRef.Web.DepositLiveTest do
-  use Phoenix.LiveViewTest
+  use IgamingRef.ConnCase, async: false
+  import Phoenix.LiveViewTest
+  use Foundry.TestScenario
   @moduletag :scenario
 
   setup do
@@ -7,61 +9,89 @@ defmodule IgamingRef.Web.DepositLiveTest do
     :ok
   end
 
-  test "deposit page mounts and renders deposit form" do
-    {:ok, view, html} = live(build_conn(), "/deposit")
+  @scenario category: :flow
+  test "deposit page mounts and renders deposit form", context do
+    capture(context, fn ->
+      {:ok, view, html} = live(build_conn(), "/deposit")
 
-    assert view
-    assert html != ""
+      assert view
+      assert html != ""
+    end)
   end
 
-  test "deposit page requires player authentication" do
-    {:ok, view, _html} = live(build_conn(), "/deposit")
+  @scenario category: :flow
+  test "deposit page requires player authentication", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/deposit")
 
-    # page_group :player — auth required
-    assert view |> render() =~ ""
+      # page_group :player — auth required
+      assert view |> render() =~ ""
+    end)
   end
 
-  test "deposit page creates deposit resource" do
-    {:ok, view, _html} = live(build_conn(), "/deposit")
+  @scenario category: :flow
+  test "deposit page creates deposit resource", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/deposit")
 
-    # Page calls IgamingRef.Finance.Deposit :create
-    html = render(view)
-    assert html != ""
+      # Page calls IgamingRef.Finance.Deposit :create
+      html = render(view)
+      assert html != ""
+    end)
   end
 
-  test "deposit page reads wallet resource" do
-    {:ok, view, _html} = live(build_conn(), "/deposit")
+  @scenario category: :flow
+  test "deposit page reads wallet resource", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/deposit")
 
-    # Page calls IgamingRef.Finance.Wallet :read
-    html = render(view)
-    assert html != ""
+      # Page calls IgamingRef.Finance.Wallet :read
+      html = render(view)
+      assert html != ""
+    end)
   end
 
-  test "deposit page uses static SDUI layout" do
-    {:ok, view, _html} = live(build_conn(), "/deposit")
+  @scenario category: :flow
+  test "deposit page uses static SDUI layout", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/deposit")
 
-    # use AshSDUI, lookup: {:static, "deposit"}
-    rendered = render(view)
-    assert rendered != ""
+      # use AshSDUI, lookup: {:static, "deposit"}
+      rendered = render(view)
+      assert rendered != ""
+    end)
   end
 
-  test "deposit page form has amount field" do
-    {:ok, view, _html} = live(build_conn(), "/deposit")
+  @scenario category: :flow
+  test "deposit page form has amount field", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/deposit")
 
-    # Verify form structure exists
-    html = render(view)
-    assert html != ""
+      # Verify form structure exists
+      html = render(view)
+      assert html != ""
+    end)
   end
 
-  test "deposit page validates minimum amount" do
-    {:ok, view, _html} = live(build_conn(), "/deposit")
+  @scenario category: :flow
+  test "deposit page validates minimum amount", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/deposit")
 
-    # Test amount validation constraints
-    rendered = render(view)
-    assert rendered != ""
+      # Test amount validation constraints
+      rendered = render(view)
+      assert rendered != ""
+    end)
   end
 
-  defp build_conn do
-    Phoenix.ConnTest.build_conn()
+  @scenario category: :flow,
+            flow: [%{type: :action, node: "Finance.Transfer", action: "record"}]
+  test "deposit page submits deposit form", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/deposit")
+      result = render_submit(view, "submit_deposit", %{"amount" => "100.00"})
+      assert result != ""
+    end)
   end
+
 end

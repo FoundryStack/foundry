@@ -1,4 +1,5 @@
 defmodule IgamingRef.Web.PagesIntegrationTest do
+  use ExUnit.Case
   @moduletag :scenario
 
   doctest IgamingRef.Web.HomeLive

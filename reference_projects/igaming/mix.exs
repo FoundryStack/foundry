@@ -87,6 +87,7 @@ defmodule IgamingRef.MixProject do
       {:bypass, "~> 2.1", only: :test},
       {:mox, "~> 1.1", only: :test},
       {:ex_machina, "~> 2.7", only: :test},
+      {:lazy_html, ">= 0.1.0", only: :test},
 
       # Dependency conflict resolution
       {:plug, "~> 1.7", override: true},

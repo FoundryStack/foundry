@@ -1,5 +1,7 @@
 defmodule IgamingRef.Web.WithdrawalLiveTest do
-  use Phoenix.LiveViewTest
+  use IgamingRef.ConnCase, async: false
+  import Phoenix.LiveViewTest
+  use Foundry.TestScenario
   @moduletag :scenario
 
   setup do
@@ -7,61 +9,89 @@ defmodule IgamingRef.Web.WithdrawalLiveTest do
     :ok
   end
 
-  test "withdrawal page mounts and renders withdrawal form" do
-    {:ok, view, html} = live(build_conn(), "/withdrawal")
+  @scenario category: :flow
+  test "withdrawal page mounts and renders withdrawal form", context do
+    capture(context, fn ->
+      {:ok, view, html} = live(build_conn(), "/withdrawal")
 
-    assert view
-    assert html != ""
+      assert view
+      assert html != ""
+    end)
   end
 
-  test "withdrawal page requires player authentication" do
-    {:ok, view, _html} = live(build_conn(), "/withdrawal")
+  @scenario category: :flow
+  test "withdrawal page requires player authentication", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/withdrawal")
 
-    # page_group :player — auth required
-    assert view |> render() =~ ""
+      # page_group :player — auth required
+      assert view |> render() =~ ""
+    end)
   end
 
-  test "withdrawal page reads withdrawal rules" do
-    {:ok, view, _html} = live(build_conn(), "/withdrawal")
+  @scenario category: :flow
+  test "withdrawal page reads withdrawal rules", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/withdrawal")
 
-    # Page calls IgamingRef.Finance.WithdrawalRule :read
-    html = render(view)
-    assert html != ""
+      # Page calls IgamingRef.Finance.WithdrawalRule :read
+      html = render(view)
+      assert html != ""
+    end)
   end
 
-  test "withdrawal page reads withdrawal requests" do
-    {:ok, view, _html} = live(build_conn(), "/withdrawal")
+  @scenario category: :flow
+  test "withdrawal page reads withdrawal requests", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/withdrawal")
 
-    # Page calls IgamingRef.Finance.WithdrawalRequest :read
-    html = render(view)
-    assert html != ""
+      # Page calls IgamingRef.Finance.WithdrawalRequest :read
+      html = render(view)
+      assert html != ""
+    end)
   end
 
-  test "withdrawal page uses static SDUI layout" do
-    {:ok, view, _html} = live(build_conn(), "/withdrawal")
+  @scenario category: :flow
+  test "withdrawal page uses static SDUI layout", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/withdrawal")
 
-    # use AshSDUI, lookup: {:static, "withdrawal"}
-    rendered = render(view)
-    assert rendered != ""
+      # use AshSDUI, lookup: {:static, "withdrawal"}
+      rendered = render(view)
+      assert rendered != ""
+    end)
   end
 
-  test "withdrawal page form has amount field" do
-    {:ok, view, _html} = live(build_conn(), "/withdrawal")
+  @scenario category: :flow
+  test "withdrawal page form has amount field", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/withdrawal")
 
-    # Verify form structure exists
-    html = render(view)
-    assert html != ""
+      # Verify form structure exists
+      html = render(view)
+      assert html != ""
+    end)
   end
 
-  test "withdrawal page enforces withdrawal rules" do
-    {:ok, view, _html} = live(build_conn(), "/withdrawal")
+  @scenario category: :flow
+  test "withdrawal page enforces withdrawal rules", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/withdrawal")
 
-    # Test withdrawal rule constraints
-    rendered = render(view)
-    assert rendered != ""
+      # Test withdrawal rule constraints
+      rendered = render(view)
+      assert rendered != ""
+    end)
   end
 
-  defp build_conn do
-    Phoenix.ConnTest.build_conn()
+  @scenario category: :flow,
+            flow: [%{type: :action, node: "Finance.WithdrawalRequest", action: "create"}]
+  test "withdrawal page submits withdrawal form", context do
+    capture(context, fn ->
+      {:ok, view, _html} = live(build_conn(), "/withdrawal")
+      result = render_submit(view, "submit_withdrawal", %{"amount" => "50.00"})
+      assert result != ""
+    end)
   end
+
 end
