@@ -508,6 +508,10 @@ defmodule FoundryWeb.ChatComponents do
             mono
           />
           <.digest_list
+            title="Saved findings"
+            items={Map.get(@session_digest, "recent_findings", [])}
+          />
+          <.digest_list
             title="Recent conclusions"
             items={Map.get(@session_digest, "recent_conclusions", [])}
           />
@@ -605,10 +609,12 @@ defmodule FoundryWeb.ChatComponents do
 
   defp message_bubble(assigns) do
     is_user = assigns.message["role"] == "user"
+    proposal = assigns.message["proposal"]
 
     assigns =
       assigns
       |> assign(:is_user, is_user)
+      |> assign(:proposal, proposal)
       |> assign(:content, assigns.message["content"] || "")
       |> assign(:markdown_id, message_markdown_id(assigns.message, assigns.message_index))
       |> assign(:markdown_variant, if(is_user, do: "user", else: "assistant"))
@@ -646,8 +652,116 @@ defmodule FoundryWeb.ChatComponents do
             mdex_opts={markdown_options()}
           />
         </div>
+        <.proposal_preview_card :if={!@is_user and is_map(@proposal)} proposal={@proposal} />
       </div>
     </div>
+    """
+  end
+
+  attr :proposal, :map, required: true
+
+  defp proposal_preview_card(assigns) do
+    preview = assigns.proposal[:preview] || assigns.proposal["preview"] || %{}
+    files = preview[:files] || preview["files"] || []
+    change_summary = preview[:change_summary] || preview["change_summary"] || []
+    ui_status = assigns.proposal[:ui_status] || assigns.proposal["ui_status"] || :draft
+
+    assigns =
+      assigns
+      |> assign(:preview, preview)
+      |> assign(:files, files)
+      |> assign(:change_summary, change_summary)
+      |> assign(:ui_status, ui_status)
+
+    ~H"""
+    <section class="mt-4 rounded-box border border-accent/20 bg-neutral/30 p-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent">
+          Proposal {@proposal[:id] || @proposal["id"]}
+        </span>
+        <span class={proposal_status_class(@ui_status)}>
+          {proposal_status_label(@ui_status)}
+        </span>
+      </div>
+
+      <p class="mt-3 text-sm leading-6 text-base-content/90">
+        {@preview[:summary] || @preview["summary"]}
+      </p>
+
+      <%= if @change_summary != [] do %>
+        <div class="mt-4">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">
+            Summary of Changes
+          </p>
+          <div class="mt-2 space-y-2">
+            <p :for={summary <- @change_summary} class="rounded-box border border-base-300/70 bg-base-100/60 px-3 py-2 text-sm text-base-content/90">
+              {summary}
+            </p>
+          </div>
+        </div>
+      <% end %>
+
+      <details class="mt-4 overflow-hidden rounded-box border border-base-300/80 bg-[#0d1117]">
+        <summary class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-neutral-content">
+          Preview Changes
+        </summary>
+        <div class="border-t border-base-300/80 px-3 py-3">
+          <pre class="overflow-x-auto rounded-box bg-[#0d1117] px-3 py-3 font-mono text-[11px] leading-5 text-[#c9d1d9]"><%= @preview[:diff] || @preview["diff"] %></pre>
+        </div>
+      </details>
+
+      <%= if @files != [] do %>
+        <div class="mt-4">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">
+            Changed Files
+          </p>
+          <div class="mt-2 space-y-2">
+            <button
+              :for={file <- @files}
+              type="button"
+              phx-click="open_proposal_file_preview"
+              phx-value-proposal_id={@proposal[:id] || @proposal["id"]}
+              phx-value-path={file[:path] || file["path"]}
+              class="flex w-full items-center justify-between rounded-box border border-base-300/70 bg-base-100/60 px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-base-100"
+            >
+              <span class="min-w-0 truncate font-mono text-xs text-base-content">
+                {file[:path] || file["path"]}
+              </span>
+              <span class="ml-3 shrink-0 text-[11px] text-neutral-content">
+                {file[:added_lines] || file["added_lines"] || 0}+ / {file[:removed_lines] || file["removed_lines"] || 0}-
+              </span>
+            </button>
+          </div>
+        </div>
+      <% end %>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          phx-click="proposal_apply"
+          phx-value-id={@proposal[:id] || @proposal["id"]}
+          class="rounded-selector bg-success/90 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-base-100 transition-opacity hover:opacity-90"
+        >
+          Apply
+        </button>
+        <button
+          type="button"
+          phx-click="proposal_revise"
+          phx-value-id={@proposal[:id] || @proposal["id"]}
+          class="rounded-selector border border-warning/30 bg-warning/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-warning transition-colors hover:bg-warning/15"
+        >
+          Revise In Chat
+        </button>
+        <button
+          type="button"
+          phx-click="proposal_cancel"
+          phx-value-id={@proposal[:id] || @proposal["id"]}
+          class="rounded-selector border border-base-300 bg-base-100/70 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-neutral-content transition-colors hover:text-base-content"
+        >
+          Cancel
+        </button>
+      </div>
+    </section>
     """
   end
 
@@ -770,6 +884,28 @@ defmodule FoundryWeb.ChatComponents do
   defp trace_status_class(_status),
     do:
       "rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
+
+  defp proposal_status_label(:applied), do: "Applied"
+  defp proposal_status_label(:awaiting_revision), do: "Awaiting revision"
+  defp proposal_status_label(:cancelled), do: "Cancelled"
+  defp proposal_status_label(status) when is_binary(status), do: status
+  defp proposal_status_label(_status), do: "Draft"
+
+  defp proposal_status_class(:applied),
+    do:
+      "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success"
+
+  defp proposal_status_class(:awaiting_revision),
+    do:
+      "rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
+
+  defp proposal_status_class(:cancelled),
+    do:
+      "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
+
+  defp proposal_status_class(_status),
+    do:
+      "rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent"
 
   defp trace_category_label(:proposal), do: "Proposal"
   defp trace_category_label(:context), do: "Context"

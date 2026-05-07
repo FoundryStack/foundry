@@ -23,3 +23,11 @@ config :igaming_ref, Oban,
   queues: false,
   plugins: false,
   testing: :manual
+
+config :igaming_ref, IgamingRef.Web.Endpoint,
+  secret_key_base: "igaming-ref-test-secret-key-base",
+  server: false,
+  url: [host: "localhost"],
+  http: [ip: {127, 0, 0, 1}, port: 4002],
+  live_view: [signing_salt: "test-live-view-salt"],
+  pubsub_server: IgamingRef.PubSub

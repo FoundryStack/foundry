@@ -1,6 +1,6 @@
 defmodule Foundry.Context.SpecKitIndexBuilder do
   @moduledoc """
-  Builds the spec-kit index by scanning ADRs, runbooks, regulations, and other
+  Builds the spec-kit index by scanning ADRs, runbooks, findings, regulations, and other
   documentation files. Extracts summaries, tags, and token counts.
 
   Token estimation uses a conservative approximation: byte_size / 3.
@@ -23,11 +23,12 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
   def build(project_root) do
     adrs = scan_dir(project_root, "docs/adrs/", "adr")
     runbooks = scan_dir(project_root, "docs/runbooks/", "runbook")
+    findings = scan_dir(project_root, "docs/findings/", "finding")
     regs = scan_dir(project_root, "docs/regulations/", "regulation")
     agents = scan_exact(project_root, "AGENTS.md", "agents", "AGENTS")
     rules = scan_dir(project_root, ".foundry/usage_rules/", "usage_rules")
 
-    all_entries = adrs ++ runbooks ++ regs ++ List.wrap(agents) ++ rules
+    all_entries = adrs ++ runbooks ++ findings ++ regs ++ List.wrap(agents) ++ rules
     token_count = estimate_tokens(all_entries)
 
     %{
@@ -36,6 +37,7 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
       "index_token_limit" => 50000,
       "adrs" => adrs,
       "runbooks" => runbooks,
+      "findings" => findings,
       "regulations" => regs,
       "agents" => agents,
       "usage_rules" => rules
@@ -175,6 +177,7 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
 
   defp skip_paragraph?(text) do
     trimmed = String.trim(text)
+
     trimmed == "" or
       String.starts_with?(trimmed, "#") or
       String.starts_with?(trimmed, "```") or

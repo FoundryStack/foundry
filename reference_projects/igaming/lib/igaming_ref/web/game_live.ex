@@ -2,6 +2,8 @@ defmodule IgamingRef.Web.GameLive do
   use Phoenix.LiveView
   use AshSDUI, lookup: {:from_params, :name}
 
+  alias IgamingRef.Web.PreviewSupport
+
   @page_group :player
   @calls_actions [
     {IgamingRef.Gaming.Game, :read},
@@ -13,10 +15,21 @@ defmodule IgamingRef.Web.GameLive do
 
   @impl true
   def mount(%{"id" => game_id}, _session, socket) do
-    game = Ash.read_one!(IgamingRef.Gaming.Game, filter: [id: game_id])
-    wallet = Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: socket.assigns.player_id])
+    player_id = socket.assigns[:player_id] || PreviewSupport.sample_player_id()
 
-    {:ok, assign(socket, game: game, wallet: wallet, session: nil)}
+    game =
+      PreviewSupport.safe_read(
+        fn -> Ash.read_one!(IgamingRef.Gaming.Game, filter: [id: game_id]) end,
+        PreviewSupport.sample_game(game_id)
+      )
+
+    wallet =
+      PreviewSupport.safe_read(
+        fn -> Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: player_id]) end,
+        PreviewSupport.sample_wallet()
+      )
+
+    {:ok, assign(socket, game: game, wallet: wallet, player_id: player_id, session: nil)}
   end
 
   @impl true

@@ -109,7 +109,10 @@ defmodule Foundry.PreviewServerTest do
 
     PreviewServer.start_preview(project_root)
 
-    assert wait_for_last_error("Preview server startup timed out after 10000ms", 500)
+    assert wait_for_last_error(
+             "Preview HTTP port 4404 did not open within 10000ms after the last process output. No explicit error was emitted. Last log line: waiting",
+             500
+           )
     assert {:ok, status} = PreviewServer.get_status()
     assert status.state == :failed
     assert status.output =~ "waiting"

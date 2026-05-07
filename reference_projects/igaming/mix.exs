@@ -33,9 +33,10 @@ defmodule IgamingRef.MixProject do
       {:postgrex, ">= 0.0.0"},
 
       # Phoenix
-      {:phoenix, "~> 1.7"},
+      {:phoenix, "~> 1.8"},
       {:phoenix_live_view, "~> 1.0"},
       {:bandit, "~> 1.2"},
+      {:plug_cowboy, "~> 2.6"},
 
       # Ash extensions
       {:ash_authentication, "~> 4.0"},

@@ -50,6 +50,7 @@ export class DrawerManager {
   _initDrawer() {
     const drawer = document.getElementById(SELECTORS.drawer)
     const closeBtn = document.getElementById(SELECTORS.drawerClose)
+    const previewBtn = document.getElementById('fm-drawer-preview-btn')
     const detailsPanel = document.getElementById(SELECTORS.panelDetails)
 
     if (!drawer) return
@@ -62,6 +63,19 @@ export class DrawerManager {
       this._closeHandler = () => this.close()
       closeBtn.addEventListener('click', this._closeHandler)
       this._boundCloseBtn = closeBtn
+    }
+
+    if (previewBtn && this._boundPreviewBtn !== previewBtn) {
+      if (this._boundPreviewBtn && this._previewBtnHandler) {
+        this._boundPreviewBtn.removeEventListener('click', this._previewBtnHandler)
+      }
+
+      this._previewBtnHandler = () => {
+        const route = previewBtn.dataset.startPreviewRoute || '/'
+        this._onStartPreview(route)
+      }
+      previewBtn.addEventListener('click', this._previewBtnHandler)
+      this._boundPreviewBtn = previewBtn
     }
 
     if (detailsPanel && this._boundDetailsPanel !== detailsPanel) {
@@ -170,7 +184,7 @@ export class DrawerManager {
       const parentNode = this.normalizedNodes.get(parentId)
       const step = parentNode?.steps?.[parseInt(stepIdx, 10)]
       if (!parentNode || !step) return
-      this._setHeader(step.name || 'Step', this._displayNodeLabel(parentNode))
+      this._setHeader(step.name || 'Step', this._displayNodeLabel(parentNode), { showPreview: false })
       this._renderStepDetailsPanel(step)
       return
     }
@@ -188,7 +202,7 @@ export class DrawerManager {
           description: nodeData?.description,
         }
 
-      this._setHeader(action.name || 'Action', this._displayNodeLabel(parentNode))
+      this._setHeader(action.name || 'Action', this._displayNodeLabel(parentNode), { showPreview: false })
       this._renderActionDetailsPanel(action, parentNode)
       return
     }
@@ -198,7 +212,7 @@ export class DrawerManager {
       const [, parentId, rawStateName] = stateMatch
       const parentNode = this.normalizedNodes.get(parentId)
       if (!parentNode) return
-      this._setHeader(rawStateName, this._displayNodeLabel(parentNode))
+      this._setHeader(rawStateName, this._displayNodeLabel(parentNode), { showPreview: false })
       this._renderStateDetailsPanel(rawStateName, parentNode)
       return
     }
@@ -206,7 +220,9 @@ export class DrawerManager {
     const node = this.normalizedNodes.get(nodeId) || nodeData
     if (!node) return
 
-    this._setHeader(this._displayNodeLabel(node), node.type || 'node')
+    const showPreview = node.type === 'page'
+    const previewRoute = node.page_route || '/'
+    this._setHeader(this._displayNodeLabel(node), node.type || 'node', { showPreview, previewRoute })
     this._renderDetailsPanel(node)
   }
 
@@ -224,6 +240,11 @@ export class DrawerManager {
     this._activeScenario = null
     this._activeNodeSelection = null
     this._activeFileView = null
+    const previewBtn = document.getElementById('fm-drawer-preview-btn')
+    if (previewBtn) {
+      previewBtn.classList.add('hidden')
+      delete previewBtn.dataset.startPreviewRoute
+    }
     this.close()
   }
 
@@ -281,6 +302,49 @@ export class DrawerManager {
     panel.innerHTML = `
       <div class="rounded-2xl border border-error/30 bg-error/10 px-4 py-4">
         <p class="text-sm text-error">${this._esc(reason || 'unknown error')}</p>
+      </div>
+    `
+  }
+
+  renderProposalFilePreview({ path, content, diff, status, added_lines = 0, removed_lines = 0 }) {
+    const panel = document.getElementById(SELECTORS.panelDetails)
+    if (!panel) return
+
+    this._activeNodeSelection = null
+    this._activeScenario = null
+    this._activeFileView = { kind: 'proposal', path, content, diff, status, added_lines, removed_lines }
+
+    this._setHeader(path || 'Proposal preview', `${status || 'modified'} · ${added_lines}+ ${removed_lines}-`)
+
+    const lines = String(content || '').split('\n')
+
+    panel.innerHTML = `
+      <div class="space-y-3">
+        <details open class="overflow-hidden rounded-2xl border border-white/10 bg-[#0d1117]">
+          <summary class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-base-content/70">
+            Unified diff
+          </summary>
+          <div class="border-t border-white/10 px-3 py-3">
+            <pre class="overflow-x-auto rounded-xl bg-[#0d1117] px-3 py-3 font-mono text-[11px] leading-5 text-[#c9d1d9]">${this._esc(diff || '')}</pre>
+          </div>
+        </details>
+        <div class="overflow-hidden rounded-2xl border border-white/10 bg-base-100/90">
+          <div class="max-h-[32rem] overflow-auto">
+            <table class="w-full border-collapse font-mono text-[11px] leading-5">
+              <tbody>
+                ${lines.map((fileLine, index) => {
+                  const lineNumber = index + 1
+                  return `
+                    <tr data-line="${lineNumber}">
+                      <td class="select-none border-r border-white/10 px-3 py-0.5 text-right align-top text-base-content/40">${lineNumber}</td>
+                      <td class="whitespace-pre-wrap break-words px-3 py-0.5 align-top text-base-content">${this._esc(fileLine)}</td>
+                    </tr>
+                  `
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     `
   }
@@ -497,30 +561,6 @@ export class DrawerManager {
       }
     }
 
-    if (node.type === 'page') {
-      blocks.push(this._fieldCard(
-        'Controls',
-        `
-          <div class="flex flex-wrap gap-2">
-            <button
-              class="rounded-lg border border-info/30 bg-info/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info transition hover:border-info/50 hover:bg-info/20"
-              data-start-preview-route="${this._esc(node.page_route || '/')}"
-              type="button"
-            >
-              Start preview
-            </button>
-            <button
-              class="rounded-lg border border-error/30 bg-error/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error transition hover:border-error/50 hover:bg-error/20"
-              data-stop-preview="true"
-              type="button"
-            >
-              Stop preview
-            </button>
-          </div>
-        `,
-      ))
-    }
-
     panel.innerHTML = `<div class="space-y-3">${blocks.join('')}</div>`
   }
 
@@ -689,11 +729,22 @@ export class DrawerManager {
     }
   }
 
-  _setHeader(title, subtitle = '') {
+  _setHeader(title, subtitle = '', { showPreview = false, previewRoute = '/' } = {}) {
     const titleEl = document.getElementById(SELECTORS.drawerTitle)
     const subtitleEl = document.getElementById(SELECTORS.drawerSubtitle)
     if (titleEl) titleEl.textContent = title || ''
     if (subtitleEl) subtitleEl.textContent = subtitle || ''
+
+    const previewBtn = document.getElementById('fm-drawer-preview-btn')
+    if (previewBtn) {
+      if (showPreview) {
+        previewBtn.classList.remove('hidden')
+        previewBtn.dataset.startPreviewRoute = previewRoute
+      } else {
+        previewBtn.classList.add('hidden')
+        delete previewBtn.dataset.startPreviewRoute
+      }
+    }
   }
 
   _displayNodeLabel(nodeOrId) {
@@ -759,11 +810,16 @@ export class DrawerManager {
       this._boundCloseBtn.removeEventListener('click', this._closeHandler)
     }
 
+    if (this._boundPreviewBtn && this._previewBtnHandler) {
+      this._boundPreviewBtn.removeEventListener('click', this._previewBtnHandler)
+    }
+
     if (this._boundDetailsPanel && this._detailsClickHandler) {
       this._boundDetailsPanel.removeEventListener('click', this._detailsClickHandler)
     }
 
     this._boundCloseBtn = null
+    this._boundPreviewBtn = null
     this._boundDetailsPanel = null
     this._panel.destroy()
   }

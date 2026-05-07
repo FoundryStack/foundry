@@ -172,9 +172,16 @@ export class CytoscapeGraph {
   }
 
   applyProposalOverlay(delta) {
-    if (!delta || !delta.nodes_added) return
+    if (!delta) return
 
-    const phantomElements = delta.nodes_added.map(node => ({
+    if (delta.clear) {
+      this.clearProposalOverlay()
+      return
+    }
+
+    this.clearProposalOverlay()
+
+    const phantomElements = (delta.nodes_added || []).map(node => ({
       group: 'nodes',
       data: {
         id: node.id,
@@ -185,6 +192,8 @@ export class CytoscapeGraph {
       },
       classes: 'phantom-node',
     }))
+
+    const modifiedNodeStyles = delta.nodes_modified || []
 
     const phantomEdges = (delta.edges_added || []).map(edge => ({
       group: 'edges',
@@ -199,10 +208,29 @@ export class CytoscapeGraph {
     }))
 
     this.cy.add([...phantomElements, ...phantomEdges])
+
+    modifiedNodeStyles.forEach(node => {
+      const element = this.cy.getElementById(node.id)
+      if (element.length > 0) {
+        element.data({ ...element.data(), proposal_state: 'modified', proposal_tone: node.tone || 'warning' })
+        element.style('border-width', element.isParent() ? '3px' : '2.5px')
+        element.style('border-color', '#f59e0b')
+        element.style('background-color', 'rgba(245, 158, 11, 0.12)')
+      }
+    })
   }
 
   clearProposalOverlay() {
     this.cy.elements().filter(ele => ele.data('state') === 'phantom').remove()
+    this.cy.elements().forEach(ele => {
+      if (ele.data('proposal_state') === 'modified') {
+        ele.removeData('proposal_state')
+        ele.removeData('proposal_tone')
+        ele.style('border-width', null)
+        ele.style('border-color', null)
+        ele.style('background-color', null)
+      }
+    })
   }
 
   applyCoverageOverlay({ uncovered_node_ids: uncoveredNodeIds } = {}) {

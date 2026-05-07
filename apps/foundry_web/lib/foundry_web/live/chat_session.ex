@@ -2,11 +2,13 @@ defmodule FoundryWeb.ChatSession do
   @moduledoc false
 
   import Phoenix.Component, only: [assign: 3, update: 3]
+  import Phoenix.LiveView, only: [push_event: 3]
   require Ash.Query
 
   alias Foundry.Chat.Retrieval, as: ChatRetrieval
   alias Foundry.Chat.Session, as: ChatRecord
   alias Foundry.ChatTrace
+  alias Foundry.SpecKit.SessionMemory
 
   def mount(socket, session) do
     session_id = Map.get(session, "chat_session_id", Ecto.UUID.generate())
@@ -123,6 +125,74 @@ defmodule FoundryWeb.ChatSession do
     {:noreply, assign(socket, :chat_view, parse_chat_view(view))}
   end
 
+  def handle_event("proposal_apply", %{"id" => proposal_id}, socket) do
+    socket =
+      socket
+      |> update(:messages, &update_latest_proposal_message(&1, proposal_id, :applied))
+      |> update(:session_digest, fn digest ->
+        digest
+        |> normalize_session_digest()
+        |> Map.put("active_proposal_id", nil)
+        |> Map.put("active_proposal_status", "applied")
+      end)
+      |> push_event("graph:proposal_overlay", %{clear: true})
+      |> push_event("graph:delta", active_proposal_delta(socket.assigns.messages, proposal_id))
+      |> persist_updated_chat()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("proposal_revise", %{"id" => proposal_id}, socket) do
+    socket =
+      socket
+      |> update(:messages, &update_latest_proposal_message(&1, proposal_id, :awaiting_revision))
+      |> update(:session_digest, fn digest ->
+        digest
+        |> normalize_session_digest()
+        |> Map.put("active_proposal_id", proposal_id)
+        |> Map.put("active_proposal_status", "awaiting_revision")
+        |> Map.put("revision_of_proposal_id", proposal_id)
+      end)
+      |> push_event("graph:proposal_overlay", active_proposal_overlay(socket.assigns.messages, proposal_id))
+      |> persist_updated_chat()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("proposal_cancel", %{"id" => proposal_id}, socket) do
+    socket =
+      socket
+      |> update(:messages, &update_latest_proposal_message(&1, proposal_id, :cancelled))
+      |> update(:session_digest, fn digest ->
+        digest
+        |> normalize_session_digest()
+        |> Map.put("active_proposal_id", nil)
+        |> Map.put("active_proposal_status", "cancelled")
+        |> Map.put("revision_of_proposal_id", nil)
+      end)
+      |> push_event("graph:proposal_overlay", %{clear: true})
+      |> persist_updated_chat()
+
+    {:noreply, socket}
+  end
+
+  def handle_event(
+        "open_proposal_file_preview",
+        %{"proposal_id" => proposal_id, "path" => path},
+        socket
+      ) do
+    socket =
+      case proposal_file_preview_payload(socket.assigns.messages, proposal_id, path) do
+        nil ->
+          push_event(socket, "file_error", %{path: path, reason: "proposal_preview_missing"})
+
+        payload ->
+          push_event(socket, "proposal_file_preview", payload)
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_event("select_activity_run", %{"id" => id}, socket) do
     {:noreply, assign(socket, :selected_activity_run_id, String.to_integer(id))}
   rescue
@@ -141,9 +211,22 @@ defmodule FoundryWeb.ChatSession do
 
   def handle_info({:llm_stream_done, request_ref, response}, socket) do
     if request_ref == socket.assigns.active_request_ref do
-      messages = finalize_streaming_response(socket.assigns.messages, response)
-      socket = complete_activity_run(socket, request_ref, response)
-      digest = finalized_session_digest(socket, request_ref, response)
+      memory_result = persist_turn_memory(socket, request_ref, response)
+      run = find_activity_run(socket.assigns.activity_runs, request_ref)
+      messages = finalize_streaming_response(socket.assigns.messages, memory_result.response, run)
+
+      socket =
+        socket
+        |> complete_activity_run(request_ref, memory_result.response)
+        |> maybe_record_memory_trace(request_ref, memory_result)
+
+      digest =
+        finalized_session_digest(
+          socket,
+          request_ref,
+          memory_result.response,
+          memory_result.artifact
+        )
 
       {:noreply,
        finish_stream(
@@ -243,7 +326,8 @@ defmodule FoundryWeb.ChatSession do
                      message,
                      "studio@local",
                      retrieval.tool_results,
-                     socket.assigns.session_digest || %{}
+                     socket.assigns.session_digest || %{},
+                     project_root
                    ) do
                 {:ok, proposal} -> proposal
                 {:error, _reason} -> nil
@@ -329,10 +413,14 @@ defmodule FoundryWeb.ChatSession do
     end)
   end
 
-  defp finalize_streaming_response(messages, ""), do: messages
+  defp finalize_streaming_response(messages, "", _run), do: messages
 
-  defp finalize_streaming_response(messages, response) do
-    update_last_message(messages, &Map.put(&1, "content", response))
+  defp finalize_streaming_response(messages, response, run) do
+    update_last_message(messages, fn message ->
+      message
+      |> Map.put("content", response)
+      |> maybe_attach_message_metadata(run)
+    end)
   end
 
   defp drop_empty_streaming_response(messages) do
@@ -1059,6 +1147,84 @@ defmodule FoundryWeb.ChatSession do
 
   defp summarize_response(_response), do: nil
 
+  defp persist_turn_memory(socket, request_ref, response) do
+    extracted = SessionMemory.extract(response)
+    run = find_activity_run(socket.assigns.activity_runs, request_ref)
+
+    result = %{
+      response: extracted.response,
+      artifact: nil,
+      error: extracted.error
+    }
+
+    case extracted.payload do
+      nil ->
+        result
+
+      payload ->
+        metadata = %{
+          "mode" => socket.assigns.session_digest |> Map.get("last_mode"),
+          "proposal_id" => socket.assigns.session_digest |> Map.get("last_proposal_id"),
+          "user_message" => run && run.user_message
+        }
+
+        case persist_session_memory(
+               socket.assigns.project_root,
+               socket.assigns.session_id,
+               payload,
+               metadata
+             ) do
+          {:ok, artifact} ->
+            %{result | artifact: artifact, error: extracted.error}
+
+          {:error, reason} ->
+            %{result | error: reason}
+        end
+    end
+  end
+
+  defp persist_session_memory(project_root, session_id, payload, metadata) do
+    case hook(:persist_session_memory) do
+      nil ->
+        SessionMemory.persist(project_root, session_id, payload, metadata)
+
+      fun ->
+        fun.(project_root, session_id, payload, metadata)
+    end
+  end
+
+  defp maybe_record_memory_trace(socket, _request_ref, %{artifact: nil, error: nil}), do: socket
+
+  defp maybe_record_memory_trace(socket, request_ref, %{artifact: artifact})
+       when is_map(artifact) do
+    trace_event = %{
+      "provider" => "foundry",
+      "type" => "foundry.session.finding_saved",
+      "phase" => "session",
+      "path" => artifact.path,
+      "message" => "Saved canonical finding #{artifact.id}",
+      "summary" => artifact.summary
+    }
+
+    update_activity_run(socket, request_ref, fn run ->
+      append_trace_event(run, ChatTrace.normalize(:foundry, trace_event))
+    end)
+  end
+
+  defp maybe_record_memory_trace(socket, request_ref, %{error: error}) do
+    trace_event = %{
+      "provider" => "foundry",
+      "type" => "foundry.session.finding_save_failed",
+      "phase" => "session",
+      "message" => "Could not save canonical finding",
+      "summary" => inspect(error)
+    }
+
+    update_activity_run(socket, request_ref, fn run ->
+      append_trace_event(run, ChatTrace.normalize(:foundry, trace_event))
+    end)
+  end
+
   defp normalize_session_digest(nil), do: %{}
   defp normalize_session_digest(digest) when is_map(digest), do: digest
   defp normalize_session_digest(_digest), do: %{}
@@ -1078,10 +1244,11 @@ defmodule FoundryWeb.ChatSession do
       "recent_documents",
       Enum.map(tool_results.documents, & &1.path)
     )
+    |> Map.put("revision_of_proposal_id", Map.get(digest, "revision_of_proposal_id"))
     |> maybe_put_proposal(proposal)
   end
 
-  defp finalized_session_digest(socket, request_ref, response) do
+  defp finalized_session_digest(socket, request_ref, response, artifact \\ nil) do
     digest = normalize_session_digest(socket.assigns.session_digest)
     run = find_activity_run(socket.assigns.activity_runs, request_ref)
 
@@ -1092,6 +1259,7 @@ defmodule FoundryWeb.ChatSession do
 
     digest
     |> Map.put("recent_conclusions", recent_conclusions)
+    |> prepend_recent_finding(artifact)
     |> Map.put("recent_files", if(run, do: run.files, else: []))
     |> Map.put("recent_tools", if(run, do: run.tools, else: []))
     |> Map.put(
@@ -1106,12 +1274,138 @@ defmodule FoundryWeb.ChatSession do
     )
   end
 
+  defp prepend_recent_finding(digest, nil), do: digest
+
+  defp prepend_recent_finding(digest, artifact) do
+    recent_findings =
+      [format_recent_finding(artifact) | Map.get(digest, "recent_findings", [])]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Enum.take(5)
+
+    Map.put(digest, "recent_findings", recent_findings)
+  end
+
+  defp format_recent_finding(%{title: title, path: path})
+       when is_binary(title) and is_binary(path) do
+    "#{title} (#{path})"
+  end
+
+  defp format_recent_finding(_artifact), do: nil
+
   defp maybe_put_proposal(digest, nil), do: digest
 
   defp maybe_put_proposal(digest, proposal) do
     digest
     |> Map.put("last_proposal_id", proposal.id)
     |> Map.put("last_change_class", Atom.to_string(proposal.change_class))
+    |> Map.put("active_proposal_id", proposal.id)
+    |> Map.put("active_proposal_status", Atom.to_string(proposal.state || :draft))
+  end
+
+  defp maybe_attach_message_metadata(message, nil), do: message
+
+  defp maybe_attach_message_metadata(message, run) do
+    message
+    |> Map.put("mode", Atom.to_string(run.mode))
+    |> maybe_put_message_proposal(run.proposal)
+  end
+
+  defp maybe_put_message_proposal(message, nil), do: message
+  defp maybe_put_message_proposal(message, proposal), do: Map.put(message, "proposal", proposal)
+
+  defp persist_updated_chat(socket) do
+    case save_session_state(
+           socket.assigns.session_id,
+           socket.assigns.messages,
+           socket.assigns.session_digest
+         ) do
+      :ok ->
+        socket
+
+      {:error, reason} ->
+        assign(socket, :error, persistence_error("Failed to save chat session", reason))
+    end
+  end
+
+  defp update_latest_proposal_message(messages, proposal_id, status) do
+    case latest_proposal_message_index(messages, proposal_id) do
+      nil ->
+        messages
+
+      index ->
+        List.update_at(messages, index, fn message ->
+          update_in(message["proposal"], fn
+            nil ->
+              nil
+
+            proposal when is_map(proposal) ->
+              proposal
+              |> Map.put(:ui_status, status)
+              |> Map.put("ui_status", status)
+          end)
+        end)
+    end
+  end
+
+  defp latest_proposal_message_index(messages, proposal_id) do
+    messages
+    |> Enum.with_index()
+    |> Enum.reverse()
+    |> Enum.find_value(fn {message, index} ->
+      proposal = message["proposal"]
+      proposal_value = proposal && (proposal[:id] || proposal["id"])
+
+      if message["role"] == "assistant" and to_string(proposal_value) == proposal_id, do: index
+    end)
+  end
+
+  defp active_proposal_overlay(messages, proposal_id) do
+    messages
+    |> find_proposal(proposal_id)
+    |> case do
+      nil -> %{}
+      proposal -> get_in(proposal, [:preview, :graph_overlay]) || get_in(proposal, ["preview", "graph_overlay"]) || %{}
+    end
+  end
+
+  defp active_proposal_delta(messages, proposal_id) do
+    overlay = active_proposal_overlay(messages, proposal_id)
+
+    %{
+      nodes_added: overlay[:nodes_added] || overlay["nodes_added"] || [],
+      nodes_modified: overlay[:nodes_modified] || overlay["nodes_modified"] || [],
+      edges_added: overlay[:edges_added] || overlay["edges_added"] || [],
+      edges_removed: overlay[:edges_removed] || overlay["edges_removed"] || []
+    }
+  end
+
+  defp proposal_file_preview_payload(messages, proposal_id, path) do
+    with proposal when is_map(proposal) <- find_proposal(messages, proposal_id),
+         files when is_list(files) <-
+           get_in(proposal, [:preview, :files]) || get_in(proposal, ["preview", "files"]),
+         file when is_map(file) <-
+           Enum.find(files, fn preview_file -> (preview_file[:path] || preview_file["path"]) == path end) do
+      %{
+        proposal_id: proposal_id,
+        path: path,
+        status: file[:status] || file["status"] || :modified,
+        diff: file[:diff] || file["diff"] || "",
+        content: file[:full_content] || file["full_content"] || "",
+        added_lines: file[:added_lines] || file["added_lines"] || 0,
+        removed_lines: file[:removed_lines] || file["removed_lines"] || 0
+      }
+    end
+  end
+
+  defp find_proposal(messages, proposal_id) do
+    Enum.find_value(messages, fn
+      %{"proposal" => proposal} when is_map(proposal) ->
+        if to_string(proposal[:id] || proposal["id"]) == proposal_id, do: proposal
+
+      _ ->
+        nil
+    end)
   end
 
   defp stringify_atom_keys(map) do

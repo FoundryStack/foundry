@@ -2,6 +2,8 @@ defmodule IgamingRef.Web.WithdrawalLive do
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "withdrawal"}
 
+  alias IgamingRef.Web.PreviewSupport
+
   @page_group :player
   @calls_actions [
     {IgamingRef.Finance.WithdrawalRequest, :create},
@@ -12,8 +14,15 @@ defmodule IgamingRef.Web.WithdrawalLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    wallet = Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: socket.assigns.player_id])
-    {:ok, assign(socket, wallet: wallet)}
+    player_id = socket.assigns[:player_id] || PreviewSupport.sample_player_id()
+
+    wallet =
+      PreviewSupport.safe_read(
+        fn -> Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: player_id]) end,
+        PreviewSupport.sample_wallet()
+      )
+
+    {:ok, assign(socket, wallet: wallet, player_id: player_id)}
   end
 
   @impl true

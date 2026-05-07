@@ -506,7 +506,51 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       assert html =~ "Session Memory"
       assert html =~ "Recent conclusions"
+      assert html =~ "Saved findings"
       assert html =~ "Selected nodes"
+    end
+
+    test "strips hidden memory blocks and records saved findings in session memory", %{conn: conn} do
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        persist_session_memory: fn _project_root, _session_id, _payload, _metadata ->
+          {:ok,
+           %{
+             id: "FND-20260507-example",
+             path: "docs/findings/FND-20260507-example.md",
+             title: "Provider callback finding",
+             summary: "Callbacks must stay idempotent."
+           }}
+        end,
+        call_llm_stream: fn _messages, _on_event, _run_context ->
+          {:ok,
+           """
+           The provider callback needs an idempotency boundary.
+
+           ```foundry-memory
+           {"title":"Provider callback finding","summary":"Callbacks must stay idempotent.","findings":["[VERIFIED] Provider retries can replay the same event."]}
+           ```
+           """}
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+      _html = render_submit(live, "send_message", %{"message" => "Explain the callback risk"})
+
+      assert eventually(fn ->
+               render(live) =~ "The provider callback needs an idempotency boundary."
+             end)
+
+      html = render(live)
+      refute html =~ "```foundry-memory"
+      refute html =~ "\"title\":\"Provider callback finding\""
+
+      session_html = render_click(live, "set_chat_view", %{"view" => "session"})
+      assert session_html =~ "Saved findings"
+      assert session_html =~ "Provider callback finding"
+      assert session_html =~ "docs/findings/FND-20260507-example.md"
     end
 
     test "routes change requests into proposal-backed mode", %{conn: conn} do
@@ -527,6 +571,72 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert html =~ "Proposal drafted"
       assert html =~ "Proposal"
       assert html =~ "Change"
+    end
+
+    test "renders preview changes and summary for proposal-backed replies", %{conn: conn} do
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, _on_event, _run_context -> {:ok, "Proposal drafted"} end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+      _html = render_submit(live, "send_message", %{"message" => "Implement a new transfer rule"})
+
+      assert eventually(fn ->
+               rendered = render(live)
+
+               rendered =~ "Preview Changes" and
+                 rendered =~ "Summary of Changes" and
+                 rendered =~ "Revise In Chat" and
+                 rendered =~ "apps/foundry_web/lib/foundry_web/components/chat_components.ex"
+             end)
+    end
+
+    test "apply clears proposal overlay and pushes graph delta", %{conn: conn} do
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, _on_event, _run_context -> {:ok, "Proposal drafted"} end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+      _html = render_submit(live, "send_message", %{"message" => "Implement a new transfer rule"})
+      assert eventually(fn -> render(live) =~ "Apply" end)
+
+      _html = render_click(live, "proposal_apply", %{"id" => "42"})
+
+      assert_push_event(live, "graph:proposal_overlay", %{clear: true})
+      assert_push_event(live, "graph:delta", %{nodes_modified: [%{id: "Finance.Wallet"}]})
+    end
+
+    test "clicking a proposal file opens the proposal drawer preview payload", %{conn: conn} do
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, _on_event, _run_context -> {:ok, "Proposal drafted"} end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+      _html = render_submit(live, "send_message", %{"message" => "Implement a new transfer rule"})
+      assert eventually(fn -> render(live) =~ "chat_components.ex" end)
+
+      _html =
+        render_click(live, "open_proposal_file_preview", %{
+          "proposal_id" => "42",
+          "path" => "apps/foundry_web/lib/foundry_web/components/chat_components.ex"
+        })
+
+      assert_push_event(live, "proposal_file_preview", %{
+        proposal_id: "42",
+        path: "apps/foundry_web/lib/foundry_web/components/chat_components.ex",
+        content: content
+      })
+
+      assert content =~ "defmodule FoundryWeb.ChatComponents"
     end
   end
 
@@ -587,6 +697,15 @@ defmodule FoundryWeb.SystemMapLiveTest do
       save_messages: fn _session_id, _messages, session_digest ->
         {:ok, %{session_digest: session_digest}}
       end,
+      persist_session_memory: fn _project_root, _session_id, _payload, _metadata ->
+        {:ok,
+         %{
+           id: "FND-test",
+           path: "docs/findings/FND-test.md",
+           title: "Test finding",
+           summary: "Stubbed finding"
+         }}
+      end,
       call_llm_stream: fn _messages, _on_event, _run_context -> {:ok, "Stubbed response"} end,
       build_run_context: fn socket, message -> {:ok, canned_run_context(socket, message)} end,
       build_system_prompt: fn project_root, _run_context ->
@@ -605,7 +724,43 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
     proposal =
       if mode == :change do
-        %{id: 42, change_class: :behavioral}
+        %{
+          id: "42",
+          change_class: :behavioral,
+          state: :draft,
+          preview: %{
+            summary: "This proposal updates the Studio copilot flow and keeps the changes reviewable before apply.",
+            change_summary: [
+              "Render a proposal preview card under assistant change replies.",
+              "Open a proposal-aware file drawer with diff context."
+            ],
+            diff: """
+            diff --git a/apps/foundry_web/lib/foundry_web/components/chat_components.ex b/apps/foundry_web/lib/foundry_web/components/chat_components.ex
+            --- a/apps/foundry_web/lib/foundry_web/components/chat_components.ex
+            +++ b/apps/foundry_web/lib/foundry_web/components/chat_components.ex
+            @@
+            -old preview
+            +new preview
+            """,
+            files: [
+              %{
+                path: "apps/foundry_web/lib/foundry_web/components/chat_components.ex",
+                status: :modified,
+                diff: "@@",
+                full_content: "defmodule FoundryWeb.ChatComponents do\nend\n",
+                added_lines: 1,
+                removed_lines: 1,
+                summary: "Render the proposal preview card and action row."
+              }
+            ],
+            graph_overlay: %{
+              nodes_added: [],
+              nodes_modified: [%{id: "Finance.Wallet", tone: "warning"}],
+              edges_added: [],
+              edges_removed: []
+            }
+          }
+        }
       end
 
     %{
