@@ -216,6 +216,13 @@ Target platform domain resources still use `ash_postgres` — Foundry introspect
 Mix task subprocess and does not own their database. Nebulex caches were already ETS.
 ADR-001 is updated to reflect that `ash_postgres` is a target platform dependency, not a Foundry dependency.
 
+## Related Artifact Families
+
+Canonical spec-kit artifacts that preserve project reasoning continue to live under `docs/`
+and are committed to git with the rest of the repository. This includes the durable
+session-memory findings introduced in ADR-029 at `docs/findings/*.md`. These are not part of
+Foundry's ephemeral ETS session state; they are durable project knowledge.
+
 ---
 
 ## Consequences

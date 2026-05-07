@@ -140,6 +140,11 @@ Apply these retrieval and reasoning rules in every Foundry project:
 
 - For questions, answer from the spec-kit and live project context, citing the ADR,
   regulation requirement, runbook, module, field, or invariant that grounds the answer.
+- When a turn uncovers durable technical knowledge (root cause, invariant, integration
+  hazard, rejected approach, debugging discovery, or implementation constraint that will
+  matter again), append a hidden `foundry-memory` JSON block so Foundry can persist it as
+  a canonical `docs/findings/*.md` artifact. Do not emit this block for transient progress
+  notes, TODO lists, or obvious restatements of existing ADR text.
 - For structural code facts, prefer `mix foundry.project.context <Module>` over
   source-file prose or memory.
 - For DSL syntax, use current project usage rules, ExDoc, and local project patterns.
@@ -161,6 +166,32 @@ Apply these retrieval and reasoning rules in every Foundry project:
   is the ubiquitous language — do not invent synonyms.
 
 These are universal Foundry copilot behaviors, not project-specific conventions.
+
+### Session Memory Artifact Format
+
+When you need to preserve a durable finding, append this exact fenced block at the end of
+the response. Keep the user-facing explanation above it. The block is stripped before
+display and saved by Foundry automatically.
+
+```foundry-memory
+{
+  "title": "Short durable finding title",
+  "summary": "One-sentence explanation of what future sessions should remember and why it matters.",
+  "findings": ["[VERIFIED] Concrete fact learned from code, tooling, or tests."],
+  "discoveries": ["[INFERRED] Non-obvious architectural or operational discovery."],
+  "issues": ["[ASSUMPTION] Open risk or unresolved gap that future work must revisit."],
+  "conclusions": ["Decision, rejected path, or guidance that should shape future changes."],
+  "related_nodes": ["Finance.WithdrawalTransfer"],
+  "related_docs": ["docs/adrs/ADR-001-double-entry-ledger.md"],
+  "tags": ["withdrawals", "idempotency", "provider-callback"]
+}
+```
+
+Rules:
+- Omit empty arrays rather than filling them with placeholders.
+- Preserve epistemic markers on every substantive list item.
+- Only include knowledge that remains useful outside the current turn.
+- If nothing durable was learned, omit the block entirely.
 
 ---
 
@@ -251,8 +282,10 @@ See ADR-020 and `docs/regulations/platform_invariants.md`.
 
 **INV-009: The spec-kit is the only manual documentation**
 The only documentation that requires manual authorship is: ADRs, regulation files, runbooks,
-and AGENTS.md. All other documentation is generated from code. Manually maintaining what the
-compiler already knows creates synchronisation drift. See `docs/regulations/platform_invariants.md`.
+and AGENTS.md. Foundry may also auto-capture canonical `docs/findings/*.md` artifacts from
+copilot sessions when durable technical knowledge is discovered. All other documentation is
+generated from code. Manually maintaining what the compiler already knows creates
+synchronisation drift. See `docs/regulations/platform_invariants.md`.
 
 **INV-010: Staleness conditions must have notification channels**
 The project manifest must declare notification targets for three staleness conditions:

@@ -31,7 +31,7 @@ Foundry has two modes:
 **Terminology:**
 - *Foundry* — this meta-platform
 - *Target platform* — a platform built using Foundry (e.g., an iGaming back office, a fintech ledger system)
-- *Spec-kit* — the four document types that capture what code cannot: ADRs, Regulations, Runbooks, AGENTS.md
+- *Spec-kit* — the canonical document families that capture what code cannot: ADRs, Regulations, Runbooks, AGENTS.md, and durable `docs/findings/*.md` technical findings captured from copilot sessions
 - *Project context* — the full system map produced by `mix foundry.project.context`:
   all nodes, edges, and spec-kit navigation metadata for the current project. **Included in Tier 2 LLM context**
   for agent discovery, governance validation, and change impact analysis.
@@ -242,6 +242,9 @@ Apply these retrieval and reasoning rules in every Foundry project:
 
 - For questions, answer from the spec-kit and live project context, citing the ADR,
   regulation requirement, runbook, module, field, or invariant that grounds the answer.
+- When a turn uncovers durable technical knowledge that future sessions should remember,
+  append a hidden `foundry-memory` JSON block so Foundry can persist it automatically as a
+  canonical `docs/findings/*.md` artifact. Do not emit this block for transient progress notes.
 - For structural code facts, prefer `mix foundry.project.context <Module>` over
   source-file prose or memory.
 - For DSL syntax, use current project usage rules, ExDoc, and local project patterns.
@@ -353,8 +356,10 @@ See ADR-020 and `docs/regulations/platform_invariants.md`.
 
 **INV-009: The spec-kit is the only manual documentation**
 The only documentation that requires manual authorship is: ADRs, regulation files, runbooks,
-and AGENTS.md. All other documentation is generated from code. Manually maintaining what the
-compiler already knows creates synchronisation drift. See `docs/regulations/platform_invariants.md`.
+and AGENTS.md. Foundry may also auto-capture canonical `docs/findings/*.md` artifacts from
+copilot sessions when durable technical knowledge is discovered. All other documentation is
+generated from code. Manually maintaining what the compiler already knows creates
+synchronisation drift. See `docs/regulations/platform_invariants.md`.
 
 **INV-010: Staleness conditions must have notification channels**
 The project manifest must declare notification targets for three staleness conditions:

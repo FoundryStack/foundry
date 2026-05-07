@@ -306,7 +306,7 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 | `Foundry.Context.EdgeEntry` | Typed edge between two nodes |
 | `Foundry.Context.LockFile` | Writes and validates `.foundry/context.lock` |
 | `Foundry.Context.ModuleDiscovery` | Discovers all compiled project modules |
-| `Foundry.Context.SpecKitIndexBuilder` | Walks `docs/adrs/`, `docs/runbooks/`, `docs/regulations/`; populates `spec_kit` field |
+| `Foundry.Context.SpecKitIndexBuilder` | Walks `docs/adrs/`, `docs/findings/`, `docs/runbooks/`, `docs/regulations/`; populates `spec_kit` field |
 | `Foundry.Context.SessionState` | Captures system map state for graph delta computation |
 | `Foundry.Manifest` | Ash resource for manifest schema + validation (no database — Simple data layer) |
 | `Foundry.Manifest.Parser` | Reads and parses `.foundry/manifest.exs` |
