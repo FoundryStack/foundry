@@ -3,6 +3,9 @@ import Config
 # Disable Swoosh HTTP client — not needed for Foundry lint/context tasks
 config :swoosh, :api_client, false
 
+# Enable Ash tracing for scenario tests
+config :ash, :tracer, [Foundry.TestScenario.AshTracer]
+
 test_db_user =
   System.get_env("PGUSER") ||
     System.get_env("USER") ||

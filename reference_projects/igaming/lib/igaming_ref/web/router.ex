@@ -15,14 +15,16 @@ defmodule IgamingRef.Web.Router do
     plug :accepts, ["json"]
   end
 
-  scope "/", IgamingRef.Web do
-    pipe_through :browser
+  live_session :default, on_mount: [Foundry.TestScenario.LiveViewHook] do
+    scope "/", IgamingRef.Web do
+      pipe_through :browser
 
-    live "/", HomeLive
-    live "/games/:id", GameLive
-    live "/auth", AuthLive
-    live "/deposit", DepositLive
-    live "/withdrawal", WithdrawalLive
+      live "/", HomeLive
+      live "/games/:id", GameLive
+      live "/auth", AuthLive
+      live "/deposit", DepositLive
+      live "/withdrawal", WithdrawalLive
+    end
   end
 
   scope "/api", IgamingRef.Web do

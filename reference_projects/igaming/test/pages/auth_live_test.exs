@@ -9,30 +9,30 @@ defmodule IgamingRef.Web.AuthLiveTest do
     :ok
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "auth page mounts and renders login form", context do
     capture(context, fn ->
-      {:ok, view, html} = live(build_conn(), "/auth")
+      {:ok, view, html} = live(build_conn_with_trace(), "/auth")
 
       assert view
       assert html != ""
     end)
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "auth page is anonymous", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/auth")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/auth")
 
       # page_group :anonymous — accessible without auth
       assert view |> render() =~ ""
     end)
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "auth page creates token resource", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/auth")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/auth")
 
       # Page calls IgamingRef.User.Token :create
       html = render(view)
@@ -40,10 +40,10 @@ defmodule IgamingRef.Web.AuthLiveTest do
     end)
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "auth page form submission", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/auth")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/auth")
 
       # Test form mount and initial render
       rendered = render(view)
@@ -51,10 +51,10 @@ defmodule IgamingRef.Web.AuthLiveTest do
     end)
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "auth page handles empty credentials", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/auth")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/auth")
 
       # Test error handling for missing credentials
       html = render(view)
@@ -62,10 +62,10 @@ defmodule IgamingRef.Web.AuthLiveTest do
     end)
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "auth page form has required fields", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/auth")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/auth")
 
       # Verify login form is present
       rendered = render(view)
@@ -73,11 +73,11 @@ defmodule IgamingRef.Web.AuthLiveTest do
     end)
   end
 
-  @scenario category: :flow,
+  @scenario category: :invariant,
             flow: [%{type: :action, node: "Accounts.Token", action: "create"}]
   test "auth page submits login form", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/auth")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/auth")
       result = render_submit(view, "login", %{"email" => "test@example.com", "password" => "password"})
       assert result != ""
     end)

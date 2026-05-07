@@ -9,20 +9,20 @@ defmodule IgamingRef.Web.HomeLiveTest do
     :ok
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "home page mounts and renders initial content", context do
     capture(context, fn ->
-      {:ok, view, html} = live(build_conn(), "/")
+      {:ok, view, html} = live(build_conn_with_trace(), "/")
 
       assert view
       assert html != ""
     end)
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "home page mounts as anonymous user", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/")
 
       # Home page should be accessible without authentication
       # (page_group :anonymous means no auth required)
@@ -30,10 +30,10 @@ defmodule IgamingRef.Web.HomeLiveTest do
     end)
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "home page reads games list", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/")
 
       # Page calls IgamingRef.Gaming.Game :read action
       html = render(view)
@@ -41,10 +41,10 @@ defmodule IgamingRef.Web.HomeLiveTest do
     end)
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "home page reads promotions list", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/")
 
       # Page calls IgamingRef.Promotions.Promotion :read action
       html = render(view)
@@ -52,10 +52,10 @@ defmodule IgamingRef.Web.HomeLiveTest do
     end)
   end
 
-  @scenario category: :flow
+  @scenario category: :invariant
   test "home page feature flag evaluation", context do
     capture(context, fn ->
-      {:ok, view, _html} = live(build_conn(), "/")
+      {:ok, view, _html} = live(build_conn_with_trace(), "/")
 
       # Page evaluates :new_lobby and :personalized_games feature flags
       # Content visibility depends on flag state
