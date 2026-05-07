@@ -14,7 +14,6 @@ defmodule IgamingRef.Web.AuthLive do
   def handle_event("login", %{"email" => email, "password" => password}, socket) do
     case Ash.create(IgamingRef.Accounts.Token, %{email: email, password: password}) do
       {:ok, _token} ->
-        Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Accounts.Token", action_kind: :create)
         {:noreply, socket |> redirect(to: "/")}
 
       {:error, _reason} ->

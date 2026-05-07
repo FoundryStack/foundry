@@ -23,31 +23,6 @@ defmodule Foundry.TestScenario.RuntimeCapture do
     end
   end
 
-  def trace_node(node_id), do: trace_node(node_id, %{})
-
-  def trace_node(node_id, attrs) when is_binary(node_id) do
-    case Process.get(@trace_key) do
-      %{events: events, sequence: sequence} = trace ->
-        normalized_attrs =
-          attrs
-          |> Enum.into(%{})
-          |> normalize_trace_attrs()
-
-        event =
-          normalized_attrs
-          |> Map.put(:node_id, node_id)
-          |> Map.put_new(:focus_node_id, Map.get(normalized_attrs, :focus_node_id, node_id))
-          |> Map.put_new(:status, :passed)
-          |> Map.put_new(:provenance, :executed)
-          |> Map.put_new(:sequence, sequence + 1)
-
-        Process.put(@trace_key, %{trace | events: [event | events], sequence: sequence + 1})
-        :ok
-
-      _ ->
-        :ok
-    end
-  end
 
   defp flush_trace(outcome) do
     case Process.get(@trace_key) do
@@ -108,13 +83,6 @@ defmodule Foundry.TestScenario.RuntimeCapture do
   defp normalize_outcome(:ok), do: "ok"
   defp normalize_outcome({kind, reason}), do: "#{kind}:#{Exception.format_banner(kind, reason)}"
 
-  defp normalize_trace_attrs(attrs) do
-    Enum.into(attrs, %{}, fn
-      {key, value} when is_atom(key) -> {key, value}
-      {key, value} when is_binary(key) -> {String.to_atom(key), value}
-    end)
-  end
-
   defp safe_segment(value) do
     value
     |> to_string()
@@ -148,6 +116,7 @@ defmodule Foundry.TestScenario.RuntimeCapture do
               |> Map.put_new(:status, :passed)
               |> Map.put_new(:provenance, :executed)
               |> Map.put_new(:sequence, seq + 1)
+              |> Map.put_new(:focus_node_id, Map.get(event_attrs, :node_id))
 
             Process.put(@trace_key, %{trace | events: [event | events], sequence: seq + 1})
 

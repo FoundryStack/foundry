@@ -12,11 +12,9 @@ defmodule IgamingRef.Web.HomeLive do
   @impl true
   def mount(_params, _session, socket) do
     games = PreviewSupport.safe_read(fn -> Ash.read!(IgamingRef.Gaming.Game) end, [])
-    Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Gaming.Game", action_kind: :read)
 
     promos =
       PreviewSupport.safe_read(fn -> Ash.read!(IgamingRef.Promotions.BonusCampaign) end, [])
-    Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Promotions.BonusCampaign", action_kind: :read)
 
     {:ok, socket |> assign(games: games, promos: promos)}
   end

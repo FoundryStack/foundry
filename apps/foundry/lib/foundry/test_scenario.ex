@@ -34,7 +34,7 @@ defmodule Foundry.TestScenario do
   defmacro __using__(_opts) do
     quote do
       Module.register_attribute(__MODULE__, :scenario, accumulate: true, persist: true)
-      import Foundry.TestScenario, only: [capture: 2, trace_node: 1, trace_node: 2]
+      import Foundry.TestScenario, only: [capture: 2]
     end
   end
 
@@ -61,27 +61,12 @@ defmodule Foundry.TestScenario do
   end
 
   @doc false
-  def trace_call(attrs, fun) when is_map(attrs) and is_function(fun, 0) do
-    case Map.pop(attrs, :node_id) do
-      {node_id, event_attrs} when is_binary(node_id) ->
-        trace_node(node_id, event_attrs)
-
-      _ ->
-        :ok
-    end
-
+  def trace_call(_attrs, fun) when is_function(fun, 0) do
+    # With Ash.Tracer now capturing all action metadata, we don't need to
+    # manually instrument here. Just execute the wrapped function.
     fun.()
   end
 
-  @doc """
-  Manually append a scenario runtime event.
-
-  Deprecated for ordinary test authoring. Prefer `capture/2`, which automatically
-  records executable entrypoints and lets the extractor expand them through the
-  graph without leaking Foundry-specific calls into domain code.
-  """
-  def trace_node(node_id), do: RuntimeCapture.trace_node(node_id)
-  def trace_node(node_id, attrs), do: RuntimeCapture.trace_node(node_id, attrs)
 
   defp instrument_capture_body(body, caller) do
     Macro.prewalk(body, fn
