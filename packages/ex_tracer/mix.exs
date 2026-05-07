@@ -4,6 +4,8 @@ defmodule ExTracer.MixProject do
   def project do
     [
       app: :ex_tracer,
+      name: "ex_tracer",
+      source_url: "https://github.com/MaxSvargal/ex_tracer",
       version: "0.1.0",
       build_path: "../../_build",
       config_path: "../../config/config.exs",
@@ -11,8 +13,13 @@ defmodule ExTracer.MixProject do
       lockfile: "../../mix.lock",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      description: description(),
     ]
+  end
+
+  defp description() do
+    "Scenario extraction primitives for Elixir test suites."
   end
 
   def application do
