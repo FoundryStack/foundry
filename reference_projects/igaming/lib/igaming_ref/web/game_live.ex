@@ -1,19 +1,10 @@
 defmodule IgamingRef.Web.GameLive do
-  Module.register_attribute(__MODULE__, :page_route, persist: true)
-  Module.register_attribute(__MODULE__, :calls_actions, persist: true)
-
   use Phoenix.LiveView
   use AshSDUI, lookup: {:from_params, :name}
 
   alias IgamingRef.Web.PreviewSupport
 
   @page_group :player
-  @page_route "/games/:id"
-  @calls_actions [
-    {IgamingRef.Gaming.Game, :read},
-    {IgamingRef.Finance.Wallet, :read},
-    {IgamingRef.Gaming.GameSession, :create}
-  ]
 
   @moduledoc "GameLive - #{@page_group} page"
 
@@ -53,8 +44,8 @@ defmodule IgamingRef.Web.GameLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <h1><%= @game.name %></h1>
-    <p>Balance: <%= @wallet.balance %></p>
+    <h1>{@game.name}</h1>
+    <p>Balance: {@wallet.balance}</p>
     <button phx-click="start_game">Play</button>
     """
   end

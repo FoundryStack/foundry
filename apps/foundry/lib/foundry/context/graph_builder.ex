@@ -11,13 +11,23 @@ defmodule Foundry.Context.GraphBuilder do
   - Resource `has_many`/`has_one` relationship: `referenced_by` edge
   """
 
-  alias Foundry.Context.{ModuleDiscovery, NodeBuilder, PendingMigrations, EdgeEntry, NodeEntry}
+  alias Foundry.Context.{ModuleDiscovery, NodeBuilder, PendingMigrations, EdgeEntry, NodeEntry, RouterIntrospector}
   alias Foundry.SparkMeta, as: FoundrySparkMeta
 
   @spec build(String.t(), list()) :: {list(NodeEntry.t()), list(EdgeEntry.t())}
   def build(project_root, manifest) do
     root_name = Keyword.get(manifest, :project_name, "")
+    app_name = Macro.underscore(root_name) |> String.to_atom()
     {:ok, pending_set} = PendingMigrations.check(project_root)
+
+    # Build router routes map keyed by module string for page route enrichment
+    router_routes =
+      case RouterIntrospector.find_router(app_name, project_root) do
+        nil -> %{}
+        router ->
+          RouterIntrospector.liveview_routes(router)
+          |> Map.new(fn r -> {format_module(r.module), r} end)
+      end
 
     nodes =
       ModuleDiscovery.all_project_modules(project_root, root_name)
@@ -25,7 +35,8 @@ defmodule Foundry.Context.GraphBuilder do
         fn mod ->
           info = FoundrySparkMeta.walk(mod)
           pending = PendingMigrations.pending?(mod, pending_set)
-          NodeBuilder.build(info, manifest, pending)
+          node = NodeBuilder.build(info, manifest, pending)
+          enrich_page_route(node, router_routes)
         end,
         max_concurrency: System.schedulers_online(),
         timeout: 30_000
@@ -49,6 +60,15 @@ defmodule Foundry.Context.GraphBuilder do
 
     {all_nodes, all_edges}
   end
+
+  defp enrich_page_route(%NodeEntry{type: "page"} = node, router_routes) do
+    case Map.get(router_routes, node.module) do
+      nil -> node
+      route -> %{node | page_route: route.path, page_dynamic: route.dynamic}
+    end
+  end
+
+  defp enrich_page_route(node, _router_routes), do: node
 
   # ---------------------------------------------------------------------------
   # Edge derivation

@@ -1,18 +1,10 @@
 defmodule IgamingRef.Web.WithdrawalLive do
-  Module.register_attribute(__MODULE__, :page_route, persist: true)
-  Module.register_attribute(__MODULE__, :calls_actions, persist: true)
-
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "withdrawal"}
 
   alias IgamingRef.Web.PreviewSupport
 
   @page_group :player
-  @page_route "/withdrawal"
-  @calls_actions [
-    {IgamingRef.Finance.WithdrawalRequest, :create},
-    {IgamingRef.Finance.Wallet, :read}
-  ]
 
   @moduledoc "WithdrawalLive - #{@page_group} page"
 
@@ -49,7 +41,7 @@ defmodule IgamingRef.Web.WithdrawalLive do
   def render(assigns) do
     ~H"""
     <h1>Withdraw Funds</h1>
-    <p>Available balance: <%= @wallet.balance %></p>
+    <p>Available balance: {@wallet.balance}</p>
     <form phx-submit="submit_withdrawal">
       <input name="amount" type="number" step="0.01" placeholder="Amount" />
       <button type="submit">Withdraw</button>

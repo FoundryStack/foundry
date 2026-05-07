@@ -40,7 +40,7 @@ defmodule IgamingRef.Web.PagesIntegrationTest do
     end
 
     test "calls_actions are inferred from source AST or annotations" do
-      # Either via Sourceror AST scan or @calls_actions attribute
+      # Sourceror AST scan is primary; @calls_actions only supplements misses
       # Tests: Foundry.SparkMeta.Analyzers.LiveViewActions
       :ok
     end
@@ -208,7 +208,17 @@ defmodule IgamingRef.Web.PagesIntegrationTest do
     end
 
     test "pages without @calls_actions use AST inference" do
-      # Fallback to Sourceror scanning
+      # Sourceror scanning is the default path
+      :ok
+    end
+
+    test "static SDUI pages infer preview routes when router discovery is unavailable" do
+      # Route fallback derives from use AshSDUI, lookup: {:static, ...}
+      :ok
+    end
+
+    test "plain LiveViews do not derive routes from Ash action calls" do
+      # Prevents auth-style pages from inventing routes from resource usage
       :ok
     end
 

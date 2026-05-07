@@ -24,9 +24,12 @@ Introduce a generic `:page` node type into Foundry that:
 1. Auto-discovers pages via Phoenix router introspection (router_introspector.ex)
 2. Infers page metadata via code-first patterns:
    - Route path from Phoenix router
+   - Route fallback from source only when router discovery is unavailable:
+     `use AshSDUI, lookup: {:static, name}` maps to `"/#{name}"`, with `"home"` mapping to `/`
    - Dynamic route markers (`:param` in path)
    - SDUI vs plain LiveView subtype (via injected `__sdui_lookup__/0`)
-   - Called Ash actions via AST scan (sourceror) with `@calls_actions` fallback
+   - Called Ash actions via AST scan (sourceror), with `@calls_actions` used only to supplement cases
+     the AST cannot observe directly
    - Feature flags via `@feature_flags` module attribute
 3. Requires single annotation: `@page_group` (only thing not inferable)
 4. Shows pages in Foundry Studio graph linked to called resources
@@ -47,14 +50,14 @@ Introduce a generic `:page` node type into Foundry that:
 **Page Module Detection** (`Foundry.Introspector`)
 - Checks `Phoenix.LiveView` behavior + `mount/3` function via `__info__`
 - Detects SDUI subtype via injected `__sdui_lookup__/0` function
-- Extracts page group, calls_actions, feature_flags from module attributes
+- Uses shared source-aware page metadata inference for route fallback, group, actions, and feature flags
 - Populates `NodeEntry` with `page_route`, `page_group`, `page_dynamic`, `page_subtype`, `calls_actions`
 
 **AST Analysis** (`Foundry.SparkMeta.Analyzers.LiveViewActions`)
 - Uses Sourceror to parse LiveView source
 - Detects patterns: `Ash.read(Module)`, `Module |> Ash.create(...)`
 - Returns `{resource_module, action_type}` list
-- Falls back to `@calls_actions` attribute if present
+- Merges in `@calls_actions` only when annotations add facts the AST missed
 
 **Graph Edges** (`Foundry.Context.GraphBuilder.derive_page_edges/2`)
 - `calls_action`: page → resource (from calls_actions list)
@@ -144,12 +147,12 @@ Five example pages demonstrate all patterns:
 
 | Field | Source | Fallback | Required |
 |---|---|---|---|
-| route_path | Phoenix.Router | N/A | Auto |
-| dynamic | Route path contains `:` | N/A | Auto |
+| route_path | Phoenix.Router | `@page_route`, then static `AshSDUI` lookup inference | Auto |
+| dynamic | Route path contains `:` | inferred from fallback route string | Auto |
 | liveview_module | Router.__routes__ | Module name pattern | Auto |
 | page_group | `@page_group` | nil (shows as `:unknown`) | **User annotates** |
 | page_subtype | `__sdui_lookup__/0` injected | :liveview | Auto |
-| calls_actions | Sourceror AST scan | `@calls_actions` attribute | Auto |
+| calls_actions | Sourceror AST scan | `@calls_actions` attribute supplements misses | Auto |
 | feature_flags | `@feature_flags` attribute | [] (omitted) | Auto |
 
 ---
@@ -195,11 +198,11 @@ Foundry.PreviewServer.stop_preview()
 ## Edge Cases Handled
 
 1. **Pages without @page_group**: show as `:unknown` group (not an error)
-2. **Pages without AST-detectable calls**: `@calls_actions` attribute overrides
+2. **Pages without AST-detectable calls**: `@calls_actions` attribute can fill in missing calls
 3. **Plain LiveView without AshSDUI**: correctly detected as :liveview subtype
 4. **Empty feature_flags**: field omitted from serialization (not [] array)
 5. **Dynamic routes**: `:param` segments trigger page_dynamic: true flag
-6. **Module attribute persistence**: fallback to pattern matching when unreliable
+6. **Router discovery unavailable**: static `AshSDUI` pages still infer stable preview routes from source
 7. **Router not in Application.spec**: pattern matching discovers pages anyway
 
 ---

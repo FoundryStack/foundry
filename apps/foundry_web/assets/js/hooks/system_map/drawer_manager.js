@@ -221,7 +221,8 @@ export class DrawerManager {
     if (!node) return
 
     const showPreview = node.type === 'page'
-    const previewRoute = node.page_route || '/'
+    const rawRoute = node.page_route || '/'
+    const previewRoute = rawRoute.replace(/:([^/]+)/g, 'preview')
     this._setHeader(this._displayNodeLabel(node), node.type || 'node', { showPreview, previewRoute })
     this._renderDetailsPanel(node)
   }

@@ -1,15 +1,10 @@
 defmodule IgamingRef.Web.DepositLive do
-  Module.register_attribute(__MODULE__, :page_route, persist: true)
-  Module.register_attribute(__MODULE__, :calls_actions, persist: true)
-
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "deposit"}
 
   alias IgamingRef.Web.PreviewSupport
 
   @page_group :player
-  @page_route "/deposit"
-  @calls_actions [{IgamingRef.Finance.Transfer, :create}, {IgamingRef.Finance.Wallet, :read}]
 
   @moduledoc "DepositLive - #{@page_group} page"
 
@@ -45,7 +40,7 @@ defmodule IgamingRef.Web.DepositLive do
   def render(assigns) do
     ~H"""
     <h1>Deposit Funds</h1>
-    <p>Current balance: <%= @wallet.balance %></p>
+    <p>Current balance: {@wallet.balance}</p>
     <form phx-submit="submit_deposit">
       <input name="amount" type="number" step="0.01" placeholder="Amount" />
       <button type="submit">Deposit</button>

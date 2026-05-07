@@ -84,9 +84,14 @@ ResourceModule |> Ash.read(...)      → reads ResourceModule
 Produces a list of `{resource_module, :read | :write}` tuples stored in
 `NodeEntry.calls_actions`. Approximate (AST heuristic, ~80% coverage).
 
-**Override** — if `@calls_actions [...]` module attribute is present, it takes precedence
-over the inferred list. This handles dynamic dispatch, indirect calls, and cases the
-AST scanner misses.
+**Supplement** — if `@calls_actions [...]` module attribute is present, it supplements
+the inferred list rather than replacing it. This handles dynamic dispatch, indirect calls,
+and cases the AST scanner misses without drifting away from observable code paths.
+
+**Route fallback** — when router discovery is unavailable, static `AshSDUI` lookups can
+infer a stable preview route from source (`{:static, "deposit"}` -> `"/deposit"`,
+`{:static, "home"}` -> `"/"`). Plain LiveViews and dynamic lookups are not guessed from
+their Ash action calls. An explicit `@page_route` remains an escape hatch for unusual cases.
 
 **Page group** — the only annotation required. Cannot be inferred from code:
 

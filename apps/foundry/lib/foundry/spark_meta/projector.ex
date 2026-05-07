@@ -61,7 +61,9 @@ defmodule Foundry.SparkMeta.Projector do
       side_effects: Map.get(analysis.facts, :foundry_side_effects, []),
       trigger_kind: classifier[:trigger_kind],
       diagnostics: analysis.diagnostics,
+      page_route: page_meta[:page_route],
       page_group: page_meta[:page_group],
+      page_dynamic: page_meta[:page_dynamic] || false,
       page_subtype: page_meta[:page_subtype],
       calls_actions: page_meta[:calls_actions] || []
     }
