@@ -868,7 +868,14 @@ defmodule Foundry.Context.GraphBuilder do
                end
 
              if resource_str && Map.has_key?(node_map, resource_str) do
-               EdgeEntry.new(page.module, resource_str, :calls_action)
+               action_name = Map.get(call_action, "action_name")
+
+               %EdgeEntry{
+                 from: page.module,
+                 to: resource_str,
+                 relation: :calls_action,
+                 action_name: action_name
+               }
              else
                nil
              end

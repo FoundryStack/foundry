@@ -55,6 +55,8 @@ export class CytoscapeGraph {
     this.compoundCompaction = { ...DEFAULT_COMPOUND_COMPACTION, ...compoundCompaction }
     this._coverageOverlayState = { uncoveredNodeIds: new Set() }
     this._hiddenRelations = new Set()
+    this._pendingViewportFrame = null
+    this._pendingViewportAction = null
 
     // Initialize callback properties with no-op defaults
     this.onNodeClick = () => {}
@@ -119,52 +121,54 @@ export class CytoscapeGraph {
   applyDelta(delta) {
     if (!delta) return
 
-    if (delta.nodes_removed?.length > 0) {
-      delta.nodes_removed.forEach(id => {
-        const node = this.cy.getElementById(id)
-        if (node.length > 0) node.remove()
-      })
-    }
+    this.cy.batch(() => {
+      if (delta.nodes_removed?.length > 0) {
+        delta.nodes_removed.forEach(id => {
+          const node = this.cy.getElementById(id)
+          if (node.length > 0) node.remove()
+        })
+      }
 
-    if (delta.nodes_added?.length > 0) {
-      const newElements = delta.nodes_added.map(node => ({
-        group: 'nodes',
-        data: {
-          id: node.id,
-          label: node.id,
-          parent: node.domain ? `domain:${node.domain}` : null,
-          ...node,
-        },
-      }))
-      this.cy.add(newElements)
-    }
+      if (delta.nodes_added?.length > 0) {
+        const newElements = delta.nodes_added.map(node => ({
+          group: 'nodes',
+          data: {
+            id: node.id,
+            label: node.id,
+            parent: node.domain ? `domain:${node.domain}` : null,
+            ...node,
+          },
+        }))
+        this.cy.add(newElements)
+      }
 
-    if (delta.nodes_modified?.length > 0) {
-      delta.nodes_modified.forEach(node => {
-        const ele = this.cy.getElementById(node.id)
-        if (ele.length > 0) ele.data(node)
-      })
-    }
+      if (delta.nodes_modified?.length > 0) {
+        delta.nodes_modified.forEach(node => {
+          const ele = this.cy.getElementById(node.id)
+          if (ele.length > 0) ele.data(node)
+        })
+      }
 
-    if (delta.edges_added?.length > 0) {
-      const newEdges = delta.edges_added.map(edge => ({
-        group: 'edges',
-        data: {
-          id: `${edge.from}->${edge.to}`,
-          source: edge.from,
-          target: edge.to,
-          ...edge,
-        },
-      }))
-      this.cy.add(newEdges)
-    }
+      if (delta.edges_added?.length > 0) {
+        const newEdges = delta.edges_added.map(edge => ({
+          group: 'edges',
+          data: {
+            id: `${edge.from}->${edge.to}`,
+            source: edge.from,
+            target: edge.to,
+            ...edge,
+          },
+        }))
+        this.cy.add(newEdges)
+      }
 
-    if (delta.edges_removed?.length > 0) {
-      delta.edges_removed.forEach(id => {
-        const edge = this.cy.getElementById(id)
-        if (edge.length > 0) edge.remove()
-      })
-    }
+      if (delta.edges_removed?.length > 0) {
+        delta.edges_removed.forEach(id => {
+          const edge = this.cy.getElementById(id)
+          if (edge.length > 0) edge.remove()
+        })
+      }
+    })
   }
 
   applyProposalOverlay(delta) {
@@ -246,110 +250,114 @@ export class CytoscapeGraph {
     const contextNodeIds = this._scenarioContextNodeIds(scenarioNodeIds)
     const activeTone = this._scenarioStatusTone(currentActiveStep?.status)
 
-    this._activeScenarioOverlayMode = overlayEdgeMode || null
-    this._ensureScenarioOverlayEdges(transitions, activeEdgeSet, transitionEdgeSet)
+    this.cy.batch(() => {
+      this._activeScenarioOverlayMode = overlayEdgeMode || null
+      this._ensureScenarioOverlayEdges(transitions, activeEdgeSet, transitionEdgeSet)
 
-    this.cy.elements().unselect()
+      this.cy.elements().unselect()
 
-    this.cy.nodes().forEach(node => {
-      const id = node.id()
-      const isActiveFocus = activeNodeIds.has(id)
-      const inScenario = scenarioNodeIds.has(id)
-      const inContext = contextNodeIds.has(id)
-      const isExecuted = executedNodeIds.has(id)
-      const isExpandedOnly = !isExecuted && expandedNodeIds.has(id)
-      const isFailed = failedNodeIds.has(id)
-      const isShortCircuit = shortCircuitNodeIds.has(id)
+      this.cy.nodes().forEach(node => {
+        const id = node.id()
+        const isActiveFocus = activeNodeIds.has(id)
+        const inScenario = scenarioNodeIds.has(id)
+        const inContext = contextNodeIds.has(id)
+        const isExecuted = executedNodeIds.has(id)
+        const isExpandedOnly = !isExecuted && expandedNodeIds.has(id)
+        const isFailed = failedNodeIds.has(id)
+        const isShortCircuit = shortCircuitNodeIds.has(id)
 
-      if (isActiveFocus) {
-        node.select()
-        node.style('opacity', 1)
-        node.style('border-width', node.isParent() ? '3px' : '2.5px')
-        node.style('border-color', activeTone.border)
-        node.style('background-color', activeTone.fill)
-        node.style('z-index', 999)
-      } else if (isFailed) {
-        node.style('opacity', 1)
-        node.style('border-width', node.isParent() ? '2.5px' : '2px')
-        node.style('border-color', '#dc2626')
-        node.style('background-color', 'rgba(220, 38, 38, 0.12)')
-        node.style('z-index', 900)
-      } else if (isShortCircuit) {
-        node.style('opacity', 1)
-        node.style('border-width', node.isParent() ? '2.5px' : '2px')
-        node.style('border-color', '#d97706')
-        node.style('background-color', 'rgba(217, 119, 6, 0.1)')
-        node.style('z-index', 880)
-      } else if (isExecuted) {
-        node.style('opacity', 1)
-        node.style('border-width', node.isParent() ? '2.5px' : '2px')
-        node.style('border-color', '#16a34a')
-        node.style('z-index', 850)
-      } else if (isExpandedOnly) {
-        node.style('opacity', 0.72)
-        node.style('border-width', node.isParent() ? '1.5px' : '1px')
-        node.style('z-index', 820)
-      } else if (inScenario || inContext) {
-        node.style('opacity', 0.92)
-        node.style('border-width', null)
-        node.style('z-index', 800)
-      } else {
-        node.style('opacity', 0.12)
-        node.style('z-index', null)
-      }
+        if (isActiveFocus) {
+          node.select()
+          node.style('opacity', 1)
+          node.style('border-width', node.isParent() ? '3px' : '2.5px')
+          node.style('border-color', activeTone.border)
+          node.style('background-color', activeTone.fill)
+          node.style('z-index', 999)
+        } else if (isFailed) {
+          node.style('opacity', 1)
+          node.style('border-width', node.isParent() ? '2.5px' : '2px')
+          node.style('border-color', '#dc2626')
+          node.style('background-color', 'rgba(220, 38, 38, 0.12)')
+          node.style('z-index', 900)
+        } else if (isShortCircuit) {
+          node.style('opacity', 1)
+          node.style('border-width', node.isParent() ? '2.5px' : '2px')
+          node.style('border-color', '#d97706')
+          node.style('background-color', 'rgba(217, 119, 6, 0.1)')
+          node.style('z-index', 880)
+        } else if (isExecuted) {
+          node.style('opacity', 1)
+          node.style('border-width', node.isParent() ? '2.5px' : '2px')
+          node.style('border-color', '#16a34a')
+          node.style('z-index', 850)
+        } else if (isExpandedOnly) {
+          node.style('opacity', 0.72)
+          node.style('border-width', node.isParent() ? '1.5px' : '1px')
+          node.style('z-index', 820)
+        } else if (inScenario || inContext) {
+          node.style('opacity', 0.92)
+          node.style('border-width', null)
+          node.style('z-index', 800)
+        } else {
+          node.style('opacity', 0.12)
+          node.style('z-index', null)
+        }
+      })
+
+      this.cy.edges().forEach(edge => {
+        const source = edge.source().id()
+        const target = edge.target().id()
+        const edgeKey = `${source}|${target}`
+        const isScenarioEdge =
+          transitionEdgeSet.has(edgeKey) ||
+          transitionEdgeSet.has(`${target}|${source}`)
+        const isActiveEdge = activeEdgeSet.has(edgeKey)
+        const isSyntheticScenarioEdge = edge.data('state') === 'scenario-overlay'
+        const overlayReason = edge.data('overlay_reason')
+        const isLogicalStaticEdge = overlayReason === 'static_logical_transition'
+        const touchesExecuted =
+          executedNodeIds.has(source) && executedNodeIds.has(target)
+        const edgeTone = this._scenarioEdgeTone(source, target, failedNodeIds, shortCircuitNodeIds)
+
+        if (isActiveEdge) {
+          edge.select()
+          edge.style('line-style', 'solid')
+          edge.style('width', '4px')
+          edge.style('opacity', 1)
+          edge.style('line-color', activeTone.line)
+          edge.style('target-arrow-color', activeTone.line)
+          edge.style('z-index', 999)
+        } else if (isScenarioEdge) {
+          edge.style(
+            'line-style',
+            isLogicalStaticEdge ? 'dotted' : isSyntheticScenarioEdge ? 'dashed' : 'solid',
+          )
+          edge.style('width', touchesExecuted ? '2.5px' : '1.5px')
+          edge.style('opacity', isLogicalStaticEdge ? 0.62 : touchesExecuted ? 1 : 0.7)
+          edge.style('line-color', edgeTone.line)
+          edge.style('target-arrow-color', edgeTone.line)
+          edge.style('z-index', 850)
+        } else {
+          edge.style('opacity', 0.12)
+          edge.style('z-index', null)
+        }
+      })
     })
 
-    this.cy.edges().forEach(edge => {
-      const source = edge.source().id()
-      const target = edge.target().id()
-      const edgeKey = `${source}|${target}`
-      const isScenarioEdge =
-        transitionEdgeSet.has(edgeKey) ||
-        transitionEdgeSet.has(`${target}|${source}`)
-      const isActiveEdge = activeEdgeSet.has(edgeKey)
-      const isSyntheticScenarioEdge = edge.data('state') === 'scenario-overlay'
-      const overlayReason = edge.data('overlay_reason')
-      const isLogicalStaticEdge = overlayReason === 'static_logical_transition'
-      const touchesExecuted =
-        executedNodeIds.has(source) && executedNodeIds.has(target)
-      const edgeTone = this._scenarioEdgeTone(source, target, failedNodeIds, shortCircuitNodeIds)
+    this._queueViewportTransition(() => {
+      const activeNodes = this.cy.nodes().filter(n => activeNodeIds.has(n.id()))
+      const allScenarioNodes = this.cy.nodes().filter(n => scenarioNodeIds.has(n.id()))
+      const nextFocusNodes =
+        activeNodes.length > 0
+          ? activeNodes.union(activeNodes.neighborhood('node'))
+          : allScenarioNodes
 
-      if (isActiveEdge) {
-        edge.select()
-        edge.style('line-style', 'solid')
-        edge.style('width', '4px')
-        edge.style('opacity', 1)
-        edge.style('line-color', activeTone.line)
-        edge.style('target-arrow-color', activeTone.line)
-        edge.style('z-index', 999)
-      } else if (isScenarioEdge) {
-        edge.style(
-          'line-style',
-          isLogicalStaticEdge ? 'dotted' : isSyntheticScenarioEdge ? 'dashed' : 'solid',
-        )
-        edge.style('width', touchesExecuted ? '2.5px' : '1.5px')
-        edge.style('opacity', isLogicalStaticEdge ? 0.62 : touchesExecuted ? 1 : 0.7)
-        edge.style('line-color', edgeTone.line)
-        edge.style('target-arrow-color', edgeTone.line)
-        edge.style('z-index', 850)
-      } else {
-        edge.style('opacity', 0.12)
-        edge.style('z-index', null)
-      }
-    })
-
-    const activeScenarioNodes = this.cy.nodes().filter(n => activeNodeIds.has(n.id()))
-    const scenarioNodes = this.cy.nodes().filter(n => scenarioNodeIds.has(n.id()))
-    const focusNodes =
-      activeScenarioNodes.length > 0
-        ? activeScenarioNodes.union(activeScenarioNodes.neighborhood('node'))
-        : scenarioNodes
-
-    this._focusElements(focusNodes.length > 0 ? focusNodes : scenarioNodes, {
-      padding: 128,
-      maxZoom: 0.92,
-      minZoom: 0.5,
-      duration: 420,
+      this._focusElements(nextFocusNodes.length > 0 ? nextFocusNodes : allScenarioNodes, {
+        padding: 128,
+        maxZoom: 0.92,
+        minZoom: 0.5,
+        duration: 420,
+      })
     })
   }
 
@@ -614,7 +622,10 @@ export class CytoscapeGraph {
     if (node.length === 0) return
 
     this.selectNode(id)
-    this._centerElementsPreservingZoom(node, { duration: 260 })
+    this._queueViewportTransition(() => {
+      const nextNode = this.cy.getElementById(id)
+      this._centerElementsPreservingZoom(nextNode, { duration: 260 })
+    })
   }
 
   clearSelection() {
@@ -622,10 +633,12 @@ export class CytoscapeGraph {
   }
 
   centerOn(id) {
-    const ele = this.cy.getElementById(id)
-    if (ele.length > 0) {
-      this._centerElementsPreservingZoom(ele, { duration: 260 })
-    }
+    this._queueViewportTransition(() => {
+      const ele = this.cy.getElementById(id)
+      if (ele.length > 0) {
+        this._centerElementsPreservingZoom(ele, { duration: 260 })
+      }
+    })
   }
 
   // Dims non-matching nodes by id set. Caller decides what matches.
@@ -690,6 +703,7 @@ export class CytoscapeGraph {
 
   destroy() {
     if (this.currentLayout) this.currentLayout.stop()
+    this._clearPendingViewportTransition()
     if (this.cy) {
       this.cy.destroy()
       this.cy = null
@@ -729,6 +743,7 @@ export class CytoscapeGraph {
   _restoreViewport(viewport) {
     if (!viewport) return
 
+    this.cy.stop()
     this.cy.animate({
       zoom: viewport.zoom,
       pan: viewport.pan,
@@ -752,6 +767,9 @@ export class CytoscapeGraph {
     const panX = (this.cy.width() / 2) + sidebarOffset - (bb.x1 + bb.w / 2) * zoom
     const panY = (this.cy.height() / 2) - (bb.y1 + bb.h / 2) * zoom
 
+    if (this._isViewportClose({ x: panX, y: panY }, zoom)) return
+
+    this.cy.stop()
     this.cy.animate({ pan: { x: panX, y: panY }, duration })
   }
 
@@ -767,12 +785,59 @@ export class CytoscapeGraph {
 
     const zoom = Math.max(minZoom, Math.min(maxZoom, viewport.zoom))
     const sidebarOffset = this._getSidebarOffset()
+    const pan = { x: viewport.pan.x + sidebarOffset, y: viewport.pan.y }
 
+    if (this._isViewportClose(pan, zoom)) return
+
+    this.cy.stop()
     this.cy.animate({
-      pan: { x: viewport.pan.x + sidebarOffset, y: viewport.pan.y },
+      pan,
       zoom,
       duration,
     })
+  }
+
+  _queueViewportTransition(callback, { settleFrames = 2 } = {}) {
+    if (typeof callback !== 'function') return
+
+    this._pendingViewportAction = callback
+    this._clearPendingViewportTransition()
+
+    let remainingFrames = settleFrames
+    const tick = () => {
+      if (!this.cy) return
+
+      if (remainingFrames > 0) {
+        remainingFrames -= 1
+        this._pendingViewportFrame = requestAnimationFrame(tick)
+        return
+      }
+
+      this._pendingViewportFrame = null
+      const action = this._pendingViewportAction
+      this._pendingViewportAction = null
+      action?.()
+    }
+
+    this._pendingViewportFrame = requestAnimationFrame(tick)
+  }
+
+  _clearPendingViewportTransition() {
+    if (this._pendingViewportFrame) {
+      cancelAnimationFrame(this._pendingViewportFrame)
+      this._pendingViewportFrame = null
+    }
+  }
+
+  _isViewportClose(nextPan, nextZoom, panTolerance = 1, zoomTolerance = 0.01) {
+    const currentPan = this.cy.pan()
+    const currentZoom = this.cy.zoom()
+
+    return (
+      Math.abs(currentPan.x - nextPan.x) <= panTolerance &&
+      Math.abs(currentPan.y - nextPan.y) <= panTolerance &&
+      Math.abs(currentZoom - nextZoom) <= zoomTolerance
+    )
   }
 
   _runLocalLayout(parentId) {

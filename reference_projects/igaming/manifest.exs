@@ -55,7 +55,7 @@
   ],
   preview_server: [
     command: "mix phx.server",
-    port: 4000,
+    port: 4001,
     env: []
   ]
 ]

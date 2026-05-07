@@ -62,7 +62,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     test "embeds preview base url for the system map hook", %{conn: conn} do
       {:ok, _live, html} = live(conn, "/studio")
 
-      assert html =~ ~s(data-preview-base-url="http://localhost:4000")
+      assert html =~ ~s(data-preview-base-url="http://localhost:4001")
     end
 
     test "shows empty state when context unavailable" do

@@ -38,9 +38,12 @@ defmodule Foundry.SparkMeta.Analyzers.LiveViewActions do
   defp normalize_calls_actions(attrs) do
     Enum.map(attrs, fn
       {resource_module, action_type} when is_atom(resource_module) ->
+        action_name = Atom.to_string(action_type)
+
         %{
           "resource" => format_module(resource_module),
-          "action" => action_type
+          "action" => action_type,
+          "action_name" => action_name
         }
 
       map when is_map(map) ->
@@ -103,6 +106,21 @@ defmodule Foundry.SparkMeta.Analyzers.LiveViewActions do
     collect_calls(body)
   end
 
+  # Match: Ash.create(Module, :action_name, ...) — named action variant (write actions only)
+  defp collect_calls(
+         {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _,
+          [{:__aliases__, _, module_parts}, named_action | _]}
+       )
+       when action in [:create, :create!, :update, :update!, :destroy, :destroy!] and
+              is_atom(named_action) and named_action not in [true, false, nil] do
+    module = Module.concat(module_parts)
+    [%{
+      "resource" => format_module(module),
+      "action" => :write,
+      "action_name" => Atom.to_string(named_action)
+    }]
+  end
+
   # Match: Ash.read(Module, ...) or Ash.create(Module, ...) or Ash.read_one!(Module, ...) etc.
   defp collect_calls(
          {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _, [{:__aliases__, _, module_parts} | _]}
@@ -123,8 +141,17 @@ defmodule Foundry.SparkMeta.Analyzers.LiveViewActions do
             ] do
     action_type =
       if action in [:create, :create!, :update, :update!, :destroy, :destroy!], do: :write, else: :read
+
+    default_action_name =
+      cond do
+        action in [:create, :create!] -> "create"
+        action in [:update, :update!] -> "update"
+        action in [:destroy, :destroy!] -> "destroy"
+        true -> "read"
+      end
+
     module = Module.concat(module_parts)
-    [%{"resource" => format_module(module), "action" => action_type}]
+    [%{"resource" => format_module(module), "action" => action_type, "action_name" => default_action_name}]
   end
 
   # Match: Module |> Ash.read(...) - pipe expression

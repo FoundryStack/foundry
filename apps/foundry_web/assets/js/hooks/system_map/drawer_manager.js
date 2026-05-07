@@ -30,6 +30,9 @@ export class DrawerManager {
     this._pushEvent = pushEvent || (() => {})
     this._onNodeSelect = options.onNodeSelect || (() => {})
     this._onStartPreview = options.onStartPreview || (() => {})
+    this._activeNodeSelection = null
+    this._activeScenario = null
+    this._activeFileView = null
     this._panel = new ResizablePanel({
       elementId: SELECTORS.drawer,
       handleId: 'drawer-resize-handle',
@@ -151,12 +154,15 @@ export class DrawerManager {
   sync() {
     this._initDrawer()
     this._panel.sync()
+    this._renderActivePanel()
   }
 
   switchTab(_tabName) {}
 
   renderForNode(nodeId, nodeData = null) {
     this._activeScenario = null
+    this._activeFileView = null
+    this._activeNodeSelection = { nodeId, nodeData }
 
     const stepMatch = nodeId.match(/^(.+):step:(\d+)$/)
     if (stepMatch) {
@@ -206,6 +212,8 @@ export class DrawerManager {
 
   renderForScenario(scenario) {
     if (!scenario) return
+    this._activeNodeSelection = null
+    this._activeFileView = null
     this._activeScenario = scenario
     this._setHeader(scenario.test_header || scenario.name || 'Scenario', scenario.test_subheader || '')
     this._renderScenarioPanel(scenario)
@@ -214,12 +222,18 @@ export class DrawerManager {
 
   clearScenario() {
     this._activeScenario = null
+    this._activeNodeSelection = null
+    this._activeFileView = null
     this.close()
   }
 
   renderFileContent({ path, content, line = null }) {
     const panel = document.getElementById(SELECTORS.panelDetails)
     if (!panel) return
+
+    this._activeNodeSelection = null
+    this._activeScenario = null
+    this._activeFileView = { kind: 'content', path, content, line }
 
     this._setHeader(path || 'File preview', line ? `Line ${line}` : 'Source')
 
@@ -258,6 +272,10 @@ export class DrawerManager {
   renderFileError({ path, reason }) {
     const panel = document.getElementById(SELECTORS.panelDetails)
     if (!panel) return
+
+    this._activeNodeSelection = null
+    this._activeScenario = null
+    this._activeFileView = { kind: 'error', path, reason }
 
     this._setHeader('File preview unavailable', path || 'unknown')
     panel.innerHTML = `
@@ -428,8 +446,12 @@ export class DrawerManager {
       blocks.push(this._fieldCard(
         'Called actions',
         `<div class="space-y-1">${node.calls_actions.map(action => {
-          const [resource, actionType] = Array.isArray(action) ? action : [action, 'unknown']
-          return `<p class="font-mono text-xs text-base-content/80">${this._esc(resource)} <span class="text-base-content/45">(${this._esc(actionType)})</span></p>`
+          const resource = action?.resource ?? (Array.isArray(action) ? action[0] : String(action))
+          const actionName = action?.action_name
+          const actionType = action?.action ?? (Array.isArray(action) ? action[1] : 'unknown')
+          const label = actionName ? `${resource}.${actionName}` : resource
+          const badge = actionName ? actionName : actionType
+          return `<p class="font-mono text-xs text-base-content/80">${this._esc(label)} <span class="text-base-content/45">(${this._esc(badge)})</span></p>`
         }).join('')}</div>`,
       ))
     }
@@ -441,10 +463,12 @@ export class DrawerManager {
       ))
     }
 
-    if (node.reqs?.length) {
+    if (node.reqs?.length || node.compliance?.length) {
+      const requirements = node.reqs || node.compliance || []
+
       blocks.push(this._fieldCard(
         'Compliance',
-        `<div class="flex flex-wrap gap-1">${node.reqs.map(req => `<span class="rounded-full border border-warning/30 bg-warning/10 px-2 py-1 font-mono text-[10px] text-warning">${this._esc(req)}</span>`).join('')}</div>`,
+        `<div class="flex flex-wrap gap-1">${requirements.map(req => `<span class="rounded-full border border-warning/30 bg-warning/10 px-2 py-1 font-mono text-[10px] text-warning">${this._esc(req)}</span>`).join('')}</div>`,
       ))
     }
 
@@ -641,6 +665,28 @@ export class DrawerManager {
         ${this._esc(message)}
       </div>
     `
+  }
+
+  _renderActivePanel() {
+    if (this._activeScenario) {
+      this.renderForScenario(this._activeScenario)
+      return
+    }
+
+    if (this._activeFileView?.kind === 'content') {
+      this.renderFileContent(this._activeFileView)
+      return
+    }
+
+    if (this._activeFileView?.kind === 'error') {
+      this.renderFileError(this._activeFileView)
+      return
+    }
+
+    if (this._activeNodeSelection) {
+      const { nodeId, nodeData } = this._activeNodeSelection
+      this.renderForNode(nodeId, nodeData)
+    }
   }
 
   _setHeader(title, subtitle = '') {

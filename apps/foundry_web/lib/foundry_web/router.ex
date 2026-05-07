@@ -47,6 +47,7 @@ defmodule FoundryWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/preview-launch", PageController, :preview_launch
     live "/studio", SystemMapLive
   end
 
