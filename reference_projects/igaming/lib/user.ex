@@ -25,6 +25,10 @@ defmodule IgamingRef.Accounts.User do
     repo(IgamingRef.Repo)
   end
 
+  paper_trail do
+    change_tracking_mode(:snapshot)
+  end
+
   authentication do
     strategies do
       password :password do
@@ -107,6 +111,10 @@ defmodule IgamingRef.Accounts.Token do
   postgres do
     table("tokens")
     repo(IgamingRef.Repo)
+  end
+
+  paper_trail do
+    change_tracking_mode(:snapshot)
   end
 
   actions do

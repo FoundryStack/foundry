@@ -25,11 +25,11 @@ defmodule IgamingRef.Web.GameLiveTest do
     game = PageFixtures.game_fixture(%{title: "Crystal River"})
     {:ok, view, _html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/games/#{game.id}")
 
-    html = render_click(element(view, "button", "Play"))
+    render_click(element(view, "button", "Play"))
     session = PageFixtures.session_for(player.id, game.id)
 
     assert session.status == :active
-    assert PageFixtures.normalize_text(html) =~ "Game session started"
+    assert PageFixtures.flash(view, :info) == "Game session started"
     assert PageFixtures.normalize_text(render(view)) =~ "Session ID:"
   end
 
@@ -39,7 +39,7 @@ defmodule IgamingRef.Web.GameLiveTest do
     assert html =~ "Preview Game"
     assert html =~ "£1,250.00"
 
-    failed_html = render_click(element(view, "button", "Play"))
-    assert PageFixtures.normalize_text(failed_html) =~ "Could not start session"
+    render_click(element(view, "button", "Play"))
+    assert PageFixtures.flash(view, :error) == "Could not start session"
   end
 end

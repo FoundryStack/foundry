@@ -25,17 +25,16 @@ defmodule IgamingRef.Web.WithdrawalLiveTest do
     wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "300.00")})
     {:ok, view, _html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/withdrawal")
 
-    html =
-      view
-      |> form("form", %{"amount" => "50.00"})
-      |> render_submit()
+    view
+    |> form("form", %{"amount" => "50.00"})
+    |> render_submit()
 
     request = PageFixtures.withdrawal_for_wallet(wallet.id)
 
     assert request.player_id == player.id
     assert request.amount == Money.new(:GBP, "50.00")
     assert request.status == :pending
-    assert PageFixtures.normalize_text(html) =~ "Withdrawal requested"
+    assert PageFixtures.flash(view, :info) == "Withdrawal requested"
   end
 
   test "preview fallback still mounts safely and failed submission shows an error" do
@@ -43,11 +42,10 @@ defmodule IgamingRef.Web.WithdrawalLiveTest do
 
     assert html =~ "£1,250.00"
 
-    failed_html =
-      view
-      |> form("form", %{"amount" => "50.00"})
-      |> render_submit()
+    view
+    |> form("form", %{"amount" => "50.00"})
+    |> render_submit()
 
-    assert PageFixtures.normalize_text(failed_html) =~ "Withdrawal failed"
+    assert PageFixtures.flash(view, :error) == "Withdrawal failed"
   end
 end

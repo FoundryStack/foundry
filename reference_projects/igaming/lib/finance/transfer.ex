@@ -27,6 +27,10 @@ defmodule IgamingRef.Finance.Transfer do
     repo(IgamingRef.Repo)
   end
 
+  paper_trail do
+    change_tracking_mode(:snapshot)
+  end
+
   attributes do
     uuid_primary_key(:id)
 

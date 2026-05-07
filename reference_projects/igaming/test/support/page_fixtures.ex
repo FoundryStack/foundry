@@ -82,6 +82,13 @@ defmodule IgamingRef.PageFixtures do
     :sys.get_state(view.pid).socket.assigns
   end
 
+  def flash(view, kind) do
+    view
+    |> view_assigns()
+    |> Map.get(:flash, %{})
+    |> then(fn flash -> Map.get(flash, kind) || Map.get(flash, to_string(kind)) end)
+  end
+
   def normalize_text(text) do
     text
     |> String.replace(~r/\s+/, " ")

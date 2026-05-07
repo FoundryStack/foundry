@@ -19,12 +19,11 @@ defmodule IgamingRef.Web.AuthLiveTest do
   test "shows an error flash for invalid credentials" do
     {:ok, view, _html} = live(build_conn_with_trace(), "/auth")
 
-    html =
-      view
-      |> form("form", %{"email" => "missing@example.test", "password" => "wrongpass"})
-      |> render_submit()
+    view
+    |> form("form", %{"email" => "missing@example.test", "password" => "wrongpass"})
+    |> render_submit()
 
-    assert PageFixtures.normalize_text(html) =~ "Invalid credentials"
+    assert PageFixtures.flash(view, :error) == "Invalid credentials"
   end
 
   test "redirects after a successful password sign in" do

@@ -19,7 +19,7 @@ defmodule IgamingRef.Web.AuthLive do
       })
 
     case Ash.read_one(query, authorize?: false) do
-      {:ok, _user} ->
+      {:ok, %{} = _user} ->
         {:noreply, socket |> redirect(to: "/")}
 
       _ ->

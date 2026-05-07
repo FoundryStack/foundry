@@ -10,38 +10,38 @@ defmodule IgamingRef.Web.WithdrawalLive do
   @moduledoc "WithdrawalLive - #{@page_group} page"
 
   @impl true
-  def mount(_params, _session, socket) do
-    player_id = socket.assigns[:player_id] || PreviewSupport.sample_player_id()
+  def mount(_params, session, socket) do
+    player_id = session_player_id(session)
+    preview? = is_nil(player_id)
+    player_id = player_id || PreviewSupport.sample_player_id()
 
     wallet =
       PreviewSupport.safe_read(
         fn ->
           IgamingRef.Finance.Wallet
           |> Ash.Query.filter(player_id: player_id)
-          |> Ash.read_one!(actor: %{id: player_id})
+          |> Ash.read_one!(actor: %{is_system: true})
         end,
         PreviewSupport.sample_wallet()
       )
 
-    {:ok, assign(socket, wallet: wallet, player_id: player_id)}
+    {:ok, assign(socket, wallet: wallet, player_id: player_id, preview?: preview?)}
   end
 
   @impl true
   def handle_event("submit_withdrawal", %{"amount" => amount}, socket) do
     wallet = socket.assigns.wallet
 
-    with {:ok, parsed_amount} <- parse_amount(wallet, amount),
+    with false <- socket.assigns.preview?,
+         {:ok, parsed_amount} <- parse_amount(wallet, amount),
          {:ok, _withdrawal} <-
-           Ash.create(
-             IgamingRef.Finance.WithdrawalRequest,
-             %{
+           IgamingRef.Finance.WithdrawalRequest
+           |> Ash.Changeset.for_create(:create, %{
                player_id: socket.assigns.player_id,
                wallet_id: wallet.id,
                amount: parsed_amount
-             },
-             action: :create,
-             actor: %{id: socket.assigns.player_id}
-           ) do
+             })
+           |> Ash.create(actor: %{id: socket.assigns.player_id}) do
         {:noreply, socket |> put_flash(:info, "Withdrawal requested")}
     else
       _ ->
@@ -75,4 +75,10 @@ defmodule IgamingRef.Web.WithdrawalLive do
   defp wallet_currency(_wallet), do: "GBP"
 
   defp format_money(value), do: to_string(value)
+
+  defp session_player_id(session) when is_map(session) do
+    Map.get(session, "player_id") || Map.get(session, :player_id)
+  end
+
+  defp session_player_id(_session), do: nil
 end

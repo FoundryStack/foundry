@@ -12,6 +12,8 @@ defmodule Foundry.TestScenario.LiveViewHook do
   """
 
   def on_mount(_name, _params, session, socket) do
+    socket = assign_session_keys(socket, session)
+
     case decode_test_pid(session) do
       {:ok, test_pid} ->
         Foundry.TestScenario.LiveViewRegistry.register(self(), test_pid)
@@ -29,6 +31,19 @@ defmodule Foundry.TestScenario.LiveViewHook do
         {:cont, socket}
     end
   end
+
+  defp assign_session_keys(socket, session) when is_map(session) do
+    session
+    |> Enum.reject(fn {key, _value} -> to_string(key) == "foundry_test_pid" end)
+    |> Enum.reduce(socket, fn {key, value}, acc ->
+      Phoenix.Component.assign(acc, normalize_assign_key(key), value)
+    end)
+  end
+
+  defp assign_session_keys(socket, _session), do: socket
+
+  defp normalize_assign_key(key) when is_atom(key), do: key
+  defp normalize_assign_key(key) when is_binary(key), do: String.to_atom(key)
 
   defp decode_test_pid(session) when is_map(session) do
     case session do

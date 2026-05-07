@@ -8,7 +8,7 @@ defmodule IgamingRef.Web.DepositLiveTest do
 
   test "mounts with the player's real wallet balance and active form controls" do
     player = PageFixtures.player_fixture()
-    wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "1250.00")})
+    wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "987.65")})
 
     {:ok, view, html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/deposit")
 
@@ -24,16 +24,15 @@ defmodule IgamingRef.Web.DepositLiveTest do
     wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "100.00")})
     {:ok, view, _html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/deposit")
 
-    html =
-      view
-      |> form("form", %{"amount" => "100.00"})
-      |> render_submit()
+    view
+    |> form("form", %{"amount" => "100.00"})
+    |> render_submit()
 
     transfer = PageFixtures.transfer_for_wallet(wallet.id)
 
     assert transfer.reason == "deposit"
     assert transfer.amount == Money.new(:GBP, "100.00")
-    assert PageFixtures.normalize_text(html) =~ "Deposit successful"
+    assert PageFixtures.flash(view, :info) == "Deposit successful"
   end
 
   test "preview fallback still mounts safely and failed submission shows an error" do
@@ -41,11 +40,10 @@ defmodule IgamingRef.Web.DepositLiveTest do
 
     assert html =~ "£1,250.00"
 
-    failed_html =
-      view
-      |> form("form", %{"amount" => "100.00"})
-      |> render_submit()
+    view
+    |> form("form", %{"amount" => "100.00"})
+    |> render_submit()
 
-    assert PageFixtures.normalize_text(failed_html) =~ "Deposit failed"
+    assert PageFixtures.flash(view, :error) == "Deposit failed"
   end
 end
