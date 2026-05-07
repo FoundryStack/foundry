@@ -28,9 +28,10 @@ config :igaming_ref, Oban,
   testing: :manual
 
 config :igaming_ref, IgamingRef.Web.Endpoint,
-  secret_key_base: "igaming-ref-test-secret-key-base",
+  secret_key_base: "igaming-ref-test-secret-key-base-that-is-long-enough-for-64-bytes",
   server: false,
   url: [host: "localhost"],
   http: [ip: {127, 0, 0, 1}, port: 4002],
   live_view: [signing_salt: "test-live-view-salt"],
-  pubsub_server: IgamingRef.PubSub
+  pubsub_server: IgamingRef.PubSub,
+  render_errors: [view: IgamingRef.Web.ErrorView, accepts: [:html, :json]]

@@ -17,6 +17,7 @@ defmodule IgamingRef.Web.DepositLive do
         fn -> Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: player_id]) end,
         PreviewSupport.sample_wallet()
       )
+    Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Finance.Wallet", action_kind: :read)
 
     {:ok, assign(socket, wallet: wallet, player_id: player_id)}
   end
@@ -29,6 +30,7 @@ defmodule IgamingRef.Web.DepositLive do
            reason: "deposit"
          }) do
       {:ok, _deposit} ->
+        Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Finance.Transfer", action_kind: :create)
         {:noreply, socket |> put_flash(:info, "Deposit successful")}
 
       {:error, _reason} ->

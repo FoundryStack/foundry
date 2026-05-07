@@ -17,19 +17,23 @@ defmodule IgamingRef.Web.WithdrawalLive do
         fn -> Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: player_id]) end,
         PreviewSupport.sample_wallet()
       )
+    Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Finance.Wallet", action_kind: :read)
 
     {:ok, assign(socket, wallet: wallet, player_id: player_id)}
   end
 
   @impl true
   def handle_event("submit_withdrawal", %{"amount" => amount}, socket) do
-    case Ash.create(IgamingRef.Finance.WithdrawalRequest,
-           input: %{
-             player_id: socket.assigns.player_id,
-             amount: Decimal.new(amount)
-           }
-         ) do
+    # Fetch wallet first to get wallet_id
+    wallet = socket.assigns.wallet
+
+    case Ash.create(IgamingRef.Finance.WithdrawalRequest, :create, %{
+      player_id: socket.assigns.player_id,
+      wallet_id: wallet.id,
+      amount: Decimal.new(amount)
+    }) do
       {:ok, _withdrawal} ->
+        Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Finance.WithdrawalRequest", action_kind: :create)
         {:noreply, socket |> put_flash(:info, "Withdrawal requested")}
 
       {:error, _reason} ->

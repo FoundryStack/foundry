@@ -1,6 +1,15 @@
 defmodule IgamingRef.Web.Endpoint do
   use Phoenix.Endpoint, otp_app: :igaming_ref
 
+  @doc false
+  def config_change(changed, _new, removed) do
+    if changed[:http] || is_nil(changed) do
+      {:ok, _} = Supervisor.terminate_child(IgamingRef.Supervisor, __MODULE__)
+      {:ok, _} = Supervisor.restart_child(IgamingRef.Supervisor, __MODULE__)
+    end
+    {:ok}
+  end
+
   @session_options [
     store: :cookie,
     key: "_igaming_ref_key",

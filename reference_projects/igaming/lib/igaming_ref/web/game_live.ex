@@ -18,12 +18,14 @@ defmodule IgamingRef.Web.GameLive do
         fn -> Ash.read_one!(IgamingRef.Gaming.Game, filter: [id: game_id]) end,
         PreviewSupport.sample_game(game_id)
       )
+    Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Gaming.Game", action_kind: :read)
 
     wallet =
       PreviewSupport.safe_read(
         fn -> Ash.read_one!(IgamingRef.Finance.Wallet, filter: [player_id: player_id]) end,
         PreviewSupport.sample_wallet()
       )
+    Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Finance.Wallet", action_kind: :read)
 
     {:ok, assign(socket, game: game, wallet: wallet, player_id: player_id, session: nil)}
   end
@@ -35,6 +37,7 @@ defmodule IgamingRef.Web.GameLive do
            game_id: socket.assigns.game.id
          }) do
       {:ok, game_session} ->
+        Foundry.TestScenario.RuntimeCapture.trace_node("IgamingRef.Gaming.GameSession", action_kind: :create)
         {:noreply, assign(socket, session: game_session)}
 
       {:error, _reason} ->
