@@ -13,6 +13,7 @@ defmodule Foundry.TestScenario.LiveViewRegistry do
   def register(lv_pid, test_pid) when is_pid(lv_pid) and is_pid(test_pid) do
     init_table()
     :ets.insert(@table_name, {lv_pid, test_pid})
+    spawn(fn -> monitor_and_cleanup(lv_pid) end)
     :ok
   end
 
@@ -38,6 +39,15 @@ defmodule Foundry.TestScenario.LiveViewRegistry do
         :ets.new(@table_name, [:named_table, :public, :set])
       _ ->
         :ok
+    end
+  end
+
+  defp monitor_and_cleanup(lv_pid) do
+    ref = Process.monitor(lv_pid)
+
+    receive do
+      {:DOWN, ^ref, :process, ^lv_pid, _reason} ->
+        unregister(lv_pid)
     end
   end
 end
