@@ -15,7 +15,7 @@ defmodule Foundry.SparkMeta.Classifier do
         trigger_module?(context.module) -> :trigger
         blueprint_module?(context.module) -> :blueprint
         provider_module?(context.module) -> :adapter
-        liveview_module?(context.module) -> :liveview
+        liveview_module?(context.module) -> :page
         liveresource_module?(context.module) -> :liveresource
         agent_module?(context.module) -> :agent
         rule_module?(context.module) -> :rule

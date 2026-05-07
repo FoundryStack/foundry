@@ -13,19 +13,35 @@ defmodule Foundry.SparkMeta.Analyzers.LiveViewActions do
   @doc """
   Extract Ash action calls from a LiveView module.
 
-  Returns a list of `{resource_module, action_type}` tuples where:
-  - `resource_module` is the Ash resource module being acted upon
-  - `action_type` is `:read` or `:write` (or specific action name)
+  Returns a list of maps with `resource` and `action` keys:
+  - `resource` is the Ash resource module name (string) being acted upon
+  - `action` is `:read` or `:write` (or specific action name)
 
-  If the module has a `@calls_actions` attribute, returns that instead
-  (allows manual override).
+  If the module has a `@calls_actions` attribute, converts it to map format
+  (allows manual override with either tuples or maps).
   """
-  @spec analyze(module()) :: [{module(), atom()}]
+  @spec analyze(module()) :: [map()]
   def analyze(mod) do
     case module_attribute(mod, :calls_actions) do
       nil -> scan_for_ash_calls(mod)
-      attrs when is_list(attrs) -> attrs
+      attrs when is_list(attrs) -> normalize_calls_actions(attrs)
     end
+  end
+
+  defp normalize_calls_actions(attrs) do
+    Enum.map(attrs, fn
+      {resource_module, action_type} when is_atom(resource_module) ->
+        %{
+          "resource" => format_module(resource_module),
+          "action" => action_type
+        }
+
+      map when is_map(map) ->
+        map
+
+      other ->
+        other
+    end)
   end
 
   defp module_attribute(mod, attr_name) do
@@ -80,17 +96,21 @@ defmodule Foundry.SparkMeta.Analyzers.LiveViewActions do
     collect_calls(body)
   end
 
-  # Match: Ash.read(Module, ...) or Ash.create(Module, ...)
+  # Match: Ash.read(Module, ...) or Ash.create(Module, ...) or Ash.read!(Module, ...)
   defp collect_calls(
-         {:call, _,
-          {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _},
-          [{:__aliases__, _, module_parts} | _]}
+         {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _, [{:__aliases__, _, module_parts} | _]}
        )
-       when action in [:read, :create, :update, :destroy] do
-    action_type = if action in [:create, :update, :destroy], do: :write, else: :read
+       when action in [:read, :create, :update, :destroy, :read!, :create!, :update!, :destroy!] do
+    action_type = if action in [:create, :update, :destroy, :create!, :update!, :destroy!], do: :write, else: :read
     module = Module.concat(module_parts)
-    [{module, action_type}]
+    [%{"resource" => format_module(module), "action" => action_type}]
   end
+
+  defp format_module(module) when is_atom(module) do
+    module |> Atom.to_string() |> String.replace_prefix("Elixir.", "")
+  end
+
+  defp format_module(module), do: module
 
   # Match: Module |> Ash.read(...) - pipe expression
   defp collect_calls({:|>, _, [_lhs, rhs]}) do

@@ -50,7 +50,7 @@ defmodule Foundry.SparkMeta.Projector do
       authentication_subject: classifier[:authentication_subject] || false,
       oban_queues: classifier[:oban_queues] || [],
       rate_limited: classifier[:rate_limited] || false,
-      feature_flags: [],
+      feature_flags: page_meta[:feature_flags] || [],
       steps: reactor[:steps] || [],
       outputs: [],
       agent_steps: [],

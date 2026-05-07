@@ -755,7 +755,58 @@ defmodule Foundry.Context.GraphBuilder do
         }
       end)
 
-    external_nodes = postgres_nodes ++ oban_node ++ adapter_nodes
+    # Feature flag external nodes (one per unique flag name across all page nodes)
+    feature_flag_names =
+      nodes
+      |> Enum.filter(&(&1.type in ["page", "liveview"]))
+      |> Enum.flat_map(fn n ->
+        flags = n.feature_flags || []
+        if is_list(flags), do: flags, else: [flags]
+      end)
+      |> Enum.uniq()
+
+    feature_flag_nodes =
+      Enum.map(feature_flag_names, fn flag_name ->
+        flag_id = "external:feature_flag:#{flag_name}"
+
+        %NodeEntry{
+          module: flag_id,
+          id: flag_id,
+          type: "external",
+          domain: "Infrastructure",
+          description: "Feature flag: #{flag_name}",
+          app: nil,
+          sensitive: false,
+          attributes: [],
+          actions: [],
+          rules: [],
+          compliance: [],
+          adrs: [],
+          runbook: nil,
+          test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
+          data_layer: nil,
+          pending_migrations: false,
+          paper_trail: false,
+          archival: false,
+          state_machine: nil,
+          api_routes: [],
+          telemetry_prefix: nil,
+          money_attributes: [],
+          authentication_subject: false,
+          oban_queues: [],
+          rate_limited: false,
+          feature_flags: [],
+          steps: [],
+          performs: nil,
+          outputs: [],
+          agent_steps: [],
+          relationships: [],
+          auth_strategies: [],
+          last_modified: nil
+        }
+      end)
+
+    external_nodes = postgres_nodes ++ oban_node ++ adapter_nodes ++ feature_flag_nodes
 
     {external_nodes, external_edges}
   end
@@ -804,13 +855,19 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list =
       edge_list ++
         (nodes
-         |> Enum.filter(&(&1.type == "page"))
+         |> Enum.filter(&(&1.type in ["page", "liveview"]))
          |> Enum.flat_map(fn page ->
-           page.calls_actions
-           |> Enum.map(fn {resource_module, _action_type} ->
-             resource_str = format_module(resource_module)
+           (page.calls_actions || [])
+           |> then(fn calls -> if is_list(calls), do: calls, else: [calls] end)
+           |> Enum.map(fn call_action ->
+             resource_str =
+               case call_action do
+                 %{"resource" => res} -> res
+                 {resource_module, _action_type} -> format_module(resource_module)
+                 _ -> nil
+               end
 
-             if Map.has_key?(node_map, resource_str) do
+             if resource_str && Map.has_key?(node_map, resource_str) do
                EdgeEntry.new(page.module, resource_str, :calls_action)
              else
                nil
@@ -823,9 +880,10 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list =
       edge_list ++
         (nodes
-         |> Enum.filter(&(&1.type == "page"))
+         |> Enum.filter(&(&1.type in ["page", "liveview"]))
          |> Enum.flat_map(fn page ->
-           page.feature_flags
+           (page.feature_flags || [])
+           |> then(fn flags -> if is_list(flags), do: flags, else: [flags] end)
            |> Enum.map(fn flag_name ->
              flag_node_id = "external:feature_flag:#{flag_name}"
              EdgeEntry.new(page.module, flag_node_id, :feature_flagged_by)
