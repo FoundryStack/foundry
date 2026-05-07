@@ -167,8 +167,8 @@ defmodule Foundry.PreviewServer do
       state.env
       |> Kernel.++(
         [
-          {'MIX_ENV', 'dev'},
-          {'PORT', '#{state.port_num}'}
+          {~c"MIX_ENV", ~c"dev"},
+          {~c"PORT", String.to_charlist("#{state.port_num}")}
         ]
       )
       |> Enum.map(fn {k, v} ->
