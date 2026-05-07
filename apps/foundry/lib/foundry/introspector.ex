@@ -91,8 +91,21 @@ defmodule Foundry.Context.Introspector do
           end
       end
 
-    # Discover page modules from router
-    page_modules = Map.keys(page_routes_map)
+    # Discover page modules from router, or from module path pattern
+    page_modules =
+      case Map.keys(page_routes_map) do
+        [] ->
+          # Fallback: Find modules in Web.Live pattern
+          all_modules()
+          |> Enum.filter(fn mod ->
+            mod_str = to_string(mod)
+            (String.contains?(mod_str, ".Live.") or String.ends_with?(mod_str, "Live")) and
+              page_module?(mod)
+          end)
+
+        routes ->
+          routes
+      end
 
     all_modules()
     |> Kernel.++(page_modules)

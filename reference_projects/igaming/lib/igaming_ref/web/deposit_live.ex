@@ -1,4 +1,4 @@
-defmodule IgamingRefWeb.DepositLive do
+defmodule IgamingRef.Web.DepositLive do
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "deposit"}
 

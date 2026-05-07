@@ -1,4 +1,4 @@
-defmodule IgamingRefWeb.HomeLive do
+defmodule IgamingRef.Web.HomeLive do
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "home"}
 

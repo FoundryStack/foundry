@@ -1,4 +1,4 @@
-defmodule IgamingRefWeb.Router do
+defmodule IgamingRef.Web.Router do
   use Phoenix.Router
   import Phoenix.LiveView.Router
 
@@ -6,7 +6,7 @@ defmodule IgamingRefWeb.Router do
     plug :accepts, ["html"]
     plug :fetch_session
     plug :fetch_live_flash
-    plug :put_root_layout, {IgamingRefWeb.Layouts, :root}
+    plug :put_root_layout, {IgamingRef.Web.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
   end
@@ -15,7 +15,7 @@ defmodule IgamingRefWeb.Router do
     plug :accepts, ["json"]
   end
 
-  scope "/", IgamingRefWeb do
+  scope "/", IgamingRef.Web do
     pipe_through :browser
 
     live "/", HomeLive
@@ -25,7 +25,7 @@ defmodule IgamingRefWeb.Router do
     live "/withdrawal", WithdrawalLive
   end
 
-  scope "/api", IgamingRefWeb do
+  scope "/api", IgamingRef.Web do
     pipe_through :api
   end
 end

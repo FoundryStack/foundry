@@ -1,4 +1,4 @@
-defmodule IgamingRefWeb.AuthLive do
+defmodule IgamingRef.Web.AuthLive do
   use Phoenix.LiveView
 
   @page_group :anonymous

@@ -1,4 +1,4 @@
-defmodule IgamingRefWeb.GameLive do
+defmodule IgamingRef.Web.GameLive do
   use Phoenix.LiveView
   use AshSDUI, lookup: {:from_params, :name}
 

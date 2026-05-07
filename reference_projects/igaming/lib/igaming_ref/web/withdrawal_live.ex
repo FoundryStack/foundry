@@ -1,4 +1,4 @@
-defmodule IgamingRefWeb.WithdrawalLive do
+defmodule IgamingRef.Web.WithdrawalLive do
   use Phoenix.LiveView
   use AshSDUI, lookup: {:static, "withdrawal"}
 
