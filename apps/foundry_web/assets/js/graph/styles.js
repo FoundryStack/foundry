@@ -6,27 +6,31 @@ const FONT = 'Segoe UI Symbol, Apple Symbols, Arial Unicode MS, sans-serif'
 
 export const FOUNDRY_LAYOUT_OPTIONS = {
   randomize: false,
-  idealEdgeLength: 70,
-  nodeRepulsion: 4600,
-  edgeElasticity: 0.2,
-  padding: 44,
-  gravity: 0.35,
-  gravityCompound: 0.95,
-  nestingFactor: 0.18,
+  quality: 'proof',
+  idealEdgeLength: 80,
+  nodeRepulsion: 9500,
+  edgeElasticity: 0.45,
+  padding: 56,
+  gravity: 0.28,
+  gravityCompound: 1.0,
+  gravityRangeCompound: 1.5,
+  nestingFactor: 0.55,
+  tilingPaddingHorizontal: 32,
+  tilingPaddingVertical: 32,
 }
 
 export const FOUNDRY_COMPOUND_COMPACTION = {
   enabled: true,
   selector: 'node.domain-cluster, node.transfer-cluster, node.resource-cluster, node.fsm-cluster',
-  maxChildren: 12,
-  minOccupancy: 0.32,
-  spacing: 52,
-  padding: 64,
+  maxChildren: 20,
+  minOccupancy: 0.42,
+  spacing: 56,
+  padding: 72,
   separateDomains: true,
-  domainGap: 110,
+  domainGap: 64,
   domainLabelBufferX: 132,
   domainLabelBufferY: 104,
-  domainIterations: 8,
+  domainIterations: 12,
 }
 
 export const STATIC_STYLES = [

@@ -11,7 +11,7 @@ const DEFAULT_LAYOUT_OPTIONS = {
   fit: true,
   padding: 32,
   idealEdgeLength: 62,
-  nodeRepulsion: 4200,
+  nodeRepulsion: 6500,
   gravity: 0.35,
   gravityRange: 2.8,
   gravityCompound: 1.25,
@@ -1031,8 +1031,8 @@ export class CytoscapeGraph {
             labelBufferX,
             labelBufferY,
           )
-          const overlapX = Math.min(aBox.x2 + gap, bBox.x2 + gap) - Math.max(aBox.x1 - gap, bBox.x1 - gap)
-          const overlapY = Math.min(aBox.y2 + gap, bBox.y2 + gap) - Math.max(aBox.y1 - gap, bBox.y1 - gap)
+          const overlapX = Math.min(aBox.x2, bBox.x2) - Math.max(aBox.x1, bBox.x1) + gap
+          const overlapY = Math.min(aBox.y2, bBox.y2) - Math.max(aBox.y1, bBox.y1) + gap
 
           if (overlapX <= 0 || overlapY <= 0) continue
 
