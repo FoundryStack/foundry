@@ -10,7 +10,7 @@ defmodule IgamingRef.Web.DepositLiveTest do
     player = PageFixtures.player_fixture()
     wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "987.65")})
 
-    {:ok, view, html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/deposit")
+    {:ok, view, html} = live(build_conn(%{"player_id" => player.id}), "/deposit")
 
     assert html =~ "Deposit Funds"
     assert html =~ to_string(wallet.balance)
@@ -22,7 +22,7 @@ defmodule IgamingRef.Web.DepositLiveTest do
   test "submitting the form records a deposit transfer and shows success" do
     player = PageFixtures.player_fixture()
     wallet = PageFixtures.wallet_fixture(player, %{balance: Money.new(:GBP, "100.00")})
-    {:ok, view, _html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/deposit")
+    {:ok, view, _html} = live(build_conn(%{"player_id" => player.id}), "/deposit")
 
     view
     |> form("form", %{"amount" => "100.00"})
@@ -36,7 +36,7 @@ defmodule IgamingRef.Web.DepositLiveTest do
   end
 
   test "preview fallback still mounts safely and failed submission shows an error" do
-    {:ok, view, html} = live(build_conn_with_trace(), "/deposit")
+    {:ok, view, html} = live(build_conn(), "/deposit")
 
     assert html =~ "£1,250.00"
 

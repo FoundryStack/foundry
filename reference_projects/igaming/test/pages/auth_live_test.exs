@@ -7,7 +7,7 @@ defmodule IgamingRef.Web.AuthLiveTest do
   alias IgamingRef.PageFixtures
 
   test "renders the login form with its active fields" do
-    {:ok, view, html} = live(build_conn_with_trace(), "/auth")
+    {:ok, view, html} = live(build_conn(), "/auth")
 
     assert html =~ "Login"
     assert has_element?(view, "form[phx-submit=login]")
@@ -17,7 +17,7 @@ defmodule IgamingRef.Web.AuthLiveTest do
   end
 
   test "shows an error flash for invalid credentials" do
-    {:ok, view, _html} = live(build_conn_with_trace(), "/auth")
+    {:ok, view, _html} = live(build_conn(), "/auth")
 
     view
     |> form("form", %{"email" => "missing@example.test", "password" => "wrongpass"})
@@ -28,7 +28,7 @@ defmodule IgamingRef.Web.AuthLiveTest do
 
   test "redirects after a successful password sign in" do
     user = PageFixtures.user_fixture()
-    {:ok, view, _html} = live(build_conn_with_trace(), "/auth")
+    {:ok, view, _html} = live(build_conn(), "/auth")
 
     view
     |> form("form", %{"email" => to_string(user.email), "password" => "password123"})

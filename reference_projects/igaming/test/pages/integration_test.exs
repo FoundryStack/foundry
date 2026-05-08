@@ -26,17 +26,17 @@ defmodule IgamingRef.Web.PagesIntegrationTest do
     game = PageFixtures.game_fixture(%{title: "Golden Harbor"})
     _campaign = PageFixtures.bonus_campaign_fixture(%{name: "Starter Spins"})
 
-    {:ok, _home, home_html} = live(build_conn_with_trace(), "/")
-    {:ok, _auth, auth_html} = live(build_conn_with_trace(), "/auth")
+    {:ok, _home, home_html} = live(build_conn(), "/")
+    {:ok, _auth, auth_html} = live(build_conn(), "/auth")
 
     {:ok, _deposit, deposit_html} =
-      live(build_conn_with_trace(%{"player_id" => player.id}), "/deposit")
+      live(build_conn(%{"player_id" => player.id}), "/deposit")
 
     {:ok, _withdrawal, withdrawal_html} =
-      live(build_conn_with_trace(%{"player_id" => player.id}), "/withdrawal")
+      live(build_conn(%{"player_id" => player.id}), "/withdrawal")
 
     {:ok, game_view, game_html} =
-      live(build_conn_with_trace(%{"player_id" => player.id}), "/games/#{game.id}")
+      live(build_conn(%{"player_id" => player.id}), "/games/#{game.id}")
 
     assert home_html =~ "Starter Spins"
     assert auth_html =~ "Sign In"

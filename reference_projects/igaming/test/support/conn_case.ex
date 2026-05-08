@@ -22,6 +22,11 @@ defmodule IgamingRef.ConnCase do
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 
+  def build_conn(session) when is_map(session) do
+    Phoenix.ConnTest.build_conn()
+    |> Plug.Test.init_test_session(session)
+  end
+
   def build_conn_with_trace(session \\ %{}) do
     Phoenix.ConnTest.build_conn()
     |> Plug.Test.init_test_session(Map.put(session, "foundry_test_pid", encode_pid(self())))

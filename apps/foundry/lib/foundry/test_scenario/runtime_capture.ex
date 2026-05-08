@@ -20,6 +20,7 @@ defmodule Foundry.TestScenario.RuntimeCapture do
         :erlang.raise(kind, reason, __STACKTRACE__)
     after
       restore_previous_trace(previous_trace)
+      Foundry.TestScenario.LiveViewRegistry.unregister_by_test_pid(self())
     end
   end
 
@@ -126,7 +127,7 @@ defmodule Foundry.TestScenario.RuntimeCapture do
 
         drain_liveview_events()
     after
-      50 -> :ok
+      0 -> :ok
     end
   end
 end

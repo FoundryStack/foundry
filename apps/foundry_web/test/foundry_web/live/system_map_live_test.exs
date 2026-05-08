@@ -1,6 +1,5 @@
 defmodule FoundryWeb.SystemMapLiveTest do
   use FoundryWeb.ConnCase
-  use Foundry.TestScenario
   import Phoenix.LiveViewTest
 
   setup_all do
@@ -35,7 +34,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       restore_env(:foundry_web, :system_map_live_hooks, system_map_live_hooks)
     end)
 
-    {:ok, conn: FoundryWeb.ConnCase.build_conn_with_trace()}
+    {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 
   setup %{project_context: project_context, project_node: project_node} do
@@ -52,26 +51,20 @@ defmodule FoundryWeb.SystemMapLiveTest do
   describe "mount" do
     @scenario category: :invariant
     test "renders page with data-context attribute when context available", %{conn: conn} do
-      capture(%{conn: conn}, fn ->
-        {:ok, _live, html} = live(conn, "/studio")
-        assert html =~ "data-context"
-      end)
+      {:ok, _live, html} = live(conn, "/studio")
+      assert html =~ "data-context"
     end
 
     @scenario category: :invariant
     test "embeds valid JSON in data-context attribute", %{conn: conn} do
-      capture(%{conn: conn}, fn ->
-        {:ok, _live, html} = live(conn, "/studio")
-        assert Regex.match?(~r/data-context="[^"]+nodes[^"]*"/, html)
-      end)
+      {:ok, _live, html} = live(conn, "/studio")
+      assert Regex.match?(~r/data-context="[^"]+nodes[^"]*"/, html)
     end
 
     @scenario category: :invariant
     test "embeds preview base url for the system map hook", %{conn: conn} do
-      capture(%{conn: conn}, fn ->
-        {:ok, _live, html} = live(conn, "/studio")
-        assert html =~ ~s(data-preview-base-url="http://localhost:4001")
-      end)
+      {:ok, _live, html} = live(conn, "/studio")
+      assert html =~ ~s(data-preview-base-url="http://localhost:4001")
     end
 
     test "shows empty state when context unavailable", %{conn: conn} do
@@ -81,33 +74,31 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
     @scenario category: :invariant
     test "renders the integrated copilot workspace", %{conn: conn} do
-      capture(%{conn: conn}, fn ->
-        {:ok, _live, html} = live(conn, "/studio")
+      {:ok, _live, html} = live(conn, "/studio")
 
-        assert html =~ "Foundry Copilot"
-        assert html =~ "Governed studio chat"
-        assert html =~ "Copilot"
-        assert html =~ ~s(id="fm-feed")
-        assert html =~ ~s(id="fm-drawer")
+      assert html =~ "Foundry Copilot"
+      assert html =~ "Governed studio chat"
+      assert html =~ "Copilot"
+      assert html =~ ~s(id="fm-feed")
+      assert html =~ ~s(id="fm-drawer")
 
-        assert Regex.match?(
-                 ~r/id="fm-sidebar"[\s\S]*style="[^"]*width: var\(--foundry-sidebar-width, 240px\);"/,
-                 html
-               )
+      assert Regex.match?(
+               ~r/id="fm-sidebar"[\s\S]*style="[^"]*width: var\(--foundry-sidebar-width, 240px\);"/,
+               html
+             )
 
-        assert Regex.match?(
-                 ~r/id="fm-drawer"[\s\S]*data-open="false"[\s\S]*style="[^"]*width: 0px;"/,
-                 html
-               )
+      assert Regex.match?(
+               ~r/id="fm-drawer"[\s\S]*data-open="false"[\s\S]*style="[^"]*width: 0px;"/,
+               html
+             )
 
-        assert Regex.match?(
-                 ~r/id="fm-feed"[\s\S]*data-open="true"[\s\S]*style="[^"]*width: var\(--foundry-feed-width, 360px\);"/,
-                 html
-               )
+      assert Regex.match?(
+               ~r/id="fm-feed"[\s\S]*data-open="true"[\s\S]*style="[^"]*width: var\(--foundry-feed-width, 360px\);"/,
+               html
+             )
 
-        assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"/, html)
-        assert Regex.match?(~r/id="fm-drawer"[\s\S]*data-open="false"/, html)
-      end)
+      assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"/, html)
+      assert Regex.match?(~r/id="fm-drawer"[\s\S]*data-open="false"/, html)
     end
 
     test "project context edges resolve to renderable graph node ids", %{project_context: context} do

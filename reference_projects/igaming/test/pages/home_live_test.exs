@@ -10,7 +10,7 @@ defmodule IgamingRef.Web.HomeLiveTest do
     game = PageFixtures.game_fixture(%{title: "Neon Atlas"})
     campaign = PageFixtures.bonus_campaign_fixture(%{name: "Friday Reload"})
 
-    {:ok, _view, html} = live(build_conn_with_trace(), "/")
+    {:ok, _view, html} = live(build_conn(), "/")
 
     assert html =~ "Welcome to Gaming Platform"
     assert html =~ "Featured Games"
@@ -20,7 +20,7 @@ defmodule IgamingRef.Web.HomeLiveTest do
   end
 
   test "shows stable empty states when no data is available" do
-    {:ok, _view, html} = live(build_conn_with_trace(), "/")
+    {:ok, _view, html} = live(build_conn(), "/")
 
     assert html =~ "No featured games available"
     assert html =~ "No active promotions available"
