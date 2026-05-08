@@ -791,12 +791,16 @@ defmodule FoundryWeb.SystemMapLive do
             %{
               source: ^source,
               target: ^target,
+              source_step_id: source_step_id,
+              target_step_id: target_step_id,
               kind: kind,
               status: status,
               provenance: provenance
             }
             when kind == transition.kind and status == transition.status and
-                   provenance == transition.provenance ->
+                   provenance == transition.provenance and
+                   source_step_id == transition.source_step_id and
+                   target_step_id == transition.target_step_id ->
               acc
 
             _ ->
@@ -816,13 +820,16 @@ defmodule FoundryWeb.SystemMapLive do
       |> Enum.map(&(Map.get(&1, :focus_node_id) || Map.get(&1, :node_id)))
       |> Enum.filter(& &1)
       |> Enum.chunk_every(2, 1, :discard)
-      |> Enum.map(fn [source, target] ->
+      |> Enum.with_index()
+      |> Enum.map(fn {[source, target], index} ->
         %{
           source: source,
           target: target,
           kind: :sequence,
           status: nil,
-          provenance: flow_provenance(path_flow, source, target)
+          provenance: flow_provenance(path_flow, source, target),
+          source_step_id: step_id_at(path_flow, index),
+          target_step_id: step_id_at(path_flow, index + 1)
         }
       end)
 
@@ -840,7 +847,9 @@ defmodule FoundryWeb.SystemMapLive do
             target: target,
             kind: Map.get(step, :kind) || Map.get(step, :type) || :transition,
             status: Map.get(step, :status),
-            provenance: Map.get(step, :provenance)
+            provenance: Map.get(step, :provenance),
+            source_step_id: Map.get(step, :id),
+            target_step_id: nil
           }
         end)
       end)
@@ -859,7 +868,9 @@ defmodule FoundryWeb.SystemMapLive do
               target: target,
               kind: :context,
               status: Map.get(step, :status),
-              provenance: Map.get(step, :provenance)
+              provenance: Map.get(step, :provenance),
+              source_step_id: Map.get(step, :id),
+              target_step_id: nil
             }
           ]
         end
@@ -868,13 +879,16 @@ defmodule FoundryWeb.SystemMapLive do
     graph_path_fallback =
       graph_path
       |> Enum.chunk_every(2, 1, :discard)
-      |> Enum.map(fn [source, target] ->
+      |> Enum.with_index()
+      |> Enum.map(fn {[source, target], index} ->
         %{
           source: source,
           target: target,
           kind: :graph_path,
           status: nil,
-          provenance: if(evidence_mode(scenario) == :runtime, do: :executed, else: :expanded)
+          provenance: if(evidence_mode(scenario) == :runtime, do: :executed, else: :expanded),
+          source_step_id: "graph-path-#{index}",
+          target_step_id: "graph-path-#{index + 1}"
         }
       end)
 
@@ -938,9 +952,20 @@ defmodule FoundryWeb.SystemMapLive do
       kind: candidate.kind,
       status: candidate.status,
       provenance: candidate.provenance,
+      source_step_id: Map.get(candidate, :source_step_id),
+      target_step_id: Map.get(candidate, :target_step_id),
       synthetic: synthetic?,
       reason: reason
     }
+  end
+
+  defp step_id_at(flow, index) do
+    flow
+    |> Enum.at(index)
+    |> case do
+      nil -> nil
+      step -> Map.get(step, :id)
+    end
   end
 
   defp structural_edge_set(edges) do

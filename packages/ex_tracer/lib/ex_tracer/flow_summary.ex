@@ -60,8 +60,13 @@ defmodule ExTracer.FlowSummary do
   end
 
   def derive_flow_summaries(flow) do
+    path_flow =
+      Enum.reject(flow, fn step ->
+        step.provenance == :branch and step.kind == :assert_result
+      end)
+
     nodes =
-      flow
+      path_flow
       |> Enum.flat_map(fn step ->
         [step.node_id, step.focus_node_id | Enum.map(step.focus_targets, &Utils.base_node_id/1)]
       end)
@@ -70,10 +75,8 @@ defmodule ExTracer.FlowSummary do
       |> Enum.uniq()
 
     graph_path =
-      flow
-      |> Enum.flat_map(fn step ->
-        [step.focus_node_id || step.node_id | step.focus_targets]
-      end)
+      path_flow
+      |> Enum.flat_map(&step_graph_nodes/1)
       |> Enum.reject(&is_nil/1)
       |> Utils.distinct_consecutive()
 
@@ -192,7 +195,23 @@ defmodule ExTracer.FlowSummary do
       step.focus_node_id,
       step.kind,
       step.action || runtime_step_operation(step.module_function) || step.label,
+      step.module_function,
+      step.line,
+      step.source_snippet,
+      step.capture_origin,
       step.test_name
     }
+  end
+
+  defp step_graph_nodes(step) do
+    [step.focus_node_id || step.node_id | List.wrap(step.focus_targets)]
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [first | rest] ->
+        [first | Enum.reject(rest, &(&1 == first))]
+
+      [] ->
+        []
+    end
   end
 end

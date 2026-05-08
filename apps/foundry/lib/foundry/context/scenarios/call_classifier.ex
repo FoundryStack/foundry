@@ -125,12 +125,11 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
     do: "#{String.capitalize(fun_name)} #{short_name}"
 
   defp infer_ash_step(fun_name, [resource_ast | rest], alias_map, lookup, opts) do
-    resource_name = ModuleIndex.resolve_module_name(resource_ast, alias_map)
-    node_id = ModuleIndex.resolve_node_id(resource_name, lookup)
+    {action, arg_payload} = extract_ash_action(rest)
 
-    if node_id do
-      {action, arg_payload} = extract_ash_action(rest)
-
+    with {node_id, resolved_action} when is_binary(node_id) <-
+           resolve_action_target(resource_ast, action, alias_map, lookup) do
+      action = resolved_action || action
       focus_node_id =
         if action, do: ModuleIndex.build_action_focus(node_id, action, lookup), else: node_id
 
@@ -184,16 +183,15 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
   defp infer_reactor_run_step(_, _, _), do: nil
 
   defp infer_changeset_step(fun_name, [resource_ast | rest], alias_map, lookup, opts) do
-    resource_name = ModuleIndex.resolve_module_name(resource_ast, alias_map)
-    node_id = ModuleIndex.resolve_node_id(resource_name, lookup)
+    action =
+      case rest do
+        [action_ast | _] -> ModuleIndex.extract_action_name(action_ast)
+        _ -> nil
+      end
 
-    if node_id do
-      action =
-        case rest do
-          [action_ast | _] -> ModuleIndex.extract_action_name(action_ast)
-          _ -> nil
-        end
-
+    with {node_id, resolved_action} when is_binary(node_id) <-
+           resolve_action_target(resource_ast, action, alias_map, lookup) do
+      action = resolved_action || action
       focus_node_id =
         if action, do: ModuleIndex.build_action_focus(node_id, action, lookup), else: node_id
 
@@ -462,6 +460,115 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
 
   defp action_focus(node_id, nil), do: node_id
   defp action_focus(node_id, action), do: "#{node_id}:action:#{action}"
+
+  defp resolve_action_target(resource_ast, action, alias_map, lookup) do
+    resource_name = ModuleIndex.resolve_module_name(resource_ast, alias_map)
+    node_id = ModuleIndex.resolve_node_id(resource_name, lookup)
+
+    cond do
+      is_binary(node_id) ->
+        {node_id, action}
+
+      resolved = resolve_pipeline_target(resource_ast, alias_map, lookup) ->
+        {elem(resolved, 0), action || elem(resolved, 1)}
+
+      is_binary(action) ->
+        case find_unique_action_node(action, lookup) do
+          nil -> nil
+          inferred_node_id -> {inferred_node_id, action}
+        end
+
+      true ->
+        nil
+    end
+  end
+
+  defp resolve_pipeline_target({:|>, _, [lhs, rhs]}, alias_map, lookup) do
+    resolve_pipeline_target(rhs, lhs, alias_map, lookup) ||
+      resolve_pipeline_target(lhs, alias_map, lookup)
+  end
+
+  defp resolve_pipeline_target(_, _, _), do: nil
+
+  defp resolve_pipeline_target(
+         {{:., _, [{:__aliases__, _, [:Ash, :Changeset]}, action]}, _, [resource_ast, action_ast | _]},
+         _lhs,
+         alias_map,
+         lookup
+       )
+       when action in [:for_create, :for_update, :for_destroy] do
+    resolve_pipeline_resource(resource_ast, action_ast, alias_map, lookup)
+  end
+
+  defp resolve_pipeline_target(
+         {{:., _, [{:__aliases__, _, [:Ash, :Query]}, :for_read]}, _, [resource_ast, action_ast | _]},
+         _lhs,
+         alias_map,
+         lookup
+       ) do
+    resolve_pipeline_resource(resource_ast, action_ast, alias_map, lookup)
+  end
+
+  defp resolve_pipeline_target(
+         {{:., _, [{:__aliases__, _, [:Ash, :Changeset]}, action]}, _, [action_ast | _]},
+         lhs,
+         alias_map,
+         lookup
+       )
+       when action in [:for_create, :for_update, :for_destroy] do
+    resolve_pipeline_resource(lhs, action_ast, alias_map, lookup)
+  end
+
+  defp resolve_pipeline_target(
+         {{:., _, [{:__aliases__, _, [:Ash, :Query]}, :for_read]}, _, [action_ast | _]},
+         lhs,
+         alias_map,
+         lookup
+       ) do
+    resolve_pipeline_resource(lhs, action_ast, alias_map, lookup)
+  end
+
+  defp resolve_pipeline_target(_, _, _, _), do: nil
+
+  defp resolve_pipeline_resource(resource_ast, action_ast, alias_map, lookup) do
+    action = ModuleIndex.extract_action_name(action_ast)
+    resource_name = ModuleIndex.resolve_module_name(resource_ast, alias_map)
+    node_id = ModuleIndex.resolve_node_id(resource_name, lookup)
+
+    cond do
+      is_binary(node_id) ->
+        {node_id, action}
+
+      is_binary(action) ->
+        case find_unique_action_node(action, lookup) do
+          nil -> nil
+          inferred_node_id -> {inferred_node_id, action}
+        end
+
+      true ->
+        nil
+    end
+  end
+
+  defp find_unique_action_node(action_name, lookup) do
+    normalized_action = Utils.normalize_name(action_name)
+
+    lookup.by_id
+    |> Enum.flat_map(fn {node_id, node} ->
+      actions = Map.get(node, :actions, [])
+
+      if Enum.any?(actions, &(Utils.normalize_name(Map.get(&1, :name)) == normalized_action)) do
+        [node_id]
+      else
+        []
+      end
+    end)
+    |> Enum.uniq()
+    |> case do
+      [node_id] -> node_id
+      _ -> nil
+    end
+  end
 
   defp infer_status_from_pattern({:ok, _}), do: :passed
   defp infer_status_from_pattern(:ok), do: :passed

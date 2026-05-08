@@ -1340,6 +1340,60 @@ defmodule FoundryWeb.SystemMapLiveTest do
              end)
     end
 
+    test "withdrawal integration flow routes overlay transitions through exact action nodes", %{
+      conn: conn,
+      project_context: context
+    } do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      scenario =
+        Enum.find(context.scenarios, fn scenario ->
+          scenario.name ==
+            "Flow: Player withdrawal request is approved and enters provider processing"
+        end)
+
+      assert scenario
+
+      render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", payload)
+
+      assert "IgamingRef.Finance.WithdrawalRequest:action:create" in scenario.graph_path
+      assert "IgamingRef.Finance.WithdrawalRequest:action:approve" in scenario.graph_path
+
+      assert Enum.any?(payload.overlay_transitions, fn transition ->
+               transition.source == "IgamingRef.Finance.WithdrawalRequest:action:create" and
+                 transition.target == "IgamingRef.Finance.WithdrawalRequest:action:approve"
+             end)
+    end
+
+    test "withdrawal page runtime overlay keeps the traced step sequence instead of collapsing to two edges",
+         %{
+           conn: conn,
+           project_context: context
+         } do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      scenario =
+        Enum.find(context.scenarios, fn scenario ->
+          scenario.source_module == "IgamingRef.Web.WithdrawalLiveTest" and
+            String.contains?(scenario.name, "withdrawal page") and
+            scenario.evidence_mode == :runtime
+        end)
+
+      assert scenario
+      assert length(scenario.flow) >= 6
+
+      render_click(live, "select_scenario", %{"id" => scenario.id})
+      assert_push_event(live, "graph:scenario_overlay", payload)
+
+      assert length(payload.overlay_transitions) >= 5
+
+      assert Enum.any?(payload.overlay_transitions, fn transition ->
+               String.contains?(transition.source, ":action:") or
+                 String.contains?(transition.target, ":action:")
+             end)
+    end
+
     test "clear_scenario properly clears overlay and resets graph state", %{
       conn: conn,
       project_context: context

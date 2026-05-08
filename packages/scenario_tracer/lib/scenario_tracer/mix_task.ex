@@ -32,8 +32,10 @@ defmodule ScenarioTracer.MixTask do
     lookup = mod.lookup_builder(project_root, nodes, runtime)
     adapters = mod.adapters()
 
-    if args != [:static_only] do
-      _ = Mix.Task.run("test", args)
+    {mix_test_args, static_only?} = normalize_args(args)
+
+    if not static_only? do
+      _ = Mix.Task.run("test", mix_test_args)
     end
 
     scenarios =
@@ -116,9 +118,21 @@ defmodule ScenarioTracer.MixTask do
               |> FlowSummary.assign_step_ids()
               |> FlowSummary.attach_focus_targets()
 
-            flow = if(runtime_flow == [], do: static_flow, else: runtime_flow)
-            overlay = if(runtime_flow == [], do: overlay_flow, else: runtime_flow)
-            {nodes, graph_path} = FlowSummary.derive_flow_summaries(overlay)
+            flow =
+              if runtime_flow == [] do
+                static_flow
+              else
+                merge_runtime_with_static(static_flow, runtime_flow)
+              end
+
+            _overlay =
+              if runtime_flow == [] do
+                overlay_flow
+              else
+                merge_runtime_with_static(overlay_flow, runtime_flow)
+              end
+
+            {nodes, graph_path} = FlowSummary.derive_flow_summaries(flow)
             has_runtime = runtime_flow != []
 
             [
@@ -250,5 +264,126 @@ defmodule ScenarioTracer.MixTask do
         Map.update(inner, node_id, [scenario.id], &[scenario.id | &1])
       end)
     end)
+  end
+
+  defp merge_runtime_with_static(static_flow, runtime_flow) do
+    cond do
+      runtime_flow == [] ->
+        static_flow
+
+      static_flow == [] ->
+        runtime_flow
+
+      true ->
+        do_merge_runtime_with_static(static_flow, runtime_flow)
+    end
+  end
+
+  defp do_merge_runtime_with_static(static_flow, runtime_flow) do
+    do_merge_runtime_with_static(static_flow, runtime_flow, [], MapSet.new())
+  end
+
+  defp do_merge_runtime_with_static([], [], acc, _seen_keys), do: Enum.reverse(acc)
+
+  defp do_merge_runtime_with_static([], [runtime_step | rest], acc, seen_keys) do
+    runtime_key = merge_step_key(runtime_step)
+    do_merge_runtime_with_static([], rest, [runtime_step | acc], MapSet.put(seen_keys, runtime_key))
+  end
+
+  defp do_merge_runtime_with_static([static_step | rest], [], acc, seen_keys) do
+    static_key = merge_step_key(static_step)
+
+    if MapSet.member?(seen_keys, static_key) do
+      do_merge_runtime_with_static(rest, [], acc, seen_keys)
+    else
+      do_merge_runtime_with_static(rest, [], [static_step | acc], MapSet.put(seen_keys, static_key))
+    end
+  end
+
+  defp do_merge_runtime_with_static(
+         [static_step | static_rest] = static_flow,
+         [runtime_step | runtime_rest] = runtime_flow,
+         acc,
+         seen_keys
+       ) do
+    static_key = merge_step_key(static_step)
+    runtime_key = merge_step_key(runtime_step)
+
+    cond do
+      static_key == runtime_key ->
+        do_merge_runtime_with_static(
+          static_rest,
+          runtime_rest,
+          [merge_steps(static_step, runtime_step) | acc],
+          MapSet.put(seen_keys, static_key)
+        )
+
+      runtime_key in Enum.map(static_rest, &merge_step_key/1) ->
+        if MapSet.member?(seen_keys, static_key) do
+          do_merge_runtime_with_static(static_rest, runtime_flow, acc, seen_keys)
+        else
+          do_merge_runtime_with_static(
+            static_rest,
+            runtime_flow,
+            [static_step | acc],
+            MapSet.put(seen_keys, static_key)
+          )
+        end
+
+      true ->
+        do_merge_runtime_with_static(
+          static_flow,
+          runtime_rest,
+          [runtime_step | acc],
+          MapSet.put(seen_keys, runtime_key)
+        )
+    end
+  end
+
+  defp merge_steps(static_step, runtime_step) do
+    %{
+      static_step
+      | provenance: runtime_step.provenance,
+        status: runtime_step.status || static_step.status,
+        focus_node_id: runtime_step.focus_node_id || static_step.focus_node_id,
+        focus_targets:
+          if(runtime_step.focus_targets in [nil, []],
+            do: static_step.focus_targets,
+            else: runtime_step.focus_targets
+          ),
+        action: runtime_step.action || static_step.action,
+        module_function: runtime_step.module_function || static_step.module_function,
+        result: runtime_step.result || static_step.result,
+        details: runtime_step.details || static_step.details,
+        capture_origin: runtime_step.capture_origin || static_step.capture_origin
+    }
+  end
+
+  defp merge_step_key(step) do
+    {
+      Map.get(step, :type),
+      Map.get(step, :kind),
+      Map.get(step, :action),
+      Map.get(step, :focus_node_id) || Map.get(step, :node_id),
+      Map.get(step, :node_id)
+    }
+  end
+
+  defp normalize_args(args) do
+    static_only? =
+      Enum.any?(args, fn
+        :static_only -> true
+        "--static-only" -> true
+        _ -> false
+      end)
+
+    mix_test_args =
+      Enum.reject(args, fn
+        :static_only -> true
+        "--static-only" -> true
+        _ -> false
+      end)
+
+    {mix_test_args, static_only?}
   end
 end

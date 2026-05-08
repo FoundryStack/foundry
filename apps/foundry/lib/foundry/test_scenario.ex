@@ -83,8 +83,8 @@ defmodule Foundry.TestScenario do
   end
 
   @doc false
-  def trace_call(_attrs, fun) when is_function(fun, 0) do
-    RuntimeCapture.with_current_trace_context(fun)
+  def trace_call(attrs, fun) when is_map(attrs) and is_function(fun, 0) do
+    RuntimeCapture.trace_call(attrs, fun)
   end
 
   defp current_describe_name(%Macro.Env{} = caller) do

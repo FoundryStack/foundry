@@ -311,8 +311,12 @@ defmodule Foundry.PageMetadata do
   end
 
   defp collect_calls({:|>, _, [lhs, rhs]}) do
-    case {leading_module_alias(lhs), rhs} do
-      {module_parts, {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _, _args}}
+    case {leading_action_call(lhs), leading_module_alias(lhs), rhs} do
+      {%{"resource" => _resource} = action_call, _module_parts, {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _, _args}}
+      when action in [:read, :read!, :read_one, :read_one!, :get, :get!, :create, :create!, :update, :update!, :destroy, :destroy!] ->
+        [action_call]
+
+      {_action_call, module_parts, {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _, _args}}
       when action in [:read, :read!, :read_one, :read_one!, :get, :get!] and module_parts != nil ->
         module = Module.concat(module_parts)
 
@@ -324,7 +328,7 @@ defmodule Foundry.PageMetadata do
           }
         ]
 
-      {module_parts, {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _, _args}}
+      {_action_call, module_parts, {{:., _, [{:__aliases__, _, [:Ash]}, action]}, _, _args}}
       when action in [:create, :create!, :update, :update!, :destroy, :destroy!] and
              module_parts != nil ->
         module = Module.concat(module_parts)
@@ -396,6 +400,65 @@ defmodule Foundry.PageMetadata do
   end
 
   defp collect_calls(_), do: []
+
+  defp leading_action_call({:|>, _, [lhs, rhs]}) do
+    case {leading_module_alias(lhs), rhs} do
+      {module_parts, {{:., _, [{:__aliases__, _, [:Ash, :Changeset]}, action]}, _, [named_action | _]}}
+      when module_parts != nil and action in [:for_create, :for_update, :for_destroy] and
+             is_atom(named_action) ->
+        module = Module.concat(module_parts)
+
+        %{
+          "resource" => format_module(module),
+          "action" => :write,
+          "action_name" => Atom.to_string(named_action)
+        }
+
+      {module_parts, {{:., _, [{:__aliases__, _, [:Ash, :Query]}, :for_read]}, _, [named_action | _]}}
+      when module_parts != nil and is_atom(named_action) ->
+        module = Module.concat(module_parts)
+
+        %{
+          "resource" => format_module(module),
+          "action" => :read,
+          "action_name" => Atom.to_string(named_action)
+        }
+
+      _ ->
+        leading_action_call(rhs) || leading_action_call(lhs)
+    end
+  end
+
+  defp leading_action_call(
+         {{:., _, [{:__aliases__, _, [:Ash, :Changeset]}, action]}, _,
+          [{:__aliases__, _, module_parts}, named_action | _]}
+       )
+       when action in [:for_create, :for_update, :for_destroy] and is_atom(named_action) do
+    module = Module.concat(module_parts)
+    action_type = if(action == :for_create, do: :write, else: :write)
+
+    %{
+      "resource" => format_module(module),
+      "action" => action_type,
+      "action_name" => Atom.to_string(named_action)
+    }
+  end
+
+  defp leading_action_call(
+         {{:., _, [{:__aliases__, _, [:Ash, :Query]}, :for_read]}, _,
+          [{:__aliases__, _, module_parts}, named_action | _]}
+       )
+       when is_atom(named_action) do
+    module = Module.concat(module_parts)
+
+    %{
+      "resource" => format_module(module),
+      "action" => :read,
+      "action_name" => Atom.to_string(named_action)
+    }
+  end
+
+  defp leading_action_call(_), do: nil
 
   defp leading_module_alias({:|>, _, [lhs, _rhs]}), do: leading_module_alias(lhs)
   defp leading_module_alias({:__aliases__, _, parts}), do: parts

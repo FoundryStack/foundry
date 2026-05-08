@@ -120,6 +120,50 @@ defmodule Foundry.TestScenario.RuntimeCaptureTest do
         assert Enum.map(Enum.at(traces, 1)["events"], & &1["details"]) == ["after crash"]
       end)
     end
+
+    test "persists exact runtime attrs for non-Ash traced calls" do
+      project_root = tmp_project_root()
+      context = scenario_context("persists runtime attrs")
+
+      in_project_root(project_root, fn ->
+        RuntimeCapture.capture(context, fn ->
+          Foundry.TestScenario.trace_call(
+            %{
+              node_id: "Demo.Flow",
+              focus_node_id: "Demo.Flow:action:submit",
+              kind: :action_execute,
+              type: :entry,
+              action: "submit",
+              module_function: "Demo.Flow.submit",
+              source_snippet: "Demo.Flow.submit()",
+              line: 19,
+              capture_origin: :automatic
+            },
+            fn -> :ok end
+          )
+        end)
+
+        [trace_path] = trace_files(project_root)
+        payload = decode_trace!(trace_path)
+
+        assert payload["events"] == [
+                 %{
+                   "action" => "submit",
+                   "capture_origin" => "automatic",
+                   "focus_node_id" => "Demo.Flow:action:submit",
+                   "kind" => "action_execute",
+                   "line" => 19,
+                   "module_function" => "Demo.Flow.submit",
+                   "node_id" => "Demo.Flow",
+                   "provenance" => "executed",
+                   "sequence" => 1,
+                   "source_snippet" => "Demo.Flow.submit()",
+                   "status" => "passed",
+                   "type" => "entry"
+                 }
+               ]
+      end)
+    end
   end
 
   defp scenario_context(test_name, opts \\ []) do

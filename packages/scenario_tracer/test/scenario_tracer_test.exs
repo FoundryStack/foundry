@@ -176,4 +176,28 @@ defmodule ScenarioTracerTest do
     assert report.performance.total_test_duration_ms == 12
     assert {"Demo.SampleTest.happy_path", "test runs thing", 12} = hd(report.performance.slowest_tests)
   end
+
+  test "static_only parses scenario tests without executing their bodies", %{root: root} do
+    File.write!(
+      Path.join(root, "test/demo_nonexecuted_test.exs"),
+      """
+      defmodule Demo.NonexecutedTest do
+        use ExUnit.Case, async: true
+
+        alias Demo.Thing
+
+        describe "static only" do
+          test "is discovered without being run" do
+            raise "should not execute during static extraction"
+            Thing.run(:ok)
+          end
+        end
+      end
+      """
+    )
+
+    report = MixTask.run(MockTask, [:static_only])
+
+    assert Enum.any?(report.scenarios, &(&1.id == "Demo.NonexecutedTest.static_only"))
+  end
 end
