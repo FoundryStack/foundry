@@ -32,13 +32,13 @@ defmodule Foundry.Context.ScenarioCache do
   def handle_info(:extract_static, state) do
     report =
       try do
-        ScenarioTracer.MixTask.run(Mix.Tasks.Foundry.Scenarios.Extract, [:static_only])
+        ScenarioTracer.MixTask.run(Mix.Tasks.Foundry.Scenarios.Extract, [])
       rescue
         error ->
           require Logger
 
           Logger.warning("""
-          ScenarioCache static extraction failed: #{Exception.message(error)}
+          ScenarioCache extraction failed: #{Exception.message(error)}
           """)
 
           %ExTracer.Report{

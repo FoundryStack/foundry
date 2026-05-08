@@ -579,6 +579,11 @@ export class CytoscapeGraph {
       const { source, target } = transition
       if (!(source && target) || source === target) return
 
+      // Validate both nodes exist in the graph before creating edge
+      const sourceNode = this.cy.getElementById(source)
+      const targetNode = this.cy.getElementById(target)
+      if (sourceNode.length === 0 || targetNode.length === 0) return
+
       transitionEdgeSet.add(`${source}|${target}`)
 
       const existing = this.cy.edges().filter(edge =>

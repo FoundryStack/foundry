@@ -12,7 +12,7 @@ defmodule Foundry.Context.ScenarioExtractor do
 
     try do
       task_module
-      |> ScenarioTracer.MixTask.run([:static_only])
+      |> ScenarioTracer.MixTask.run([])
       |> Map.get(:scenarios, [])
     after
       :code.purge(task_module)
