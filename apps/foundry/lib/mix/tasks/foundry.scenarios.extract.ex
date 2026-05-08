@@ -18,6 +18,7 @@ defmodule Mix.Tasks.Foundry.Scenarios.Extract do
 
   def adapters do
     [
+      Adapters.Page,
       Adapters.Rule,
       Adapters.Reactor,
       Adapters.Trigger,

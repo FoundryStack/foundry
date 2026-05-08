@@ -33,6 +33,7 @@ defmodule Foundry.Context.ScenarioExtractor do
         @impl true
         def adapters do
           [
+            Foundry.Context.Scenarios.Adapters.Page,
             Foundry.Context.Scenarios.Adapters.Rule,
             Foundry.Context.Scenarios.Adapters.Reactor,
             Foundry.Context.Scenarios.Adapters.Trigger,
