@@ -13,7 +13,7 @@ defmodule IgamingRef.ConnCase do
       @endpoint IgamingRef.Web.Endpoint
 
       import Plug.Conn
-      import Phoenix.ConnTest
+      import Phoenix.ConnTest, except: [build_conn: 0, build_conn: 1]
       import IgamingRef.ConnCase
     end
   end
@@ -22,17 +22,18 @@ defmodule IgamingRef.ConnCase do
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 
-  def build_conn(session) when is_map(session) do
+  def build_conn(session \\ %{}) do
     Phoenix.ConnTest.build_conn()
     |> Plug.Test.init_test_session(session)
   end
 
   def build_conn_with_trace(session \\ %{}) do
+    trace_id = Foundry.TestScenario.RuntimeCapture.current_trace_id()
+
     Phoenix.ConnTest.build_conn()
-    |> Plug.Test.init_test_session(Map.put(session, "foundry_test_pid", encode_pid(self())))
+    |> Plug.Test.init_test_session(maybe_put_trace_id(session, trace_id))
   end
 
-  defp encode_pid(pid) do
-    pid |> :erlang.pid_to_list() |> List.to_string()
-  end
+  defp maybe_put_trace_id(session, nil), do: session
+  defp maybe_put_trace_id(session, trace_id), do: Map.put(session, "foundry_trace_id", trace_id)
 end

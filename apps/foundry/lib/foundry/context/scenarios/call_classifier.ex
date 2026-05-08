@@ -47,9 +47,6 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
       module_name == "Reactor" and fun == :run ->
         infer_reactor_trace(args, call_ast, caller)
 
-      is_binary(module_name) ->
-        infer_module_trace(module_name, fun_name, call_ast)
-
       true ->
         nil
     end
@@ -416,6 +413,51 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
     |> Map.new()
     |> Map.put(:node_id, node_id)
     |> Map.put(:capture_origin, :automatic)
+  end
+
+  defp runtime_traceable_module?(module_name, caller_file)
+       when is_binary(module_name) and is_binary(caller_file) do
+    with {:ok, module} <- safe_module_atom(module_name),
+         true <- Code.ensure_loaded?(module),
+         source when is_list(source) <- module.module_info(:compile)[:source],
+         source_path <- Path.expand(List.to_string(source)),
+         project_root when is_binary(project_root) <- project_root(caller_file),
+         true <- String.starts_with?(source_path, project_root <> "/") do
+      relative_path = String.replace_prefix(source_path, project_root <> "/", "")
+      String.starts_with?(relative_path, "lib/") or String.contains?(relative_path, "/lib/")
+    else
+      _ -> false
+    end
+  end
+
+  defp safe_module_atom(module_name) when is_binary(module_name) do
+    try do
+      {:ok, String.to_existing_atom("Elixir." <> module_name)}
+    rescue
+      ArgumentError -> :error
+    end
+  end
+
+  defp project_root(caller_file) do
+    caller_file
+    |> Path.expand()
+    |> Path.dirname()
+    |> find_project_root()
+  end
+
+  defp find_project_root(dir) do
+    parent = Path.dirname(dir)
+
+    cond do
+      File.exists?(Path.join(dir, "mix.exs")) ->
+        dir
+
+      parent != dir ->
+        find_project_root(parent)
+
+      true ->
+        nil
+    end
   end
 
   defp action_focus(node_id, nil), do: node_id

@@ -34,7 +34,29 @@ defmodule Foundry.TestScenario do
   defmacro __using__(_opts) do
     quote do
       Module.register_attribute(__MODULE__, :scenario, accumulate: true, persist: true)
-      import Foundry.TestScenario, only: [capture: 2]
+      import Foundry.TestScenario, only: [capture: 1, capture: 2]
+    end
+  end
+
+  defmacro capture(do: body) do
+    caller = __CALLER__
+    describe_name = current_describe_name(caller)
+    test_name = current_test_name(caller, describe_name)
+
+    context = %{
+      module: caller.module,
+      describe: describe_name,
+      test: test_name,
+      file: caller.file,
+      line: caller.line
+    }
+
+    instrumented_body = instrument_capture_body(body, caller)
+
+    quote do
+      Foundry.TestScenario.__capture__(unquote(Macro.escape(context)), fn ->
+        unquote(instrumented_body)
+      end)
     end
   end
 
@@ -62,11 +84,23 @@ defmodule Foundry.TestScenario do
 
   @doc false
   def trace_call(_attrs, fun) when is_function(fun, 0) do
-    # With Ash.Tracer now capturing all action metadata, we don't need to
-    # manually instrument here. Just execute the wrapped function.
-    fun.()
+    RuntimeCapture.with_current_trace_context(fun)
   end
 
+  defp current_describe_name(%Macro.Env{} = caller) do
+    case Module.get_attribute(caller.module, :ex_unit_describe) do
+      {_line, name, _level} -> name
+      _ -> nil
+    end
+  end
+
+  defp current_test_name(%Macro.Env{function: {fun_name, _arity}}, describe_name) do
+    fun_name
+    |> Atom.to_string()
+    |> String.replace_prefix("test ", "")
+    |> String.replace_prefix("property ", "")
+    |> strip_describe_prefix(describe_name)
+  end
 
   defp instrument_capture_body(body, caller) do
     Macro.prewalk(body, fn
@@ -105,5 +139,12 @@ defmodule Foundry.TestScenario do
       node ->
         node
     end)
+  end
+
+  defp strip_describe_prefix(test_name, nil), do: test_name
+  defp strip_describe_prefix(test_name, ""), do: test_name
+
+  defp strip_describe_prefix(test_name, describe_name) do
+    String.replace_prefix(test_name, describe_name <> " ", "")
   end
 end
