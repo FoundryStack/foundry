@@ -1366,7 +1366,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
              end)
     end
 
-    test "withdrawal page runtime overlay keeps the traced step sequence instead of collapsing to two edges",
+    test "withdrawal page runtime overlay keeps the meaningful traced step sequence without duplicated mount cycles",
          %{
            conn: conn,
            project_context: context
@@ -1381,12 +1381,19 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end)
 
       assert scenario
-      assert length(scenario.flow) >= 6
+      assert length(scenario.flow) >= 4
 
       render_click(live, "select_scenario", %{"id" => scenario.id})
       assert_push_event(live, "graph:scenario_overlay", payload)
 
-      assert length(payload.overlay_transitions) >= 5
+      assert length(payload.overlay_transitions) >= 3
+
+      assert scenario.graph_path == [
+               "IgamingRef.Web.WithdrawalLive",
+               "IgamingRef.Finance.Wallet:action:read",
+               "IgamingRef.Finance.WithdrawalRequest:action:create",
+               "IgamingRef.Finance.WithdrawalRequest:action:read"
+             ]
 
       assert Enum.any?(payload.overlay_transitions, fn transition ->
                String.contains?(transition.source, ":action:") or

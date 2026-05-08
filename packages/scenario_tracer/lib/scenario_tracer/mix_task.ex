@@ -124,6 +124,9 @@ defmodule ScenarioTracer.MixTask do
               else
                 merge_runtime_with_static(static_flow, runtime_flow)
               end
+              |> maybe_compact_page_flow(lookup)
+              |> FlowSummary.assign_step_ids()
+              |> FlowSummary.attach_focus_targets()
 
             _overlay =
               if runtime_flow == [] do
@@ -345,7 +348,7 @@ defmodule ScenarioTracer.MixTask do
       static_step
       | provenance: runtime_step.provenance,
         status: runtime_step.status || static_step.status,
-        focus_node_id: runtime_step.focus_node_id || static_step.focus_node_id,
+        focus_node_id: preferred_focus_node_id(static_step, runtime_step),
         focus_targets:
           if(runtime_step.focus_targets in [nil, []],
             do: static_step.focus_targets,
@@ -359,6 +362,25 @@ defmodule ScenarioTracer.MixTask do
     }
   end
 
+  defp preferred_focus_node_id(static_step, runtime_step) do
+    runtime_focus = runtime_step.focus_node_id || runtime_step.node_id
+    static_focus = static_step.focus_node_id || static_step.node_id
+
+    cond do
+      is_nil(runtime_focus) ->
+        static_focus
+
+      is_nil(static_focus) ->
+        runtime_focus
+
+      runtime_focus == runtime_step.node_id and static_focus != static_step.node_id ->
+        static_focus
+
+      true ->
+        runtime_focus
+    end
+  end
+
   defp merge_step_key(step) do
     {
       Map.get(step, :type),
@@ -368,6 +390,193 @@ defmodule ScenarioTracer.MixTask do
       Map.get(step, :node_id)
     }
   end
+
+  defp maybe_compact_page_flow(flow, lookup) do
+    if page_flow?(flow, lookup) do
+      flow
+      |> chunk_flow_by_test_name()
+      |> Enum.map(&collapse_initial_duplicate_page_cycle(&1, lookup))
+      |> compact_page_chunks()
+      |> Enum.flat_map(& &1)
+      |> Enum.map(&%{&1 | focus_targets: []})
+      |> refine_page_action_focus(lookup)
+    else
+      flow
+    end
+  end
+
+  defp page_flow?([first | _], lookup), do: page_node?(first.node_id, lookup)
+  defp page_flow?([], _lookup), do: false
+
+  defp page_node?(node_id, lookup) when is_binary(node_id) do
+    case Map.get(lookup.by_id, node_id) do
+      %{type: type} when type in ["page", :page, "live_page", :live_page] -> true
+      _ -> false
+    end
+  end
+
+  defp page_node?(_, _lookup), do: false
+
+  defp chunk_flow_by_test_name(flow) do
+    flow
+    |> Enum.chunk_by(& &1.test_name)
+    |> Enum.reject(&(&1 == []))
+  end
+
+  defp collapse_initial_duplicate_page_cycle([first | _] = chunk, lookup) do
+    if page_node?(first.node_id, lookup) do
+      do_collapse_initial_duplicate_page_cycle(chunk)
+    else
+      chunk
+    end
+  end
+
+  defp collapse_initial_duplicate_page_cycle([], _lookup), do: []
+
+  defp do_collapse_initial_duplicate_page_cycle(chunk) do
+    max_cycle = div(length(chunk), 2)
+
+    case max_cycle do
+      cycle_size when cycle_size < 1 ->
+        chunk
+
+      _ ->
+        case Enum.find(1..max_cycle, fn cycle_size ->
+               repeated_initial_cycle?(chunk, cycle_size)
+             end) do
+          nil ->
+            chunk
+
+          cycle_size ->
+            chunk
+            |> Enum.take(cycle_size)
+            |> Kernel.++(Enum.drop(chunk, cycle_size * 2))
+            |> do_collapse_initial_duplicate_page_cycle()
+        end
+    end
+  end
+
+  defp repeated_initial_cycle?(chunk, cycle_size) when cycle_size > 0 do
+    leading = Enum.take(chunk, cycle_size)
+    repeated = chunk |> Enum.drop(cycle_size) |> Enum.take(cycle_size)
+
+    leading != [] and repeated != [] and
+      Enum.map(leading, &page_compaction_step_key/1) ==
+        Enum.map(repeated, &page_compaction_step_key/1)
+  end
+
+  defp compact_page_chunks(chunks) do
+    Enum.reduce(chunks, [], fn chunk, acc ->
+      cond do
+        Enum.any?(acc, &same_page_chunk?(&1, chunk)) ->
+          acc
+
+        Enum.any?(acc, &page_chunk_prefix?(chunk, &1)) ->
+          acc
+
+        true ->
+          acc
+          |> Enum.reject(&page_chunk_prefix?(&1, chunk))
+          |> Kernel.++([chunk])
+      end
+    end)
+  end
+
+  defp same_page_chunk?(left, right) do
+    Enum.map(left, &page_compaction_step_key/1) == Enum.map(right, &page_compaction_step_key/1)
+  end
+
+  defp page_chunk_prefix?(prefix, full) when length(prefix) <= length(full) do
+    prefix_keys = Enum.map(prefix, &page_compaction_step_key/1)
+    full_keys = full |> Enum.take(length(prefix)) |> Enum.map(&page_compaction_step_key/1)
+    prefix_keys == full_keys
+  end
+
+  defp page_chunk_prefix?(_prefix, _full), do: false
+
+  defp page_compaction_step_key(step) do
+    {
+      Map.get(step, :type),
+      Map.get(step, :kind),
+      Map.get(step, :action),
+      Map.get(step, :focus_node_id) || Map.get(step, :node_id),
+      Map.get(step, :node_id)
+    }
+  end
+
+  defp refine_page_action_focus(flow, lookup) do
+    {refined, _active_page} =
+      Enum.map_reduce(flow, nil, fn step, active_page ->
+        cond do
+          page_node?(step.node_id, lookup) ->
+            {step, step.node_id}
+
+          is_binary(active_page) ->
+            {refine_page_step(step, active_page, lookup), active_page}
+
+          true ->
+            {step, active_page}
+        end
+      end)
+
+    refined
+  end
+
+  defp refine_page_step(step, page_node_id, lookup) do
+    with %{calls_actions: calls_actions} when is_list(calls_actions) <- Map.get(lookup.by_id, page_node_id),
+         step_action_type when not is_nil(step_action_type) <- page_step_action_type(step),
+         [match] <- Enum.filter(calls_actions, &page_action_match?(&1, step, step_action_type)) do
+      action_name = Map.get(match, "action_name") || Map.get(match, :action_name)
+
+      %{
+        step
+        | action: step.action || normalize_action_name(action_name),
+          focus_node_id: refined_page_focus(step, action_name)
+      }
+    else
+      _ -> step
+    end
+  end
+
+  defp page_step_action_type(step) do
+    case step.kind do
+      :read -> :read
+      "read" -> :read
+      :create -> :create
+      "create" -> :create
+      :update -> :update
+      "update" -> :update
+      :destroy -> :destroy
+      "destroy" -> :destroy
+      _ -> nil
+    end
+  end
+
+  defp page_action_match?(action, step, step_action_type) do
+    resource = Map.get(action, "resource") || Map.get(action, :resource)
+    action_type = Map.get(action, "action") || Map.get(action, :action)
+
+    resource == step.node_id and action_type == step_action_type
+  end
+
+  defp refined_page_focus(step, action_name) do
+    normalized_action = normalize_action_name(action_name)
+
+    cond do
+      is_nil(normalized_action) ->
+        step.focus_node_id
+
+      step.focus_node_id in [nil, step.node_id] ->
+        "#{step.node_id}:action:#{normalized_action}"
+
+      true ->
+        step.focus_node_id
+    end
+  end
+
+  defp normalize_action_name(nil), do: nil
+  defp normalize_action_name(action_name) when is_atom(action_name), do: Atom.to_string(action_name)
+  defp normalize_action_name(action_name) when is_binary(action_name), do: action_name
 
   defp normalize_args(args) do
     static_only? =

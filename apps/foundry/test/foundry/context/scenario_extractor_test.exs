@@ -1041,6 +1041,290 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       assert encoded =~ "\"kind\":\"action_execute\""
       assert encoded =~ "\"node_id\":\"IgamingRef.Promotions.BonusEvent\""
     end
+
+    test "page scenarios collapse duplicated disconnected and connected mount cycles" do
+      tmpdir = tmp_project_root()
+
+      write_test_file(
+        tmpdir,
+        "home_live_test.exs",
+        """
+        defmodule IgamingRef.Web.HomeLiveTest do
+          use ExUnit.Case, async: true
+          use Foundry.TestScenario
+
+          describe "home page" do
+            test "renders featured games and active promotions from live data" do
+              :ok
+            end
+
+            test "shows stable empty states when no data is available" do
+              :ok
+            end
+          end
+        end
+        """
+      )
+
+      write_trace_file(
+        tmpdir,
+        "home_page_a.json",
+        %{
+          "scenario_id" => "IgamingRef.Web.HomeLiveTest.home_page",
+          "test_name" => "renders featured games and active promotions from live data",
+          "events" => [
+            %{"sequence" => 1, "node_id" => "IgamingRef.Web.HomeLive", "focus_node_id" => "IgamingRef.Web.HomeLive", "action_kind" => "entry"},
+            %{"sequence" => 2, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
+            %{"sequence" => 3, "node_id" => "IgamingRef.Promotions.BonusCampaign", "focus_node_id" => "IgamingRef.Promotions.BonusCampaign", "action_kind" => "read"},
+            %{"sequence" => 4, "node_id" => "IgamingRef.Web.HomeLive", "focus_node_id" => "IgamingRef.Web.HomeLive", "action_kind" => "entry"},
+            %{"sequence" => 5, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
+            %{"sequence" => 6, "node_id" => "IgamingRef.Promotions.BonusCampaign", "focus_node_id" => "IgamingRef.Promotions.BonusCampaign", "action_kind" => "read"}
+          ]
+        }
+      )
+
+      write_trace_file(
+        tmpdir,
+        "home_page_b.json",
+        %{
+          "scenario_id" => "IgamingRef.Web.HomeLiveTest.home_page",
+          "test_name" => "shows stable empty states when no data is available",
+          "events" => [
+            %{"sequence" => 1, "node_id" => "IgamingRef.Web.HomeLive", "focus_node_id" => "IgamingRef.Web.HomeLive", "action_kind" => "entry"},
+            %{"sequence" => 2, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
+            %{"sequence" => 3, "node_id" => "IgamingRef.Promotions.BonusCampaign", "focus_node_id" => "IgamingRef.Promotions.BonusCampaign", "action_kind" => "read"},
+            %{"sequence" => 4, "node_id" => "IgamingRef.Web.HomeLive", "focus_node_id" => "IgamingRef.Web.HomeLive", "action_kind" => "entry"},
+            %{"sequence" => 5, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
+            %{"sequence" => 6, "node_id" => "IgamingRef.Promotions.BonusCampaign", "focus_node_id" => "IgamingRef.Promotions.BonusCampaign", "action_kind" => "read"}
+          ]
+        }
+      )
+
+      nodes = [
+        node("IgamingRef.Web.HomeLive", "page"),
+        %NodeEntry{
+          id: "IgamingRef.Gaming.Game",
+          module: "IgamingRef.Gaming.Game",
+          type: "resource",
+          domain: "Gaming",
+          description: "Game",
+          actions: [%{name: "read", type: "read"}]
+        },
+        %NodeEntry{
+          id: "IgamingRef.Promotions.BonusCampaign",
+          module: "IgamingRef.Promotions.BonusCampaign",
+          type: "resource",
+          domain: "Promotions",
+          description: "Bonus campaign",
+          actions: [%{name: "read", type: "read"}]
+        }
+      ]
+
+      [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert Enum.map(scenario.flow, & &1.test_name) == [
+               "renders featured games and active promotions from live data",
+               "renders featured games and active promotions from live data",
+               "renders featured games and active promotions from live data"
+             ]
+
+      assert scenario.graph_path == [
+               "IgamingRef.Web.HomeLive",
+               "IgamingRef.Gaming.Game:action:read",
+               "IgamingRef.Promotions.BonusCampaign:action:read"
+             ]
+    end
+
+    test "page scenarios drop shorter prefix-only variants across tests" do
+      tmpdir = tmp_project_root()
+
+      write_test_file(
+        tmpdir,
+        "auth_live_test.exs",
+        """
+        defmodule IgamingRef.Web.AuthLiveTest do
+          use ExUnit.Case, async: true
+          use Foundry.TestScenario
+
+          describe "auth page" do
+            test "renders the login form with its active fields" do
+              :ok
+            end
+
+            test "shows an error flash for invalid credentials" do
+              :ok
+            end
+
+            test "redirects after a successful password sign in" do
+              :ok
+            end
+          end
+        end
+        """
+      )
+
+      write_trace_file(
+        tmpdir,
+        "auth_page_a.json",
+        %{
+          "scenario_id" => "IgamingRef.Web.AuthLiveTest.auth_page",
+          "test_name" => "renders the login form with its active fields",
+          "events" => [
+            %{"sequence" => 1, "node_id" => "IgamingRef.Web.AuthLive", "focus_node_id" => "IgamingRef.Web.AuthLive", "action_kind" => "entry"},
+            %{"sequence" => 2, "node_id" => "IgamingRef.Web.AuthLive", "focus_node_id" => "IgamingRef.Web.AuthLive", "action_kind" => "entry"}
+          ]
+        }
+      )
+
+      for name <- [
+            "shows an error flash for invalid credentials",
+            "redirects after a successful password sign in"
+          ] do
+        write_trace_file(
+          tmpdir,
+          "auth_#{String.replace(name, ~r/[^a-z]+/, "_")}.json",
+          %{
+            "scenario_id" => "IgamingRef.Web.AuthLiveTest.auth_page",
+            "test_name" => name,
+            "events" => [
+              %{"sequence" => 1, "node_id" => "IgamingRef.Web.AuthLive", "focus_node_id" => "IgamingRef.Web.AuthLive", "action_kind" => "entry"},
+              %{"sequence" => 2, "node_id" => "IgamingRef.Web.AuthLive", "focus_node_id" => "IgamingRef.Web.AuthLive", "action_kind" => "entry"},
+              %{"sequence" => 3, "node_id" => "IgamingRef.Accounts.User", "focus_node_id" => "IgamingRef.Accounts.User", "action_kind" => "read"}
+            ]
+          }
+        )
+      end
+
+      nodes = [
+        node("IgamingRef.Web.AuthLive", "page"),
+        %NodeEntry{
+          id: "IgamingRef.Accounts.User",
+          module: "IgamingRef.Accounts.User",
+          type: "resource",
+          domain: "Accounts",
+          description: "User",
+          actions: [%{name: "sign_in_with_password", type: "read"}]
+        }
+      ]
+
+      [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert length(scenario.flow) == 2
+      assert Enum.map(scenario.flow, & &1.node_id) == [
+               "IgamingRef.Web.AuthLive",
+               "IgamingRef.Accounts.User"
+             ]
+
+      assert scenario.graph_path == [
+               "IgamingRef.Web.AuthLive",
+               "IgamingRef.Accounts.User:action:sign_in_with_password"
+             ]
+    end
+
+    test "page scenarios keep the richest unique interaction path instead of concatenating repeated prefixes" do
+      tmpdir = tmp_project_root()
+
+      write_test_file(
+        tmpdir,
+        "game_live_test.exs",
+        """
+        defmodule IgamingRef.Web.GameLiveTest do
+          use ExUnit.Case, async: true
+          use Foundry.TestScenario
+
+          describe "game page" do
+            test "loads the routed game and the current player's wallet" do
+              :ok
+            end
+
+            test "clicking play creates a game session for the routed game" do
+              :ok
+            end
+          end
+        end
+        """
+      )
+
+      write_trace_file(
+        tmpdir,
+        "game_page_a.json",
+        %{
+          "scenario_id" => "IgamingRef.Web.GameLiveTest.game_page",
+          "test_name" => "loads the routed game and the current player's wallet",
+          "events" => [
+            %{"sequence" => 1, "node_id" => "IgamingRef.Web.GameLive", "focus_node_id" => "IgamingRef.Web.GameLive", "action_kind" => "entry"},
+            %{"sequence" => 2, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
+            %{"sequence" => 3, "node_id" => "IgamingRef.Finance.Wallet", "focus_node_id" => "IgamingRef.Finance.Wallet", "action_kind" => "read"},
+            %{"sequence" => 4, "node_id" => "IgamingRef.Web.GameLive", "focus_node_id" => "IgamingRef.Web.GameLive", "action_kind" => "entry"},
+            %{"sequence" => 5, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
+            %{"sequence" => 6, "node_id" => "IgamingRef.Finance.Wallet", "focus_node_id" => "IgamingRef.Finance.Wallet", "action_kind" => "read"}
+          ]
+        }
+      )
+
+      write_trace_file(
+        tmpdir,
+        "game_page_b.json",
+        %{
+          "scenario_id" => "IgamingRef.Web.GameLiveTest.game_page",
+          "test_name" => "clicking play creates a game session for the routed game",
+          "events" => [
+            %{"sequence" => 1, "node_id" => "IgamingRef.Web.GameLive", "focus_node_id" => "IgamingRef.Web.GameLive", "action_kind" => "entry"},
+            %{"sequence" => 2, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
+            %{"sequence" => 3, "node_id" => "IgamingRef.Finance.Wallet", "focus_node_id" => "IgamingRef.Finance.Wallet", "action_kind" => "read"},
+            %{"sequence" => 4, "node_id" => "IgamingRef.Web.GameLive", "focus_node_id" => "IgamingRef.Web.GameLive", "action_kind" => "entry"},
+            %{"sequence" => 5, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
+            %{"sequence" => 6, "node_id" => "IgamingRef.Finance.Wallet", "focus_node_id" => "IgamingRef.Finance.Wallet", "action_kind" => "read"},
+            %{"sequence" => 7, "node_id" => "IgamingRef.Gaming.GameSession", "focus_node_id" => "IgamingRef.Gaming.GameSession", "action_kind" => "read"},
+            %{"sequence" => 8, "node_id" => "IgamingRef.Gaming.GameSession", "focus_node_id" => "IgamingRef.Gaming.GameSession", "action_kind" => "read"}
+          ]
+        }
+      )
+
+      nodes = [
+        node("IgamingRef.Web.GameLive", "page"),
+        %NodeEntry{
+          id: "IgamingRef.Gaming.Game",
+          module: "IgamingRef.Gaming.Game",
+          type: "resource",
+          domain: "Gaming",
+          description: "Game",
+          actions: [%{name: "read", type: "read"}]
+        },
+        %NodeEntry{
+          id: "IgamingRef.Finance.Wallet",
+          module: "IgamingRef.Finance.Wallet",
+          type: "resource",
+          domain: "Finance",
+          description: "Wallet",
+          actions: [%{name: "read", type: "read"}]
+        },
+        %NodeEntry{
+          id: "IgamingRef.Gaming.GameSession",
+          module: "IgamingRef.Gaming.GameSession",
+          type: "resource",
+          domain: "Gaming",
+          description: "Game session",
+          actions: [%{name: "read", type: "read"}]
+        }
+      ]
+
+      [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert Enum.map(scenario.flow, & &1.node_id) == [
+               "IgamingRef.Web.GameLive",
+               "IgamingRef.Gaming.Game",
+               "IgamingRef.Finance.Wallet",
+               "IgamingRef.Gaming.GameSession"
+             ]
+
+      assert scenario.graph_path == [
+               "IgamingRef.Web.GameLive",
+               "IgamingRef.Gaming.Game:action:read",
+               "IgamingRef.Finance.Wallet:action:read",
+               "IgamingRef.Gaming.GameSession:action:read"
+             ]
+    end
   end
 
   defp node(module_name, type) do
