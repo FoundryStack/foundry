@@ -29,11 +29,13 @@ defmodule Foundry.TestScenario.LiveViewRegistry do
   end
 
   def lookup(lv_pid) when is_pid(lv_pid) do
-    ensure_started()
-
-    case :ets.lookup(@table_name, lv_pid) do
-      [{^lv_pid, test_pid}] -> {:ok, test_pid}
-      [] -> :not_found
+    try do
+      case :ets.lookup(@table_name, lv_pid) do
+        [{^lv_pid, test_pid}] -> {:ok, test_pid}
+        [] -> :not_found
+      end
+    rescue
+      ArgumentError -> :not_found
     end
   end
 

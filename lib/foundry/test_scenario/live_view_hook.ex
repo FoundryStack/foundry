@@ -12,18 +12,17 @@ defmodule Foundry.TestScenario.LiveViewHook do
   """
 
   def on_mount(_name, _params, session, socket) do
-    socket = assign_session_keys(socket, session)
-
-    case decode_test_pid(session) do
-      {:ok, test_pid} ->
-        Foundry.TestScenario.LiveViewRegistry.register(self(), test_pid)
+    case decode_trace_context(session) do
+      {:ok, trace_context} ->
+        Process.put(:foundry_test_scenario_trace_context, trace_context)
 
         # Record page entry in scenario trace
         page_module = socket.view |> Atom.to_string() |> String.trim_leading("Elixir.")
-        send(test_pid, {:foundry_ash_event, %{
+
+        Foundry.TestScenario.EventBuffer.push(trace_context.trace_id, %{
           node_id: page_module,
           action_kind: :entry
-        }})
+        })
 
         {:cont, socket}
 
@@ -32,41 +31,18 @@ defmodule Foundry.TestScenario.LiveViewHook do
     end
   end
 
-  defp assign_session_keys(socket, session) when is_map(session) do
-    session
-    |> Enum.reject(fn {key, _value} -> to_string(key) == "foundry_test_pid" end)
-    |> Enum.reduce(socket, fn {key, value}, acc ->
-      Phoenix.Component.assign(acc, normalize_assign_key(key), value)
-    end)
-  end
-
-  defp assign_session_keys(socket, _session), do: socket
-
-  defp normalize_assign_key(key) when is_atom(key), do: key
-  defp normalize_assign_key(key) when is_binary(key), do: String.to_atom(key)
-
-  defp decode_test_pid(session) when is_map(session) do
+  defp decode_trace_context(session) when is_map(session) do
     case session do
-      %{"foundry_test_pid" => pid_string} when is_binary(pid_string) ->
-        # Decode PID from string representation
-        try do
-          pid = :erlang.list_to_pid(String.to_charlist(pid_string))
-          {:ok, pid}
-        rescue
-          _ -> :not_found
-        end
+      %{"foundry_trace_id" => trace_id} when is_binary(trace_id) and trace_id != "" ->
+        {:ok, %{trace_id: trace_id}}
 
-      %{foundry_test_pid: pid_string} when is_binary(pid_string) ->
-        try do
-          pid = :erlang.list_to_pid(String.to_charlist(pid_string))
-          {:ok, pid}
-        rescue
-          _ -> :not_found
-        end
+      %{foundry_trace_id: trace_id} when is_binary(trace_id) and trace_id != "" ->
+        {:ok, %{trace_id: trace_id}}
 
       _ ->
         :not_found
     end
   end
-  defp decode_test_pid(_), do: :not_found
+
+  defp decode_trace_context(_), do: :not_found
 end

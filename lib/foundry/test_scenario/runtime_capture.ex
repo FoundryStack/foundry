@@ -2,6 +2,7 @@ defmodule Foundry.TestScenario.RuntimeCapture do
   @moduledoc false
 
   @trace_key :foundry_test_scenario_trace
+  @context_key :foundry_test_scenario_trace_context
 
   def capture(context, fun) when is_map(context) and is_function(fun, 0) do
     metadata = trace_metadata(context)
@@ -20,10 +21,52 @@ defmodule Foundry.TestScenario.RuntimeCapture do
         :erlang.raise(kind, reason, __STACKTRACE__)
     after
       restore_previous_trace(previous_trace)
-      Foundry.TestScenario.LiveViewRegistry.unregister_by_test_pid(self())
     end
   end
 
+  def current_trace_id do
+    case Process.get(@trace_key) do
+      %{metadata: metadata} -> trace_id(metadata)
+      _ -> nil
+    end
+  end
+
+  def with_current_trace_context(fun) when is_function(fun, 0) do
+    previous_context = Process.get(@context_key)
+
+    try do
+      case current_trace_id() do
+        trace_id when is_binary(trace_id) ->
+          Process.put(@context_key, %{trace_id: trace_id})
+
+        _ ->
+          :ok
+      end
+
+      fun.()
+    after
+      restore_previous_context(previous_context)
+    end
+  end
+
+  def trace_node(node_id, event_attrs \\ %{}) when is_binary(node_id) and is_map(event_attrs) do
+    case Process.get(@trace_key) do
+      %{events: events, sequence: seq} = trace ->
+        event =
+          event_attrs
+          |> Map.put_new(:node_id, node_id)
+          |> Map.put_new(:status, :passed)
+          |> Map.put_new(:provenance, :executed)
+          |> Map.put_new(:sequence, seq + 1)
+          |> Map.put_new(:focus_node_id, Map.get(event_attrs, :node_id, node_id))
+
+        Process.put(@trace_key, %{trace | events: [event | events], sequence: seq + 1})
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
 
   defp flush_trace(outcome) do
     case Process.get(@trace_key) do
@@ -59,6 +102,13 @@ defmodule Foundry.TestScenario.RuntimeCapture do
       file: context[:file],
       line: context[:line]
     }
+  end
+
+  defp trace_id(metadata) do
+    metadata
+    |> Map.take([:scenario_id, :test_name, :line])
+    |> :erlang.term_to_binary()
+    |> Base.url_encode64(padding: false)
   end
 
   defp normalize_test_name(nil), do: "scenario"
@@ -106,26 +156,60 @@ defmodule Foundry.TestScenario.RuntimeCapture do
 
   defp restore_previous_trace(nil), do: Process.delete(@trace_key)
   defp restore_previous_trace(previous_trace), do: Process.put(@trace_key, previous_trace)
+  defp restore_previous_context(nil), do: Process.delete(@context_key)
+  defp restore_previous_context(previous_context), do: Process.put(@context_key, previous_context)
 
   defp drain_liveview_events do
+    case Process.get(@trace_key) do
+      %{metadata: metadata, sequence: seq} = trace ->
+        metadata
+        |> trace_id()
+        |> Foundry.TestScenario.EventBuffer.take()
+        |> Enum.reduce({trace, seq}, fn event_attrs, {current_trace, current_seq} ->
+          updated_trace =
+            event_attrs
+            |> Map.put_new(:node_id, Map.get(event_attrs, :node_id))
+            |> persist_event(current_trace, current_seq)
+
+          {updated_trace, updated_trace.sequence}
+        end)
+
+        :ok
+
+      _ ->
+        :ok
+    end
+
+    drain_mailbox_events()
+  end
+
+  defp persist_event(event_attrs, trace, seq) do
+    event =
+      event_attrs
+      |> Map.put_new(:status, :passed)
+      |> Map.put_new(:provenance, :executed)
+      |> Map.put_new(:sequence, seq + 1)
+      |> Map.put_new(:focus_node_id, Map.get(event_attrs, :node_id))
+
+    updated_trace = %{trace | events: [event | trace.events], sequence: seq + 1}
+    Process.put(@trace_key, updated_trace)
+    updated_trace
+  end
+
+  defp drain_mailbox_events do
     receive do
       {:foundry_ash_event, event_attrs} ->
         case Process.get(@trace_key) do
-          %{events: events, sequence: seq} = trace ->
-            event =
-              event_attrs
-              |> Map.put_new(:status, :passed)
-              |> Map.put_new(:provenance, :executed)
-              |> Map.put_new(:sequence, seq + 1)
-              |> Map.put_new(:focus_node_id, Map.get(event_attrs, :node_id))
-
-            Process.put(@trace_key, %{trace | events: [event | events], sequence: seq + 1})
+          %{sequence: seq} = trace ->
+            event_attrs
+            |> Map.put_new(:node_id, Map.get(event_attrs, :node_id))
+            |> persist_event(trace, seq)
 
           _ ->
             :ok
         end
 
-        drain_liveview_events()
+        drain_mailbox_events()
     after
       0 -> :ok
     end
