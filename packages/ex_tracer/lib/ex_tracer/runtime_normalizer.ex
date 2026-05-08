@@ -12,7 +12,7 @@ defmodule ExTracer.RuntimeNormalizer do
       |> Enum.map(fn event ->
         FlowSummary.build_step(%{
           type: normalize_runtime_atom(Map.get(event, "type"), :reaction),
-          kind: normalize_runtime_atom(Map.get(event, "kind"), :observation),
+          kind: normalize_runtime_atom(Map.get(event, "action_kind") || Map.get(event, "kind"), :observation),
           label: Map.get(event, "label") || runtime_label(event),
           node_id: Map.get(event, "node_id"),
           focus_node_id: Map.get(event, "focus_node_id") || Map.get(event, "node_id"),
@@ -57,6 +57,9 @@ defmodule ExTracer.RuntimeNormalizer do
       "job_enqueue" -> :job_enqueue
       "job_execute" -> :job_execute
       "read" -> :read
+      "create" -> :create
+      "update" -> :update
+      "destroy" -> :destroy
       "write" -> :write
       "rule_check" -> :rule_check
       "assert_result" -> :assert_result
