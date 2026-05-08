@@ -214,7 +214,8 @@ defmodule ScenarioTracer.MixTask do
 
   defp runtime_steps_from_trace(nil, _test_block), do: []
 
-  defp runtime_steps_from_trace(%{events: events}, test_block) do
+  defp runtime_steps_from_trace(trace, test_block) when is_map(trace) do
+    events = Map.get(trace, :events) || Map.get(trace, "events") || []
     Enum.map(events, fn event ->
       node_id = Map.get(event, :node_id) || Map.get(event, "node_id")
       focus_node_id = Map.get(event, :focus_node_id) || Map.get(event, "focus_node_id") || node_id
