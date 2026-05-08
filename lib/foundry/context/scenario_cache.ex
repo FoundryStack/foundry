@@ -32,7 +32,7 @@ defmodule Foundry.Context.ScenarioCache do
   def handle_info(:extract_static, state) do
     report =
       try do
-        ScenarioTracer.MixTask.run(Mix.Tasks.Foundry.Scenarios.Extract, [])
+        ScenarioTracer.MixTask.run(Mix.Tasks.Foundry.Scenarios.Extract, [:static_only])
       rescue
         error ->
           require Logger

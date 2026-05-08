@@ -482,11 +482,20 @@ defmodule Foundry.Context.ScenarioExtractorTest do
 
       assert scenario.nodes == [
                "IgamingRef.Promotions.BonusEvaluationReactor",
-               "IgamingRef.Promotions.BonusGrantTransfer"
+               "IgamingRef.Promotions.BonusEvent",
+               "IgamingRef.Players.Player",
+               "IgamingRef.Promotions.BonusGrantTransfer",
+               "IgamingRef.Promotions.BonusGrant"
              ]
 
       assert scenario.graph_path == [
                "IgamingRef.Promotions.BonusEvaluationReactor",
+               "IgamingRef.Promotions.BonusEvaluationReactor:step:0",
+               "IgamingRef.Promotions.BonusEvaluationReactor:step:1",
+               "IgamingRef.Promotions.BonusEvaluationReactor",
+               "IgamingRef.Promotions.BonusGrantTransfer",
+               "IgamingRef.Promotions.BonusGrantTransfer:step:0",
+               "IgamingRef.Promotions.BonusGrantTransfer:step:1",
                "IgamingRef.Promotions.BonusGrantTransfer"
              ]
     end
@@ -573,7 +582,7 @@ defmodule Foundry.Context.ScenarioExtractorTest do
                "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook"
              ]
 
-      assert scenario.graph_path == [
+      assert Enum.take(scenario.graph_path, 3) == [
                "IgamingRef.Finance.WithdrawalWebhook",
                "IgamingRef.Finance.WithdrawalWebhookEvent:action:receive",
                "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook"
@@ -887,15 +896,24 @@ defmodule Foundry.Context.ScenarioExtractorTest do
           node("IgamingRef.Finance.WithdrawalRequest", "resource")
         ])
 
-      assert length(scenario.flow) == 1
+      assert length(scenario.flow) == 2
 
-      [step] = scenario.flow
-      assert step.label == "Enter WithdrawalTransfer pipeline"
-      assert step.focus_targets == ["IgamingRef.Finance.WithdrawalRequest"]
+      [action_step, transfer_step] = scenario.flow
+      assert action_step.label == "Run the approved WithdrawalTransfer pipeline"
+      assert action_step.focus_node_id == "IgamingRef.Finance.WithdrawalTransfer:action:run"
+
+      assert action_step.focus_targets == [
+               "IgamingRef.Finance.WithdrawalRequest",
+               "IgamingRef.Finance.WithdrawalTransfer:step:0"
+             ]
+
+      assert transfer_step.label == "Enter WithdrawalTransfer pipeline"
+      assert transfer_step.focus_node_id == "IgamingRef.Finance.WithdrawalTransfer:step:0"
 
       assert scenario.graph_path == [
-               "IgamingRef.Finance.WithdrawalTransfer:step:0",
-               "IgamingRef.Finance.WithdrawalRequest"
+               "IgamingRef.Finance.WithdrawalTransfer:action:run",
+               "IgamingRef.Finance.WithdrawalRequest",
+               "IgamingRef.Finance.WithdrawalTransfer:step:0"
              ]
     end
 

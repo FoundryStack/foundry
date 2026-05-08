@@ -24,6 +24,7 @@ defmodule Foundry.PageMetadataTest do
       IgamingRef.Web.GameLive,
       IgamingRef.Web.HomeLive,
       IgamingRef.Web.AuthLive,
+      IgamingRef.Web.WithdrawalLive,
       Foundry.TestSupport.ExplicitRouteLive
     ]
 
@@ -73,12 +74,16 @@ defmodule Foundry.PageMetadataTest do
     assert auth.page_route == nil
     assert auth.page_dynamic == false
 
-    assert %{"resource" => "IgamingRef.Accounts.Token", "action" => :write} =
+    assert %{
+             "resource" => "IgamingRef.Accounts.User",
+             "action" => :read,
+             "action_name" => "sign_in_with_password"
+           } =
              Enum.at(auth.calls_actions, 0)
   end
 
-  test "SparkMeta carries inferred page route and calls_actions for static pages" do
-    info = Foundry.SparkMeta.walk(IgamingRef.Web.DepositLive)
+  test "page metadata carries inferred page route and exact calls_actions for static pages" do
+    info = Foundry.PageMetadata.analyze(IgamingRef.Web.DepositLive)
 
     assert info.page_route == "/deposit"
     assert info.page_dynamic == false
@@ -90,6 +95,16 @@ defmodule Foundry.PageMetadataTest do
     assert Enum.any?(info.calls_actions, fn action ->
              action["resource"] == "IgamingRef.Finance.Transfer" and
                action["action_name"] == "record"
+           end)
+  end
+
+  test "pipeline-backed page writes preserve the exact named Ash action" do
+    info = Foundry.PageMetadata.analyze(IgamingRef.Web.WithdrawalLive)
+
+    assert Enum.any?(info.calls_actions, fn action ->
+             action["resource"] == "IgamingRef.Finance.WithdrawalRequest" and
+               action["action"] == :write and
+               action["action_name"] == "create"
            end)
   end
 end

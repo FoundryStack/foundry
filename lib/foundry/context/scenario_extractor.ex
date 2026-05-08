@@ -7,12 +7,13 @@ defmodule Foundry.Context.ScenarioExtractor do
   traced steps, but it never creates a scenario on its own.
   """
 
-  def extract(project_root, nodes) do
+  def extract(project_root, nodes, opts \\ []) do
     task_module = build_task_module(project_root, nodes)
+    args = if Keyword.get(opts, :run_tests?, false), do: [], else: [:static_only]
 
     try do
       task_module
-      |> ScenarioTracer.MixTask.run([])
+      |> ScenarioTracer.MixTask.run(args)
       |> Map.get(:scenarios, [])
     after
       :code.purge(task_module)

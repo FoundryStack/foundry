@@ -49,6 +49,16 @@ defmodule Foundry.TestScenario.RuntimeCapture do
     end
   end
 
+  def trace_call(attrs, fun) when is_map(attrs) and is_function(fun, 0) do
+    with_current_trace_context(fn ->
+      if persist_trace_call?(attrs) do
+        trace_node(Map.get(attrs, :node_id), attrs)
+      end
+
+      fun.()
+    end)
+  end
+
   def trace_node(node_id, event_attrs \\ %{}) when is_binary(node_id) and is_map(event_attrs) do
     case Process.get(@trace_key) do
       %{events: events, sequence: seq} = trace ->
@@ -66,6 +76,22 @@ defmodule Foundry.TestScenario.RuntimeCapture do
       _ ->
         :ok
     end
+  end
+
+  defp persist_trace_call?(%{module_function: module_function}) when is_binary(module_function) do
+    not duplicate_ash_runtime_call?(module_function)
+  end
+
+  defp persist_trace_call?(%{"module_function" => module_function}) when is_binary(module_function) do
+    not duplicate_ash_runtime_call?(module_function)
+  end
+
+  defp persist_trace_call?(%{node_id: node_id}) when is_binary(node_id), do: true
+  defp persist_trace_call?(%{"node_id" => node_id}) when is_binary(node_id), do: true
+  defp persist_trace_call?(_attrs), do: false
+
+  defp duplicate_ash_runtime_call?(module_function) do
+    module_function in ["Ash.create", "Ash.read", "Ash.read_one", "Ash.get", "Ash.update", "Ash.destroy"]
   end
 
   defp flush_trace(outcome) do

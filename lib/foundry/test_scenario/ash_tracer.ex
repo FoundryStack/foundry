@@ -127,11 +127,24 @@ defmodule Foundry.TestScenario.AshTracer do
     action = Map.get(metadata, :action)
 
     if resource && action do
-      node_id = resource |> to_string() |> String.trim_leading("Elixir.")
+      node_id =
+        resource
+        |> to_string()
+        |> String.trim_leading("Elixir.")
+        |> canonical_resource_id()
+
+      action_name = action_name(action)
+      action_type = action_type(action)
 
       %{
         node_id: node_id,
-        action_kind: action_kind(action)
+        type: runtime_type(action_type),
+        kind: runtime_kind(action_type),
+        action_kind: runtime_kind(action_type),
+        action: action_name,
+        focus_node_id: focus_node_id(node_id, action_name),
+        capture_origin: :ash_tracer,
+        module_function: module_function(action_type)
       }
     end
   end
@@ -143,9 +156,33 @@ defmodule Foundry.TestScenario.AshTracer do
     end
   end
 
-  defp action_kind(:create), do: :create
-  defp action_kind(:read), do: :read
-  defp action_kind(:update), do: :update
-  defp action_kind(:destroy), do: :destroy
-  defp action_kind(_), do: :read
+  defp action_name(action) when is_atom(action), do: Atom.to_string(action)
+  defp action_name(%{name: name}) when is_atom(name), do: Atom.to_string(name)
+  defp action_name(%{name: name}) when is_binary(name), do: name
+  defp action_name(action), do: to_string(action)
+
+  defp action_type(%{type: type}) when is_atom(type), do: type
+  defp action_type(action) when is_atom(action), do: action
+  defp action_type(_action), do: :read
+
+  defp runtime_type(:read), do: :observation
+  defp runtime_type(_action_type), do: :entry
+
+  defp runtime_kind(:create), do: :action_execute
+  defp runtime_kind(:update), do: :action_execute
+  defp runtime_kind(:destroy), do: :action_execute
+  defp runtime_kind(_action_type), do: :read
+
+  defp module_function(:create), do: "Ash.create"
+  defp module_function(:update), do: "Ash.update"
+  defp module_function(:destroy), do: "Ash.destroy"
+  defp module_function(_action_type), do: "Ash.read"
+
+  defp focus_node_id(node_id, nil), do: node_id
+  defp focus_node_id(node_id, ""), do: node_id
+  defp focus_node_id(node_id, action_name), do: "#{node_id}:action:#{action_name}"
+
+  defp canonical_resource_id(resource_id) do
+    String.replace_suffix(resource_id, ".Version", "")
+  end
 end
