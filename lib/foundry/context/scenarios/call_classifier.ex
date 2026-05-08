@@ -1,7 +1,7 @@
 defmodule Foundry.Context.Scenarios.CallClassifier do
   @moduledoc false
 
-  alias Foundry.Context.Scenarios.FlowSummary
+  alias ExTracer.FlowSummary
   alias Foundry.Context.Scenarios.ModuleIndex
   alias Foundry.Context.Scenarios.Utils
 

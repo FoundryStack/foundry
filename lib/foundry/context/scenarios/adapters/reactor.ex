@@ -1,9 +1,10 @@
 defmodule Foundry.Context.Scenarios.Adapters.Reactor do
   @moduledoc false
 
-  @behaviour Foundry.Context.Scenarios.Adapter
+  @behaviour ExTracer.Adapter
 
-  alias Foundry.Context.Scenarios.FlowSummary
+  alias ExTracer.FlowExpander
+  alias ExTracer.FlowSummary
   alias Foundry.Context.Scenarios.ModuleIndex
 
   @impl true
@@ -22,7 +23,16 @@ defmodule Foundry.Context.Scenarios.Adapters.Reactor do
   end
 
   @impl true
-  def classify_call(_call, _lookup), do: nil
+  def classify_call(module_ast, fun, args, alias_map, lookup, opts) do
+    Foundry.Context.Scenarios.CallClassifier.classify_ast_call(
+      module_ast,
+      fun,
+      args,
+      alias_map,
+      lookup,
+      opts
+    )
+  end
 
   @impl true
   def focus_for_helper(_module_name, _helper_name, _lookup), do: nil
@@ -49,6 +59,6 @@ defmodule Foundry.Context.Scenarios.Adapters.Reactor do
         details: ModuleIndex.pipeline_step_description(pipeline_step),
         source_snippet: ModuleIndex.pipeline_step_snippet(pipeline_step)
       })
-    end) ++ Foundry.Context.Scenarios.FlowExpander.maybe_assert_result_step(step)
+    end) ++ FlowExpander.maybe_assert_result_step(step)
   end
 end

@@ -1,7 +1,7 @@
 defmodule Foundry.Context.Scenarios.ModuleIndex do
   @moduledoc false
 
-  alias Foundry.Context.Scenarios.Lookup
+  alias ExTracer.Lookup
   alias Foundry.Context.Scenarios.Utils
 
   @code_globs ["lib/**/*.{ex,exs}", "apps/*/lib/**/*.{ex,exs}"]
