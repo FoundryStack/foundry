@@ -237,7 +237,7 @@ defmodule Foundry.Phase1AcceptanceTest do
       scenario = Enum.find(ctx["scenarios"], &(is_list(&1["flow"]) and length(&1["flow"]) > 0))
       assert scenario
       assert scenario["evidence_mode"] in ["runtime", "static"]
-      assert scenario["trace_status"] in ["captured", "missing", "stale"]
+      assert scenario["trace_status"] in ["present", "missing", "stale"]
       assert scenario["level"] in ["rule", "action", "transfer", "reactor", "webhook", "job"]
       assert is_map(scenario["evidence_summary"])
       refute Map.has_key?(scenario, "expansion_mode")
@@ -442,7 +442,7 @@ defmodule Foundry.Phase1AcceptanceTest do
         end)
 
       assert scenario["evidence_mode"] == "runtime"
-      assert scenario["trace_status"] == "captured"
+      assert scenario["trace_status"] == "present"
       refute Map.has_key?(scenario, "expansion_mode")
 
       assert scenario["nodes"] == [

@@ -8,7 +8,12 @@ defmodule ExTracer.Scenario do
 
   Created by `ExTracer.TestScanner` during AST analysis and enriched by
   `ExTracer.FlowSummary`, `ExTracer.FlowExpander`, and runtime trace matching.
+
+  `trace_status` is adapter-defined, and currently uses values such as
+  `:present`, `:missing`, and `:stale`.
   """
+
+  @type trace_status :: :present | :missing | :stale | atom()
 
   @derive Jason.Encoder
   defstruct [

@@ -1,5 +1,5 @@
 defmodule Foundry.Context.ScenarioExtractorTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Foundry.Context.NodeEntry
   alias Foundry.Context.ScenarioExtractor
@@ -565,7 +565,7 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
 
       assert scenario.evidence_mode == :runtime
-      assert scenario.trace_status == :captured
+      assert scenario.trace_status == :present
 
       assert scenario.nodes == [
                "IgamingRef.Finance.WithdrawalWebhook",
@@ -684,7 +684,7 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
 
       assert scenario.evidence_mode == :runtime
-      assert scenario.trace_status == :captured
+      assert scenario.trace_status == :present
 
       assert scenario.nodes == [
                "IgamingRef.Finance.WithdrawalWebhook",

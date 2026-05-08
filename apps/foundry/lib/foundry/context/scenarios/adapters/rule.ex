@@ -1,10 +1,10 @@
 defmodule Foundry.Context.Scenarios.Adapters.Rule do
   @moduledoc false
 
-  @behaviour Foundry.Context.Scenarios.Adapter
+  @behaviour ExTracer.Adapter
 
-  alias Foundry.Context.Scenarios.FlowExpander
-  alias Foundry.Context.Scenarios.FlowSummary
+  alias ExTracer.FlowExpander
+  alias ExTracer.FlowSummary
   alias Foundry.Context.Scenarios.ModuleIndex
   alias Foundry.Context.Scenarios.Utils
 
@@ -24,7 +24,16 @@ defmodule Foundry.Context.Scenarios.Adapters.Rule do
   end
 
   @impl true
-  def classify_call(_call, _lookup), do: nil
+  def classify_call(module_ast, fun, args, alias_map, lookup, opts) do
+    Foundry.Context.Scenarios.CallClassifier.classify_ast_call(
+      module_ast,
+      fun,
+      args,
+      alias_map,
+      lookup,
+      opts
+    )
+  end
 
   @impl true
   def focus_for_helper(_module_name, _helper_name, _lookup), do: nil

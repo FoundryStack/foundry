@@ -12,6 +12,9 @@ defmodule ExTracer.ModuleIndex do
   def resolve_step_focus(node_id, step_name, lookup),
     do: maybe_apply(:resolve_step_focus, [node_id, step_name, lookup])
 
+  def entry_point_level(entry_point, lookup),
+    do: maybe_apply(:entry_point_level, [entry_point, lookup])
+
   def explicit_focus_targets(step, lookup),
     do: maybe_apply(:explicit_focus_targets, [step, lookup]) || []
 

@@ -1,14 +1,11 @@
-defmodule Foundry.Context.Scenarios.RuntimeNormalizer do
+defmodule ExTracer.RuntimeNormalizer do
   @moduledoc false
 
-  alias Foundry.Context.Scenarios.FlowExpander
-  alias Foundry.Context.Scenarios.FlowSummary
-  alias Foundry.Context.Scenarios.RuntimeTrace
-  alias Foundry.Context.Scenarios.Utils
+  alias ExTracer.{FlowExpander, FlowSummary, RuntimeTrace, Utils}
 
-  def normalize(nil, _test_case, _lookup), do: []
+  def normalize(nil, _test_case, _lookup, _adapters), do: []
 
-  def normalize(%RuntimeTrace{} = runtime_trace, test_case, lookup) do
+  def normalize(%RuntimeTrace{} = runtime_trace, test_case, lookup, adapters) do
     steps =
       runtime_trace.events
       |> Enum.sort_by(&Map.get(&1, "sequence", 0))
@@ -38,7 +35,7 @@ defmodule Foundry.Context.Scenarios.RuntimeNormalizer do
       end)
 
     steps
-    |> FlowExpander.maybe_expand_automatic_runtime_steps(lookup)
+    |> FlowExpander.maybe_expand_automatic_runtime_steps(lookup, adapters)
     |> FlowSummary.collapse_duplicate_runtime_steps()
   end
 

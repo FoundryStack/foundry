@@ -1,9 +1,9 @@
 defmodule Foundry.Context.Scenarios.CallClassifierTest do
   use ExUnit.Case, async: true
 
+  alias ExTracer.Lookup
   alias Foundry.Context.NodeEntry
   alias Foundry.Context.Scenarios.CallClassifier
-  alias Foundry.Context.Scenarios.Lookup
 
   test "classifies piped Ash.Changeset calls as action preparation steps" do
     lookup =

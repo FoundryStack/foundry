@@ -365,7 +365,7 @@ Each entry in top-level `scenarios[]` is a verified executable test trace:
 | `source_file` | string | Test file path |
 | `source_module` | string | ExUnit module containing the scenario |
 | `evidence_mode` | `"runtime" \| "static"` | Whether the graph overlay came from captured runtime traces or direct AST evidence |
-| `trace_status` | `"captured" \| "missing" \| "stale"` | Runtime trace availability for this scenario |
+| `trace_status` | `"present" \| "missing" \| "stale"` | Runtime trace availability for this scenario |
 | `nodes` | string[] | Scenario-wide declarative graph nodes highlighted in the overlay |
 | `graph_path` | string[] | Ordered graph IDs used for scenario-path highlighting; preserved alongside `nodes` for canvas rendering |
 | `compliance_links` | string[] | Optional requirement IDs from metadata |

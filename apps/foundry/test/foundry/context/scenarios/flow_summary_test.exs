@@ -1,8 +1,8 @@
 defmodule Foundry.Context.Scenarios.FlowSummaryTest do
   use ExUnit.Case, async: true
 
-  alias Foundry.Context.Scenarios.FlowSummary
-  alias Foundry.Context.Scenarios.Step
+  alias ExTracer.FlowSummary
+  alias ExTracer.Step
 
   test "collapses duplicate adjacent runtime steps but keeps distinct provenance" do
     executed =

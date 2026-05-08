@@ -13,6 +13,8 @@ defmodule ExTracer.Step do
   and matched against persisted traces by `ExTracer.TraceStore` implementations.
   """
 
+  @derive Jason.Encoder
+
   @type t :: %__MODULE__{
           id: String.t() | nil,
           type: atom() | String.t(),

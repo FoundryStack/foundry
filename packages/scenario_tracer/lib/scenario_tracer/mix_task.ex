@@ -10,7 +10,18 @@ defmodule ScenarioTracer.MixTask do
   @callback trace_dir(String.t()) :: String.t()
   @callback frameworks() :: [module()]
 
-  alias ExTracer.{CallTracer, CoverageReport, FlowExpander, FlowHints, FlowSummary, PerformanceReport, Report, TestScanner}
+  alias ExTracer.{
+    CallTracer,
+    CoverageReport,
+    FlowExpander,
+    FlowHints,
+    FlowSummary,
+    ModuleIndex,
+    PerformanceReport,
+    Report,
+    RuntimeNormalizer,
+    TestScanner
+  }
 
   def run(mod, args \\ []) do
     started = System.monotonic_time(:millisecond)
@@ -30,6 +41,7 @@ defmodule ScenarioTracer.MixTask do
       |> Path.join("test/**/*.{ex,exs}")
       |> Path.wildcard()
       |> Enum.flat_map(&extract_file(&1, mod.frameworks(), lookup, adapters))
+      |> Enum.uniq_by(&{&1.id, &1.source_file})
 
     duration_ms = System.monotonic_time(:millisecond) - started
 
@@ -68,11 +80,9 @@ defmodule ScenarioTracer.MixTask do
               executed_flow = CallTracer.collect_executed_trace(test_block, alias_map, lookup, adapters)
               flow = Enum.flat_map(executed_flow, &FlowExpander.expand_step(&1, lookup, adapters))
               runtime_trace = lookup.runtime |> Map.get(scenario_id, []) |> Enum.find(&ScenarioTracer.TraceStore.JsonFile.match(&1, test_block.name))
-              runtime_flow = runtime_steps_from_trace(runtime_trace, test_block)
-              merged_flow = merge_runtime_flow(flow, runtime_flow)
 
               %{
-                flow: merged_flow,
+                flow: flow,
                 executed_flow: executed_flow,
                 runtime_trace: runtime_trace,
                 test_case: %{name: test_block.name, kind: test_block.kind, file: file_path, line: test_block.line}
@@ -85,16 +95,31 @@ defmodule ScenarioTracer.MixTask do
           else
             flow_hints = FlowHints.normalize_flow_hints(Map.get(scenario_meta, :flow), lookup)
 
-            flow =
+            static_flow =
               traced_tests
               |> Enum.flat_map(& &1.flow)
               |> FlowSummary.assign_step_ids()
               |> FlowSummary.attach_focus_targets()
               |> FlowHints.merge_flow_hints(flow_hints)
 
-            {nodes, graph_path} = FlowSummary.derive_flow_summaries(flow)
+            overlay_flow =
+              traced_tests
+              |> Enum.flat_map(& &1.executed_flow)
+              |> FlowSummary.assign_step_ids()
+              |> FlowSummary.attach_focus_targets()
 
-            has_runtime = Enum.any?(traced_tests, &not is_nil(&1.runtime_trace))
+            runtime_flow =
+              traced_tests
+              |> Enum.flat_map(
+                &RuntimeNormalizer.normalize(&1.runtime_trace, &1.test_case, lookup, adapters)
+              )
+              |> FlowSummary.assign_step_ids()
+              |> FlowSummary.attach_focus_targets()
+
+            flow = if(runtime_flow == [], do: static_flow, else: runtime_flow)
+            overlay = if(runtime_flow == [], do: overlay_flow, else: runtime_flow)
+            {nodes, graph_path} = FlowSummary.derive_flow_summaries(overlay)
+            has_runtime = runtime_flow != []
 
             [
               %ExTracer.Scenario{
@@ -133,8 +158,23 @@ defmodule ScenarioTracer.MixTask do
   end
 
   defp infer_level(traced_tests, lookup) do
-    _ = {traced_tests, lookup}
-    nil
+    traced_tests
+    |> Enum.flat_map(&Map.get(&1, :executed_flow, []))
+    |> Enum.map(&ModuleIndex.entry_point_level(&1, lookup))
+    |> Enum.reject(&is_nil/1)
+    |> highest_level()
+  end
+
+  defp highest_level(levels) do
+    cond do
+      :webhook in levels -> :webhook
+      :job in levels -> :job
+      :transfer in levels -> :transfer
+      :reactor in levels -> :reactor
+      :action in levels -> :action
+      :rule in levels -> :rule
+      true -> nil
+    end
   end
 
   defp extract_alias_map(ast) do
@@ -210,36 +250,5 @@ defmodule ScenarioTracer.MixTask do
         Map.update(inner, node_id, [scenario.id], &[scenario.id | &1])
       end)
     end)
-  end
-
-  defp runtime_steps_from_trace(nil, _test_block), do: []
-
-  defp runtime_steps_from_trace(trace, test_block) when is_map(trace) do
-    events = Map.get(trace, :events) || Map.get(trace, "events") || []
-    Enum.map(events, fn event ->
-      node_id = Map.get(event, :node_id) || Map.get(event, "node_id")
-      focus_node_id = Map.get(event, :focus_node_id) || Map.get(event, "focus_node_id") || node_id
-      action_kind = Map.get(event, :action_kind) || Map.get(event, "action_kind")
-      status = Map.get(event, :status) || Map.get(event, "status") || :passed
-
-      FlowSummary.build_step(%{
-        node_id: node_id,
-        focus_node_id: focus_node_id,
-        kind: action_kind,
-        provenance: :executed,
-        status: status,
-        test_name: test_block.name,
-        test_kind: test_block.kind,
-        capture_origin: :runtime_trace
-      })
-    end)
-  end
-
-  defp merge_runtime_flow([], runtime_flow), do: runtime_flow
-
-  defp merge_runtime_flow(static_flow, runtime_flow) do
-    static_node_keys = MapSet.new(static_flow, &{&1.node_id, &1.kind})
-    extra = Enum.reject(runtime_flow, &MapSet.member?(static_node_keys, {&1.node_id, &1.kind}))
-    static_flow ++ extra
   end
 end

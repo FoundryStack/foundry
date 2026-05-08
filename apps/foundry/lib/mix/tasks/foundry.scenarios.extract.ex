@@ -18,7 +18,6 @@ defmodule Mix.Tasks.Foundry.Scenarios.Extract do
 
   def adapters do
     [
-      Adapters.ASTClassifier,
       Adapters.Rule,
       Adapters.Reactor,
       Adapters.Trigger,

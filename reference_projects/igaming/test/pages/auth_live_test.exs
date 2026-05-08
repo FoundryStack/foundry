@@ -6,34 +6,36 @@ defmodule IgamingRef.Web.AuthLiveTest do
 
   alias IgamingRef.PageFixtures
 
-  test "renders the login form with its active fields" do
-    {:ok, view, html} = live(build_conn(), "/auth")
+  describe "auth page" do
+    test "renders the login form with its active fields" do
+      {:ok, view, html} = live(build_conn(), "/auth")
 
-    assert html =~ "Login"
-    assert has_element?(view, "form[phx-submit=login]")
-    assert has_element?(view, "input[name=email][type=email]")
-    assert has_element?(view, "input[name=password][type=password]")
-    assert has_element?(view, "button", "Sign In")
-  end
+      assert html =~ "Login"
+      assert has_element?(view, "form[phx-submit=login]")
+      assert has_element?(view, "input[name=email][type=email]")
+      assert has_element?(view, "input[name=password][type=password]")
+      assert has_element?(view, "button", "Sign In")
+    end
 
-  test "shows an error flash for invalid credentials" do
-    {:ok, view, _html} = live(build_conn(), "/auth")
+    test "shows an error flash for invalid credentials" do
+      {:ok, view, _html} = live(build_conn(), "/auth")
 
-    view
-    |> form("form", %{"email" => "missing@example.test", "password" => "wrongpass"})
-    |> render_submit()
+      view
+      |> form("form", %{"email" => "missing@example.test", "password" => "wrongpass"})
+      |> render_submit()
 
-    assert PageFixtures.flash(view, :error) == "Invalid credentials"
-  end
+      assert PageFixtures.flash(view, :error) == "Invalid credentials"
+    end
 
-  test "redirects after a successful password sign in" do
-    user = PageFixtures.user_fixture()
-    {:ok, view, _html} = live(build_conn(), "/auth")
+    test "redirects after a successful password sign in" do
+      user = PageFixtures.user_fixture()
+      {:ok, view, _html} = live(build_conn(), "/auth")
 
-    view
-    |> form("form", %{"email" => to_string(user.email), "password" => "password123"})
-    |> render_submit()
+      view
+      |> form("form", %{"email" => to_string(user.email), "password" => "password123"})
+      |> render_submit()
 
-    assert_redirect(view, "/")
+      assert_redirect(view, "/")
+    end
   end
 end

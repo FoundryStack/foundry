@@ -1,14 +1,14 @@
 defmodule Foundry.Context.Scenarios.Adapters.Trigger do
   @moduledoc false
 
-  @behaviour Foundry.Context.Scenarios.Adapter
+  @behaviour ExTracer.Adapter
 
-  alias Foundry.Context.Scenarios.CallTracer
+  alias ExTracer.CallTracer
+  alias ExTracer.FlowExpander
+  alias ExTracer.FlowSummary
+  alias ExTracer.TestBlock
   alias Foundry.Context.Scenarios.Adapters.Oban
-  alias Foundry.Context.Scenarios.FlowExpander
-  alias Foundry.Context.Scenarios.FlowSummary
   alias Foundry.Context.Scenarios.ModuleIndex
-  alias Foundry.Context.Scenarios.TestBlock
   alias Foundry.Context.Scenarios.Utils
 
   @impl true
@@ -27,7 +27,16 @@ defmodule Foundry.Context.Scenarios.Adapters.Trigger do
   end
 
   @impl true
-  def classify_call(_call, _lookup), do: nil
+  def classify_call(module_ast, fun, args, alias_map, lookup, opts) do
+    Foundry.Context.Scenarios.CallClassifier.classify_ast_call(
+      module_ast,
+      fun,
+      args,
+      alias_map,
+      lookup,
+      opts
+    )
+  end
 
   @impl true
   def focus_for_helper(module_name, helper_name, lookup) do
@@ -36,7 +45,8 @@ defmodule Foundry.Context.Scenarios.Adapters.Trigger do
       CallTracer.collect_executed_trace(
         %TestBlock{name: Atom.to_string(helper_name), kind: :test, line: nil, block: body},
         alias_map,
-        lookup
+        lookup,
+        [__MODULE__, Oban]
       )
       |> Enum.find_value(&(&1.focus_node_id || &1.node_id))
       |> Kernel.||(Oban.focus_for_helper(module_name, helper_name, lookup))
