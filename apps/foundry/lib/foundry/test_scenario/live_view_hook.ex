@@ -21,7 +21,8 @@ defmodule Foundry.TestScenario.LiveViewHook do
 
         Foundry.TestScenario.EventBuffer.push(trace_context.trace_id, %{
           node_id: page_module,
-          action_kind: :entry
+          action_kind: :entry,
+          capture_origin: :live_view_mount
         })
 
         {:cont, socket}

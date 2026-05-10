@@ -130,6 +130,7 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
     with {node_id, resolved_action} when is_binary(node_id) <-
            resolve_action_target(resource_ast, action, alias_map, lookup) do
       action = resolved_action || action
+
       focus_node_id =
         if action, do: ModuleIndex.build_action_focus(node_id, action, lookup), else: node_id
 
@@ -192,6 +193,7 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
     with {node_id, resolved_action} when is_binary(node_id) <-
            resolve_action_target(resource_ast, action, alias_map, lookup) do
       action = resolved_action || action
+
       focus_node_id =
         if action, do: ModuleIndex.build_action_focus(node_id, action, lookup), else: node_id
 
@@ -341,25 +343,6 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
 
   defp infer_reactor_trace(_, _, _), do: nil
 
-  defp infer_module_trace(module_name, fun_name, call_ast) do
-    {type, kind, action} =
-      cond do
-        fun_name == "evaluate" -> {:assertion, :rule_check, fun_name}
-        fun_name == "handle_webhook" -> {:entry, :trigger_receive, fun_name}
-        fun_name == "perform" -> {:job, :job_execute, fun_name}
-        true -> {:entry, :action_execute, fun_name}
-      end
-
-    build_trace_attrs(module_name, %{
-      type: type,
-      kind: kind,
-      action: action,
-      module_function: "#{module_name}.#{fun_name}",
-      source_snippet: Macro.to_string(call_ast),
-      focus_node_id: action_focus(module_name, action)
-    })
-  end
-
   defp resolve_runtime_module_name(ast, caller) do
     expanded = Macro.expand(ast, caller)
 
@@ -413,51 +396,6 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
     |> Map.put(:capture_origin, :automatic)
   end
 
-  defp runtime_traceable_module?(module_name, caller_file)
-       when is_binary(module_name) and is_binary(caller_file) do
-    with {:ok, module} <- safe_module_atom(module_name),
-         true <- Code.ensure_loaded?(module),
-         source when is_list(source) <- module.module_info(:compile)[:source],
-         source_path <- Path.expand(List.to_string(source)),
-         project_root when is_binary(project_root) <- project_root(caller_file),
-         true <- String.starts_with?(source_path, project_root <> "/") do
-      relative_path = String.replace_prefix(source_path, project_root <> "/", "")
-      String.starts_with?(relative_path, "lib/") or String.contains?(relative_path, "/lib/")
-    else
-      _ -> false
-    end
-  end
-
-  defp safe_module_atom(module_name) when is_binary(module_name) do
-    try do
-      {:ok, String.to_existing_atom("Elixir." <> module_name)}
-    rescue
-      ArgumentError -> :error
-    end
-  end
-
-  defp project_root(caller_file) do
-    caller_file
-    |> Path.expand()
-    |> Path.dirname()
-    |> find_project_root()
-  end
-
-  defp find_project_root(dir) do
-    parent = Path.dirname(dir)
-
-    cond do
-      File.exists?(Path.join(dir, "mix.exs")) ->
-        dir
-
-      parent != dir ->
-        find_project_root(parent)
-
-      true ->
-        nil
-    end
-  end
-
   defp action_focus(node_id, nil), do: node_id
   defp action_focus(node_id, action), do: "#{node_id}:action:#{action}"
 
@@ -491,7 +429,8 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
   defp resolve_pipeline_target(_, _, _), do: nil
 
   defp resolve_pipeline_target(
-         {{:., _, [{:__aliases__, _, [:Ash, :Changeset]}, action]}, _, [resource_ast, action_ast | _]},
+         {{:., _, [{:__aliases__, _, [:Ash, :Changeset]}, action]}, _,
+          [resource_ast, action_ast | _]},
          _lhs,
          alias_map,
          lookup
@@ -501,7 +440,8 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
   end
 
   defp resolve_pipeline_target(
-         {{:., _, [{:__aliases__, _, [:Ash, :Query]}, :for_read]}, _, [resource_ast, action_ast | _]},
+         {{:., _, [{:__aliases__, _, [:Ash, :Query]}, :for_read]}, _,
+          [resource_ast, action_ast | _]},
          _lhs,
          alias_map,
          lookup

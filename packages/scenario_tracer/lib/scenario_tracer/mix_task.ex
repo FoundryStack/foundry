@@ -65,100 +65,120 @@ defmodule ScenarioTracer.MixTask do
       source_module = extract_module_name(ast)
 
       Enum.flat_map(frameworks, fn framework ->
-        TestScanner.extract_from_ast(ast, source_module, file_path, alias_map, framework, fn describe_name,
-                                                                                           body,
-                                                                                           source_module,
-                                                                                           file_path,
-                                                                                           alias_map,
-                                                                                           metadata_attrs,
-                                                                                           test_kinds ->
-          scenario_id = TestScanner.generate_scenario_id(source_module, describe_name)
-          scenario_meta = TestScanner.extract_scenario_metadata(body, metadata_attrs)
+        TestScanner.extract_from_ast(
+          ast,
+          source_module,
+          file_path,
+          alias_map,
+          framework,
+          fn describe_name,
+             body,
+             source_module,
+             file_path,
+             alias_map,
+             metadata_attrs,
+             test_kinds ->
+            scenario_id = TestScanner.generate_scenario_id(source_module, describe_name)
+            scenario_meta = TestScanner.extract_scenario_metadata(body, metadata_attrs)
 
-          traced_tests =
-            body
-            |> TestScanner.extract_test_blocks(test_kinds)
-            |> Enum.map(fn test_block ->
-              executed_flow = CallTracer.collect_executed_trace(test_block, alias_map, lookup, adapters)
-              flow = Enum.flat_map(executed_flow, &FlowExpander.expand_step(&1, lookup, adapters))
-              runtime_trace = lookup.runtime |> Map.get(scenario_id, []) |> Enum.find(&ScenarioTracer.TraceStore.JsonFile.match(&1, test_block.name))
+            traced_tests =
+              body
+              |> TestScanner.extract_test_blocks(test_kinds)
+              |> Enum.map(fn test_block ->
+                executed_flow =
+                  CallTracer.collect_executed_trace(test_block, alias_map, lookup, adapters)
 
-              %{
-                flow: flow,
-                executed_flow: executed_flow,
-                runtime_trace: runtime_trace,
-                test_case: %{name: test_block.name, kind: test_block.kind, file: file_path, line: test_block.line}
-              }
-            end)
-            |> Enum.filter(&(Enum.any?(&1.flow) or not is_nil(&1.runtime_trace)))
+                flow =
+                  Enum.flat_map(executed_flow, &FlowExpander.expand_step(&1, lookup, adapters))
 
-          if traced_tests == [] do
-            []
-          else
-            flow_hints = FlowHints.normalize_flow_hints(Map.get(scenario_meta, :flow), lookup)
+                runtime_trace =
+                  lookup.runtime
+                  |> Map.get(scenario_id, [])
+                  |> Enum.find(&ScenarioTracer.TraceStore.JsonFile.match(&1, test_block.name))
 
-            static_flow =
-              traced_tests
-              |> Enum.flat_map(& &1.flow)
-              |> FlowSummary.assign_step_ids()
-              |> FlowSummary.attach_focus_targets()
-              |> FlowHints.merge_flow_hints(flow_hints)
+                %{
+                  flow: flow,
+                  executed_flow: executed_flow,
+                  runtime_trace: runtime_trace,
+                  test_case: %{
+                    name: test_block.name,
+                    kind: test_block.kind,
+                    file: file_path,
+                    line: test_block.line
+                  }
+                }
+              end)
+              |> Enum.filter(&(Enum.any?(&1.flow) or not is_nil(&1.runtime_trace)))
 
-            overlay_flow =
-              traced_tests
-              |> Enum.flat_map(& &1.executed_flow)
-              |> FlowSummary.assign_step_ids()
-              |> FlowSummary.attach_focus_targets()
+            if traced_tests == [] do
+              []
+            else
+              flow_hints = FlowHints.normalize_flow_hints(Map.get(scenario_meta, :flow), lookup)
 
-            runtime_flow =
-              traced_tests
-              |> Enum.flat_map(
-                &RuntimeNormalizer.normalize(&1.runtime_trace, &1.test_case, lookup, adapters)
-              )
-              |> FlowSummary.assign_step_ids()
-              |> FlowSummary.attach_focus_targets()
+              merged_test_flows =
+                traced_tests
+                |> Enum.map(fn traced_test ->
+                  runtime_flow =
+                    RuntimeNormalizer.normalize(
+                      traced_test.runtime_trace,
+                      traced_test.test_case,
+                      lookup,
+                      adapters
+                    )
 
-            flow =
-              if runtime_flow == [] do
-                static_flow
-              else
-                merge_runtime_with_static(static_flow, runtime_flow)
-              end
-              |> maybe_compact_page_flow(lookup)
-              |> FlowSummary.assign_step_ids()
-              |> FlowSummary.attach_focus_targets()
+                  %{
+                    test_name: traced_test.test_case.name,
+                    flow: merge_runtime_with_static(traced_test.flow, runtime_flow)
+                  }
+                end)
 
-            _overlay =
-              if runtime_flow == [] do
-                overlay_flow
-              else
-                merge_runtime_with_static(overlay_flow, runtime_flow)
-              end
+              normalized_page_flow =
+                ScenarioTracer.PageTraceNormalizer.normalize(merged_test_flows, lookup)
 
-            {nodes, graph_path} = FlowSummary.derive_flow_summaries(flow)
-            has_runtime = runtime_flow != []
+              flow =
+                normalized_page_flow.canonical_flow
+                |> FlowHints.merge_flow_hints(flow_hints)
+                |> materialize_flow()
 
-            [
-              %ExTracer.Scenario{
-                id: scenario_id,
-                name: to_string(describe_name),
-                category: infer_category(scenario_meta, traced_tests),
-                level: infer_level(traced_tests, lookup),
-                source_file: file_path,
-                source_module: source_module,
-                evidence_mode: if(has_runtime, do: :runtime, else: :static),
-                trace_status: if(has_runtime, do: :present, else: :missing),
-                nodes: nodes,
-                graph_path: graph_path,
-                compliance_links: ExTracer.Utils.normalize_string_list(Map.get(scenario_meta, :compliance_links)),
-                flow: flow,
-                evidence_summary: FlowSummary.summarize_evidence(flow),
-                tests: Enum.map(traced_tests, & &1.test_case),
-                tags: TestScanner.normalize_tags(Map.get(scenario_meta, :tags) || [])
-              }
-            ]
+              raw_flow = materialize_flow(normalized_page_flow.raw_flow)
+              raw_test_flows = materialize_test_flows(normalized_page_flow.raw_test_flows)
+              test_flows = materialize_test_flows(normalized_page_flow.test_flows)
+
+              {nodes, graph_path} = FlowSummary.derive_flow_summaries(flow)
+
+              has_runtime =
+                Enum.any?(traced_tests, fn traced_test ->
+                  not is_nil(traced_test.runtime_trace)
+                end)
+
+              [
+                %ExTracer.Scenario{
+                  id: scenario_id,
+                  name: to_string(describe_name),
+                  category: infer_category(scenario_meta, traced_tests),
+                  level: infer_level(traced_tests, lookup),
+                  source_file: file_path,
+                  source_module: source_module,
+                  evidence_mode: if(has_runtime, do: :runtime, else: :static),
+                  trace_status: if(has_runtime, do: :present, else: :missing),
+                  nodes: nodes,
+                  graph_path: graph_path,
+                  compliance_links:
+                    ExTracer.Utils.normalize_string_list(
+                      Map.get(scenario_meta, :compliance_links)
+                    ),
+                  flow: flow,
+                  raw_flow: raw_flow,
+                  raw_test_flows: raw_test_flows,
+                  test_flows: test_flows,
+                  evidence_summary: FlowSummary.summarize_evidence(flow),
+                  tests: Enum.map(traced_tests, & &1.test_case),
+                  tags: TestScanner.normalize_tags(Map.get(scenario_meta, :tags) || [])
+                }
+              ]
+            end
           end
-        end)
+        )
       end)
     else
       _ -> []
@@ -167,10 +187,17 @@ defmodule ScenarioTracer.MixTask do
 
   defp infer_category(meta, traced_tests) do
     cond do
-      category = Map.get(meta, :category) -> category
-      Enum.any?(ExTracer.Utils.normalize_string_list(Map.get(meta, :compliance_links))) -> :compliance
-      Enum.any?(traced_tests, &(&1.test_case.kind == :property)) -> :property
-      true -> :invariant
+      category = Map.get(meta, :category) ->
+        category
+
+      Enum.any?(ExTracer.Utils.normalize_string_list(Map.get(meta, :compliance_links))) ->
+        :compliance
+
+      Enum.any?(traced_tests, &(&1.test_case.kind == :property)) ->
+        :property
+
+      true ->
+        :invariant
     end
   end
 
@@ -239,11 +266,14 @@ defmodule ScenarioTracer.MixTask do
       covered_nodes: covered_count,
       coverage_pct: if(total == 0, do: 0.0, else: covered_count / total * 100.0),
       uncovered_node_ids: Enum.reject(Enum.map(nodes, & &1.id), &(&1 in covered)),
-      coverage_by_type: nodes |> Enum.group_by(& &1.type) |> Map.new(fn {type, typed} ->
-        typed_ids = Enum.map(typed, & &1.id)
-        type_covered = Enum.count(typed_ids, &(&1 in covered))
-        {type, if(typed == [], do: 0.0, else: type_covered / length(typed) * 100.0)}
-      end)
+      coverage_by_type:
+        nodes
+        |> Enum.group_by(& &1.type)
+        |> Map.new(fn {type, typed} ->
+          typed_ids = Enum.map(typed, & &1.id)
+          type_covered = Enum.count(typed_ids, &(&1 in covered))
+          {type, if(typed == [], do: 0.0, else: type_covered / length(typed) * 100.0)}
+        end)
     }
   end
 
@@ -254,9 +284,15 @@ defmodule ScenarioTracer.MixTask do
 
     %PerformanceReport{
       total_test_duration_ms: Enum.sum(durations),
-      slowest_tests: Enum.map(Enum.take(ordered, 10), &{&1.scenario_id, &1.test_name, &1.duration_ms}),
-      fastest_tests: Enum.map(Enum.take(Enum.reverse(ordered), 10), &{&1.scenario_id, &1.test_name, &1.duration_ms}),
-      avg_duration_ms: if(durations == [], do: 0.0, else: Enum.sum(durations) / length(durations)),
+      slowest_tests:
+        Enum.map(Enum.take(ordered, 10), &{&1.scenario_id, &1.test_name, &1.duration_ms}),
+      fastest_tests:
+        Enum.map(
+          Enum.take(Enum.reverse(ordered), 10),
+          &{&1.scenario_id, &1.test_name, &1.duration_ms}
+        ),
+      avg_duration_ms:
+        if(durations == [], do: 0.0, else: Enum.sum(durations) / length(durations)),
       extraction_duration_ms: extraction_duration_ms
     }
   end
@@ -278,28 +314,59 @@ defmodule ScenarioTracer.MixTask do
         runtime_flow
 
       true ->
-        do_merge_runtime_with_static(static_flow, runtime_flow)
+        remaining_static_keys = count_step_keys(static_flow)
+
+        do_merge_runtime_with_static(
+          static_flow,
+          runtime_flow,
+          [],
+          MapSet.new(),
+          remaining_static_keys
+        )
     end
   end
 
-  defp do_merge_runtime_with_static(static_flow, runtime_flow) do
-    do_merge_runtime_with_static(static_flow, runtime_flow, [], MapSet.new())
-  end
+  defp do_merge_runtime_with_static([], [], acc, _seen_keys, _remaining_static_keys),
+    do: Enum.reverse(acc)
 
-  defp do_merge_runtime_with_static([], [], acc, _seen_keys), do: Enum.reverse(acc)
-
-  defp do_merge_runtime_with_static([], [runtime_step | rest], acc, seen_keys) do
+  defp do_merge_runtime_with_static(
+         [],
+         [runtime_step | rest],
+         acc,
+         seen_keys,
+         remaining_static_keys
+       ) do
     runtime_key = merge_step_key(runtime_step)
-    do_merge_runtime_with_static([], rest, [runtime_step | acc], MapSet.put(seen_keys, runtime_key))
+
+    do_merge_runtime_with_static(
+      [],
+      rest,
+      [runtime_step | acc],
+      MapSet.put(seen_keys, runtime_key),
+      remaining_static_keys
+    )
   end
 
-  defp do_merge_runtime_with_static([static_step | rest], [], acc, seen_keys) do
+  defp do_merge_runtime_with_static(
+         [static_step | rest],
+         [],
+         acc,
+         seen_keys,
+         remaining_static_keys
+       ) do
     static_key = merge_step_key(static_step)
+    remaining_static_keys = decrement_key_count(remaining_static_keys, static_key)
 
     if MapSet.member?(seen_keys, static_key) do
-      do_merge_runtime_with_static(rest, [], acc, seen_keys)
+      do_merge_runtime_with_static(rest, [], acc, seen_keys, remaining_static_keys)
     else
-      do_merge_runtime_with_static(rest, [], [static_step | acc], MapSet.put(seen_keys, static_key))
+      do_merge_runtime_with_static(
+        rest,
+        [],
+        [static_step | acc],
+        MapSet.put(seen_keys, static_key),
+        remaining_static_keys
+      )
     end
   end
 
@@ -307,10 +374,12 @@ defmodule ScenarioTracer.MixTask do
          [static_step | static_rest] = static_flow,
          [runtime_step | runtime_rest] = runtime_flow,
          acc,
-         seen_keys
+         seen_keys,
+         remaining_static_keys
        ) do
     static_key = merge_step_key(static_step)
     runtime_key = merge_step_key(runtime_step)
+    remaining_after_current = decrement_key_count(remaining_static_keys, static_key)
 
     cond do
       static_key == runtime_key ->
@@ -318,18 +387,26 @@ defmodule ScenarioTracer.MixTask do
           static_rest,
           runtime_rest,
           [merge_steps(static_step, runtime_step) | acc],
-          MapSet.put(seen_keys, static_key)
+          MapSet.put(seen_keys, static_key),
+          remaining_after_current
         )
 
-      runtime_key in Enum.map(static_rest, &merge_step_key/1) ->
+      Map.get(remaining_after_current, runtime_key, 0) > 0 ->
         if MapSet.member?(seen_keys, static_key) do
-          do_merge_runtime_with_static(static_rest, runtime_flow, acc, seen_keys)
+          do_merge_runtime_with_static(
+            static_rest,
+            runtime_flow,
+            acc,
+            seen_keys,
+            remaining_after_current
+          )
         else
           do_merge_runtime_with_static(
             static_rest,
             runtime_flow,
             [static_step | acc],
-            MapSet.put(seen_keys, static_key)
+            MapSet.put(seen_keys, static_key),
+            remaining_after_current
           )
         end
 
@@ -338,7 +415,8 @@ defmodule ScenarioTracer.MixTask do
           static_flow,
           runtime_rest,
           [runtime_step | acc],
-          MapSet.put(seen_keys, runtime_key)
+          MapSet.put(seen_keys, runtime_key),
+          remaining_static_keys
         )
     end
   end
@@ -391,192 +469,30 @@ defmodule ScenarioTracer.MixTask do
     }
   end
 
-  defp maybe_compact_page_flow(flow, lookup) do
-    if page_flow?(flow, lookup) do
-      flow
-      |> chunk_flow_by_test_name()
-      |> Enum.map(&collapse_initial_duplicate_page_cycle(&1, lookup))
-      |> compact_page_chunks()
-      |> Enum.flat_map(& &1)
-      |> Enum.map(&%{&1 | focus_targets: []})
-      |> refine_page_action_focus(lookup)
-    else
-      flow
-    end
-  end
-
-  defp page_flow?([first | _], lookup), do: page_node?(first.node_id, lookup)
-  defp page_flow?([], _lookup), do: false
-
-  defp page_node?(node_id, lookup) when is_binary(node_id) do
-    case Map.get(lookup.by_id, node_id) do
-      %{type: type} when type in ["page", :page, "live_page", :live_page] -> true
-      _ -> false
-    end
-  end
-
-  defp page_node?(_, _lookup), do: false
-
-  defp chunk_flow_by_test_name(flow) do
-    flow
-    |> Enum.chunk_by(& &1.test_name)
-    |> Enum.reject(&(&1 == []))
-  end
-
-  defp collapse_initial_duplicate_page_cycle([first | _] = chunk, lookup) do
-    if page_node?(first.node_id, lookup) do
-      do_collapse_initial_duplicate_page_cycle(chunk)
-    else
-      chunk
-    end
-  end
-
-  defp collapse_initial_duplicate_page_cycle([], _lookup), do: []
-
-  defp do_collapse_initial_duplicate_page_cycle(chunk) do
-    max_cycle = div(length(chunk), 2)
-
-    case max_cycle do
-      cycle_size when cycle_size < 1 ->
-        chunk
-
-      _ ->
-        case Enum.find(1..max_cycle, fn cycle_size ->
-               repeated_initial_cycle?(chunk, cycle_size)
-             end) do
-          nil ->
-            chunk
-
-          cycle_size ->
-            chunk
-            |> Enum.take(cycle_size)
-            |> Kernel.++(Enum.drop(chunk, cycle_size * 2))
-            |> do_collapse_initial_duplicate_page_cycle()
-        end
-    end
-  end
-
-  defp repeated_initial_cycle?(chunk, cycle_size) when cycle_size > 0 do
-    leading = Enum.take(chunk, cycle_size)
-    repeated = chunk |> Enum.drop(cycle_size) |> Enum.take(cycle_size)
-
-    leading != [] and repeated != [] and
-      Enum.map(leading, &page_compaction_step_key/1) ==
-        Enum.map(repeated, &page_compaction_step_key/1)
-  end
-
-  defp compact_page_chunks(chunks) do
-    Enum.reduce(chunks, [], fn chunk, acc ->
-      cond do
-        Enum.any?(acc, &same_page_chunk?(&1, chunk)) ->
-          acc
-
-        Enum.any?(acc, &page_chunk_prefix?(chunk, &1)) ->
-          acc
-
-        true ->
-          acc
-          |> Enum.reject(&page_chunk_prefix?(&1, chunk))
-          |> Kernel.++([chunk])
-      end
+  defp count_step_keys(steps) do
+    Enum.reduce(steps, %{}, fn step, counts ->
+      Map.update(counts, merge_step_key(step), 1, &(&1 + 1))
     end)
   end
 
-  defp same_page_chunk?(left, right) do
-    Enum.map(left, &page_compaction_step_key/1) == Enum.map(right, &page_compaction_step_key/1)
-  end
-
-  defp page_chunk_prefix?(prefix, full) when length(prefix) <= length(full) do
-    prefix_keys = Enum.map(prefix, &page_compaction_step_key/1)
-    full_keys = full |> Enum.take(length(prefix)) |> Enum.map(&page_compaction_step_key/1)
-    prefix_keys == full_keys
-  end
-
-  defp page_chunk_prefix?(_prefix, _full), do: false
-
-  defp page_compaction_step_key(step) do
-    {
-      Map.get(step, :type),
-      Map.get(step, :kind),
-      Map.get(step, :action),
-      Map.get(step, :focus_node_id) || Map.get(step, :node_id),
-      Map.get(step, :node_id)
-    }
-  end
-
-  defp refine_page_action_focus(flow, lookup) do
-    {refined, _active_page} =
-      Enum.map_reduce(flow, nil, fn step, active_page ->
-        cond do
-          page_node?(step.node_id, lookup) ->
-            {step, step.node_id}
-
-          is_binary(active_page) ->
-            {refine_page_step(step, active_page, lookup), active_page}
-
-          true ->
-            {step, active_page}
-        end
-      end)
-
-    refined
-  end
-
-  defp refine_page_step(step, page_node_id, lookup) do
-    with %{calls_actions: calls_actions} when is_list(calls_actions) <- Map.get(lookup.by_id, page_node_id),
-         step_action_type when not is_nil(step_action_type) <- page_step_action_type(step),
-         [match] <- Enum.filter(calls_actions, &page_action_match?(&1, step, step_action_type)) do
-      action_name = Map.get(match, "action_name") || Map.get(match, :action_name)
-
-      %{
-        step
-        | action: step.action || normalize_action_name(action_name),
-          focus_node_id: refined_page_focus(step, action_name)
-      }
-    else
-      _ -> step
+  defp decrement_key_count(counts, key) do
+    case Map.get(counts, key, 0) do
+      count when count <= 1 -> Map.delete(counts, key)
+      count -> Map.put(counts, key, count - 1)
     end
   end
 
-  defp page_step_action_type(step) do
-    case step.kind do
-      :read -> :read
-      "read" -> :read
-      :create -> :create
-      "create" -> :create
-      :update -> :update
-      "update" -> :update
-      :destroy -> :destroy
-      "destroy" -> :destroy
-      _ -> nil
-    end
+  defp materialize_flow(flow) do
+    flow
+    |> FlowSummary.assign_step_ids()
+    |> FlowSummary.attach_focus_targets()
   end
 
-  defp page_action_match?(action, step, step_action_type) do
-    resource = Map.get(action, "resource") || Map.get(action, :resource)
-    action_type = Map.get(action, "action") || Map.get(action, :action)
-
-    resource == step.node_id and action_type == step_action_type
+  defp materialize_test_flows(test_flows) do
+    Enum.map(test_flows, fn %{test_name: test_name, flow: flow} ->
+      %{test_name: test_name, flow: materialize_flow(flow)}
+    end)
   end
-
-  defp refined_page_focus(step, action_name) do
-    normalized_action = normalize_action_name(action_name)
-
-    cond do
-      is_nil(normalized_action) ->
-        step.focus_node_id
-
-      step.focus_node_id in [nil, step.node_id] ->
-        "#{step.node_id}:action:#{normalized_action}"
-
-      true ->
-        step.focus_node_id
-    end
-  end
-
-  defp normalize_action_name(nil), do: nil
-  defp normalize_action_name(action_name) when is_atom(action_name), do: Atom.to_string(action_name)
-  defp normalize_action_name(action_name) when is_binary(action_name), do: action_name
 
   defp normalize_args(args) do
     static_only? =

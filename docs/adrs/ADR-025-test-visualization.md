@@ -2,6 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-05-04  
+**Amended:** 2026-05-09 by runtime-backed page trace normalization
 **Context:** Tests are first-class in copilot-driven development (INV-023). Foundry Studio renders system architecture via graph, but tests remain invisible — Coverage sidebar tab is a placeholder, Flow drawer tab shows "No scenarios defined yet", and the Scenario lens button is inactive.
 
 ## Problem
@@ -25,6 +26,23 @@ Extract scenarios from annotated ExUnit test files, link them to graph nodes via
 4. **Coverage Tab**: Domain-grouped scenario browser showing coverage score, category filters, and node participation
 5. **Graph Overlay**: On scenario selection, highlight participating nodes and execution path with START/END markers
 6. **Flow Drawer Tab**: Render Given/When/Then steps in plain language, show participating nodes and compliance links
+
+### Amendment: Runtime-backed Page Trace Normalization
+
+For page scenarios backed by runtime evidence, Foundry applies page-specific runtime
+semantics during normalization without changing the existing `provenance` field or
+persisting page-only role fields into generic `ExTracer` structs:
+
+- `:framework_mount` — LiveView mount/entry events emitted by the runtime harness
+- `:app_behavior` — resource actions executed by the page itself
+- `:test_observation` — helper/assertion reads executed by the test process
+
+Studio presents one canonical page flow per scenario. Canonical page flow:
+
+- collapses duplicated disconnected/connected mount cycles
+- excludes `:test_observation` steps from graph-path extension and overlay routing
+- prefers exact action nodes when page metadata resolves a single matching action
+- preserves the raw per-test flows alongside the canonical flow for debugging and future drill-down UI
 
 ## Scope
 

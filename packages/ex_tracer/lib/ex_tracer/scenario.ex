@@ -29,6 +29,9 @@ defmodule ExTracer.Scenario do
     graph_path: [],
     compliance_links: [],
     flow: [],
+    raw_flow: [],
+    raw_test_flows: [],
+    test_flows: [],
     evidence_summary: %{},
     tests: [],
     tags: []
