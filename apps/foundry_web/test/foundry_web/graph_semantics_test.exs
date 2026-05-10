@@ -137,7 +137,7 @@ defmodule FoundryWeb.GraphSemanticsTest do
 
       for (const path of paths) {
         let source = await readFile(path, 'utf8')
-        source = source.replace(/^import .*?\\n/gm, '')
+        source = source.replace(/^import[\\s\\S]*?from\\s+['\"][^'\"]+['\"]\\s*;?\\n?/gm, '')
         parts.push(source)
       }
 

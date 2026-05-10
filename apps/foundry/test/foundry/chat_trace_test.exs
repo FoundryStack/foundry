@@ -26,39 +26,85 @@ defmodule Foundry.ChatTraceTest do
     assert event.detail =~ "custom_tool_call"
   end
 
-  test "summarizes unique tools, grouped events, and surfaced files across a run" do
+  test "classifies governed shell inspection as shell retrieval" do
+    event =
+      ChatTrace.normalize(:codex, %{
+        "type" => "command_execution",
+        "command" =>
+          ~s(/bin/zsh -lc "rg -n \\"bonus\\" lib test docs/runbooks && sed -n '1,220p' lib/bonus.ex")
+      })
+
+    assert event.category == :command
+    assert event.phase == :shell_retrieval
+    assert ChatTrace.phase_label(event.phase) == "Shell Retrieval"
+    assert event.title =~ "Inspected via shell"
+  end
+
+  test "keeps explicit degraded shell commands as shell fallback" do
+    event =
+      ChatTrace.normalize(:codex, %{
+        "type" => "command_execution",
+        "command" => ~s(/bin/zsh -lc "python scratch.py"),
+        "message" => "Ran fallback command because structured retrieval was unavailable"
+      })
+
+    assert event.phase == :shell_fallback
+    assert ChatTrace.phase_label(event.phase) == "Shell Fallback"
+    assert event.title =~ "Ran fallback command"
+  end
+
+  test "summarizes shell retrieval, true fallback, and redundant global fetches across a run" do
     events = [
       %{
-        tool: "exec_command",
-        paths: ["apps/foundry_web/lib/foundry_web/live/chat_session.ex"],
-        phase: :retrieval,
-        duplicate_key: {:retrieval, :tool, "exec_command", nil, [], "item.completed"}
+        provider: :foundry,
+        tool: nil,
+        paths: [],
+        phase: :context,
+        duplicate_key: {:context, :context, nil, nil, [], "foundry.context"}
       },
       %{
-        tool: "exec_command",
+        provider: :codex,
+        tool: nil,
         paths: ["apps/foundry_web/lib/foundry_web/live/chat_session.ex"],
-        phase: :retrieval,
-        duplicate_key: {:retrieval, :tool, "exec_command", nil, [], "item.completed"}
+        phase: :shell_retrieval,
+        duplicate_key:
+          {:shell_retrieval, :command, nil, "rg -n bonuses lib test", [], "command_execution"}
       },
       %{
-        tool: "read_file",
+        provider: :codex,
+        tool: "project_status",
+        paths: [],
+        phase: :retrieval,
+        duplicate_key: {:retrieval, :tool, "project_status", nil, [], "item.completed"}
+      },
+      %{
+        provider: :codex,
+        tool: "system_graph",
+        paths: [],
+        phase: :retrieval,
+        duplicate_key: {:retrieval, :tool, "system_graph", nil, [], "item.completed"}
+      },
+      %{
+        provider: :codex,
+        tool: nil,
         paths: ["apps/foundry/lib/foundry/codex_provider.ex"],
         phase: :shell_fallback,
-        duplicate_key: {:shell_fallback, :tool, "read_file", nil, [], "item.completed"}
+        duplicate_key:
+          {:shell_fallback, :command, nil, "python scratch.py", [], "command_execution"}
       }
     ]
 
     assert %{
-             event_count: 3,
-             grouped_event_count: 2,
-             tool_count: 2,
+             event_count: 5,
+             grouped_event_count: 5,
              file_count: 2,
-             tools: ["exec_command", "read_file"],
-             files: [
-               "apps/foundry_web/lib/foundry_web/live/chat_session.ex",
-               "apps/foundry/lib/foundry/codex_provider.ex"
-             ],
-             provenance: %{shell_fallback_used: true}
+             provenance: %{
+               cached_context_used: true,
+               shell_retrieval_used: true,
+               true_fallback_used: true,
+               shell_fallback_used: true,
+               redundant_global_context_fetches: 2
+             }
            } = ChatTrace.summarize_run(events)
   end
 end

@@ -117,14 +117,13 @@ defmodule FoundryWeb.ChatComponents do
                 </button>
               </div>
 
-
-          <button
-            type="button"
-            phx-click="toggle_system_context"
-            class="shrink-0 rounded-selector border border-base-300 bg-base-300/70 px-3 py-2 text-xs font-medium text-neutral-content transition-colors hover:border-primary/40 hover:bg-base-300 hover:text-base-content"
-          >
-            {if @show_system_context, do: "Hide context", else: "Show context"}
-          </button>
+              <button
+                type="button"
+                phx-click="toggle_system_context"
+                class="shrink-0 rounded-selector border border-base-300 bg-base-300/70 px-3 py-2 text-xs font-medium text-neutral-content transition-colors hover:border-primary/40 hover:bg-base-300 hover:text-base-content"
+              >
+                {if @show_system_context, do: "Hide context", else: "Show context"}
+              </button>
             </div>
           </div>
 
@@ -158,7 +157,7 @@ defmodule FoundryWeb.ChatComponents do
                       <% end %>
                     </div>
                     <p class="mt-2 text-xs leading-5 text-neutral-content">
-                      Context cache {trace_cache_label(@latest_run)}. Foundry retrieval runs before shell fallback, and governed change requests are attached to proposal metadata.
+                      Context cache {trace_cache_label(@latest_run)}. Foundry preloads global context and may inspect source directly when exact evidence is needed, while governed change requests stay attached to proposal metadata.
                     </p>
                   </div>
                 <% end %>
@@ -221,10 +220,10 @@ defmodule FoundryWeb.ChatComponents do
               ></textarea>
               <div class="mt-3 flex items-center justify-between gap-3">
                 <p class="text-[11px] leading-5 text-neutral-content">
-                                <span class="inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-300/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-neutral-content">
-                <span class="size-1.5 rounded-full bg-success"></span>
-                {provider_label(@llm_provider)}
-              </span>
+                  <span class="inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-300/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-neutral-content">
+                    <span class="size-1.5 rounded-full bg-success"></span>
+                    {provider_label(@llm_provider)}
+                  </span>
                 </p>
                 <button
                   type="submit"
@@ -317,19 +316,40 @@ defmodule FoundryWeb.ChatComponents do
               <div class="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-5">
                 <.trace_stat label="Context cache" value={trace_cache_label(@selected_run)} />
                 <.trace_stat
+                  label="Context reused"
+                  value={yes_no(get_in(@selected_run, [:provenance, :cached_context_used]))}
+                />
+                <.trace_stat
                   label="Foundry tools"
                   value={yes_no(get_in(@selected_run, [:provenance, :foundry_tools_used]))}
                 />
                 <.trace_stat
-                  label="Shell fallback"
-                  value={yes_no(get_in(@selected_run, [:provenance, :shell_fallback_used]))}
+                  label="Shell retrieval"
+                  value={yes_no(get_in(@selected_run, [:provenance, :shell_retrieval_used]))}
                 />
+                <.trace_stat
+                  label="True fallback"
+                  value={yes_no(trace_true_fallback_used(@selected_run))}
+                />
+                <.trace_stat
+                  label="Global refetches"
+                  value={get_in(@selected_run, [:provenance, :redundant_global_context_fetches]) || 0}
+                />
+              </div>
+
+              <div class="mt-2 grid grid-cols-2 gap-2 xl:grid-cols-2">
                 <.trace_stat
                   label="Proposal flow"
                   value={yes_no(get_in(@selected_run, [:provenance, :proposal_flow_used]))}
                 />
                 <.trace_stat label="Files surfaced" value={@selected_run.file_count} />
               </div>
+
+              <%= if (get_in(@selected_run, [:provenance, :redundant_global_context_fetches]) || 0) > 0 do %>
+                <p class="mt-3 rounded-box border border-warning/20 bg-warning/10 px-3 py-2 text-xs leading-5 text-warning-content">
+                  This run re-requested already injected global context.
+                </p>
+              <% end %>
 
               <%= if @selected_run.files != [] do %>
                 <div class="mt-4">
@@ -680,7 +700,10 @@ defmodule FoundryWeb.ChatComponents do
             Summary of Changes
           </p>
           <div class="mt-2 space-y-2">
-            <p :for={summary <- @change_summary} class="rounded-box border border-base-300/70 bg-base-100/60 px-3 py-2 text-sm text-base-content/90">
+            <p
+              :for={summary <- @change_summary}
+              class="rounded-box border border-base-300/70 bg-base-100/60 px-3 py-2 text-sm text-base-content/90"
+            >
               {summary}
             </p>
           </div>
@@ -714,7 +737,8 @@ defmodule FoundryWeb.ChatComponents do
                 {file[:path] || file["path"]}
               </span>
               <span class="ml-3 shrink-0 text-[11px] text-neutral-content">
-                {file[:added_lines] || file["added_lines"] || 0}+ / {file[:removed_lines] || file["removed_lines"] || 0}-
+                {file[:added_lines] || file["added_lines"] || 0}+ / {file[:removed_lines] ||
+                  file["removed_lines"] || 0}-
               </span>
             </button>
           </div>
@@ -850,6 +874,13 @@ defmodule FoundryWeb.ChatComponents do
   end
 
   defp trace_cache_label(_run), do: "n/a"
+
+  defp trace_true_fallback_used(run) when is_map(run) do
+    get_in(run, [:provenance, :true_fallback_used]) ||
+      get_in(run, [:provenance, :shell_fallback_used])
+  end
+
+  defp trace_true_fallback_used(_run), do: false
 
   defp yes_no(true), do: "Yes"
   defp yes_no(false), do: "No"

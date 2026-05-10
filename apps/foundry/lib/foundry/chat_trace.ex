@@ -7,6 +7,16 @@ defmodule Foundry.ChatTrace do
   @path_keys ~w(path paths file file_path filepath filename target source destination cwd repo_root root)
   @command_keys ~w(command cmd argv args input)
   @tool_keys ~w(tool tool_name name recipient_name)
+  @global_context_tools ["project_status", "system_graph"]
+  @governed_shell_prefixes [
+    "mix foundry.project.context",
+    "mix foundry.pattern.find",
+    "mix foundry.exdoc",
+    "rg ",
+    "sed ",
+    "cat ",
+    "find "
+  ]
 
   def normalize(provider, raw_event) when is_map(raw_event) do
     normalized_provider = normalize_provider(provider, raw_event)
@@ -94,6 +104,7 @@ defmodule Foundry.ChatTrace do
   def phase_label(:retrieval), do: "Retrieval"
   def phase_label(:proposal), do: "Proposal"
   def phase_label(:verification), do: "Verification"
+  def phase_label(:shell_retrieval), do: "Shell Retrieval"
   def phase_label(:shell_fallback), do: "Shell Fallback"
   def phase_label(:reasoning), do: "Reasoning"
   def phase_label(:session), do: "Session"
@@ -138,6 +149,7 @@ defmodule Foundry.ChatTrace do
       item_type in ["custom_tool_call", "function_call", "tool_call"] -> :retrieval
       present?(tool) -> :retrieval
       command && String.starts_with?(command, "mix test") -> :verification
+      command && shell_retrieval_command?(raw_event, command) -> :shell_retrieval
       command -> :shell_fallback
       String.contains?(type, "reason") -> :reasoning
       String.contains?(type, "completed") -> :final
@@ -149,6 +161,7 @@ defmodule Foundry.ChatTrace do
   defp phase_to_atom("retrieval"), do: :retrieval
   defp phase_to_atom("proposal"), do: :proposal
   defp phase_to_atom("verification"), do: :verification
+  defp phase_to_atom("shell_retrieval"), do: :shell_retrieval
   defp phase_to_atom("shell_fallback"), do: :shell_fallback
   defp phase_to_atom("reasoning"), do: :reasoning
   defp phase_to_atom("session"), do: :session
@@ -237,6 +250,7 @@ defmodule Foundry.ChatTrace do
     prefix =
       case phase do
         :verification -> "Verified with"
+        :shell_retrieval -> "Inspected via shell"
         :shell_fallback -> "Ran fallback command"
         _ -> "Ran command"
       end
@@ -350,6 +364,9 @@ defmodule Foundry.ChatTrace do
           _ ->
             false
         end),
+      shell_retrieval_used: Enum.any?(events, &(&1.phase == :shell_retrieval)),
+      true_fallback_used: Enum.any?(events, &(&1.phase == :shell_fallback)),
+      redundant_global_context_fetches: redundant_global_context_fetches(events),
       shell_fallback_used: Enum.any?(events, &(&1.phase == :shell_fallback)),
       proposal_flow_used: Enum.any?(events, &(&1.phase == :proposal))
     }
@@ -358,12 +375,13 @@ defmodule Foundry.ChatTrace do
   defp phase_sort_order(:context), do: 0
   defp phase_sort_order(:session), do: 1
   defp phase_sort_order(:retrieval), do: 2
-  defp phase_sort_order(:reasoning), do: 3
-  defp phase_sort_order(:proposal), do: 4
-  defp phase_sort_order(:shell_fallback), do: 5
-  defp phase_sort_order(:verification), do: 6
-  defp phase_sort_order(:final), do: 7
-  defp phase_sort_order(_), do: 8
+  defp phase_sort_order(:shell_retrieval), do: 3
+  defp phase_sort_order(:reasoning), do: 4
+  defp phase_sort_order(:proposal), do: 5
+  defp phase_sort_order(:shell_fallback), do: 6
+  defp phase_sort_order(:verification), do: 7
+  defp phase_sort_order(:final), do: 8
+  defp phase_sort_order(_), do: 9
 
   defp path_detail([]), do: nil
   defp path_detail([path]), do: "path: #{path}"
@@ -377,6 +395,38 @@ defmodule Foundry.ChatTrace do
       value when is_binary(value) and value != "" -> value
       _ -> nil
     end
+  end
+
+  defp shell_retrieval_command?(raw_event, command) do
+    normalized = normalize_duplicate_command(command)
+
+    not explicit_fallback?(raw_event) and
+      Enum.any?(@governed_shell_prefixes, &String.contains?(normalized, &1))
+  end
+
+  defp explicit_fallback?(raw_event) do
+    text =
+      [Map.get(raw_event, "message"), Map.get(raw_event, "summary"), Map.get(raw_event, "type")]
+      |> Enum.filter(&is_binary/1)
+      |> Enum.join(" ")
+      |> String.downcase()
+
+    String.contains?(text, "fallback")
+  end
+
+  defp redundant_global_context_fetches(events) do
+    events
+    |> Enum.count(fn
+      %{tool: tool, provider: provider}
+      when tool in @global_context_tools and provider != :foundry ->
+        true
+
+      %{tool: tool} when tool in @global_context_tools ->
+        true
+
+      _ ->
+        false
+    end)
   end
 
   defp truncate(nil, _limit), do: nil

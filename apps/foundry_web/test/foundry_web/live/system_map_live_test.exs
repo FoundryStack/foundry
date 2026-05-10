@@ -76,9 +76,9 @@ defmodule FoundryWeb.SystemMapLiveTest do
     test "renders the integrated copilot workspace", %{conn: conn} do
       {:ok, _live, html} = live(conn, "/studio")
 
-      assert html =~ "Foundry Copilot"
-      assert html =~ "Governed studio chat"
       assert html =~ "Copilot"
+      assert html =~ ~s(phx-click="set_feed_tab")
+      assert html =~ ~s(phx-value-tab="copilot")
       assert html =~ ~s(id="fm-feed")
       assert html =~ ~s(id="fm-drawer")
 
@@ -292,9 +292,13 @@ defmodule FoundryWeb.SystemMapLiveTest do
       Application.put_env(:foundry, :llm_provider, :codex)
       Application.put_env(:foundry, :codex, [])
 
-      {:ok, _live, html} = live(conn, "/studio")
+      {:ok, live, _html} = live(conn, "/studio")
 
-      assert html =~ "sandbox workspace-write"
+      _html = render_submit(live, "send_message", %{"message" => "Map the wallet flow"})
+      html = render_click(live, "set_chat_view", %{"view" => "trace"})
+
+      assert html =~ "Sandbox"
+      assert html =~ "workspace-write"
     end
 
     test "keeps the assistant response visible when final persistence fails", %{conn: conn} do
@@ -457,6 +461,15 @@ defmodule FoundryWeb.SystemMapLiveTest do
           on_event.(
             {:trace,
              %{
+               "type" => "command_execution",
+               "command" =>
+                 ~s(/bin/zsh -lc "rg -n \\"wallet\\" lib test && sed -n '1,160p' lib/wallet.ex")
+             }}
+          )
+
+          on_event.(
+            {:trace,
+             %{
                "type" => "item.completed",
                "item" => %{
                  "type" => "custom_tool_call",
@@ -486,6 +499,9 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert html =~ "exec_command"
       assert html =~ "mix test apps/foundry_web/test/foundry_web/live/system_map_live_test.exs"
       assert html =~ "apps/foundry_web/test/foundry_web/live/system_map_live_test.exs"
+      assert html =~ "Shell Retrieval"
+      assert html =~ "Inspected via shell"
+      refute html =~ "Shell Fallback"
       assert html =~ "Raw"
     end
 
@@ -591,6 +607,69 @@ defmodule FoundryWeb.SystemMapLiveTest do
                  rendered =~ "Summary of Changes" and
                  rendered =~ "Revise In Chat" and
                  rendered =~ "apps/foundry_web/lib/foundry_web/components/chat_components.ex"
+             end)
+    end
+
+    test "review-style prompts with implementation wording stay in ask mode", %{
+      conn: conn
+    } do
+      put_chat_hooks(
+        build_run_context: nil,
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, _on_event, _run_context ->
+          {:ok, "Reviewed bonus gaps."}
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+
+      _html =
+        render_submit(live, "send_message", %{
+          "message" => "Review bonuses. Do you see implementation and test gaps?"
+        })
+
+      assert eventually(fn ->
+               render(live) =~ "Reviewed bonus gaps."
+             end)
+
+      refute render(live) =~ "Apply"
+      refute render(live) =~ "Preview Changes"
+      trace_html = render_click(live, "set_chat_view", %{"view" => "trace"})
+
+      assert trace_html =~ "Sandbox"
+      assert trace_html =~ "Context reused"
+      assert trace_html =~ "Shell retrieval"
+      assert trace_html =~ "True fallback"
+      assert trace_html =~ "Global refetches"
+      assert trace_html =~ "Prepared cached project status and system graph summary"
+      refute trace_html =~ "Used tool project_status"
+      refute trace_html =~ "Used tool system_graph"
+    end
+
+    test "review-style prompts do not crash when retrieval returns real NodeEntry structs", %{
+      conn: conn
+    } do
+      put_chat_hooks(
+        build_run_context: nil,
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, _on_event, _run_context ->
+          {:ok, "Reviewed bonus implementation gaps."}
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+
+      _html =
+        render_submit(live, "send_message", %{
+          "message" => "Review bonuses. Do you see any gaps of implementation?"
+        })
+
+      assert eventually(fn ->
+               render(live) =~ "Reviewed bonus implementation gaps."
              end)
     end
 
@@ -729,7 +808,8 @@ defmodule FoundryWeb.SystemMapLiveTest do
           change_class: :behavioral,
           state: :draft,
           preview: %{
-            summary: "This proposal updates the Studio copilot flow and keeps the changes reviewable before apply.",
+            summary:
+              "This proposal updates the Studio copilot flow and keeps the changes reviewable before apply.",
             change_summary: [
               "Render a proposal preview card under assistant change replies.",
               "Open a proposal-aware file drawer with diff context."
@@ -1375,8 +1455,8 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       scenario =
         Enum.find(context.scenarios, fn scenario ->
-          scenario.source_module == "IgamingRef.Web.WithdrawalLiveTest" and
-            String.contains?(scenario.name, "withdrawal page") and
+          scenario.source_module == "IgamingRef.Finance.WithdrawalTransferIntegrationTest" and
+            String.contains?(String.downcase(scenario.name), "withdrawal request") and
             scenario.evidence_mode == :runtime
         end)
 
@@ -1388,12 +1468,14 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       assert length(payload.overlay_transitions) >= 3
 
-      assert scenario.graph_path == [
-               "IgamingRef.Web.WithdrawalLive",
-               "IgamingRef.Finance.Wallet:action:read",
+      assert Enum.take(scenario.graph_path, 4) == [
                "IgamingRef.Finance.WithdrawalRequest:action:create",
-               "IgamingRef.Finance.WithdrawalRequest:action:read"
+               "IgamingRef.Finance.WithdrawalRequest:action:approve",
+               "IgamingRef.Finance.WithdrawalTransfer",
+               "IgamingRef.Finance.WithdrawalTransfer:step:0"
              ]
+
+      assert Enum.uniq(scenario.graph_path) == scenario.graph_path
 
       assert Enum.any?(payload.overlay_transitions, fn transition ->
                String.contains?(transition.source, ":action:") or
