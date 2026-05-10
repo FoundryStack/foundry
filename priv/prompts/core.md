@@ -147,6 +147,14 @@ Apply these retrieval and reasoning rules in every Foundry project:
   notes, TODO lists, or obvious restatements of existing ADR text.
 - For structural code facts, prefer `mix foundry.project.context <Module>` over
   source-file prose or memory.
+- Treat `Project Status`, `System Architecture`, and the per-turn `Foundry Retrieval Summary`
+  as already-loaded global context. Do not re-fetch `project_status` or `system_graph` in
+  the same turn unless the injected context is stale, missing, or exact source evidence is required.
+- Tier 1 and retrieval summaries answer "which/where". Only inspect source for "what exactly"
+  details such as function bodies, assertions, DSL options, or contradiction-check evidence.
+- When source inspection is needed, batch related shell retrieval into grouped discovery and
+  grouped file reads instead of one file per command. Repeated global-context fetches are wasteful
+  and should be avoided.
 - For DSL syntax, use current project usage rules, ExDoc, and local project patterns.
 - For changes touching Reactors or Transfers with external side effects, verify
   idempotency and compensation expectations before proposing changes.

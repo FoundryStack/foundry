@@ -45,7 +45,15 @@ defmodule Foundry.Chat.Retrieval do
         system_graph: summarize_graph(cached_context.project_context),
         module_contexts: module_contexts,
         documents: document_contexts,
-        proposal_status: summarize_proposal(session_digest)
+        proposal_status: summarize_proposal(session_digest),
+        retrieval_guidance:
+          build_retrieval_guidance(
+            project_root,
+            modules,
+            documents,
+            module_contexts,
+            document_contexts
+          )
       }
 
       {:ok,
@@ -63,9 +71,14 @@ defmodule Foundry.Chat.Retrieval do
     """
     ## Foundry Retrieval Summary
 
-    Use this Foundry-side retrieval before issuing any shell discovery. The
-    system map answers "which"; file or shell reads should answer "what" only
-    when the retrieval summary is insufficient.
+    Treat Project Status, System Architecture, and this Foundry Retrieval Summary
+    as already-loaded global context. Reuse them before issuing shell discovery.
+    Do not re-fetch `project_status` or `system_graph` in the same turn unless
+    the injected context is stale, missing, or you need exact source evidence.
+    The system map answers "which"; file or shell reads should answer "what"
+    only when the retrieval summary is insufficient. When shell inspection is
+    needed, batch related discovery and grouped file reads instead of inspecting
+    one file at a time.
 
     ```json
     #{Jason.encode!(tool_results, pretty: true)}
@@ -76,7 +89,7 @@ defmodule Foundry.Chat.Retrieval do
   @spec create_proposal(String.t(), String.t(), map(), map(), String.t()) ::
           {:ok, map()} | {:error, term()}
   def create_proposal(message, requester, tool_results, session_digest, project_root) do
-    preview = build_proposal_preview(message, tool_results, project_root)
+    preview = proposal_preview(message, tool_results, project_root)
 
     attrs = %{
       change_class: classify_change(message, tool_results),
@@ -109,6 +122,11 @@ defmodule Foundry.Chat.Retrieval do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @spec proposal_preview(String.t(), map(), String.t()) :: map()
+  def proposal_preview(message, tool_results, project_root) do
+    build_proposal_preview(message, tool_results, project_root)
   end
 
   @spec change_prompt(map()) :: String.t()
@@ -179,6 +197,65 @@ defmodule Foundry.Chat.Retrieval do
   defp summarize_proposal(%{"last_proposal_id" => id}) when is_binary(id), do: %{id: id}
   defp summarize_proposal(_digest), do: nil
 
+  defp build_retrieval_guidance(
+         project_root,
+         modules,
+         documents,
+         module_contexts,
+         document_contexts
+       ) do
+    module_files =
+      module_contexts
+      |> Enum.flat_map(fn module_context ->
+        case module_source_path(module_context_module(module_context), project_root) do
+          nil -> []
+          path -> [Path.relative_to(path, project_root)]
+        end
+      end)
+      |> Enum.uniq()
+
+    document_paths =
+      document_contexts
+      |> Enum.map(& &1.path)
+      |> Enum.uniq()
+
+    file_hints = Enum.take(module_files ++ document_paths, 6)
+
+    %{
+      inferred_module_ids: modules,
+      inferred_document_paths: Enum.map(documents, & &1.path),
+      related_file_hints: file_hints,
+      grouped_shell_plan: grouped_shell_plan(modules, file_hints)
+    }
+  end
+
+  defp grouped_shell_plan([], []) do
+    "Reuse the injected retrieval summary first. If source evidence is still required, run one grouped discovery command followed by one grouped read command."
+  end
+
+  defp grouped_shell_plan(modules, file_hints) do
+    module_hint =
+      modules
+      |> Enum.map(&short_module_name/1)
+      |> Enum.join(", ")
+
+    file_hint =
+      file_hints
+      |> Enum.take(4)
+      |> Enum.join(", ")
+
+    [
+      "Reuse the injected retrieval summary before any global refetch.",
+      if(module_hint != "", do: "Start with grouped module discovery around #{module_hint}."),
+      if(file_hint != "",
+        do: "If exact source evidence is needed, inspect grouped files such as #{file_hint}."
+      ),
+      "Prefer one grouped discovery step and one grouped read step over one-file-at-a-time inspection."
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" ")
+  end
+
   defp build_proposal_preview(message, tool_results, project_root) do
     files =
       tool_results
@@ -205,7 +282,7 @@ defmodule Foundry.Chat.Retrieval do
   defp proposal_preview_files(tool_results, message, project_root) do
     module_files =
       Enum.flat_map(tool_results.module_contexts || [], fn module_context ->
-        module = get_in(module_context, [:node, :module]) || module_context.id
+        module = module_context_module(module_context)
         path = module_source_path(module, project_root)
         summary = module_preview_summary(module_context)
 
@@ -234,6 +311,10 @@ defmodule Foundry.Chat.Retrieval do
     (module_files ++ document_files ++ List.wrap(inferred_file))
     |> Enum.uniq_by(& &1.path)
   end
+
+  defp module_context_module(%{node: %{module: module}}) when is_binary(module), do: module
+  defp module_context_module(%{id: id}) when is_binary(id), do: id
+  defp module_context_module(_module_context), do: nil
 
   defp file_preview_entry(nil, _status, _summary, _project_root), do: nil
 
@@ -341,7 +422,11 @@ defmodule Foundry.Chat.Retrieval do
 
   defp module_preview_summary(module_context) do
     module_name = short_module_name(module_context.id)
-    description = get_in(module_context, [:summary, :description]) || "Refresh the module behavior and supporting copy."
+
+    description =
+      get_in(module_context, [:summary, :description]) ||
+        "Refresh the module behavior and supporting copy."
+
     "Update #{module_name}: #{description}"
   end
 
@@ -453,17 +538,9 @@ defmodule Foundry.Chat.Retrieval do
       },
       %{
         "provider" => "foundry",
-        "type" => "foundry.tool.project_status",
+        "type" => "foundry.retrieval.summary",
         "phase" => "retrieval",
-        "tool" => "project_status",
-        "message" => "Loaded project status for the current workspace"
-      },
-      %{
-        "provider" => "foundry",
-        "type" => "foundry.tool.system_graph",
-        "phase" => "retrieval",
-        "tool" => "system_graph",
-        "message" => "Loaded compact system graph context"
+        "message" => "Prepared cached project status and system graph summary"
       }
     ]
 
