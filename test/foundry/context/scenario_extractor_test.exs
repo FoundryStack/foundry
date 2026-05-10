@@ -1073,12 +1073,42 @@ defmodule Foundry.Context.ScenarioExtractorTest do
           "scenario_id" => "IgamingRef.Web.HomeLiveTest.home_page",
           "test_name" => "renders featured games and active promotions from live data",
           "events" => [
-            %{"sequence" => 1, "node_id" => "IgamingRef.Web.HomeLive", "focus_node_id" => "IgamingRef.Web.HomeLive", "action_kind" => "entry"},
-            %{"sequence" => 2, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
-            %{"sequence" => 3, "node_id" => "IgamingRef.Promotions.BonusCampaign", "focus_node_id" => "IgamingRef.Promotions.BonusCampaign", "action_kind" => "read"},
-            %{"sequence" => 4, "node_id" => "IgamingRef.Web.HomeLive", "focus_node_id" => "IgamingRef.Web.HomeLive", "action_kind" => "entry"},
-            %{"sequence" => 5, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
-            %{"sequence" => 6, "node_id" => "IgamingRef.Promotions.BonusCampaign", "focus_node_id" => "IgamingRef.Promotions.BonusCampaign", "action_kind" => "read"}
+            %{
+              "sequence" => 1,
+              "node_id" => "IgamingRef.Web.HomeLive",
+              "focus_node_id" => "IgamingRef.Web.HomeLive",
+              "action_kind" => "entry"
+            },
+            %{
+              "sequence" => 2,
+              "node_id" => "IgamingRef.Gaming.Game",
+              "focus_node_id" => "IgamingRef.Gaming.Game",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 3,
+              "node_id" => "IgamingRef.Promotions.BonusCampaign",
+              "focus_node_id" => "IgamingRef.Promotions.BonusCampaign",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 4,
+              "node_id" => "IgamingRef.Web.HomeLive",
+              "focus_node_id" => "IgamingRef.Web.HomeLive",
+              "action_kind" => "entry"
+            },
+            %{
+              "sequence" => 5,
+              "node_id" => "IgamingRef.Gaming.Game",
+              "focus_node_id" => "IgamingRef.Gaming.Game",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 6,
+              "node_id" => "IgamingRef.Promotions.BonusCampaign",
+              "focus_node_id" => "IgamingRef.Promotions.BonusCampaign",
+              "action_kind" => "read"
+            }
           ]
         }
       )
@@ -1090,12 +1120,42 @@ defmodule Foundry.Context.ScenarioExtractorTest do
           "scenario_id" => "IgamingRef.Web.HomeLiveTest.home_page",
           "test_name" => "shows stable empty states when no data is available",
           "events" => [
-            %{"sequence" => 1, "node_id" => "IgamingRef.Web.HomeLive", "focus_node_id" => "IgamingRef.Web.HomeLive", "action_kind" => "entry"},
-            %{"sequence" => 2, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
-            %{"sequence" => 3, "node_id" => "IgamingRef.Promotions.BonusCampaign", "focus_node_id" => "IgamingRef.Promotions.BonusCampaign", "action_kind" => "read"},
-            %{"sequence" => 4, "node_id" => "IgamingRef.Web.HomeLive", "focus_node_id" => "IgamingRef.Web.HomeLive", "action_kind" => "entry"},
-            %{"sequence" => 5, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
-            %{"sequence" => 6, "node_id" => "IgamingRef.Promotions.BonusCampaign", "focus_node_id" => "IgamingRef.Promotions.BonusCampaign", "action_kind" => "read"}
+            %{
+              "sequence" => 1,
+              "node_id" => "IgamingRef.Web.HomeLive",
+              "focus_node_id" => "IgamingRef.Web.HomeLive",
+              "action_kind" => "entry"
+            },
+            %{
+              "sequence" => 2,
+              "node_id" => "IgamingRef.Gaming.Game",
+              "focus_node_id" => "IgamingRef.Gaming.Game",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 3,
+              "node_id" => "IgamingRef.Promotions.BonusCampaign",
+              "focus_node_id" => "IgamingRef.Promotions.BonusCampaign",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 4,
+              "node_id" => "IgamingRef.Web.HomeLive",
+              "focus_node_id" => "IgamingRef.Web.HomeLive",
+              "action_kind" => "entry"
+            },
+            %{
+              "sequence" => 5,
+              "node_id" => "IgamingRef.Gaming.Game",
+              "focus_node_id" => "IgamingRef.Gaming.Game",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 6,
+              "node_id" => "IgamingRef.Promotions.BonusCampaign",
+              "focus_node_id" => "IgamingRef.Promotions.BonusCampaign",
+              "action_kind" => "read"
+            }
           ]
         }
       )
@@ -1121,6 +1181,13 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       ]
 
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert length(scenario.raw_flow) == 12
+
+      assert Enum.map(scenario.test_flows, & &1.test_name) == [
+               "renders featured games and active promotions from live data",
+               "shows stable empty states when no data is available"
+             ]
 
       assert Enum.map(scenario.flow, & &1.test_name) == [
                "renders featured games and active promotions from live data",
@@ -1170,8 +1237,18 @@ defmodule Foundry.Context.ScenarioExtractorTest do
           "scenario_id" => "IgamingRef.Web.AuthLiveTest.auth_page",
           "test_name" => "renders the login form with its active fields",
           "events" => [
-            %{"sequence" => 1, "node_id" => "IgamingRef.Web.AuthLive", "focus_node_id" => "IgamingRef.Web.AuthLive", "action_kind" => "entry"},
-            %{"sequence" => 2, "node_id" => "IgamingRef.Web.AuthLive", "focus_node_id" => "IgamingRef.Web.AuthLive", "action_kind" => "entry"}
+            %{
+              "sequence" => 1,
+              "node_id" => "IgamingRef.Web.AuthLive",
+              "focus_node_id" => "IgamingRef.Web.AuthLive",
+              "action_kind" => "entry"
+            },
+            %{
+              "sequence" => 2,
+              "node_id" => "IgamingRef.Web.AuthLive",
+              "focus_node_id" => "IgamingRef.Web.AuthLive",
+              "action_kind" => "entry"
+            }
           ]
         }
       )
@@ -1187,9 +1264,24 @@ defmodule Foundry.Context.ScenarioExtractorTest do
             "scenario_id" => "IgamingRef.Web.AuthLiveTest.auth_page",
             "test_name" => name,
             "events" => [
-              %{"sequence" => 1, "node_id" => "IgamingRef.Web.AuthLive", "focus_node_id" => "IgamingRef.Web.AuthLive", "action_kind" => "entry"},
-              %{"sequence" => 2, "node_id" => "IgamingRef.Web.AuthLive", "focus_node_id" => "IgamingRef.Web.AuthLive", "action_kind" => "entry"},
-              %{"sequence" => 3, "node_id" => "IgamingRef.Accounts.User", "focus_node_id" => "IgamingRef.Accounts.User", "action_kind" => "read"}
+              %{
+                "sequence" => 1,
+                "node_id" => "IgamingRef.Web.AuthLive",
+                "focus_node_id" => "IgamingRef.Web.AuthLive",
+                "action_kind" => "entry"
+              },
+              %{
+                "sequence" => 2,
+                "node_id" => "IgamingRef.Web.AuthLive",
+                "focus_node_id" => "IgamingRef.Web.AuthLive",
+                "action_kind" => "entry"
+              },
+              %{
+                "sequence" => 3,
+                "node_id" => "IgamingRef.Accounts.User",
+                "focus_node_id" => "IgamingRef.Accounts.User",
+                "action_kind" => "read"
+              }
             ]
           }
         )
@@ -1210,6 +1302,13 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
 
       assert length(scenario.flow) == 2
+
+      assert Enum.map(scenario.test_flows, & &1.test_name) == [
+               "renders the login form with its active fields",
+               "shows an error flash for invalid credentials",
+               "redirects after a successful password sign in"
+             ]
+
       assert Enum.map(scenario.flow, & &1.node_id) == [
                "IgamingRef.Web.AuthLive",
                "IgamingRef.Accounts.User"
@@ -1252,12 +1351,42 @@ defmodule Foundry.Context.ScenarioExtractorTest do
           "scenario_id" => "IgamingRef.Web.GameLiveTest.game_page",
           "test_name" => "loads the routed game and the current player's wallet",
           "events" => [
-            %{"sequence" => 1, "node_id" => "IgamingRef.Web.GameLive", "focus_node_id" => "IgamingRef.Web.GameLive", "action_kind" => "entry"},
-            %{"sequence" => 2, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
-            %{"sequence" => 3, "node_id" => "IgamingRef.Finance.Wallet", "focus_node_id" => "IgamingRef.Finance.Wallet", "action_kind" => "read"},
-            %{"sequence" => 4, "node_id" => "IgamingRef.Web.GameLive", "focus_node_id" => "IgamingRef.Web.GameLive", "action_kind" => "entry"},
-            %{"sequence" => 5, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
-            %{"sequence" => 6, "node_id" => "IgamingRef.Finance.Wallet", "focus_node_id" => "IgamingRef.Finance.Wallet", "action_kind" => "read"}
+            %{
+              "sequence" => 1,
+              "node_id" => "IgamingRef.Web.GameLive",
+              "focus_node_id" => "IgamingRef.Web.GameLive",
+              "action_kind" => "entry"
+            },
+            %{
+              "sequence" => 2,
+              "node_id" => "IgamingRef.Gaming.Game",
+              "focus_node_id" => "IgamingRef.Gaming.Game",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 3,
+              "node_id" => "IgamingRef.Finance.Wallet",
+              "focus_node_id" => "IgamingRef.Finance.Wallet",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 4,
+              "node_id" => "IgamingRef.Web.GameLive",
+              "focus_node_id" => "IgamingRef.Web.GameLive",
+              "action_kind" => "entry"
+            },
+            %{
+              "sequence" => 5,
+              "node_id" => "IgamingRef.Gaming.Game",
+              "focus_node_id" => "IgamingRef.Gaming.Game",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 6,
+              "node_id" => "IgamingRef.Finance.Wallet",
+              "focus_node_id" => "IgamingRef.Finance.Wallet",
+              "action_kind" => "read"
+            }
           ]
         }
       )
@@ -1269,14 +1398,54 @@ defmodule Foundry.Context.ScenarioExtractorTest do
           "scenario_id" => "IgamingRef.Web.GameLiveTest.game_page",
           "test_name" => "clicking play creates a game session for the routed game",
           "events" => [
-            %{"sequence" => 1, "node_id" => "IgamingRef.Web.GameLive", "focus_node_id" => "IgamingRef.Web.GameLive", "action_kind" => "entry"},
-            %{"sequence" => 2, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
-            %{"sequence" => 3, "node_id" => "IgamingRef.Finance.Wallet", "focus_node_id" => "IgamingRef.Finance.Wallet", "action_kind" => "read"},
-            %{"sequence" => 4, "node_id" => "IgamingRef.Web.GameLive", "focus_node_id" => "IgamingRef.Web.GameLive", "action_kind" => "entry"},
-            %{"sequence" => 5, "node_id" => "IgamingRef.Gaming.Game", "focus_node_id" => "IgamingRef.Gaming.Game", "action_kind" => "read"},
-            %{"sequence" => 6, "node_id" => "IgamingRef.Finance.Wallet", "focus_node_id" => "IgamingRef.Finance.Wallet", "action_kind" => "read"},
-            %{"sequence" => 7, "node_id" => "IgamingRef.Gaming.GameSession", "focus_node_id" => "IgamingRef.Gaming.GameSession", "action_kind" => "read"},
-            %{"sequence" => 8, "node_id" => "IgamingRef.Gaming.GameSession", "focus_node_id" => "IgamingRef.Gaming.GameSession", "action_kind" => "read"}
+            %{
+              "sequence" => 1,
+              "node_id" => "IgamingRef.Web.GameLive",
+              "focus_node_id" => "IgamingRef.Web.GameLive",
+              "action_kind" => "entry"
+            },
+            %{
+              "sequence" => 2,
+              "node_id" => "IgamingRef.Gaming.Game",
+              "focus_node_id" => "IgamingRef.Gaming.Game",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 3,
+              "node_id" => "IgamingRef.Finance.Wallet",
+              "focus_node_id" => "IgamingRef.Finance.Wallet",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 4,
+              "node_id" => "IgamingRef.Web.GameLive",
+              "focus_node_id" => "IgamingRef.Web.GameLive",
+              "action_kind" => "entry"
+            },
+            %{
+              "sequence" => 5,
+              "node_id" => "IgamingRef.Gaming.Game",
+              "focus_node_id" => "IgamingRef.Gaming.Game",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 6,
+              "node_id" => "IgamingRef.Finance.Wallet",
+              "focus_node_id" => "IgamingRef.Finance.Wallet",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 7,
+              "node_id" => "IgamingRef.Gaming.GameSession",
+              "focus_node_id" => "IgamingRef.Gaming.GameSession",
+              "action_kind" => "read"
+            },
+            %{
+              "sequence" => 8,
+              "node_id" => "IgamingRef.Gaming.GameSession",
+              "focus_node_id" => "IgamingRef.Gaming.GameSession",
+              "action_kind" => "read"
+            }
           ]
         }
       )
@@ -1310,6 +1479,11 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       ]
 
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert Enum.map(scenario.test_flows, & &1.test_name) == [
+               "loads the routed game and the current player's wallet",
+               "clicking play creates a game session for the routed game"
+             ]
 
       assert Enum.map(scenario.flow, & &1.node_id) == [
                "IgamingRef.Web.GameLive",
