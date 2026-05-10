@@ -7,7 +7,11 @@ defmodule ScenarioTracer.PageTraceNormalizerTest do
   test "collapses duplicated disconnected and connected mount cycles into one canonical path" do
     normalized =
       normalize([
-        %{test_name: "renders", flow: home_mount_cycle() ++ home_mount_cycle()}
+        %{
+          test_name: "renders",
+          runtime_flow: home_mount_cycle() ++ home_mount_cycle(),
+          resolved_flow: home_mount_cycle() ++ home_mount_cycle()
+        }
       ])
 
     assert Enum.map(normalized.canonical_flow, & &1.node_id) == [
@@ -17,6 +21,7 @@ defmodule ScenarioTracer.PageTraceNormalizerTest do
            ]
 
     assert length(normalized.raw_flow) == 6
+    assert length(normalized.runtime_flow) == 6
     assert [%{test_name: "renders", flow: flow}] = normalized.test_flows
     assert length(flow) == 3
   end
@@ -24,14 +29,22 @@ defmodule ScenarioTracer.PageTraceNormalizerTest do
   test "canonical aggregation keeps the richest unique normalized page flow" do
     normalized =
       normalize([
-        %{test_name: "load", flow: game_flow("load", ["Demo.Game", "Demo.Wallet"])},
+        %{
+          test_name: "load",
+          runtime_flow: game_flow("load", ["Demo.Game", "Demo.Wallet"]),
+          resolved_flow: game_flow("load", ["Demo.Game", "Demo.Wallet"])
+        },
         %{
           test_name: "play",
-          flow: game_flow("play", ["Demo.Game", "Demo.Wallet", "Demo.Session"])
+          runtime_flow: game_flow("play", ["Demo.Game", "Demo.Wallet", "Demo.Session"]),
+          resolved_flow: game_flow("play", ["Demo.Game", "Demo.Wallet", "Demo.Session"])
         },
         %{
           test_name: "play duplicate",
-          flow: game_flow("play duplicate", ["Demo.Game", "Demo.Wallet", "Demo.Session"])
+          runtime_flow:
+            game_flow("play duplicate", ["Demo.Game", "Demo.Wallet", "Demo.Session"]),
+          resolved_flow:
+            game_flow("play duplicate", ["Demo.Game", "Demo.Wallet", "Demo.Session"])
         }
       ])
 
@@ -48,7 +61,11 @@ defmodule ScenarioTracer.PageTraceNormalizerTest do
       normalize([
         %{
           test_name: "sign in",
-          flow: [
+          runtime_flow: [
+            page_entry("Demo.Web.AuthLive", "sign in"),
+            app_read("Demo.User", "sign in", capture_origin: "ash_tracer")
+          ],
+          resolved_flow: [
             page_entry("Demo.Web.AuthLive", "sign in"),
             app_read("Demo.User", "sign in", capture_origin: "ash_tracer")
           ]
@@ -66,7 +83,19 @@ defmodule ScenarioTracer.PageTraceNormalizerTest do
       normalize([
         %{
           test_name: "submit",
-          flow: [
+          runtime_flow: [
+            page_entry("Demo.Web.WithdrawalLive", "submit"),
+            step(%{
+              node_id: "Demo.WithdrawalRequest",
+              focus_node_id: "Demo.WithdrawalRequest:action:create",
+              kind: :action_execute,
+              action: "create",
+              capture_origin: "ash_tracer",
+              test_name: "submit"
+            }),
+            helper_read("Demo.WithdrawalRequest", "submit")
+          ],
+          resolved_flow: [
             page_entry("Demo.Web.WithdrawalLive", "submit"),
             step(%{
               node_id: "Demo.WithdrawalRequest",
@@ -87,6 +116,12 @@ defmodule ScenarioTracer.PageTraceNormalizerTest do
            ]
 
     assert length(normalized.raw_flow) == 3
+    assert Enum.map(normalized.runtime_flow, & &1.focus_node_id) == [
+             "Demo.Web.WithdrawalLive",
+             "Demo.WithdrawalRequest:action:create",
+             "Demo.WithdrawalRequest"
+           ]
+
     assert [%{flow: test_flow}] = normalized.test_flows
 
     assert Enum.map(test_flow, & &1.focus_node_id) == [
@@ -100,7 +135,12 @@ defmodule ScenarioTracer.PageTraceNormalizerTest do
       normalize([
         %{
           test_name: "repeat",
-          flow: [
+          runtime_flow: [
+            page_entry("Demo.Web.GameLive", "repeat"),
+            app_read("Demo.Session", "repeat", focus_node_id: "Demo.Session:action:read"),
+            app_read("Demo.Session", "repeat", focus_node_id: "Demo.Session:action:read")
+          ],
+          resolved_flow: [
             page_entry("Demo.Web.GameLive", "repeat"),
             app_read("Demo.Session", "repeat", focus_node_id: "Demo.Session:action:read"),
             app_read("Demo.Session", "repeat", focus_node_id: "Demo.Session:action:read")
@@ -118,8 +158,16 @@ defmodule ScenarioTracer.PageTraceNormalizerTest do
   test "retains distinct normalized per-test flows before canonical aggregation" do
     normalized =
       normalize([
-        %{test_name: "wallet", flow: game_flow("wallet", ["Demo.Game", "Demo.Wallet"])},
-        %{test_name: "session", flow: game_flow("session", ["Demo.Game", "Demo.Session"])}
+        %{
+          test_name: "wallet",
+          runtime_flow: game_flow("wallet", ["Demo.Game", "Demo.Wallet"]),
+          resolved_flow: game_flow("wallet", ["Demo.Game", "Demo.Wallet"])
+        },
+        %{
+          test_name: "session",
+          runtime_flow: game_flow("session", ["Demo.Game", "Demo.Session"]),
+          resolved_flow: game_flow("session", ["Demo.Game", "Demo.Session"])
+        }
       ])
 
     assert Enum.map(normalized.test_flows, & &1.test_name) == ["wallet", "session"]

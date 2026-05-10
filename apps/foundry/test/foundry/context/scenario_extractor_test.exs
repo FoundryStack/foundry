@@ -575,6 +575,8 @@ defmodule Foundry.Context.ScenarioExtractorTest do
 
       assert scenario.evidence_mode == :runtime
       assert scenario.trace_status == :present
+      assert scenario.runtime_flow != []
+      assert scenario.static_flow != []
 
       assert scenario.nodes == [
                "IgamingRef.Finance.WithdrawalWebhook",
@@ -694,6 +696,8 @@ defmodule Foundry.Context.ScenarioExtractorTest do
 
       assert scenario.evidence_mode == :runtime
       assert scenario.trace_status == :present
+      assert scenario.runtime_flow != []
+      assert scenario.static_flow != []
 
       assert scenario.nodes == [
                "IgamingRef.Finance.WithdrawalWebhook",
@@ -1183,8 +1187,15 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
 
       assert length(scenario.raw_flow) == 12
+      assert length(scenario.runtime_flow) == 12
+      assert scenario.static_flow == []
 
       assert Enum.map(scenario.test_flows, & &1.test_name) == [
+               "renders featured games and active promotions from live data",
+               "shows stable empty states when no data is available"
+             ]
+
+      assert Enum.map(scenario.runtime_test_flows, & &1.test_name) == [
                "renders featured games and active promotions from live data",
                "shows stable empty states when no data is available"
              ]
@@ -1302,6 +1313,8 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
 
       assert length(scenario.flow) == 2
+      assert scenario.runtime_flow != []
+      assert scenario.static_flow == []
 
       assert Enum.map(scenario.test_flows, & &1.test_name) == [
                "renders the login form with its active fields",
@@ -1481,6 +1494,11 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
 
       assert Enum.map(scenario.test_flows, & &1.test_name) == [
+               "loads the routed game and the current player's wallet",
+               "clicking play creates a game session for the routed game"
+             ]
+
+      assert Enum.map(scenario.runtime_test_flows, & &1.test_name) == [
                "loads the routed game and the current player's wallet",
                "clicking play creates a game session for the routed game"
              ]

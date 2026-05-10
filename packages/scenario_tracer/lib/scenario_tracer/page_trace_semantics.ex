@@ -5,7 +5,13 @@ defmodule ScenarioTracer.PageTraceSemantics do
 
   @page_types ["page", :page, "live_page", :live_page]
 
-  def page_flow?([%{flow: [first | _]} | _], lookup), do: page_node?(first.node_id, lookup)
+  def page_flow?([test_flow | _], lookup) when is_map(test_flow) do
+    case Map.get(test_flow, :resolved_flow) || Map.get(test_flow, :flow) do
+      [first | _] -> page_node?(first.node_id, lookup)
+      _ -> false
+    end
+  end
+
   def page_flow?(_test_flows, _lookup), do: false
 
   def page_node?(node_id, lookup) when is_binary(node_id) do

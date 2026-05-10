@@ -23,6 +23,8 @@ defmodule ScenarioTracer.MixTask do
     TestScanner
   }
 
+  alias ScenarioTracer.FlowResolver
+
   def run(mod, args \\ []) do
     started = System.monotonic_time(:millisecond)
     project_root = mod.project_root()
@@ -97,7 +99,7 @@ defmodule ScenarioTracer.MixTask do
                   |> Enum.find(&ScenarioTracer.TraceStore.JsonFile.match(&1, test_block.name))
 
                 %{
-                  flow: flow,
+                  static_flow: flow,
                   executed_flow: executed_flow,
                   runtime_trace: runtime_trace,
                   test_case: %{
@@ -108,14 +110,14 @@ defmodule ScenarioTracer.MixTask do
                   }
                 }
               end)
-              |> Enum.filter(&(Enum.any?(&1.flow) or not is_nil(&1.runtime_trace)))
+              |> Enum.filter(&(Enum.any?(&1.static_flow) or not is_nil(&1.runtime_trace)))
 
             if traced_tests == [] do
               []
             else
               flow_hints = FlowHints.normalize_flow_hints(Map.get(scenario_meta, :flow), lookup)
 
-              merged_test_flows =
+              traced_test_flows =
                 traced_tests
                 |> Enum.map(fn traced_test ->
                   runtime_flow =
@@ -126,23 +128,41 @@ defmodule ScenarioTracer.MixTask do
                       adapters
                     )
 
+                  resolved =
+                    FlowResolver.resolve(
+                      traced_test.static_flow,
+                      runtime_flow,
+                      lookup,
+                      adapters
+                    )
+
                   %{
                     test_name: traced_test.test_case.name,
-                    flow: merge_runtime_with_static(traced_test.flow, runtime_flow)
+                    static_flow: traced_test.static_flow,
+                    runtime_flow: runtime_flow,
+                    resolved_flow: resolved.resolved_flow
                   }
                 end)
 
               normalized_page_flow =
-                ScenarioTracer.PageTraceNormalizer.normalize(merged_test_flows, lookup)
+                ScenarioTracer.PageTraceNormalizer.normalize(traced_test_flows, lookup)
 
               flow =
                 normalized_page_flow.canonical_flow
                 |> FlowHints.merge_flow_hints(flow_hints)
                 |> materialize_flow()
 
+              static_flow = materialize_flow(normalized_page_flow.static_flow)
+              runtime_flow = materialize_flow(normalized_page_flow.runtime_flow)
               raw_flow = materialize_flow(normalized_page_flow.raw_flow)
               raw_test_flows = materialize_test_flows(normalized_page_flow.raw_test_flows)
-              test_flows = materialize_test_flows(normalized_page_flow.test_flows)
+              static_test_flows = materialize_test_flows(normalized_page_flow.static_test_flows)
+              runtime_test_flows = materialize_test_flows(normalized_page_flow.runtime_test_flows)
+
+              resolved_test_flows =
+                materialize_test_flows(normalized_page_flow.resolved_test_flows)
+
+              test_flows = resolved_test_flows
 
               {nodes, graph_path} = FlowSummary.derive_flow_summaries(flow)
 
@@ -168,8 +188,13 @@ defmodule ScenarioTracer.MixTask do
                       Map.get(scenario_meta, :compliance_links)
                     ),
                   flow: flow,
+                  static_flow: static_flow,
+                  runtime_flow: runtime_flow,
                   raw_flow: raw_flow,
                   raw_test_flows: raw_test_flows,
+                  static_test_flows: static_test_flows,
+                  runtime_test_flows: runtime_test_flows,
+                  resolved_test_flows: resolved_test_flows,
                   test_flows: test_flows,
                   evidence_summary: FlowSummary.summarize_evidence(flow),
                   tests: Enum.map(traced_tests, & &1.test_case),
@@ -303,183 +328,6 @@ defmodule ScenarioTracer.MixTask do
         Map.update(inner, node_id, [scenario.id], &[scenario.id | &1])
       end)
     end)
-  end
-
-  defp merge_runtime_with_static(static_flow, runtime_flow) do
-    cond do
-      runtime_flow == [] ->
-        static_flow
-
-      static_flow == [] ->
-        runtime_flow
-
-      true ->
-        remaining_static_keys = count_step_keys(static_flow)
-
-        do_merge_runtime_with_static(
-          static_flow,
-          runtime_flow,
-          [],
-          MapSet.new(),
-          remaining_static_keys
-        )
-    end
-  end
-
-  defp do_merge_runtime_with_static([], [], acc, _seen_keys, _remaining_static_keys),
-    do: Enum.reverse(acc)
-
-  defp do_merge_runtime_with_static(
-         [],
-         [runtime_step | rest],
-         acc,
-         seen_keys,
-         remaining_static_keys
-       ) do
-    runtime_key = merge_step_key(runtime_step)
-
-    do_merge_runtime_with_static(
-      [],
-      rest,
-      [runtime_step | acc],
-      MapSet.put(seen_keys, runtime_key),
-      remaining_static_keys
-    )
-  end
-
-  defp do_merge_runtime_with_static(
-         [static_step | rest],
-         [],
-         acc,
-         seen_keys,
-         remaining_static_keys
-       ) do
-    static_key = merge_step_key(static_step)
-    remaining_static_keys = decrement_key_count(remaining_static_keys, static_key)
-
-    if MapSet.member?(seen_keys, static_key) do
-      do_merge_runtime_with_static(rest, [], acc, seen_keys, remaining_static_keys)
-    else
-      do_merge_runtime_with_static(
-        rest,
-        [],
-        [static_step | acc],
-        MapSet.put(seen_keys, static_key),
-        remaining_static_keys
-      )
-    end
-  end
-
-  defp do_merge_runtime_with_static(
-         [static_step | static_rest] = static_flow,
-         [runtime_step | runtime_rest] = runtime_flow,
-         acc,
-         seen_keys,
-         remaining_static_keys
-       ) do
-    static_key = merge_step_key(static_step)
-    runtime_key = merge_step_key(runtime_step)
-    remaining_after_current = decrement_key_count(remaining_static_keys, static_key)
-
-    cond do
-      static_key == runtime_key ->
-        do_merge_runtime_with_static(
-          static_rest,
-          runtime_rest,
-          [merge_steps(static_step, runtime_step) | acc],
-          MapSet.put(seen_keys, static_key),
-          remaining_after_current
-        )
-
-      Map.get(remaining_after_current, runtime_key, 0) > 0 ->
-        if MapSet.member?(seen_keys, static_key) do
-          do_merge_runtime_with_static(
-            static_rest,
-            runtime_flow,
-            acc,
-            seen_keys,
-            remaining_after_current
-          )
-        else
-          do_merge_runtime_with_static(
-            static_rest,
-            runtime_flow,
-            [static_step | acc],
-            MapSet.put(seen_keys, static_key),
-            remaining_after_current
-          )
-        end
-
-      true ->
-        do_merge_runtime_with_static(
-          static_flow,
-          runtime_rest,
-          [runtime_step | acc],
-          MapSet.put(seen_keys, runtime_key),
-          remaining_static_keys
-        )
-    end
-  end
-
-  defp merge_steps(static_step, runtime_step) do
-    %{
-      static_step
-      | provenance: runtime_step.provenance,
-        status: runtime_step.status || static_step.status,
-        focus_node_id: preferred_focus_node_id(static_step, runtime_step),
-        focus_targets:
-          if(runtime_step.focus_targets in [nil, []],
-            do: static_step.focus_targets,
-            else: runtime_step.focus_targets
-          ),
-        action: runtime_step.action || static_step.action,
-        module_function: runtime_step.module_function || static_step.module_function,
-        result: runtime_step.result || static_step.result,
-        details: runtime_step.details || static_step.details,
-        capture_origin: runtime_step.capture_origin || static_step.capture_origin
-    }
-  end
-
-  defp preferred_focus_node_id(static_step, runtime_step) do
-    runtime_focus = runtime_step.focus_node_id || runtime_step.node_id
-    static_focus = static_step.focus_node_id || static_step.node_id
-
-    cond do
-      is_nil(runtime_focus) ->
-        static_focus
-
-      is_nil(static_focus) ->
-        runtime_focus
-
-      runtime_focus == runtime_step.node_id and static_focus != static_step.node_id ->
-        static_focus
-
-      true ->
-        runtime_focus
-    end
-  end
-
-  defp merge_step_key(step) do
-    {
-      Map.get(step, :type),
-      Map.get(step, :kind),
-      Map.get(step, :action),
-      Map.get(step, :focus_node_id) || Map.get(step, :node_id),
-      Map.get(step, :node_id)
-    }
-  end
-
-  defp count_step_keys(steps) do
-    Enum.reduce(steps, %{}, fn step, counts ->
-      Map.update(counts, merge_step_key(step), 1, &(&1 + 1))
-    end)
-  end
-
-  defp decrement_key_count(counts, key) do
-    case Map.get(counts, key, 0) do
-      count when count <= 1 -> Map.delete(counts, key)
-      count -> Map.put(counts, key, count - 1)
-    end
   end
 
   defp materialize_flow(flow) do

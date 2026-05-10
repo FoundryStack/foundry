@@ -27,7 +27,13 @@ Extract scenarios from annotated ExUnit test files, link them to graph nodes via
 5. **Graph Overlay**: On scenario selection, highlight participating nodes and execution path with START/END markers
 6. **Flow Drawer Tab**: Render Given/When/Then steps in plain language, show participating nodes and compliance links
 
-### Amendment: Runtime-backed Page Trace Normalization
+### Amendment: Runtime-first Scenario Resolution and Page Trace Normalization
+
+For scenarios backed by runtime evidence, Foundry keeps static and runtime traces as
+separate evidence streams. Studio presents a resolved flow derived from runtime first,
+then enriched by static metadata only where the match is unambiguous or the renderer
+needs inferred bridge structure. Static evidence remains a fallback when runtime traces
+are absent.
 
 For page scenarios backed by runtime evidence, Foundry applies page-specific runtime
 semantics during normalization without changing the existing `provenance` field or
@@ -42,6 +48,7 @@ Studio presents one canonical page flow per scenario. Canonical page flow:
 - collapses duplicated disconnected/connected mount cycles
 - excludes `:test_observation` steps from graph-path extension and overlay routing
 - prefers exact action nodes when page metadata resolves a single matching action
+- preserves raw runtime evidence separately from the resolved Studio flow
 - preserves the raw per-test flows alongside the canonical flow for debugging and future drill-down UI
 
 ## Scope
