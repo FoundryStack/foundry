@@ -5,6 +5,7 @@ defmodule FoundryWeb.ChatSession do
   import Phoenix.LiveView, only: [push_event: 3]
   require Ash.Query
 
+  alias Foundry.Chat.FileSessionStore
   alias Foundry.Chat.Retrieval, as: ChatRetrieval
   alias Foundry.Chat.Session, as: ChatRecord
   alias Foundry.ChatTrace
@@ -44,8 +45,183 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:chat_view, :conversation)
       |> assign(:activity_runs, [])
       |> assign(:selected_activity_run_id, nil)
+      |> assign(:workspace_id, Map.get(session, "foundry_workspace_id", Ecto.UUID.generate()))
+      |> assign(:open_session_ids, [])
+      |> assign(:active_session_id, nil)
+      |> assign(:sessions_by_id, %{})
 
     {:ok, socket}
+  end
+
+  # --- Workspace / session tab events ---
+
+  def handle_event("chat_workspace_hydrate", %{"open_session_ids" => open_ids, "active_session_id" => active_id}, socket) do
+    open_ids = Enum.filter(open_ids, &is_binary/1)
+    project_fp = project_fingerprint()
+
+    sessions_by_id =
+      Enum.reduce(open_ids, %{}, fn id, acc ->
+        case FileSessionStore.load(id) do
+          {:ok, session} when is_map(session) -> Map.put(acc, id, session)
+          _ -> acc
+        end
+      end)
+
+    valid_open_ids = Enum.filter(open_ids, &Map.has_key?(sessions_by_id, &1))
+
+    active_id =
+      cond do
+        active_id in valid_open_ids -> active_id
+        valid_open_ids != [] -> List.first(valid_open_ids)
+        true -> nil
+      end
+
+    socket =
+      socket
+      |> assign(:open_session_ids, valid_open_ids)
+      |> assign(:active_session_id, active_id)
+      |> assign(:sessions_by_id, sessions_by_id)
+      |> maybe_load_active_session_into_chat(active_id)
+      |> push_workspace_state()
+
+    _ = project_fp
+    {:noreply, socket}
+  end
+
+  def handle_event("chat_workspace_hydrate", _params, socket) do
+    {:noreply, socket}
+  end
+
+  def handle_event("chat_session_new", _params, socket) do
+    session_id = Ecto.UUID.generate()
+    project_fp = project_fingerprint()
+
+    case FileSessionStore.create(%{
+           id: session_id,
+           workspace_id: socket.assigns.workspace_id,
+           project_fingerprint: project_fp,
+           title: "New session"
+         }) do
+      {:ok, session} ->
+        open_ids = [session_id | socket.assigns.open_session_ids]
+        sessions_by_id = Map.put(socket.assigns.sessions_by_id, session_id, session)
+
+        socket =
+          socket
+          |> assign(:open_session_ids, open_ids)
+          |> assign(:active_session_id, session_id)
+          |> assign(:sessions_by_id, sessions_by_id)
+          |> switch_to_session(session_id)
+          |> push_workspace_state()
+
+        {:noreply, socket}
+
+      {:error, _reason} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("chat_session_open", %{"id" => id}, socket) do
+    sessions_by_id = socket.assigns.sessions_by_id
+
+    sessions_by_id =
+      if Map.has_key?(sessions_by_id, id) do
+        sessions_by_id
+      else
+        case FileSessionStore.load(id) do
+          {:ok, session} when is_map(session) -> Map.put(sessions_by_id, id, session)
+          _ -> sessions_by_id
+        end
+      end
+
+    if Map.has_key?(sessions_by_id, id) do
+      open_ids =
+        if id in socket.assigns.open_session_ids do
+          socket.assigns.open_session_ids
+        else
+          [id | socket.assigns.open_session_ids]
+        end
+
+      socket =
+        socket
+        |> assign(:open_session_ids, open_ids)
+        |> assign(:active_session_id, id)
+        |> assign(:sessions_by_id, sessions_by_id)
+        |> maybe_load_active_session_into_chat(id)
+        |> push_workspace_state()
+
+      {:noreply, socket}
+    else
+      {:noreply, assign(socket, :sessions_by_id, sessions_by_id)}
+    end
+  end
+
+  def handle_event("chat_session_switch", %{"id" => id}, socket) do
+    if id in socket.assigns.open_session_ids do
+      socket =
+        socket
+        |> assign(:active_session_id, id)
+        |> maybe_load_active_session_into_chat(id)
+        |> push_workspace_state()
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("chat_session_close", %{"id" => id}, socket) do
+    open_ids = List.delete(socket.assigns.open_session_ids, id)
+
+    active_id =
+      cond do
+        socket.assigns.active_session_id != id -> socket.assigns.active_session_id
+        open_ids == [] -> nil
+        true -> List.first(open_ids)
+      end
+
+    socket =
+      socket
+      |> assign(:open_session_ids, open_ids)
+      |> assign(:active_session_id, active_id)
+      |> maybe_load_active_session_into_chat(active_id)
+      |> push_workspace_state()
+
+    {:noreply, socket}
+  end
+
+  def handle_event("chat_session_rename", %{"id" => id, "title" => title}, socket) do
+    case FileSessionStore.rename(id, title) do
+      {:ok, updated_session} ->
+        sessions_by_id = Map.put(socket.assigns.sessions_by_id, id, updated_session)
+        {:noreply, assign(socket, :sessions_by_id, sessions_by_id)}
+
+      {:error, _reason} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("chat_session_delete", %{"id" => id}, socket) do
+    FileSessionStore.delete(id)
+    open_ids = List.delete(socket.assigns.open_session_ids, id)
+    sessions_by_id = Map.delete(socket.assigns.sessions_by_id, id)
+
+    active_id =
+      cond do
+        socket.assigns.active_session_id != id -> socket.assigns.active_session_id
+        open_ids == [] -> nil
+        true -> List.first(open_ids)
+      end
+
+    socket =
+      socket
+      |> assign(:open_session_ids, open_ids)
+      |> assign(:active_session_id, active_id)
+      |> assign(:sessions_by_id, sessions_by_id)
+      |> maybe_load_active_session_into_chat(active_id)
+      |> push_workspace_state()
+
+    {:noreply, socket}
   end
 
   def handle_event("toggle_system_context", _params, socket) do
@@ -450,6 +626,11 @@ defmodule FoundryWeb.ChatSession do
   end
 
   defp save_session_state(session_id, messages, session_digest) do
+    FileSessionStore.update(session_id, %{
+      "messages" => messages,
+      "session_digest" => session_digest
+    })
+
     case load_session(session_id) do
       {:ok, nil} ->
         case create_session(session_id, messages, session_digest) do
@@ -1459,5 +1640,56 @@ defmodule FoundryWeb.ChatSession do
     :foundry_web
     |> Application.get_env(:chat_live_hooks, [])
     |> Keyword.get(key)
+  end
+
+  defp project_fingerprint do
+    project_root()
+    |> then(&:crypto.hash(:md5, &1))
+    |> Base.encode16(case: :lower)
+    |> String.slice(0, 8)
+  end
+
+  defp maybe_load_active_session_into_chat(socket, nil), do: socket
+
+  defp maybe_load_active_session_into_chat(socket, session_id) do
+    sessions_by_id = socket.assigns.sessions_by_id
+
+    case Map.get(sessions_by_id, session_id) do
+      nil ->
+        socket
+
+      session ->
+        messages = session["messages"] || []
+        session_digest = session["session_digest"] || %{}
+
+        socket
+        |> assign(:session_id, session_id)
+        |> assign(:messages, messages)
+        |> assign(:session_digest, session_digest)
+        |> assign(:activity_runs, [])
+        |> assign(:selected_activity_run_id, nil)
+        |> assign(:loading, false)
+        |> assign(:error, nil)
+        |> assign(:active_request_ref, nil)
+    end
+  end
+
+  defp switch_to_session(socket, session_id) do
+    socket
+    |> assign(:session_id, session_id)
+    |> assign(:messages, [])
+    |> assign(:session_digest, %{})
+    |> assign(:activity_runs, [])
+    |> assign(:selected_activity_run_id, nil)
+    |> assign(:loading, false)
+    |> assign(:error, nil)
+    |> assign(:active_request_ref, nil)
+  end
+
+  defp push_workspace_state(socket) do
+    push_event(socket, "chat_workspace_updated", %{
+      open_session_ids: socket.assigns.open_session_ids,
+      active_session_id: socket.assigns.active_session_id
+    })
   end
 end

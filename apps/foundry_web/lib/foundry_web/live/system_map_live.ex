@@ -148,6 +148,62 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
+  def handle_params(%{"session" => session_id}, _uri, socket) do
+    ChatSession.handle_event("chat_session_open", %{"id" => session_id}, socket)
+  end
+
+  def handle_params(_params, _uri, socket) do
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("chat_workspace_hydrate", params, socket) do
+    ChatSession.handle_event("chat_workspace_hydrate", params, socket)
+  end
+
+  @impl true
+  def handle_event("chat_session_new", params, socket) do
+    case ChatSession.handle_event("chat_session_new", params, socket) do
+      {:noreply, socket} ->
+        active_id = socket.assigns.active_session_id
+        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")}, else: {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("chat_session_open", params, socket) do
+    case ChatSession.handle_event("chat_session_open", params, socket) do
+      {:noreply, socket} ->
+        active_id = socket.assigns.active_session_id
+        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")}, else: {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("chat_session_switch", params, socket) do
+    case ChatSession.handle_event("chat_session_switch", params, socket) do
+      {:noreply, socket} ->
+        active_id = socket.assigns.active_session_id
+        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")}, else: {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("chat_session_close", params, socket) do
+    ChatSession.handle_event("chat_session_close", params, socket)
+  end
+
+  @impl true
+  def handle_event("chat_session_rename", params, socket) do
+    ChatSession.handle_event("chat_session_rename", params, socket)
+  end
+
+  @impl true
+  def handle_event("chat_session_delete", params, socket) do
+    ChatSession.handle_event("chat_session_delete", params, socket)
+  end
+
+  @impl true
   def handle_event("toggle_system_context", params, socket) do
     ChatSession.handle_event("toggle_system_context", params, socket)
   end

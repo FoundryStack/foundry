@@ -14,6 +14,35 @@ export const StudioChatHook = {
     }
 
     this.el.addEventListener('click', this._linkHandler)
+
+    // Restore workspace state from localStorage and hydrate server
+    const projectRoot = this.el.dataset.projectRoot || ''
+    const storageKey = `foundry_workspace:${projectRoot}`
+    let workspaceState = { open_session_ids: [], active_session_id: null }
+
+    try {
+      const stored = localStorage.getItem(storageKey)
+      if (stored) workspaceState = JSON.parse(stored)
+    } catch (_e) {}
+
+    // If URL has ?session=<id>, prefer that as the active session
+    const urlParams = new URLSearchParams(window.location.search)
+    const urlSession = urlParams.get('session')
+    if (urlSession) {
+      workspaceState.active_session_id = urlSession
+      if (!workspaceState.open_session_ids.includes(urlSession)) {
+        workspaceState.open_session_ids = [urlSession, ...workspaceState.open_session_ids]
+      }
+    }
+
+    this.pushEvent('chat_workspace_hydrate', workspaceState)
+
+    // Sync localStorage when server updates workspace state
+    this.handleEvent('chat_workspace_updated', (state) => {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(state))
+      } catch (_e) {}
+    })
   },
 
   updated() {

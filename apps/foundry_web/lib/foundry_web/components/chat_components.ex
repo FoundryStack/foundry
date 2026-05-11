@@ -4,6 +4,9 @@ defmodule FoundryWeb.ChatComponents do
 
   alias Foundry.ChatTrace
 
+  attr :open_session_ids, :list, default: []
+  attr :active_session_id, :string, default: nil
+  attr :sessions_by_id, :map, default: %{}
   attr :messages, :list, required: true
   attr :loading, :boolean, required: true
   attr :error, :string, default: nil
@@ -34,6 +37,49 @@ defmodule FoundryWeb.ChatComponents do
       data-project-root={@project_root}
       class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-200/30"
     >
+      <%= if @open_session_ids != [] do %>
+        <div class="flex min-h-0 shrink-0 items-center gap-0 overflow-x-auto border-b border-base-300/80 bg-base-200/50 px-1">
+          <%= for id <- @open_session_ids do %>
+            <% session = Map.get(@sessions_by_id, id, %{})
+               title = session["title"] || "Session"
+               is_active = id == @active_session_id %>
+            <div class={["group flex min-w-0 max-w-[160px] shrink-0 items-center gap-1 rounded-t px-2 py-1.5 text-[11px] transition-colors", if(is_active, do: "bg-base-100 text-base-content", else: "text-neutral-content hover:bg-base-100/50 hover:text-base-content")]}>
+              <button
+                class="min-w-0 flex-1 truncate text-left"
+                phx-click="chat_session_switch"
+                phx-value-id={id}
+              >
+                {title}
+              </button>
+              <button
+                class="shrink-0 text-neutral-content opacity-0 transition-opacity group-hover:opacity-100 hover:text-base-content"
+                phx-click="chat_session_close"
+                phx-value-id={id}
+                title="Close tab"
+              >
+                ×
+              </button>
+            </div>
+          <% end %>
+          <button
+            class="ml-1 shrink-0 rounded px-2 py-1 text-[11px] text-neutral-content transition-colors hover:bg-base-100/50 hover:text-base-content"
+            phx-click="chat_session_new"
+            title="New session"
+          >
+            +
+          </button>
+        </div>
+      <% else %>
+        <div class="flex shrink-0 items-center justify-between border-b border-base-300/80 bg-base-200/50 px-3 py-1.5">
+          <span class="text-[11px] text-neutral-content">No open sessions</span>
+          <button
+            class="rounded px-2 py-1 text-[11px] text-neutral-content transition-colors hover:bg-base-100/50 hover:text-base-content"
+            phx-click="chat_session_new"
+          >
+            + New session
+          </button>
+        </div>
+      <% end %>
       <div class="border-b border-base-300/80 px-4 py-2">
         <div class="flex items-start justify-between gap-3">
           <div class="space-y-1">
