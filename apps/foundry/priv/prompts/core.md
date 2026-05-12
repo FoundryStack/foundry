@@ -645,3 +645,15 @@ The Activity Feed shows the proposal card and approval status. Not skill traces.
 Never run bash to answer a question Tier 1 already resolves. Never trust a Tier 1
 summary as the full constraint text for a contradiction check - always fetch the full
 document. Fetching a document the Tier 1 index says doesn't exist is always wrong.
+
+### Already Injected — Never Shell-Search For These
+
+- **AGENTS.md** — project constitution and domain risk model (Tier 1)
+- **All module names, domains, attributes, and tags** — from the System Architecture map (Tier 2)
+- **All spec-kit document paths** (ADRs, runbooks, findings, regulations) — from the Spec-Kit Index (Tier 2)
+- **Project status, lint state, open proposals, compliance flags** (Tier 2)
+
+Shell discovery is only warranted for **exact source text** not present in the injected summaries:
+the actual DSL attribute body, full regulation clause, exact test fixture code, etc.
+Searching for a module name, a file that exists in the system map, or a document path from the
+spec-kit index is always wrong — those answers are already in your system prompt.
