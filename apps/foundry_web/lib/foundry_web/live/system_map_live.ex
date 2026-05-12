@@ -1,5 +1,6 @@
 defmodule FoundryWeb.SystemMapLive do
   use FoundryWeb, :live_view
+  require Logger
   alias FoundryWeb.ChatSession
   alias Foundry.Context.ScenarioCache
   alias Foundry.Context.ProjectContext
