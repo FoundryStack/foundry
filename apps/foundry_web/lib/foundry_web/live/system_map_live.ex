@@ -1,6 +1,5 @@
 defmodule FoundryWeb.SystemMapLive do
   use FoundryWeb, :live_view
-  require Logger
   alias FoundryWeb.ChatSession
   alias Foundry.Context.ScenarioCache
   alias Foundry.Context.ProjectContext
@@ -545,12 +544,6 @@ defmodule FoundryWeb.SystemMapLive do
       :unhandled ->
         {:noreply, socket}
       reply ->
-        if is_tuple(reply) and elem(reply, 0) == :noreply do
-          {_, updated_socket} = reply
-          if updated_socket.assigns.loading != socket.assigns.loading do
-            Logger.info("SystemMapLive: loading changed from #{socket.assigns.loading} to #{updated_socket.assigns.loading}")
-          end
-        end
         reply
     end
   end

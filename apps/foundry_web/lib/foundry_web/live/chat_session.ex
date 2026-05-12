@@ -466,9 +466,7 @@ defmodule FoundryWeb.ChatSession do
   end
 
   def handle_info({:llm_stream_done, request_ref, response, metadata}, socket) do
-    Logger.info("ChatSession.handle_info(:llm_stream_done) ref=#{inspect(request_ref)}, active=#{inspect(socket.assigns.active_request_ref)}, match=#{request_ref == socket.assigns.active_request_ref}")
     if request_ref == socket.assigns.active_request_ref do
-      Logger.info("ChatSession: MATCH! Setting loading=false")
       memory_result = DomainLogic.persist_turn_memory(socket, request_ref, response)
 
       socket =
@@ -611,11 +609,9 @@ defmodule FoundryWeb.ChatSession do
 
       case result do
         {:ok, _text, metadata} ->
-          Logger.info("start_llm_stream: Sending llm_stream_done to #{inspect(live_view_pid)}")
           send(live_view_pid, {:llm_stream_done, request_ref, "", metadata})
 
         {:error, reason} ->
-          Logger.error("start_llm_stream: Sending llm_stream_error: #{inspect(reason)}")
           send(live_view_pid, {:llm_stream_error, request_ref, reason})
       end
     end)
