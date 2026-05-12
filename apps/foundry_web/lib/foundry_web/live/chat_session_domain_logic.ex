@@ -297,6 +297,9 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
       {:ok, payload} ->
         %{response: response, artifact: payload[:artifact], error: nil}
 
+      {:error, :empty_memory_payload} ->
+        %{response: response, artifact: nil, error: nil}
+
       {:error, reason} ->
         Logger.warning("Failed to persist memory: #{inspect(reason)}")
         %{response: response, artifact: nil, error: reason}
