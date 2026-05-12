@@ -479,18 +479,24 @@ defmodule FoundryWeb.ChatSession do
 
       digest = DomainLogic.finalize_session_digest(socket, request_ref, memory_result.response, memory_result.artifact)
 
-      save_result =
-        case DomainLogic.save_session_state(
-               socket.assigns.session_id,
-               messages,
-               digest,
-               socket.assigns.workspace_id
-            ) do
-          :ok -> :ok
-          {:error, reason} -> {:error, reason}
-        end
+      socket =
+        socket
+        |> assign(:messages, messages)
+        |> assign(:loading, false)
+        |> assign(:session_digest, digest)
+        |> clear_active_request()
 
-      finish_stream(socket, messages, save_result, digest)
+      Task.Supervisor.async_nolink(FoundryWeb.ChatTaskSupervisor, fn ->
+        DomainLogic.save_session_state(
+          socket.assigns.session_id,
+          messages,
+          digest,
+          socket.assigns.workspace_id
+        )
+      end)
+
+      socket = process_pending_messages(socket)
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -509,10 +515,29 @@ defmodule FoundryWeb.ChatSession do
 
   def handle_info({:llm_stream_error, request_ref, reason}, socket) do
     if request_ref == socket.assigns.active_request_ref do
-      socket =
-        DomainLogic.fail_activity_run(socket, request_ref, reason, &format_request_error/1)
+      messages = drop_empty_streaming_response(socket.assigns.messages)
+      digest = DomainLogic.finalize_session_digest(socket, request_ref, nil)
 
-      finish_stream(socket, socket.assigns.messages, {:error, reason}, socket.assigns.session_digest)
+      socket =
+        socket
+        |> DomainLogic.fail_activity_run(request_ref, reason, &format_request_error/1)
+        |> assign(:messages, messages)
+        |> assign(:loading, false)
+        |> assign(:session_digest, digest)
+        |> clear_active_request()
+        |> assign(:error, format_request_error(reason))
+
+      Task.Supervisor.async_nolink(FoundryWeb.ChatTaskSupervisor, fn ->
+        DomainLogic.save_session_state(
+          socket.assigns.session_id,
+          messages,
+          digest,
+          socket.assigns.workspace_id
+        )
+      end)
+
+      socket = process_pending_messages(socket)
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -525,9 +550,29 @@ defmodule FoundryWeb.ChatSession do
   def handle_info({:DOWN, ref, :process, pid, reason}, socket) do
     if ref == socket.assigns.active_request_task && ref != nil do
       Logger.warning("Task process died: pid=#{inspect(pid)}, reason=#{inspect(reason)}")
-      task_error = format_task_shutdown_error(reason)
-      socket = DomainLogic.fail_activity_run(socket, socket.assigns.active_request_ref, reason, &format_request_error/1)
-      finish_stream(socket, socket.assigns.messages, {:error, task_error}, socket.assigns.session_digest)
+      messages = drop_empty_streaming_response(socket.assigns.messages)
+      digest = DomainLogic.finalize_session_digest(socket, socket.assigns.active_request_ref, nil)
+
+      socket =
+        socket
+        |> DomainLogic.fail_activity_run(socket.assigns.active_request_ref, reason, &format_request_error/1)
+        |> assign(:messages, messages)
+        |> assign(:loading, false)
+        |> assign(:session_digest, digest)
+        |> clear_active_request()
+        |> assign(:error, format_task_shutdown_error(reason))
+
+      Task.Supervisor.async_nolink(FoundryWeb.ChatTaskSupervisor, fn ->
+        DomainLogic.save_session_state(
+          socket.assigns.session_id,
+          messages,
+          digest,
+          socket.assigns.workspace_id
+        )
+      end)
+
+      socket = process_pending_messages(socket)
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -606,28 +651,17 @@ defmodule FoundryWeb.ChatSession do
     end
   end
 
-  defp finish_stream(socket, messages, save_result, digest, base_error \\ nil) do
-    socket =
-      socket
-      |> assign(:messages, messages)
-      |> assign(:loading, false)
-      |> assign(:session_digest, digest)
-      |> clear_active_request()
-      |> assign(:error, merge_errors(base_error, save_result))
-
+  defp process_pending_messages(socket) do
     if Enum.empty?(socket.assigns.pending_messages) do
-      {:noreply, socket}
+      socket
     else
       pending = socket.assigns.pending_messages
       socket = assign(socket, :pending_messages, [])
 
-      socket =
-        Enum.reduce(pending, socket, fn pending_msg, acc ->
-          {:noreply, new_socket} = handle_event("send_message", %{"message" => pending_msg["content"]}, acc)
-          new_socket
-        end)
-
-      {:noreply, socket}
+      Enum.reduce(pending, socket, fn pending_msg, acc ->
+        {:noreply, new_socket} = handle_event("send_message", %{"message" => pending_msg["content"]}, acc)
+        new_socket
+      end)
     end
   end
 
@@ -653,16 +687,6 @@ defmodule FoundryWeb.ChatSession do
     else
       socket
     end
-  end
-
-  defp merge_errors(base_error, :ok), do: base_error
-
-  defp merge_errors(nil, {:error, reason}) do
-    persistence_error("Failed to save chat session", reason)
-  end
-
-  defp merge_errors(base_error, {:error, reason}) do
-    "#{base_error}; #{persistence_error("Failed to save chat session", reason)}"
   end
 
   # --- Error Formatting ---
