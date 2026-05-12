@@ -66,6 +66,7 @@ defmodule Foundry.ChatTraceTest do
         provider: :codex,
         tool: nil,
         paths: ["apps/foundry_web/lib/foundry_web/live/chat_session.ex"],
+        file_access: :read,
         phase: :shell_retrieval,
         duplicate_key:
           {:shell_retrieval, :command, nil, "rg -n bonuses lib test", [], "command_execution"}
@@ -88,6 +89,7 @@ defmodule Foundry.ChatTraceTest do
         provider: :codex,
         tool: nil,
         paths: ["apps/foundry/lib/foundry/codex_provider.ex"],
+        file_access: :write,
         phase: :shell_fallback,
         duplicate_key:
           {:shell_fallback, :command, nil, "python scratch.py", [], "command_execution"}
@@ -98,6 +100,8 @@ defmodule Foundry.ChatTraceTest do
              event_count: 5,
              grouped_event_count: 5,
              file_count: 2,
+             read_files: ["apps/foundry_web/lib/foundry_web/live/chat_session.ex"],
+             written_files: ["apps/foundry/lib/foundry/codex_provider.ex"],
              provenance: %{
                cached_context_used: true,
                shell_retrieval_used: true,
@@ -106,5 +110,21 @@ defmodule Foundry.ChatTraceTest do
                redundant_global_context_fetches: 2
              }
            } = ChatTrace.summarize_run(events)
+  end
+
+  test "classifies apply_patch style events as file writes" do
+    event =
+      ChatTrace.normalize(:codex, %{
+        "type" => "item.completed",
+        "item" => %{
+          "type" => "custom_tool_call",
+          "name" => "apply_patch",
+          "arguments" => %{
+            "path" => "apps/foundry_web/lib/foundry_web/live/chat_session.ex"
+          }
+        }
+      })
+
+    assert event.file_access == :write
   end
 end

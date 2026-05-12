@@ -45,7 +45,7 @@ defmodule Foundry.CodexProvider do
     system_prompt = Keyword.get(opts, :system_prompt, "")
     project_root = Keyword.get(opts, :project_root, File.cwd!())
     executable = Keyword.get(opts, :executable, "codex")
-    conversation_window = Keyword.get(opts, :conversation_window, 8)
+    conversation_window = Keyword.get(opts, :conversation_window, :all)
 
     case find_executable(executable) do
       nil ->
@@ -107,7 +107,7 @@ defmodule Foundry.CodexProvider do
   defp format_prompt(system_prompt, messages, conversation_window) do
     conversation =
       messages
-      |> Enum.take(-conversation_window)
+      |> take_conversation_window(conversation_window)
       |> Enum.map_join("\n\n", fn
         %{"role" => role, "content" => content} when role in ["user", "assistant"] ->
           "#{role}: #{content}"
@@ -130,6 +130,13 @@ defmodule Foundry.CodexProvider do
     ]
     |> Enum.join("\n")
   end
+
+  defp take_conversation_window(messages, :all), do: messages
+
+  defp take_conversation_window(messages, window) when is_integer(window),
+    do: Enum.take(messages, -window)
+
+  defp take_conversation_window(messages, _window), do: messages
 
   defp build_codex_opts(prompt_text, opts) do
     base = [
@@ -201,45 +208,46 @@ defmodule Foundry.CodexProvider do
   end
 
   defp collect_output(port, timeout_ms, on_event) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    do_collect(port, [], "", [], MapSet.new(), deadline, on_event)
+    do_collect(port, [], "", [], MapSet.new(), timeout_ms, on_event)
   end
 
-  defp do_collect(port, lines, buffer, streamed_chunks, seen_trace_lines, deadline, on_event) do
-    remaining = deadline - System.monotonic_time(:millisecond)
+  defp do_collect(port, lines, buffer, streamed_chunks, seen_trace_lines, timeout_ms, on_event) do
+    receive do
+      {^port, {:data, data}} ->
+        {complete_lines, next_buffer} = split_complete_lines(buffer <> data)
 
-    if remaining <= 0 do
-      {:error, {:timeout, parse_partial_result(lines)}}
-    else
-      receive do
-        {^port, {:data, data}} ->
-          {complete_lines, next_buffer} = split_complete_lines(buffer <> data)
+        {new_chunks, seen_trace_lines} =
+          emit_stream_events(complete_lines, seen_trace_lines, on_event)
 
-          {new_chunks, seen_trace_lines} =
-            emit_stream_events(complete_lines, seen_trace_lines, on_event)
+        do_collect(
+          port,
+          [data | lines],
+          next_buffer,
+          new_chunks ++ streamed_chunks,
+          seen_trace_lines,
+          timeout_ms,
+          on_event
+        )
 
-          do_collect(
-            port,
-            [data | lines],
-            next_buffer,
-            new_chunks ++ streamed_chunks,
-            seen_trace_lines,
-            deadline,
-            on_event
-          )
+      {^port, {:exit_status, 0}} ->
+        parse_result(lines, buffer, streamed_chunks, seen_trace_lines, on_event)
 
-        {^port, {:exit_status, 0}} ->
-          parse_result(lines, streamed_chunks, seen_trace_lines, on_event)
+      {^port, {:exit_status, code}} ->
+        {:error, {:exit_code, code, parse_partial_result(lines, buffer)}}
 
-        {^port, {:exit_status, code}} ->
-          {:error, {:exit_code, code, parse_partial_result(lines)}}
+      _other ->
+        do_collect(port, lines, buffer, streamed_chunks, seen_trace_lines, timeout_ms, on_event)
+    after
+      timeout_ms ->
+        case parse_result(lines, buffer, streamed_chunks, seen_trace_lines, on_event) do
+          {:ok, _text, _metadata} = ok ->
+            ok
 
-        _other ->
-          do_collect(port, lines, buffer, streamed_chunks, seen_trace_lines, deadline, on_event)
-      after
-        remaining ->
-          {:error, {:timeout, parse_partial_result(lines)}}
-      end
+          _ ->
+            {:error,
+             {:timeout, parse_partial_result(lines, buffer),
+              parse_partial_metadata(lines, buffer)}}
+        end
     end
   end
 
@@ -264,8 +272,8 @@ defmodule Foundry.CodexProvider do
     end)
   end
 
-  defp parse_result(lines, streamed_chunks, seen_trace_lines, on_event) do
-    full_text = Enum.reverse(lines) |> IO.iodata_to_binary()
+  defp parse_result(lines, buffer, streamed_chunks, seen_trace_lines, on_event) do
+    full_text = full_output(lines, buffer)
     emit_missing_trace_events(full_text, seen_trace_lines, on_event)
 
     case parse_json_events(full_text) do
@@ -289,8 +297,8 @@ defmodule Foundry.CodexProvider do
     end
   end
 
-  defp parse_partial_result(lines) do
-    full_text = Enum.reverse(lines) |> IO.iodata_to_binary()
+  defp parse_partial_result(lines, buffer) do
+    full_text = full_output(lines, buffer)
 
     case parse_json_events(full_text) do
       {:ok, result, _metadata} -> result
@@ -299,30 +307,74 @@ defmodule Foundry.CodexProvider do
     end
   end
 
+  defp parse_partial_metadata(lines, buffer) do
+    full_text = full_output(lines, buffer)
+
+    case parse_json_events(full_text) do
+      {:ok, _result, metadata} -> Map.put(metadata, :partial, true)
+      _ -> %{partial: true}
+    end
+  end
+
+  defp full_output(lines, buffer) do
+    Enum.reverse([buffer | lines]) |> IO.iodata_to_binary()
+  end
+
   defp parse_json_events(raw_output) do
-    raw_output
-    |> String.split("\n", trim: true)
+    events =
+      raw_output
+      |> String.split("\n", trim: true)
+      |> Enum.flat_map(fn line ->
+        case Jason.decode(line) do
+          {:ok, event} -> [event]
+          _ -> []
+        end
+      end)
+
+    metadata = extract_metadata(events)
+
+    events
     |> Enum.reverse()
-    |> Enum.find_value(:error, fn line ->
-      case Jason.decode(line) do
-        {:ok,
-         %{"type" => "item.completed", "item" => %{"type" => "agent_message", "text" => text}}}
-        when is_binary(text) ->
-          {:ok, text, %{}}
+    |> Enum.find_value(:error, fn
+      %{"type" => "item.completed", "item" => %{"type" => "agent_message", "text" => text}}
+      when is_binary(text) ->
+        {:ok, text, metadata}
 
-        {:ok, %{"type" => "turn.failed", "error" => error}} ->
-          {:error, {:turn_failed, error}}
+      %{"type" => "turn.failed", "error" => error} ->
+        {:error, {:turn_failed, error}}
 
-        {:ok, %{"type" => "error", "message" => message}} ->
-          {:error, {:codex_error, message}}
+      %{"type" => "error", "message" => message} ->
+        {:error, {:codex_error, message}}
 
-        {:ok, _event} ->
-          nil
-
-        {:error, _reason} ->
-          nil
-      end
+      _event ->
+        nil
     end)
+  end
+
+  defp extract_metadata(events) do
+    usage =
+      events
+      |> Enum.reverse()
+      |> Enum.find_value(fn event ->
+        case Map.get(event, "usage") do
+          usage when is_map(usage) -> usage
+          _ -> nil
+        end
+      end) || %{}
+
+    %{
+      usage:
+        %{
+          input_tokens: usage["input_tokens"] || usage["prompt_tokens"] || usage["inputTokens"],
+          output_tokens:
+            usage["output_tokens"] || usage["completion_tokens"] || usage["outputTokens"],
+          total_tokens: usage["total_tokens"] || usage["total"] || usage["totalTokens"]
+        }
+        |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+        |> Map.new()
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, %{}] end)
+    |> Map.new()
   end
 
   defp stream_delta(line) do

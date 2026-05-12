@@ -1,5 +1,8 @@
 export const StudioChatHook = {
   mounted() {
+    this._autoScrollEnabled = true
+    this._conversation = null
+    this._conversationScroller = null
     this._bindFormHandlers()
 
     this._linkHandler = (event) => {
@@ -43,14 +46,20 @@ export const StudioChatHook = {
         localStorage.setItem(storageKey, JSON.stringify(state))
       } catch (_e) {}
     })
+
+    this.handleEvent('chat:scroll_to_bottom', ({ force = false } = {}) => {
+      this._scrollConversationToBottom(force)
+    })
   },
 
   updated() {
     this._bindFormHandlers()
+    this._scrollConversationToBottom(false)
   },
 
   destroyed() {
     this._unbindFormHandlers()
+    this._unbindScrollHandler()
 
     if (this._linkHandler) {
       this.el.removeEventListener('click', this._linkHandler)
@@ -60,7 +69,14 @@ export const StudioChatHook = {
   _bindFormHandlers() {
     const nextInput = this.el.querySelector('[data-role="chat-input"]')
     const nextForm = this.el.querySelector('#studio-chat-form')
-    this._conversation = this.el.querySelector('#studio-chat-conversation')
+    const nextConversation = this.el.querySelector('#studio-chat-conversation')
+
+    if (this._conversation !== nextConversation) {
+      this._unbindScrollHandler()
+      this._conversation = nextConversation
+      this._conversationScroller = this._conversation?.closest('.overflow-y-auto') || null
+      this._bindScrollHandler()
+    }
 
     if (this._input === nextInput && this._form === nextForm) return
 
@@ -81,14 +97,7 @@ export const StudioChatHook = {
       const message = this._input.value.trim()
       if (!message || this._input.disabled) return
 
-      this._appendOptimisticMessage(message)
-
-      requestAnimationFrame(() => {
-        if (this._input) {
-          this._input.value = ''
-          this._input.style.height = ''
-        }
-      })
+      this._autoScrollEnabled = true
     }
 
     this._input.addEventListener('keydown', this._keydownHandler)
@@ -105,26 +114,45 @@ export const StudioChatHook = {
     }
   },
 
-  _appendOptimisticMessage(message) {
-    if (!this._conversation) return
+  _bindScrollHandler() {
+    if (!this._conversationScroller) return
 
-    const bubble = document.createElement('div')
-    bubble.dataset.optimistic = 'true'
-    bubble.className = 'flex justify-end'
-    bubble.innerHTML = `
-      <div class="max-w-[92%] rounded-box border border-primary/25 bg-primary/12 px-4 py-3 text-primary-content/95 shadow-sm">
-        <div class="mb-1 flex items-center gap-2">
-          <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">You</p>
-        </div>
-        <div class="space-y-3 break-words whitespace-pre-wrap text-sm leading-6">${this._escapeHtml(message)}</div>
-      </div>
-    `
+    this._scrollHandler = () => {
+      this._autoScrollEnabled = this._isNearBottom()
+    }
 
-    this._conversation.appendChild(bubble)
-    this._conversation.closest('.overflow-y-auto')?.scrollTo({
+    this._conversationScroller.addEventListener('scroll', this._scrollHandler)
+    this._autoScrollEnabled = this._isNearBottom()
+  },
+
+  _unbindScrollHandler() {
+    if (this._conversationScroller && this._scrollHandler) {
+      this._conversationScroller.removeEventListener('scroll', this._scrollHandler)
+    }
+
+    this._scrollHandler = null
+  },
+
+  _scrollConversationToBottom(force = false) {
+    if (!this._conversationScroller || !this._conversation) return
+    if (!force && !this._autoScrollEnabled) return
+
+    this._conversationScroller.scrollTo({
       top: this._conversation.scrollHeight,
-      behavior: 'smooth',
+      behavior: force ? 'smooth' : 'auto',
     })
+  },
+
+  _isNearBottom() {
+    if (!this._conversationScroller) return true
+
+    const threshold = 48
+    const remaining =
+      this._conversationScroller.scrollHeight -
+      this._conversationScroller.clientHeight -
+      this._conversationScroller.scrollTop
+
+    return remaining <= threshold
   },
 
   _parseLocalFileTarget(anchor) {
@@ -165,11 +193,5 @@ export const StudioChatHook = {
     if (!path.includes('/') && !path.includes('.')) return null
 
     return line ? { path, line } : { path }
-  },
-
-  _escapeHtml(value) {
-    const div = document.createElement('div')
-    div.textContent = value
-    return div.innerHTML
   },
 }

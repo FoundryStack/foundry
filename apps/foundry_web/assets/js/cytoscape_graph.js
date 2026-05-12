@@ -373,19 +373,13 @@ export class CytoscapeGraph {
     })
 
     this._queueViewportTransition(() => {
-      const activeNodes = this.cy.nodes().filter(n => activeNodeIds.has(n.id()))
-      const allScenarioNodes = this.cy.nodes().filter(n => scenarioNodeIds.has(n.id()))
-      const nextFocusNodes =
-        activeNodes.length > 0
-          ? activeNodes.union(activeNodes.neighborhood('node'))
-          : allScenarioNodes
+      const focusNodeId = this._scenarioFocusNodeId(currentActiveStep, flow, scenarioNodeIds)
+      if (!focusNodeId) return
 
-      this._focusElements(nextFocusNodes.length > 0 ? nextFocusNodes : allScenarioNodes, {
-        padding: 128,
-        maxZoom: 0.92,
-        minZoom: 0.5,
-        duration: 420,
-      })
+      const focusNode = this.cy.getElementById(focusNodeId)
+      if (focusNode.length === 0) return
+
+      this._centerElementsPreservingZoom(focusNode, { duration: 260 })
     })
   }
 
@@ -642,6 +636,36 @@ export class CytoscapeGraph {
     return { line: '#2563eb' }
   }
 
+  _scenarioFocusNodeId(activeStep, flow, scenarioNodeIds) {
+    const activeCandidates = [
+      activeStep?.focus_node_id,
+      activeStep?.node_id,
+      ...(activeStep?.focus_targets || []),
+    ].filter(Boolean)
+
+    for (const candidate of activeCandidates) {
+      if (this.cy.getElementById(candidate).length > 0) return candidate
+    }
+
+    for (const step of flow || []) {
+      const stepCandidates = [
+        step?.focus_node_id,
+        step?.node_id,
+        ...(step?.focus_targets || []),
+      ].filter(Boolean)
+
+      for (const candidate of stepCandidates) {
+        if (this.cy.getElementById(candidate).length > 0) return candidate
+      }
+    }
+
+    for (const candidate of scenarioNodeIds || []) {
+      if (this.cy.getElementById(candidate).length > 0) return candidate
+    }
+
+    return null
+  }
+
   selectNode(id) {
     const node = this.cy.getElementById(id)
     if (node.length > 0) {
@@ -655,6 +679,7 @@ export class CytoscapeGraph {
     if (node.length === 0) return
 
     this.selectNode(id)
+    this._applyFocusedNeighborhood(id)
     this._queueViewportTransition(() => {
       const nextNode = this.cy.getElementById(id)
       this._centerElementsPreservingZoom(nextNode, { duration: 260 })
@@ -663,6 +688,7 @@ export class CytoscapeGraph {
 
   clearSelection() {
     this.cy.elements().unselect()
+    this._clearFocusedNeighborhood()
   }
 
   centerOn(id) {
@@ -764,6 +790,40 @@ export class CytoscapeGraph {
         edge.style('opacity', null)
       }
     })
+  }
+
+  _applyFocusedNeighborhood(id) {
+    const activeNodeIds = new Set([id])
+    const activeEdgeIds = new Set()
+
+    this.cy.edges().forEach(edge => {
+      const sourceId = edge.source().id()
+      const targetId = edge.target().id()
+
+      if (sourceId !== id && targetId !== id) return
+
+      activeNodeIds.add(sourceId)
+      activeNodeIds.add(targetId)
+      activeEdgeIds.add(edge.id())
+    })
+
+    this.cy.nodes().forEach(node => {
+      if (!activeNodeIds.has(node.id())) return
+      node.parents().forEach(parent => activeNodeIds.add(parent.id()))
+    })
+
+    this.cy.nodes().forEach(node => {
+      node.style('opacity', activeNodeIds.has(node.id()) ? 1 : 0.16)
+    })
+
+    this.cy.edges().forEach(edge => {
+      edge.style('opacity', activeEdgeIds.has(edge.id()) ? null : 0.06)
+    })
+  }
+
+  _clearFocusedNeighborhood() {
+    this.cy.nodes().forEach(node => node.style('opacity', 1))
+    this._applyRelationVisibility()
   }
 
   _captureViewport() {

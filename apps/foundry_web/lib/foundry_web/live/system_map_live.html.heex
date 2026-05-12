@@ -369,6 +369,8 @@
             id="system-map-metadata"
             class="hidden"
             data-uncovered-node-ids={Jason.encode!(@uncovered_node_ids || [])}
+            data-sidebar-tab={@sidebar_tab}
+            data-selected-node-id={@selected_id}
           >
           </div>
           <div
@@ -404,25 +406,24 @@
     >
     </div>
     <div class="flex shrink-0 items-center border-b border-white/10 px-3 py-2">
-     
-    <div class="flex shrink-0 border-b border-white/10">
-      <button
-        class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
-        data-active={@feed_tab == :feed}
-        phx-click="set_feed_tab"
-        phx-value-tab="feed"
-      >
-        Feed
-      </button>
-      <button
-        class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
-        data-active={@feed_tab == :copilot}
-        phx-click="set_feed_tab"
-        phx-value-tab="copilot"
-      >
-        Copilot
-      </button>
-    </div>
+      <div class="flex shrink-0 border-b border-white/10">
+        <button
+          class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+          data-active={@feed_tab == :feed}
+          phx-click="set_feed_tab"
+          phx-value-tab="feed"
+        >
+          Feed
+        </button>
+        <button
+          class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+          data-active={@feed_tab == :copilot}
+          phx-click="set_feed_tab"
+          phx-value-tab="copilot"
+        >
+          Copilot
+        </button>
+      </div>
       <button
         class="flex size-7 cursor-pointer items-right justify-center rounded-selector border-0 bg-transparent text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content"
         phx-click="toggle_feed"
@@ -460,6 +461,8 @@
           activity_runs={@activity_runs}
           selected_activity_run_id={@selected_activity_run_id}
           session_digest={@session_digest}
+          input={@input}
+          last_session_summary_at={@last_session_summary_at}
           open_session_ids={@open_session_ids}
           active_session_id={@active_session_id}
           sessions_by_id={@sessions_by_id}

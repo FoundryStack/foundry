@@ -16,6 +16,10 @@ defmodule IgamingRef.Promotions.BonusEvent do
     authorizers: [Ash.Policy.Authorizer],
     extensions: [AshPaperTrail.Resource, AshArchival.Resource]
 
+  paper_trail do
+    change_tracking_mode(:snapshot)
+  end
+
   postgres do
     table("bonus_events")
     repo(IgamingRef.Repo)

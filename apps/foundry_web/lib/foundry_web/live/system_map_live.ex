@@ -166,7 +166,10 @@ defmodule FoundryWeb.SystemMapLive do
     case ChatSession.handle_event("chat_session_new", params, socket) do
       {:noreply, socket} ->
         active_id = socket.assigns.active_session_id
-        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")}, else: {:noreply, socket}
+
+        if active_id,
+          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")},
+          else: {:noreply, socket}
     end
   end
 
@@ -175,7 +178,10 @@ defmodule FoundryWeb.SystemMapLive do
     case ChatSession.handle_event("chat_session_open", params, socket) do
       {:noreply, socket} ->
         active_id = socket.assigns.active_session_id
-        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")}, else: {:noreply, socket}
+
+        if active_id,
+          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")},
+          else: {:noreply, socket}
     end
   end
 
@@ -184,7 +190,10 @@ defmodule FoundryWeb.SystemMapLive do
     case ChatSession.handle_event("chat_session_switch", params, socket) do
       {:noreply, socket} ->
         active_id = socket.assigns.active_session_id
-        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")}, else: {:noreply, socket}
+
+        if active_id,
+          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")},
+          else: {:noreply, socket}
     end
   end
 
@@ -212,6 +221,11 @@ defmodule FoundryWeb.SystemMapLive do
   def handle_event("send_message", params, socket) do
     socket = assign(socket, :feed_open, true)
     ChatSession.handle_event("send_message", params, socket)
+  end
+
+  @impl true
+  def handle_event("summarize_session", params, socket) do
+    ChatSession.handle_event("summarize_session", params, socket)
   end
 
   @impl true
@@ -276,6 +290,8 @@ defmodule FoundryWeb.SystemMapLive do
     socket =
       socket
       |> assign(
+        selected_id: normalized_node_id,
+        selected_node: normalized_node_id,
         sidebar_tab: :test_coverage,
         coverage_filtered_node: normalized_node_id,
         selected_node_scenario_count: length(filtered_scenarios),
@@ -471,7 +487,6 @@ defmodule FoundryWeb.SystemMapLive do
     Foundry.PreviewServer.stop_preview()
     {:noreply, socket}
   end
-
 
   @impl true
   def terminate(_reason, _socket) do

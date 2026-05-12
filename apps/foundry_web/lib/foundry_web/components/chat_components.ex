@@ -20,15 +20,26 @@ defmodule FoundryWeb.ChatComponents do
   attr :activity_runs, :list, default: []
   attr :selected_activity_run_id, :integer, default: nil
   attr :session_digest, :map, default: %{}
+  attr :input, :string, default: ""
+  attr :last_session_summary_at, :string, default: nil
 
   def studio_panel(assigns) do
     selected_run = selected_run(assigns.activity_runs, assigns.selected_activity_run_id)
+
+    token_meter =
+      token_meter(
+        assigns.messages,
+        assigns.session_digest,
+        assigns.input,
+        assigns.llm_diagnostics
+      )
 
     assigns =
       assigns
       |> assign(:selected_run, selected_run)
       |> assign(:latest_run, List.first(assigns.activity_runs))
       |> assign(:message_count, length(assigns.messages))
+      |> assign(:token_meter, token_meter)
 
     ~H"""
     <section
@@ -41,9 +52,15 @@ defmodule FoundryWeb.ChatComponents do
         <div class="flex min-h-0 shrink-0 items-center gap-0 overflow-x-auto border-b border-base-300/80 bg-base-200/50 px-1">
           <%= for id <- @open_session_ids do %>
             <% session = Map.get(@sessions_by_id, id, %{})
-               title = session["title"] || "Session"
-               is_active = id == @active_session_id %>
-            <div class={["group flex min-w-0 max-w-[160px] shrink-0 items-center gap-1 rounded-t px-2 py-1.5 text-[11px] transition-colors", if(is_active, do: "bg-base-100 text-base-content", else: "text-neutral-content hover:bg-base-100/50 hover:text-base-content")]}>
+            title = session["title"] || "Session"
+            is_active = id == @active_session_id %>
+            <div class={[
+              "group flex min-w-0 max-w-[160px] shrink-0 items-center gap-1 rounded-t px-2 py-1.5 text-[11px] transition-colors",
+              if(is_active,
+                do: "bg-base-100 text-base-content",
+                else: "text-neutral-content hover:bg-base-100/50 hover:text-base-content"
+              )
+            ]}>
               <button
                 class="min-w-0 flex-1 truncate text-left"
                 phx-click="chat_session_switch"
@@ -96,14 +113,32 @@ defmodule FoundryWeb.ChatComponents do
               <% end %>
             </div>
           </div>
+          <%= if @latest_run do %>
+            <div class="flex flex-wrap justify-end gap-2">
+              <span class="inline-flex items-center rounded-full border border-base-300 bg-base-100/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content">
+                {token_badge_label(@latest_run)}
+              </span>
+              <%= if @latest_run.read_files != [] do %>
+                <span class="inline-flex items-center rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info">
+                  read {length(@latest_run.read_files)}
+                </span>
+              <% end %>
+              <%= if @latest_run.written_files != [] do %>
+                <span class="inline-flex items-center rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning">
+                  wrote {length(@latest_run.written_files)}
+                </span>
+              <% end %>
+            </div>
+          <% end %>
         </div>
 
         <div class="grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
           <%= if @latest_run do %>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-4 gap-2">
               <.trace_stat label="Last run" value={status_label(@latest_run.status)} />
               <.trace_stat label="Grouped trace" value={@latest_run.grouped_event_count || 0} />
               <.trace_stat label="Files surfaced" value={@latest_run.file_count} />
+              <.trace_stat label="Tokens" value={run_total_tokens(@latest_run) || "n/a"} />
             </div>
           <% end %>
         </div>
@@ -213,14 +248,11 @@ defmodule FoundryWeb.ChatComponents do
                     message={msg}
                     message_index={index}
                     streaming={streaming_message?(msg, index, @message_count, @loading)}
+                    active_run={message_active_run(msg, index, @message_count, @loading, @latest_run)}
                   />
                 <% end %>
 
-                <%= if @loading do %>
-                  <div class="max-w-[90%] rounded-box border border-base-300 bg-base-200/80 px-4 py-3 text-sm text-neutral-content shadow-sm">
-                    Thinking...
-                  </div>
-                <% end %>
+                <.thinking_bubble :if={thinking_visible?(@messages, @loading)} />
               </div>
             </div>
           <% end %>
@@ -234,7 +266,12 @@ defmodule FoundryWeb.ChatComponents do
           <% end %>
 
           <%= if @chat_view == :session do %>
-            <.session_panel session_digest={@session_digest} selected_run={@selected_run} />
+            <.session_panel
+              session_digest={@session_digest}
+              selected_run={@selected_run}
+              loading={@loading}
+              last_session_summary_at={@last_session_summary_at}
+            />
           <% end %>
 
           <%= if @error do %>
@@ -246,6 +283,7 @@ defmodule FoundryWeb.ChatComponents do
           <form
             id="studio-chat-form"
             phx-submit="send_message"
+            phx-change="update_chat_input"
             class="border-t border-base-300/80 px-4 py-4"
           >
             <div>
@@ -261,9 +299,10 @@ defmodule FoundryWeb.ChatComponents do
                 rows="3"
                 placeholder="Ask about the system, or request a change..."
                 data-role="chat-input"
+                phx-debounce="150"
                 class="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-base-content outline-none placeholder:text-neutral-content/50"
                 disabled={@loading}
-              ></textarea>
+              ><%= @input %></textarea>
               <div class="mt-3 flex items-center justify-between gap-3">
                 <p class="text-[11px] leading-5 text-neutral-content">
                   <span class="inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-300/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-neutral-content">
@@ -271,13 +310,24 @@ defmodule FoundryWeb.ChatComponents do
                     {provider_label(@llm_provider)}
                   </span>
                 </p>
-                <button
-                  type="submit"
-                  disabled={@loading}
-                  class="inline-flex items-center rounded-selector bg-primary px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary-content transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Send
-                </button>
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    phx-click="summarize_session"
+                    disabled={@loading}
+                    class="rounded-selector border border-base-300 bg-base-200/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content transition-colors hover:border-primary/40 hover:bg-base-200 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Summarize
+                  </button>
+                  <.token_meter meter={@token_meter} />
+                  <button
+                    type="submit"
+                    disabled={@loading}
+                    class="inline-flex items-center rounded-selector bg-primary px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary-content transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Send
+                  </button>
+                </div>
               </div>
             </div>
           </form>
@@ -389,6 +439,12 @@ defmodule FoundryWeb.ChatComponents do
                   value={yes_no(get_in(@selected_run, [:provenance, :proposal_flow_used]))}
                 />
                 <.trace_stat label="Files surfaced" value={@selected_run.file_count} />
+                <.trace_stat label="Read files" value={length(@selected_run.read_files || [])} />
+                <.trace_stat
+                  label="Written files"
+                  value={length(@selected_run.written_files || [])}
+                />
+                <.trace_stat label="Tokens" value={run_total_tokens(@selected_run) || "n/a"} />
               </div>
 
               <%= if (get_in(@selected_run, [:provenance, :redundant_global_context_fetches]) || 0) > 0 do %>
@@ -405,6 +461,21 @@ defmodule FoundryWeb.ChatComponents do
                   <div class="mt-2 flex flex-wrap gap-2">
                     <%= for path <- Enum.take(@selected_run.files, 12) do %>
                       <span class="rounded-full border border-base-300 bg-base-200/80 px-2.5 py-1 font-mono text-[11px] text-base-content/80">
+                        {path}
+                      </span>
+                    <% end %>
+                  </div>
+                </div>
+              <% end %>
+
+              <%= if @selected_run.written_files != [] do %>
+                <div class="mt-4">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-content">
+                    Written files
+                  </p>
+                  <div class="mt-2 flex flex-wrap gap-2">
+                    <%= for path <- Enum.take(@selected_run.written_files, 12) do %>
+                      <span class="rounded-full border border-warning/25 bg-warning/10 px-2.5 py-1 font-mono text-[11px] text-warning">
                         {path}
                       </span>
                     <% end %>
@@ -517,18 +588,29 @@ defmodule FoundryWeb.ChatComponents do
 
   attr :session_digest, :map, default: %{}
   attr :selected_run, :map, default: nil
+  attr :loading, :boolean, required: true
+  attr :last_session_summary_at, :string, default: nil
 
   defp session_panel(assigns) do
     ~H"""
     <div class="min-h-0 flex-1 overflow-y-auto bg-base-100/30 p-4">
       <div class="space-y-4">
         <div class="rounded-box border border-base-300/80 bg-base-100/85 p-4">
-          <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">
-            Session Memory
-          </p>
-          <p class="mt-2 text-sm leading-6 text-base-content">
-            The Studio copilot keeps a compact digest across turns instead of replaying the full project context every time.
-          </p>
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">
+                Session Memory
+              </p>
+              <p class="mt-2 text-sm leading-6 text-base-content">
+                The Studio copilot keeps a compact digest across turns instead of replaying the full project context every time.
+              </p>
+            </div>
+            <%= if @last_session_summary_at do %>
+              <p class="text-[11px] text-neutral-content">
+                Updated {summary_timestamp(@last_session_summary_at)}
+              </p>
+            <% end %>
+          </div>
 
           <div class="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
             <.digest_card label="Last mode" value={Map.get(@session_digest, "last_mode", "n/a")} />
@@ -545,10 +627,18 @@ defmodule FoundryWeb.ChatComponents do
               label="Last proposal"
               value={Map.get(@session_digest, "last_proposal_id", "none")}
             />
+            <.digest_card
+              label="Recent tokens"
+              value={token_usage_label(Map.get(@session_digest, "recent_token_usage", %{}))}
+            />
           </div>
         </div>
 
         <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <.digest_list
+            title="Working summary"
+            items={List.wrap(Map.get(@session_digest, "working_summary"))}
+          />
           <.digest_list
             title="Selected nodes"
             items={Map.get(@session_digest, "selected_nodes", [])}
@@ -568,8 +658,13 @@ defmodule FoundryWeb.ChatComponents do
             items={Map.get(@session_digest, "recent_conclusions", [])}
           />
           <.digest_list
-            title="Recent files"
-            items={Map.get(@session_digest, "recent_files", [])}
+            title="Recent read files"
+            items={Map.get(@session_digest, "recent_read_files", [])}
+            mono
+          />
+          <.digest_list
+            title="Recent written files"
+            items={Map.get(@session_digest, "recent_written_files", [])}
             mono
           />
         </div>
@@ -658,15 +753,29 @@ defmodule FoundryWeb.ChatComponents do
   attr :message, :map, required: true
   attr :message_index, :integer, required: true
   attr :streaming, :boolean, default: false
+  attr :active_run, :map, default: nil
 
   defp message_bubble(assigns) do
     is_user = assigns.message["role"] == "user"
-    proposal = assigns.message["proposal"]
+    runtime = runtime_message_metadata(assigns.message, assigns.active_run, assigns.streaming)
+    proposal = runtime.proposal
+    read_files = runtime.read_files
+    written_files = runtime.written_files
+    tools = runtime.tools
+    token_usage = runtime.token_usage
+    total_tokens = runtime.total_tokens
 
     assigns =
       assigns
       |> assign(:is_user, is_user)
       |> assign(:proposal, proposal)
+      |> assign(:read_files, read_files)
+      |> assign(:written_files, written_files)
+      |> assign(:tools, tools)
+      |> assign(:token_usage, token_usage)
+      |> assign(:total_tokens, total_tokens)
+      |> assign(:provider, runtime.provider)
+      |> assign(:partial, runtime.partial)
       |> assign(:content, assigns.message["content"] || "")
       |> assign(:markdown_id, message_markdown_id(assigns.message, assigns.message_index))
       |> assign(:markdown_variant, if(is_user, do: "user", else: "assistant"))
@@ -704,6 +813,52 @@ defmodule FoundryWeb.ChatComponents do
             mdex_opts={markdown_options()}
           />
         </div>
+        <%= if !@is_user and (@total_tokens || @read_files != [] || @written_files != [] || @tools != [] || @partial) do %>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <span
+              :if={@total_tokens || map_size(@token_usage) > 0}
+              class="rounded-full border border-base-300 bg-base-100/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
+            >
+              {token_usage_label(@token_usage, @total_tokens)}
+            </span>
+            <span
+              :if={@read_files != []}
+              class="rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info"
+            >
+              read {length(@read_files)}
+            </span>
+            <span
+              :if={@written_files != []}
+              class="rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
+            >
+              wrote {length(@written_files)}
+            </span>
+            <span
+              :if={@tools != []}
+              class="rounded-full border border-secondary/25 bg-secondary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-secondary"
+            >
+              {length(@tools)} tools
+            </span>
+            <span
+              :if={@partial}
+              class="rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
+            >
+              partial
+            </span>
+          </div>
+        <% end %>
+        <%= if !@is_user and (@read_files != [] || @written_files != [] || @tools != []) do %>
+          <div class="mt-3 space-y-3">
+            <.activity_chip_row :if={@read_files != []} label="Read" tone={:read} items={@read_files} />
+            <.activity_chip_row
+              :if={@written_files != []}
+              label="Wrote"
+              tone={:write}
+              items={@written_files}
+            />
+            <.activity_chip_row :if={@tools != []} label="Tools" tone={:tool} items={@tools} />
+          </div>
+        <% end %>
         <.proposal_preview_card :if={!@is_user and is_map(@proposal)} proposal={@proposal} />
       </div>
     </div>
@@ -821,10 +976,97 @@ defmodule FoundryWeb.ChatComponents do
     """
   end
 
+  defp thinking_bubble(assigns) do
+    ~H"""
+    <div class="flex justify-start" data-role="thinking-bubble">
+      <div class="max-w-[92%] rounded-box border border-base-300 bg-base-200/80 px-4 py-3 text-base-content shadow-sm">
+        <div class="mb-1 flex items-center gap-2">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">
+            Assistant
+          </p>
+          <span class="text-[10px] uppercase tracking-[0.12em] text-neutral-content/70">
+            Thinking
+          </span>
+        </div>
+        <div class="foundry-thinking-dots" aria-label="Assistant is thinking">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :items, :list, default: []
+  attr :tone, :atom, default: :neutral
+
+  defp activity_chip_row(assigns) do
+    ~H"""
+    <div>
+      <div class="mb-1 flex items-center gap-2">
+        <span class={activity_label_class(@tone)}>{@label}</span>
+        <span
+          :if={length(@items) > 4}
+          class="text-[10px] uppercase tracking-[0.12em] text-neutral-content/70"
+        >
+          +{length(@items) - 4} more
+        </span>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <span :for={item <- Enum.take(@items, 4)} class={activity_chip_class(@tone)}>
+          {activity_chip_text(item)}
+        </span>
+      </div>
+    </div>
+    """
+  end
+
+  attr :meter, :map, required: true
+
+  defp token_meter(assigns) do
+    ~H"""
+    <div class="flex items-center gap-2" title={token_meter_title(@meter)}>
+      <div
+        class="relative grid h-10 w-10 place-items-center rounded-full border border-base-300/80 bg-base-200/70"
+        data-role="token-meter"
+        data-fill={round((@meter.ratio || 0) * 100)}
+        style={token_meter_style(@meter)}
+      >
+        <div class="grid h-7 w-7 place-items-center rounded-full bg-base-100/95 text-[9px] font-semibold uppercase tracking-[0.08em] text-base-content">
+          {token_meter_inner_label(@meter)}
+        </div>
+      </div>
+      <div class="min-w-[7rem] text-right">
+        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content">
+          Context
+        </p>
+        <p class="text-[11px] text-base-content">{token_meter_summary(@meter)}</p>
+      </div>
+    </div>
+    """
+  end
+
   defp streaming_message?(%{"role" => "assistant"}, index, message_count, true),
     do: index == message_count - 1
 
   defp streaming_message?(_message, _index, _message_count, _loading), do: false
+
+  defp message_active_run(%{"role" => "assistant"}, index, message_count, true, latest_run)
+       when index == message_count - 1,
+       do: latest_run
+
+  defp message_active_run(_message, _index, _message_count, _loading, _latest_run), do: nil
+
+  defp thinking_visible?(messages, true) do
+    case List.last(messages) do
+      %{"role" => "assistant", "content" => content} -> String.trim(content || "") == ""
+      _ -> true
+    end
+  end
+
+  defp thinking_visible?(_messages, _loading), do: false
 
   defp message_markdown_id(message, index) do
     timestamp = Map.get(message, "timestamp", "message")
@@ -931,6 +1173,232 @@ defmodule FoundryWeb.ChatComponents do
   defp yes_no(true), do: "Yes"
   defp yes_no(false), do: "No"
   defp yes_no(nil), do: "No"
+
+  defp run_total_tokens(run) when is_map(run),
+    do: Map.get(run, :total_tokens)
+
+  defp run_total_tokens(_run), do: nil
+
+  defp token_badge_label(run) do
+    case run_total_tokens(run) do
+      nil -> "tokens unavailable"
+      total -> "#{total} tokens"
+    end
+  end
+
+  defp runtime_message_metadata(message, active_run, true) when is_map(active_run) do
+    %{
+      proposal: active_run.proposal || message["proposal"],
+      read_files: active_run.read_files || message["read_files"] || [],
+      written_files: active_run.written_files || message["written_files"] || [],
+      tools: active_run.tools || message["tools"] || [],
+      token_usage: active_run.token_usage || message["token_usage"] || %{},
+      total_tokens: active_run.total_tokens || message["total_tokens"],
+      provider: active_run.provider || message["provider"],
+      partial: false
+    }
+  end
+
+  defp runtime_message_metadata(message, _active_run, _streaming) do
+    %{
+      proposal: message["proposal"],
+      read_files: message["read_files"] || [],
+      written_files: message["written_files"] || [],
+      tools: message["tools"] || [],
+      token_usage: message["token_usage"] || %{},
+      total_tokens: message["total_tokens"],
+      provider: message["provider"],
+      partial: !!message["partial"]
+    }
+  end
+
+  defp activity_label_class(:read),
+    do:
+      "rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info"
+
+  defp activity_label_class(:write),
+    do:
+      "rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
+
+  defp activity_label_class(:tool),
+    do:
+      "rounded-full border border-secondary/25 bg-secondary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-secondary"
+
+  defp activity_label_class(_tone),
+    do:
+      "rounded-full border border-base-300 bg-base-100/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
+
+  defp activity_chip_class(:read),
+    do:
+      "rounded-full border border-info/20 bg-info/10 px-2.5 py-1 font-mono text-[11px] text-info"
+
+  defp activity_chip_class(:write),
+    do:
+      "rounded-full border border-warning/20 bg-warning/10 px-2.5 py-1 font-mono text-[11px] text-warning"
+
+  defp activity_chip_class(:tool),
+    do:
+      "rounded-full border border-secondary/20 bg-secondary/10 px-2.5 py-1 text-[11px] font-semibold text-secondary"
+
+  defp activity_chip_class(_tone),
+    do:
+      "rounded-full border border-base-300 bg-base-100/70 px-2.5 py-1 text-[11px] text-base-content/80"
+
+  defp activity_chip_text(item) when is_binary(item) do
+    item
+    |> String.split("/")
+    |> Enum.take(-2)
+    |> Enum.join("/")
+  end
+
+  defp activity_chip_text(item), do: to_string(item)
+
+  defp token_meter(messages, session_digest, input, llm_diagnostics) do
+    model = Map.get(llm_diagnostics || %{}, :model) || Map.get(llm_diagnostics || %{}, "model")
+
+    provider =
+      Map.get(llm_diagnostics || %{}, :provider) || Map.get(llm_diagnostics || %{}, "provider")
+
+    exact_usage = Map.get(session_digest || %{}, "recent_token_usage", %{})
+    exact_total = Map.get(exact_usage, :total_tokens) || Map.get(exact_usage, "total_tokens")
+    estimate = estimated_tokens(messages, session_digest, input, provider, model)
+    window = context_window(provider, model)
+    total = exact_total || estimate
+    ratio = if is_integer(window) and window > 0, do: min(total / window, 1.0), else: nil
+
+    %{
+      provider: provider,
+      model: model,
+      exact_total: exact_total,
+      estimate_total: estimate,
+      total: total,
+      window: window,
+      ratio: ratio
+    }
+  end
+
+  defp estimated_tokens(messages, session_digest, input, provider, model) do
+    parts =
+      [
+        Map.get(session_digest || %{}, "working_summary", ""),
+        Jason.encode!(session_digest || %{}),
+        Enum.map_join(messages || [], "\n", &"#{&1["role"]}: #{&1["content"] || ""}"),
+        input || "",
+        to_string(provider || ""),
+        to_string(model || "")
+      ]
+
+    parts
+    |> Enum.join("\n")
+    |> String.length()
+    |> Kernel./(4)
+    |> Float.ceil()
+    |> trunc()
+    |> Kernel.+(400)
+  end
+
+  defp context_window(:codex, model) when is_binary(model) do
+    cond do
+      String.starts_with?(model, "gpt-5") -> 400_000
+      true -> nil
+    end
+  end
+
+  defp context_window(:claude_code, model) when is_binary(model) do
+    cond do
+      String.contains?(model, "sonnet") -> 200_000
+      String.contains?(model, "haiku") -> 200_000
+      String.contains?(model, "opus") -> 200_000
+      true -> nil
+    end
+  end
+
+  defp context_window(:lm_studio, _model), do: nil
+  defp context_window("codex", model), do: context_window(:codex, model)
+  defp context_window("claude_code", model), do: context_window(:claude_code, model)
+  defp context_window("lm_studio", model), do: context_window(:lm_studio, model)
+  defp context_window(_provider, _model), do: nil
+
+  defp token_meter_style(%{ratio: ratio}) when is_number(ratio) do
+    angle = Float.round(ratio * 360.0, 2)
+
+    "background: conic-gradient(color-mix(in oklch, var(--color-primary) 78%, white) #{angle}deg, color-mix(in oklch, var(--color-base-300) 88%, transparent) #{angle}deg);"
+  end
+
+  defp token_meter_style(_meter) do
+    "background: color-mix(in oklch, var(--color-base-300) 72%, transparent);"
+  end
+
+  defp token_meter_inner_label(%{ratio: ratio}) when is_number(ratio) do
+    "#{round(ratio * 100)}%"
+  end
+
+  defp token_meter_inner_label(_meter), do: "?"
+
+  defp token_meter_summary(%{total: total, window: window})
+       when is_integer(total) and is_integer(window) do
+    "#{format_compact_number(total)} / #{format_compact_number(window)}"
+  end
+
+  defp token_meter_summary(%{estimate_total: total, window: nil}) when is_integer(total) do
+    "~#{format_compact_number(total)} • window unknown"
+  end
+
+  defp token_meter_summary(_meter), do: "window unknown"
+
+  defp token_meter_title(%{total: total, exact_total: exact, window: window, model: model}) do
+    usage =
+      cond do
+        is_integer(exact) -> "#{exact} exact tokens from provider"
+        is_integer(total) -> "~#{total} estimated tokens"
+        true -> "Token usage unavailable"
+      end
+
+    window_text =
+      if is_integer(window), do: "window #{window}", else: "window unknown"
+
+    [usage, window_text, model || "model unknown"]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join(" • ")
+  end
+
+  defp summary_timestamp(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> Calendar.strftime(datetime, "%H:%M:%S UTC")
+      _ -> value
+    end
+  end
+
+  defp summary_timestamp(_value), do: "just now"
+
+  defp format_compact_number(value) when is_integer(value) and value >= 1000 do
+    cond do
+      value >= 1_000_000 -> "#{Float.round(value / 1_000_000, 1)}M"
+      value >= 1000 -> "#{Float.round(value / 1000, 1)}K"
+    end
+  end
+
+  defp format_compact_number(value) when is_integer(value), do: Integer.to_string(value)
+
+  defp token_usage_label(usage, total \\ nil) do
+    total = total || Map.get(usage || %{}, :total_tokens) || Map.get(usage || %{}, "total_tokens")
+    input = Map.get(usage || %{}, :input_tokens) || Map.get(usage || %{}, "input_tokens")
+    output = Map.get(usage || %{}, :output_tokens) || Map.get(usage || %{}, "output_tokens")
+
+    cond do
+      is_integer(total) and is_integer(input) and is_integer(output) ->
+        "#{total} total • #{input} in • #{output} out"
+
+      is_integer(total) ->
+        "#{total} tokens"
+
+      is_integer(input) or is_integer(output) ->
+        "#{input || 0} in • #{output || 0} out"
+
+      true ->
+        "tokens unavailable"
+    end
+  end
 
   defp trace_status_class(:running),
     do:

@@ -23,6 +23,7 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
   @telemetry_prefix [:igaming_ref, :finance, :withdrawal_transfer]
 
   use Reactor
+  require Ash.Query
 
   alias IgamingRef.Finance.{Wallet, LedgerEntry, WithdrawalRequest}
 
@@ -194,14 +195,13 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
 
     # Sum completed withdrawal amounts in the last 24 hours
     # Full implementation queries LedgerEntry - stubbed for reference project
-    case Ash.read(LedgerEntry,
-           filter: [
-             wallet_id: {:in, player_wallet_ids(player_id)},
-             kind: :withdrawal,
-             direction: :debit,
-             inserted_at: [greater_than_or_equal: since]
-           ],
-           actor: %{is_system: true}
+    case (
+           LedgerEntry
+           |> Ash.Query.filter(
+             wallet_id in ^player_wallet_ids(player_id) and kind == :withdrawal and
+               direction == :debit and inserted_at >= ^since
+           )
+           |> Ash.read(actor: %{is_system: true})
          ) do
       {:ok, entries} -> Enum.reduce(entries, Money.new(0, :GBP), &Money.add!(&2, &1.amount))
       _ -> Money.new(0, :GBP)
@@ -209,7 +209,11 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
   end
 
   defp player_wallet_ids(player_id) do
-    case Ash.read(Wallet, filter: [player_id: player_id], actor: %{is_system: true}) do
+    case (
+           Wallet
+           |> Ash.Query.filter(player_id: player_id)
+           |> Ash.read(actor: %{is_system: true})
+         ) do
       {:ok, wallets} -> Enum.map(wallets, & &1.id)
       _ -> []
     end
@@ -238,6 +242,7 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   @telemetry_prefix [:igaming_ref, :promotions, :bonus_grant_transfer]
 
   use Reactor
+  require Ash.Query
 
   alias IgamingRef.Finance.{Wallet, LedgerEntry}
   alias IgamingRef.Promotions.{BonusCampaign, BonusGrant}
@@ -250,10 +255,12 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
 
   step :load_context do
     description("Load player, campaign, wallet, and existing grants for rule evaluation.")
+    argument(:player_id, input(:player_id))
+    argument(:campaign_id, input(:campaign_id))
 
     run(fn %{player_id: pid, campaign_id: cid}, _ ->
-      with {:ok, player} <- Ash.get(IgamingRef.Players.Player, pid, actor: :system),
-           {:ok, campaign} <- Ash.get(BonusCampaign, cid, actor: :system),
+      with {:ok, player} <- Ash.get(IgamingRef.Players.Player, pid, actor: %{is_system: true}),
+           {:ok, campaign} <- Ash.get(BonusCampaign, cid, actor: %{is_system: true}),
            {:ok, wallet} <- primary_wallet(pid),
            {:ok, grants} <- existing_grants(pid, cid),
            {:ok, campaign_grants} <- campaign_grants(cid) do
@@ -307,13 +314,13 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
     run(fn %{ctx: %{wallet: wallet, campaign: campaign}}, _ ->
       wallet
       |> Ash.Changeset.for_update(:credit, %{amount: campaign.bonus_amount})
-      |> Ash.update(actor: :system)
+      |> Ash.update(actor: %{is_system: true})
     end)
 
     compensate(fn _, %{ctx: %{wallet: wallet, campaign: campaign}}, _ ->
       wallet
       |> Ash.Changeset.for_update(:debit, %{amount: campaign.bonus_amount})
-      |> Ash.update(actor: :system)
+      |> Ash.update(actor: %{is_system: true})
 
       :ok
     end)
@@ -370,7 +377,11 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   # ---------------------------------------------------------------------------
 
   defp primary_wallet(player_id) do
-    case Ash.read(Wallet, filter: [player_id: player_id, status: :active], actor: :system) do
+    case (
+          Wallet
+          |> Ash.Query.filter(player_id: player_id, status: :active)
+           |> Ash.read(actor: %{is_system: true})
+         ) do
       {:ok, [wallet | _]} -> {:ok, wallet}
       {:ok, []} -> {:error, "No active wallet found for player #{player_id}"}
       {:error, err} -> {:error, err}
@@ -378,16 +389,14 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   end
 
   defp existing_grants(player_id, campaign_id) do
-    Ash.read(BonusGrant,
-      filter: [player_id: player_id, campaign_id: campaign_id],
-      actor: :system
-    )
+    BonusGrant
+    |> Ash.Query.filter(player_id: player_id, campaign_id: campaign_id)
+    |> Ash.read(actor: %{is_system: true})
   end
 
   defp campaign_grants(campaign_id) do
-    Ash.read(BonusGrant,
-      filter: [campaign_id: campaign_id],
-      actor: :system
-    )
+    BonusGrant
+    |> Ash.Query.filter(campaign_id: campaign_id)
+    |> Ash.read(actor: %{is_system: true})
   end
 end

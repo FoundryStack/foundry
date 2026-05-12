@@ -34,7 +34,8 @@ We keep the bonus engine as an event-driven, two-stage workflow:
 
 1. `BonusEvaluationReactor` evaluates an inbound `BonusEvent`, determines matching
    campaigns, executes configured bonus steps, and marks the event processed only after
-   successful execution.
+   successful execution. If a `BonusEvent` already has `processed_at` set, the reactor
+   short-circuits and returns the loaded event without re-running campaign handlers.
 2. `BonusGrantTransfer` applies the wallet credit, records the immutable ledger entry,
    and creates or updates the `BonusGrant` record for wagering tracking.
 
@@ -74,6 +75,9 @@ time of award.
   steps:
   - `docs/runbooks/bonus_evaluation_reactor.md`
   - `docs/runbooks/bonus_grant_transfer.md`
+- Treat `BonusConditionGroup.parent_group_id` as a tree edge. Campaign condition
+  evaluation starts at root groups and recurses through nested child groups using each
+  group's combinator.
 
 ## Alternatives Considered
 

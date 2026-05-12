@@ -166,6 +166,19 @@ defmodule FoundryWeb.SystemMapLiveTest do
                )
       end
     end
+
+    test "preserves the selected node when switching to Coverage and back", %{conn: conn} do
+      {:ok, live, _html} = live(conn, "/")
+
+      selected_html = render_click(live, "node_selected", %{"id" => "Finance.Wallet"})
+      assert selected_html =~ ~s(data-selected-node-id="Finance.Wallet")
+
+      coverage_html = render_click(live, "set_sidebar_tab", %{"tab" => "test_coverage"})
+      assert coverage_html =~ ~s(data-selected-node-id="Finance.Wallet")
+
+      system_map_html = render_click(live, "set_sidebar_tab", %{"tab" => "system_map"})
+      assert system_map_html =~ ~s(data-selected-node-id="Finance.Wallet")
+    end
   end
 
   describe "handle_event show_node_coverage" do
@@ -226,6 +239,31 @@ defmodule FoundryWeb.SystemMapLiveTest do
       Enum.each(context.scenarios, fn scenario ->
         assert Regex.match?(
                  ~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(scenario.id)}"/,
+                 html
+               )
+      end)
+    end
+
+    test "normalizes coverage filtering from scenario-step graph ids", %{
+      conn: conn,
+      project_context: context
+    } do
+      {node_id, scenario_ids} = node_with_partial_scenario_coverage(context.scenarios)
+
+      Foundry.Context.ScenarioCache.update(
+        scenario_report(context.scenarios, node_index: build_node_index(context.scenarios))
+      )
+
+      {:ok, live, _html} = live(conn, "/")
+
+      html = render_click(live, "show_node_coverage", %{"id" => "#{node_id}:step:0"})
+
+      assert html =~ "Scenario Filter"
+      assert html =~ node_id
+
+      Enum.each(scenario_ids, fn scenario_id ->
+        assert Regex.match?(
+                 ~r/phx-click="select_scenario".*?phx-value-id="#{Regex.escape(scenario_id)}"/,
                  html
                )
       end)
@@ -403,6 +441,8 @@ defmodule FoundryWeb.SystemMapLiveTest do
       put_chat_hooks(
         save_messages: fn _session_id, _messages -> {:ok, %{}} end,
         call_llm_stream: fn _messages, on_event ->
+          send(test_pid, :before_first_chunk)
+          Process.sleep(100)
           on_event.({:delta, "```elixir\nIO.puts("})
           send(test_pid, :stream_chunk_sent)
           Process.sleep(100)
@@ -415,14 +455,15 @@ defmodule FoundryWeb.SystemMapLiveTest do
       {:ok, live, _html} = live(conn, "/")
       _html = render_submit(live, "send_message", %{"message" => "Stream this"})
 
+      assert_receive :before_first_chunk
+      assert render(live) =~ "Assistant is thinking"
+
       assert_receive :stream_chunk_sent
 
       assert eventually(fn ->
                rendered = render(live)
 
-               rendered =~ "<pre" and
-                 rendered =~ "Thinking..." and
-                 rendered =~ "puts"
+               rendered =~ "<pre" and rendered =~ "puts"
              end),
              render(live)
 
@@ -432,7 +473,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
                  rendered =~ "<pre" and
                    rendered =~ "&quot;ok&quot;" and
-                   not String.contains?(rendered, "Thinking...")
+                   not String.contains?(rendered, "Assistant is thinking")
                end,
                60
              ),
@@ -533,6 +574,189 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert html =~ "Recent conclusions"
       assert html =~ "Saved findings"
       assert html =~ "Selected nodes"
+      assert html =~ "Working summary"
+    end
+
+    test "keeps trace and session tabs available while a response is still streaming", %{
+      conn: conn
+    } do
+      test_pid = self()
+
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, on_event, _run_context ->
+          send(test_pid, :stream_started)
+          Process.sleep(150)
+          on_event.({:delta, "Still working"})
+          {:ok, "Still working"}
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/")
+      _html = render_submit(live, "send_message", %{"message" => "Implement this change"})
+      assert_receive :stream_started
+
+      assert render(live) =~ "Assistant is thinking"
+
+      trace_html = render_click(live, "set_chat_view", %{"view" => "trace"})
+      assert trace_html =~ "Event Timeline"
+
+      session_html = render_click(live, "set_chat_view", %{"view" => "session"})
+      assert session_html =~ "Session Memory"
+
+      conversation_html = render_click(live, "set_chat_view", %{"view" => "conversation"})
+      assert conversation_html =~ "Assistant is thinking"
+    end
+
+    test "surfaces realtime file activity badges in the streaming conversation bubble", %{
+      conn: conn
+    } do
+      test_pid = self()
+
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, on_event, _run_context ->
+          on_event.(
+            {:trace,
+             %{
+               "type" => "command_execution",
+               "command" => "rg -n wallet apps/foundry_web/lib/foundry_web/live/chat_session.ex",
+               "path" => "apps/foundry_web/lib/foundry_web/live/chat_session.ex"
+             }}
+          )
+
+          on_event.(
+            {:trace,
+             %{
+               "type" => "item.completed",
+               "item" => %{
+                 "type" => "custom_tool_call",
+                 "name" => "apply_patch",
+                 "arguments" => %{
+                   "path" => "apps/foundry_web/assets/js/hooks/studio_chat_hook.js"
+                 }
+               }
+             }}
+          )
+
+          send(test_pid, :trace_visible)
+          Process.sleep(120)
+          {:ok, "Patched it", %{usage: %{input_tokens: 10, output_tokens: 5, total_tokens: 15}}}
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/")
+      _html = render_submit(live, "send_message", %{"message" => "Implement it"})
+      assert_receive :trace_visible
+
+      assert eventually(fn ->
+               rendered = render(live)
+
+               rendered =~ "read 1" and
+                 rendered =~ "wrote 1" and
+                 rendered =~ "live/chat_session.ex" and
+                 rendered =~ "hooks/studio_chat_hook.js"
+             end)
+    end
+
+    test "shows exact token usage in the composer meter after completion", %{conn: conn} do
+      Application.put_env(:foundry, :llm_provider, :codex)
+
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, _on_event, _run_context ->
+          {:ok, "Patched it", %{usage: %{input_tokens: 10, output_tokens: 5, total_tokens: 15}}}
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/")
+      _html = render_submit(live, "send_message", %{"message" => "Implement it"})
+
+      assert eventually(fn ->
+               rendered = render(live)
+
+               rendered =~ "Context" and
+                 (rendered =~ "15 / 400.0K" or
+                    rendered =~ "15 exact tokens from provider") and
+                 rendered =~ "Summarize" and
+                 rendered =~ ~s(data-role="token-meter")
+             end)
+    end
+
+    test "surfaces token and file activity metadata on completed assistant messages", %{
+      conn: conn
+    } do
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, on_event, _run_context ->
+          on_event.(
+            {:trace,
+             %{
+               "type" => "command_execution",
+               "command" => "rg -n wallet apps/foundry_web/lib/foundry_web/live/chat_session.ex",
+               "path" => "apps/foundry_web/lib/foundry_web/live/chat_session.ex"
+             }}
+          )
+
+          on_event.(
+            {:trace,
+             %{
+               "type" => "item.completed",
+               "item" => %{
+                 "type" => "custom_tool_call",
+                 "name" => "apply_patch",
+                 "arguments" => %{
+                   "path" => "apps/foundry_web/assets/js/hooks/studio_chat_hook.js"
+                 }
+               }
+             }}
+          )
+
+          {:ok, "Patched it", %{usage: %{input_tokens: 10, output_tokens: 5, total_tokens: 15}}}
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/")
+      _html = render_submit(live, "send_message", %{"message" => "Implement it"})
+
+      assert eventually(fn ->
+               rendered = render(live)
+
+               rendered =~ "15 total" and
+                 rendered =~ "read 1" and
+                 rendered =~ "wrote 1" and
+                 rendered =~ "live/chat_session.ex" and
+                 rendered =~ "hooks/studio_chat_hook.js"
+             end)
+    end
+
+    test "summarize session compacts the current digest", %{conn: conn} do
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        call_llm_stream: fn _messages, _on_event, _run_context ->
+          {:ok, "Implemented wallet scrolling and timeout handling"}
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/")
+      _html = render_submit(live, "send_message", %{"message" => "Implement scrolling"})
+      assert eventually(fn -> render(live) =~ "Implemented wallet scrolling" end)
+
+      _html = render_click(live, "summarize_session")
+      session_html = render_click(live, "set_chat_view", %{"view" => "session"})
+
+      assert session_html =~ "Working summary"
+      assert session_html =~ "Recent outcomes"
     end
 
     test "strips hidden memory blocks and records saved findings in session memory", %{conn: conn} do

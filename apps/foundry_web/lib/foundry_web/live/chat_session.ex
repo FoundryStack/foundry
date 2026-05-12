@@ -49,13 +49,18 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:open_session_ids, [])
       |> assign(:active_session_id, nil)
       |> assign(:sessions_by_id, %{})
+      |> assign(:last_session_summary_at, nil)
 
     {:ok, socket}
   end
 
   # --- Workspace / session tab events ---
 
-  def handle_event("chat_workspace_hydrate", %{"open_session_ids" => open_ids, "active_session_id" => active_id}, socket) do
+  def handle_event(
+        "chat_workspace_hydrate",
+        %{"open_session_ids" => open_ids, "active_session_id" => active_id},
+        socket
+      ) do
     open_ids = Enum.filter(open_ids, &is_binary/1)
     project_fp = project_fingerprint()
 
@@ -112,6 +117,7 @@ defmodule FoundryWeb.ChatSession do
           |> assign(:active_session_id, session_id)
           |> assign(:sessions_by_id, sessions_by_id)
           |> switch_to_session(session_id)
+          |> push_event("chat:scroll_to_bottom", %{force: true})
           |> push_workspace_state()
 
         {:noreply, socket}
@@ -148,6 +154,7 @@ defmodule FoundryWeb.ChatSession do
         |> assign(:active_session_id, id)
         |> assign(:sessions_by_id, sessions_by_id)
         |> maybe_load_active_session_into_chat(id)
+        |> push_event("chat:scroll_to_bottom", %{force: true})
         |> push_workspace_state()
 
       {:noreply, socket}
@@ -162,6 +169,7 @@ defmodule FoundryWeb.ChatSession do
         socket
         |> assign(:active_session_id, id)
         |> maybe_load_active_session_into_chat(id)
+        |> push_event("chat:scroll_to_bottom", %{force: true})
         |> push_workspace_state()
 
       {:noreply, socket}
@@ -185,6 +193,7 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:open_session_ids, open_ids)
       |> assign(:active_session_id, active_id)
       |> maybe_load_active_session_into_chat(active_id)
+      |> push_event("chat:scroll_to_bottom", %{force: true})
       |> push_workspace_state()
 
     {:noreply, socket}
@@ -219,6 +228,7 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:active_session_id, active_id)
       |> assign(:sessions_by_id, sessions_by_id)
       |> maybe_load_active_session_into_chat(active_id)
+      |> push_event("chat:scroll_to_bottom", %{force: true})
       |> push_workspace_state()
 
     {:noreply, socket}
@@ -230,6 +240,10 @@ defmodule FoundryWeb.ChatSession do
     else
       {:noreply, load_system_context(socket)}
     end
+  end
+
+  def handle_event("update_chat_input", %{"message" => message}, socket) do
+    {:noreply, assign(socket, :input, message)}
   end
 
   def handle_event("send_message", %{"message" => message}, socket) do
@@ -281,6 +295,7 @@ defmodule FoundryWeb.ChatSession do
                 [activity_run | socket.assigns.activity_runs] |> Enum.take(12)
               )
               |> assign(:selected_activity_run_id, activity_run.id)
+              |> push_event("chat:scroll_to_bottom", %{force: true})
 
             {:noreply, socket}
 
@@ -298,7 +313,31 @@ defmodule FoundryWeb.ChatSession do
   end
 
   def handle_event("set_chat_view", %{"view" => view}, socket) do
-    {:noreply, assign(socket, :chat_view, parse_chat_view(view))}
+    next_view = parse_chat_view(view)
+
+    if next_view == :conversation do
+      {:noreply,
+       socket
+       |> assign(:chat_view, next_view)
+       |> push_event("chat:scroll_to_bottom", %{force: true})}
+    else
+      {:noreply, assign(socket, :chat_view, next_view)}
+    end
+  end
+
+  def handle_event("summarize_session", _params, socket) do
+    digest =
+      socket.assigns.session_digest
+      |> normalize_session_digest()
+      |> build_session_summary(socket.assigns.messages, socket.assigns.activity_runs)
+
+    socket =
+      socket
+      |> assign(:session_digest, digest)
+      |> assign(:last_session_summary_at, Map.get(digest, "summary_updated_at"))
+      |> persist_updated_chat()
+
+    {:noreply, socket}
   end
 
   def handle_event("proposal_apply", %{"id" => proposal_id}, socket) do
@@ -329,7 +368,10 @@ defmodule FoundryWeb.ChatSession do
         |> Map.put("active_proposal_status", "awaiting_revision")
         |> Map.put("revision_of_proposal_id", proposal_id)
       end)
-      |> push_event("graph:proposal_overlay", active_proposal_overlay(socket.assigns.messages, proposal_id))
+      |> push_event(
+        "graph:proposal_overlay",
+        active_proposal_overlay(socket.assigns.messages, proposal_id)
+      )
       |> persist_updated_chat()
 
     {:noreply, socket}
@@ -385,16 +427,17 @@ defmodule FoundryWeb.ChatSession do
     end
   end
 
-  def handle_info({:llm_stream_done, request_ref, response}, socket) do
+  def handle_info({:llm_stream_done, request_ref, response, metadata}, socket) do
     if request_ref == socket.assigns.active_request_ref do
       memory_result = persist_turn_memory(socket, request_ref, response)
-      run = find_activity_run(socket.assigns.activity_runs, request_ref)
-      messages = finalize_streaming_response(socket.assigns.messages, memory_result.response, run)
 
       socket =
         socket
-        |> complete_activity_run(request_ref, memory_result.response)
+        |> complete_activity_run(request_ref, memory_result.response, metadata)
         |> maybe_record_memory_trace(request_ref, memory_result)
+
+      run = find_activity_run(socket.assigns.activity_runs, request_ref)
+      messages = finalize_streaming_response(socket.assigns.messages, memory_result.response, run)
 
       digest =
         finalized_session_digest(
@@ -568,8 +611,11 @@ defmodule FoundryWeb.ChatSession do
              end,
              run_context
            ) do
-        {:ok, response} ->
-          send(live_view_pid, {:llm_stream_done, request_ref, response})
+        {:ok, response} when is_binary(response) ->
+          send(live_view_pid, {:llm_stream_done, request_ref, response, %{}})
+
+        {:ok, response, metadata} ->
+          send(live_view_pid, {:llm_stream_done, request_ref, response, metadata || %{}})
 
         {:error, reason} ->
           send(live_view_pid, {:llm_stream_error, request_ref, reason})
@@ -751,15 +797,15 @@ defmodule FoundryWeb.ChatSession do
              {:delta, text} -> on_event.({:delta, text})
              _event -> :ok
            end) do
-        {:ok, text, _metadata} ->
-          {:ok, text}
+        {:ok, text, metadata} ->
+          {:ok, text, metadata}
 
         {:error, :not_installed} ->
           {:ok, claude_not_installed_message()}
 
-        {:error, {:timeout, partial_text}} ->
+        {:error, {:timeout, partial_text, metadata}} ->
           if String.length(partial_text) > 0 do
-            {:ok, partial_text <> "\n\n[Response timed out - partial response above]"}
+            {:ok, partial_text, Map.put(metadata || %{}, :partial, true)}
           else
             {:error, :timeout}
           end
@@ -841,17 +887,54 @@ defmodule FoundryWeb.ChatSession do
 
     base =
       case provider do
-        :codex -> %{provider: provider, sandbox: codex_sandbox()}
-        _ -> %{provider: provider}
+        :codex ->
+          %{
+            provider: provider,
+            sandbox: codex_sandbox(),
+            model: codex_model()
+          }
+
+        :claude_code ->
+          %{
+            provider: provider,
+            model: claude_code_model()
+          }
+
+        :lm_studio ->
+          %{
+            provider: provider,
+            model: lm_studio_model()
+          }
+
+        _ ->
+          %{provider: provider}
       end
 
-    Map.merge(base, extra)
+    Map.merge(base, Enum.reject(extra, fn {_key, value} -> is_nil(value) end) |> Map.new())
   end
 
   defp codex_sandbox do
     :foundry
     |> Application.get_env(:codex, [])
     |> Keyword.get(:sandbox, "workspace-write")
+  end
+
+  defp codex_model do
+    :foundry
+    |> Application.get_env(:codex, [])
+    |> Keyword.get(:model)
+  end
+
+  defp claude_code_model do
+    :foundry
+    |> Application.get_env(:claude_code, [])
+    |> Keyword.get(:model)
+  end
+
+  defp lm_studio_model do
+    :foundry
+    |> Application.get_env(:lm_studio, [])
+    |> Keyword.get(:model)
   end
 
   defp target_project_header(project_root) do
@@ -920,7 +1003,7 @@ defmodule FoundryWeb.ChatSession do
         sandbox: Keyword.get(config, :sandbox, "workspace-write"),
         executable: Keyword.get(config, :executable, "codex"),
         project_root: project_root,
-        conversation_window: 8
+        conversation_window: :all
       ]
 
       case Foundry.CodexProvider.stream(messages, opts, fn
@@ -928,15 +1011,15 @@ defmodule FoundryWeb.ChatSession do
              {:trace, event} -> on_event.({:trace, event})
              _event -> :ok
            end) do
-        {:ok, text, _metadata} ->
-          {:ok, text}
+        {:ok, text, metadata} ->
+          {:ok, text, metadata}
 
         {:error, :not_installed} ->
           {:ok, codex_not_installed_message()}
 
-        {:error, {:timeout, partial_text}} ->
+        {:error, {:timeout, partial_text, metadata}} ->
           if String.length(partial_text) > 0 do
-            {:ok, partial_text <> "\n\n[Response timed out - partial response above]"}
+            {:ok, partial_text, Map.put(metadata || %{}, :partial, true)}
           else
             {:error, :timeout}
           end
@@ -990,12 +1073,12 @@ defmodule FoundryWeb.ChatSession do
              {:delta, text} -> on_event.({:delta, text})
              _event -> :ok
            end) do
-        {:ok, text, _metadata} ->
-          {:ok, text}
+        {:ok, text, metadata} ->
+          {:ok, text, metadata}
 
         {:error, {:timeout, partial_text}} ->
           if String.length(partial_text) > 0 do
-            {:ok, partial_text <> "\n\n[Response timed out - partial response above]"}
+            {:ok, partial_text, %{partial: true}}
           else
             {:error, :timeout}
           end
@@ -1279,6 +1362,11 @@ defmodule FoundryWeb.ChatSession do
       file_count: 0,
       tools: [],
       files: [],
+      read_files: [],
+      written_files: [],
+      token_usage: %{},
+      total_tokens: nil,
+      metadata: %{},
       error: nil
     }
   end
@@ -1301,12 +1389,17 @@ defmodule FoundryWeb.ChatSession do
     |> Map.merge(summary)
   end
 
-  defp complete_activity_run(socket, request_ref, response) do
+  defp complete_activity_run(socket, request_ref, response, metadata) do
     update_activity_run(socket, request_ref, fn run ->
+      usage = normalize_usage(metadata)
+
       run
       |> Map.put(:status, :completed)
       |> Map.put(:finished_at, DateTime.utc_now() |> DateTime.to_iso8601())
       |> Map.put(:response_preview, summarize_response(response))
+      |> Map.put(:metadata, metadata || %{})
+      |> Map.put(:token_usage, usage)
+      |> Map.put(:total_tokens, usage_total(usage))
     end)
   end
 
@@ -1425,6 +1518,10 @@ defmodule FoundryWeb.ChatSession do
       "recent_documents",
       Enum.map(tool_results.documents, & &1.path)
     )
+    |> Map.put(
+      "working_summary",
+      Map.get(digest, "working_summary") || summarize_working_context(digest)
+    )
     |> Map.put("revision_of_proposal_id", Map.get(digest, "revision_of_proposal_id"))
     |> maybe_put_proposal(proposal)
   end
@@ -1442,7 +1539,10 @@ defmodule FoundryWeb.ChatSession do
     |> Map.put("recent_conclusions", recent_conclusions)
     |> prepend_recent_finding(artifact)
     |> Map.put("recent_files", if(run, do: run.files, else: []))
+    |> Map.put("recent_read_files", if(run, do: run.read_files, else: []))
+    |> Map.put("recent_written_files", if(run, do: run.written_files, else: []))
     |> Map.put("recent_tools", if(run, do: run.tools, else: []))
+    |> Map.put("recent_token_usage", if(run, do: run.token_usage || %{}, else: %{}))
     |> Map.put(
       "recent_trace_summary",
       if(run,
@@ -1489,8 +1589,26 @@ defmodule FoundryWeb.ChatSession do
   defp maybe_attach_message_metadata(message, run) do
     message
     |> Map.put("mode", Atom.to_string(run.mode))
+    |> Map.put("files", run.files || [])
+    |> Map.put("read_files", run.read_files || [])
+    |> Map.put("written_files", run.written_files || [])
+    |> Map.put("tools", run.tools || [])
+    |> Map.put("token_usage", run.token_usage || %{})
+    |> Map.put("total_tokens", run.total_tokens)
+    |> Map.put("provider", to_string(run.provider))
+    |> maybe_put_partial(run)
     |> maybe_put_message_proposal(run.proposal)
   end
+
+  defp maybe_put_partial(message, %{metadata: metadata}) when is_map(metadata) do
+    if Map.get(metadata, :partial) || Map.get(metadata, "partial") do
+      Map.put(message, "partial", true)
+    else
+      message
+    end
+  end
+
+  defp maybe_put_partial(message, _run), do: message
 
   defp maybe_put_message_proposal(message, nil), do: message
   defp maybe_put_message_proposal(message, proposal), do: Map.put(message, "proposal", proposal)
@@ -1545,8 +1663,12 @@ defmodule FoundryWeb.ChatSession do
     messages
     |> find_proposal(proposal_id)
     |> case do
-      nil -> %{}
-      proposal -> get_in(proposal, [:preview, :graph_overlay]) || get_in(proposal, ["preview", "graph_overlay"]) || %{}
+      nil ->
+        %{}
+
+      proposal ->
+        get_in(proposal, [:preview, :graph_overlay]) ||
+          get_in(proposal, ["preview", "graph_overlay"]) || %{}
     end
   end
 
@@ -1566,7 +1688,9 @@ defmodule FoundryWeb.ChatSession do
          files when is_list(files) <-
            get_in(proposal, [:preview, :files]) || get_in(proposal, ["preview", "files"]),
          file when is_map(file) <-
-           Enum.find(files, fn preview_file -> (preview_file[:path] || preview_file["path"]) == path end) do
+           Enum.find(files, fn preview_file ->
+             (preview_file[:path] || preview_file["path"]) == path
+           end) do
       %{
         proposal_id: proposal_id,
         path: path,
@@ -1635,6 +1759,82 @@ defmodule FoundryWeb.ChatSession do
   defp parse_chat_view("trace"), do: :trace
   defp parse_chat_view("session"), do: :session
   defp parse_chat_view(_view), do: :conversation
+
+  defp build_session_summary(digest, messages, activity_runs) do
+    recent_assistant_points =
+      messages
+      |> Enum.filter(&(&1["role"] == "assistant"))
+      |> Enum.map(&String.trim(&1["content"] || ""))
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.take(-3)
+      |> Enum.map(&String.slice(&1, 0, 220))
+
+    recent_reads = digest |> Map.get("recent_read_files", []) |> Enum.take(8)
+    recent_writes = digest |> Map.get("recent_written_files", []) |> Enum.take(8)
+    latest_run = List.first(activity_runs || [])
+
+    summary =
+      [
+        summarize_working_context(digest),
+        if(recent_assistant_points != [],
+          do: "Recent outcomes: " <> Enum.join(recent_assistant_points, " | ")
+        ),
+        if(recent_reads != [], do: "Recent reads: " <> Enum.join(recent_reads, ", ")),
+        if(recent_writes != [], do: "Recent writes: " <> Enum.join(recent_writes, ", ")),
+        if(latest_run && latest_run.tools != [],
+          do: "Recent tools: " <> Enum.join(Enum.take(latest_run.tools, 6), ", ")
+        )
+      ]
+      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.join("\n")
+
+    digest
+    |> Map.put("working_summary", summary)
+    |> Map.put("summary_updated_at", DateTime.utc_now() |> DateTime.to_iso8601())
+  end
+
+  defp summarize_working_context(digest) do
+    [
+      digest["last_mode"] && "Mode #{digest["last_mode"]}",
+      digest["last_proposal_id"] && "proposal #{digest["last_proposal_id"]}",
+      digest["context_fingerprint"] && "context #{digest["context_fingerprint"]}",
+      digest["recent_conclusions"] |> List.wrap() |> List.first()
+    ]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join(" | ")
+  end
+
+  defp normalize_usage(metadata) when is_map(metadata) do
+    usage = Map.get(metadata, :usage) || Map.get(metadata, "usage") || %{}
+
+    %{
+      input_tokens:
+        usage[:input_tokens] || usage["input_tokens"] || usage[:prompt_tokens] ||
+          usage["prompt_tokens"],
+      output_tokens:
+        usage[:output_tokens] || usage["output_tokens"] || usage[:completion_tokens] ||
+          usage["completion_tokens"],
+      total_tokens:
+        usage[:total_tokens] || usage["total_tokens"] || usage[:total] || usage["total"]
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp normalize_usage(_metadata), do: %{}
+
+  defp usage_total(%{total_tokens: total}) when is_integer(total), do: total
+
+  defp usage_total(usage) when is_map(usage) do
+    input = Map.get(usage, :input_tokens)
+    output = Map.get(usage, :output_tokens)
+
+    if is_integer(input) or is_integer(output) do
+      (input || 0) + (output || 0)
+    end
+  end
+
+  defp usage_total(_usage), do: nil
 
   defp hook(key) do
     :foundry_web

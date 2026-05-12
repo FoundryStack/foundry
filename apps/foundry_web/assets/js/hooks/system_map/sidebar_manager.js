@@ -96,6 +96,10 @@ export class SidebarManager {
     this._panel.sync()
   }
 
+  hasBoundList() {
+    return !!this._boundList && document.body.contains(this._boundList)
+  }
+
   destroy() {
     if (this._boundList && this._sidebarClickHandler) {
       this._boundList.removeEventListener('click', this._sidebarClickHandler)

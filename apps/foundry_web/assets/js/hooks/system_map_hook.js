@@ -65,15 +65,18 @@ export const SystemMapHook = {
       this.graph.onNodeClick = (nodeId, nodeData) => {
         const resolvedNodeData = nodeData || this.graph.normalizedNodes.get(nodeId)
 
-        if (contextJson.nodes.length <= UI_CONFIG.nodeThreshold) {
-          this._selectNode(nodeId, resolvedNodeData, { pushSelection: true })
-        } else {
-          this._selectNode(nodeId, resolvedNodeData, { pushSelection: true })
+        this._selectNode(nodeId, resolvedNodeData, { pushSelection: true })
+
+        if (contextJson.nodes.length > UI_CONFIG.nodeThreshold) {
           this.pushEvent('fetch_node_detail', { id: nodeId })
         }
       }
 
       this.graph.onBackgroundClick = () => {
+        if (this._isCoverageMode()) {
+          this.pushEvent('clear_node_filter', {})
+        }
+
         this.pushEvent('clear_scenario', {})
       }
 
@@ -162,6 +165,8 @@ export const SystemMapHook = {
     }
 
     this._syncCoverageOverlay()
+    this._syncUiState()
+    this._startUiObservers()
   },
 
   _handleNodeSelected(nodeId, nodeData = null) {
@@ -180,7 +185,7 @@ export const SystemMapHook = {
     this._handleNodeSelected(nodeId, nodeData)
 
     if (pushSelection) {
-      this.pushEvent('node_selected', { id: nodeId, data: nodeData })
+      this.pushEvent(this._selectionEventName(), { id: nodeId, data: nodeData })
     }
   },
 
@@ -462,18 +467,102 @@ export const SystemMapHook = {
     }
   },
 
+  _metadata() {
+    return document.getElementById('system-map-metadata')
+  },
+
+  _currentSidebarTab() {
+    return this._metadata()?.dataset.sidebarTab || 'system_map'
+  },
+
+  _isCoverageMode() {
+    return this._currentSidebarTab() === 'test_coverage'
+  },
+
+  _selectionEventName() {
+    return this._isCoverageMode() ? 'show_node_coverage' : 'node_selected'
+  },
+
+  _startUiObservers() {
+    if (this._uiMutationObserver) {
+      this._uiMutationObserver.disconnect()
+    }
+
+    if (typeof MutationObserver !== 'function') return
+
+    const observer = new MutationObserver(() => {
+      this.sidebar?.sync()
+      this._syncCoverageOverlay()
+      this._syncUiState()
+    })
+
+    const sidebar = document.getElementById('fm-sidebar')
+    if (sidebar) {
+      observer.observe(sidebar, { childList: true, subtree: true })
+    }
+
+    const metadata = this._metadata()
+    if (metadata) {
+      observer.observe(metadata, {
+        attributes: true,
+        attributeFilter: ['data-sidebar-tab', 'data-selected-node-id', 'data-uncovered-node-ids'],
+      })
+    }
+
+    this._uiMutationObserver = observer
+  },
+
+  _syncUiState() {
+    const metadata = this._metadata()
+    const selectedNodeId = metadata?.dataset.selectedNodeId
+    const currentSidebarTab = this._currentSidebarTab()
+    const tabChanged = this._lastSyncedSidebarTab !== currentSidebarTab
+    const selectionChanged = this._lastSyncedSelectedNodeId !== selectedNodeId
+
+    if (this.sidebar && !this.sidebar.hasBoundList()) {
+      this.sidebar.sync()
+    }
+
+    if (selectedNodeId) {
+      this._selectedNodeId = selectedNodeId
+      this.sidebar?.highlightNode(selectedNodeId)
+
+      if (currentSidebarTab === 'system_map' && (tabChanged || selectionChanged)) {
+        this.graph?.focusNode(selectedNodeId)
+      }
+
+      this._lastSyncedSidebarTab = currentSidebarTab
+      this._lastSyncedSelectedNodeId = selectedNodeId
+      return
+    }
+
+    if (currentSidebarTab === 'system_map') {
+      this.graph?.clearSelection()
+      this.sidebar?.clearHighlight()
+    }
+
+    this._lastSyncedSidebarTab = currentSidebarTab
+    this._lastSyncedSelectedNodeId = null
+  },
+
   updated() {
     try {
       this.feed?.sync()
       this.drawer?.sync()
       this.sidebar?.sync()
       this._syncCoverageOverlay()
+      this._syncUiState()
     } catch (error) {
       console.error('SystemMapHook update error:', error)
     }
   },
 
   destroyed() {
+    if (this._uiMutationObserver) {
+      this._uiMutationObserver.disconnect()
+      this._uiMutationObserver = null
+    }
+
     if (this._keyHandler) {
       document.removeEventListener('keydown', this._keyHandler)
       this._keyHandler = null

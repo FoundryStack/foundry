@@ -16,6 +16,8 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
 
   use Reactor
 
+  require Ash.Query
+
   alias IgamingRef.Players.Rules.PlayerNotSelfExcluded
 
   alias IgamingRef.Promotions.{
@@ -34,70 +36,107 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
 
   step :load_event do
     description("Load inbound BonusEvent by ID.")
+    argument(:event_id, input(:event_id))
 
-    run(fn %{event_id: event_id}, _ ->
-      Ash.get(BonusEvent, event_id, actor: :system)
+    run(fn inputs, _ ->
+      event_id = Map.fetch!(inputs, :event_id)
+      Ash.get(BonusEvent, event_id, actor: %{role: :operator})
+    end)
+  end
+
+  step :load_event_state do
+    description("Attach replay metadata to the loaded event.")
+    argument(:event, result(:load_event))
+
+    run(fn %{event: event}, _ ->
+      {:ok, %{event: event, should_process: is_nil(event.processed_at)}}
     end)
   end
 
   step :load_player do
     description("Load event player for condition evaluation.")
-    argument(:event, result(:load_event))
+    argument(:event_state, result(:load_event_state))
 
-    run(fn %{event: event}, _ ->
-      Ash.get(IgamingRef.Players.Player, event.player_id, actor: :system)
+    run(fn %{event_state: %{event: event, should_process: should_process}}, _ ->
+      if should_process do
+        Ash.get(IgamingRef.Players.Player, event.player_id, actor: %{is_system: true})
+      else
+        {:ok, nil}
+      end
     end)
   end
 
   step :load_active_campaigns do
     description("Load active campaigns eligible for trigger matching.")
+    argument(:event_state, result(:load_event_state))
 
-    run(fn _, _ ->
-      Ash.read(BonusCampaign, filter: [status: :active], actor: :system)
+    run(fn %{event_state: %{should_process: should_process}}, _ ->
+      if should_process do
+        BonusCampaign
+        |> Ash.Query.filter(status: :active)
+        |> Ash.read(actor: :system)
+      else
+        {:ok, []}
+      end
     end)
   end
 
   step :find_matching_campaigns do
     description("Filter campaigns by trigger and condition evaluation.")
+    argument(:event_state, result(:load_event_state))
     argument(:event, result(:load_event))
     argument(:player, result(:load_player))
     argument(:campaigns, result(:load_active_campaigns))
 
-    run(fn %{event: event, player: player, campaigns: campaigns}, _ ->
-      matches =
-        campaigns
-        |> Enum.filter(&campaign_matches_event?(&1, event, player))
-        |> Enum.map(& &1.id)
+    run(fn %{event_state: %{should_process: should_process}, event: event, player: player, campaigns: campaigns}, _ ->
+      if should_process do
+        matches =
+          campaigns
+          |> Enum.filter(&campaign_matches_event?(&1, event, player))
+          |> Enum.map(& &1.id)
 
-      {:ok, matches}
+        {:ok, matches}
+      else
+        {:ok, []}
+      end
     end)
   end
 
   step :execute_campaigns do
     description("Run configured execution handlers for each matching campaign.")
+    argument(:event_state, result(:load_event_state))
     argument(:campaign_ids, result(:find_matching_campaigns))
     argument(:event, result(:load_event))
     argument(:player, result(:load_player))
 
-    run(fn %{campaign_ids: campaign_ids, event: event, player: player}, _ ->
-      Enum.reduce_while(campaign_ids, {:ok, []}, fn campaign_id, {:ok, acc} ->
-        case execute_campaign(campaign_id, player, event) do
-          {:ok, result} -> {:cont, {:ok, [result | acc]}}
-          {:error, error} -> {:halt, {:error, error}}
-        end
-      end)
+    run(fn %{event_state: %{should_process: should_process}, campaign_ids: campaign_ids, event: event, player: player}, _ ->
+      if should_process do
+        Enum.reduce_while(campaign_ids, {:ok, []}, fn campaign_id, {:ok, acc} ->
+          case execute_campaign(campaign_id, player, event) do
+            {:ok, result} -> {:cont, {:ok, [result | acc]}}
+            {:error, error} -> {:halt, {:error, error}}
+          end
+        end)
+      else
+        {:ok, []}
+      end
     end)
   end
 
   step :mark_processed do
     description("Mark BonusEvent as processed once execution stage completes.")
+    argument(:event_state, result(:load_event_state))
     argument(:event, result(:load_event))
     wait_for(:execute_campaigns)
 
-    run(fn %{event: event}, _ ->
-      event
-      |> Ash.Changeset.for_update(:mark_processed, %{})
-      |> Ash.update(actor: :system)
+    run(fn %{event_state: %{event: event, should_process: should_process}}, _ ->
+      if should_process do
+        event
+        |> Ash.Changeset.for_update(:mark_processed, %{})
+        |> Ash.update(actor: %{is_system: true})
+      else
+        {:ok, event}
+      end
     end)
   end
 
@@ -114,19 +153,17 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
   end
 
   defp load_triggers(campaign_id) do
-    Ash.read(BonusTrigger,
-      filter: [campaign_id: campaign_id, enabled: true],
-      sort: [position: :asc],
-      actor: :system
-    )
+    BonusTrigger
+    |> Ash.Query.filter(campaign_id: campaign_id, enabled: true)
+    |> Ash.Query.sort(position: :asc)
+    |> Ash.read(actor: :system)
   end
 
   defp load_condition_groups(campaign_id) do
-    Ash.read(BonusConditionGroup,
-      filter: [campaign_id: campaign_id],
-      sort: [position: :asc],
-      actor: :system
-    )
+    BonusConditionGroup
+    |> Ash.Query.filter(campaign_id: campaign_id)
+    |> Ash.Query.sort(position: :asc)
+    |> Ash.read(actor: :system)
   end
 
   defp load_conditions(groups) do
@@ -135,11 +172,10 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
     if group_ids == [] do
       {:ok, []}
     else
-      Ash.read(BonusCondition,
-        filter: [group_id: {:in, group_ids}],
-        sort: [position: :asc],
-        actor: :system
-      )
+      BonusCondition
+      |> Ash.Query.filter(group_id in ^group_ids)
+      |> Ash.Query.sort(position: :asc)
+      |> Ash.read(actor: :system)
     end
   end
 
@@ -148,21 +184,46 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
   end
 
   defp conditions_pass?(campaign, player, event, groups, conditions) do
+    groups_by_parent = Enum.group_by(groups, & &1.parent_group_id)
     conditions_by_group = Enum.group_by(conditions, & &1.group_id)
+    root_groups = Map.get(groups_by_parent, nil, [])
 
-    groups
-    |> Enum.all?(fn group ->
-      group_results =
+    cond do
+      root_groups == [] and groups == [] ->
+        true
+
+      root_groups == [] ->
+        false
+
+      true ->
+        Enum.all?(root_groups, &evaluate_group(&1, groups_by_parent, conditions_by_group, campaign, player, event, MapSet.new()))
+    end
+  end
+
+  defp evaluate_group(group, groups_by_parent, conditions_by_group, campaign, player, event, visited) do
+    if MapSet.member?(visited, group.id) do
+      false
+    else
+      visited = MapSet.put(visited, group.id)
+
+      direct_results =
         conditions_by_group
         |> Map.get(group.id, [])
+        |> Enum.sort_by(& &1.position)
         |> Enum.map(&evaluate_condition(&1, campaign, player, event))
 
-      case group.combinator do
-        :any -> Enum.any?(group_results, & &1)
-        _ -> Enum.all?(group_results, & &1)
-      end
-    end)
+      child_results =
+        groups_by_parent
+        |> Map.get(group.id, [])
+        |> Enum.sort_by(& &1.position)
+        |> Enum.map(&evaluate_group(&1, groups_by_parent, conditions_by_group, campaign, player, event, visited))
+
+      combine_group_results(group.combinator, direct_results ++ child_results)
+    end
   end
+
+  defp combine_group_results(:any, results), do: Enum.any?(results, & &1)
+  defp combine_group_results(:all, results), do: Enum.all?(results, & &1)
 
   defp evaluate_condition(condition, campaign, player, event) do
     result =
@@ -205,7 +266,11 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
   end
 
   defp no_active_bonus?(player_id) do
-    case Ash.read(BonusGrant, filter: [player_id: player_id, status: :active], actor: :system) do
+    case (
+           BonusGrant
+           |> Ash.Query.filter(player_id: player_id, status: :active)
+           |> Ash.read(actor: %{is_system: true})
+         ) do
       {:ok, []} -> true
       {:ok, _active_grants} -> false
       _ -> false
@@ -219,11 +284,10 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
   end
 
   defp load_executions(campaign_id) do
-    Ash.read(BonusExecution,
-      filter: [campaign_id: campaign_id, enabled: true],
-      sort: [position: :asc],
-      actor: :system
-    )
+    BonusExecution
+    |> Ash.Query.filter(campaign_id: campaign_id, enabled: true)
+    |> Ash.Query.sort(position: :asc)
+    |> Ash.read(actor: :system)
   end
 
   defp run_executions(campaign_id, player, event, []),
