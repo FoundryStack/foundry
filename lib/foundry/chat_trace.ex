@@ -28,6 +28,7 @@ defmodule Foundry.ChatTrace do
     paths = extract_paths(raw_event) |> Enum.uniq() |> Enum.take(@max_paths)
     phase = extract_phase(raw_event, type, item_type, tool, command)
     category = classify(type, item_type, tool, command, paths, phase)
+    file_access = classify_file_access(type, item_type, tool, command, paths, raw_event)
 
     %{
       id: System.unique_integer([:positive, :monotonic]),
@@ -39,6 +40,7 @@ defmodule Foundry.ChatTrace do
       tool: tool,
       command: command,
       paths: paths,
+      file_access: file_access,
       summary: Map.get(raw_event, "message") || Map.get(raw_event, "summary"),
       duplicate_key: duplicate_key(phase, category, tool, command, paths, type),
       title: build_title(category, phase, type, item_type, tool, command, paths, raw_event),
@@ -65,6 +67,18 @@ defmodule Foundry.ChatTrace do
       |> Enum.flat_map(&Map.get(&1, :paths, []))
       |> Enum.uniq()
 
+    read_files =
+      events
+      |> Enum.filter(&(Map.get(&1, :file_access) == :read))
+      |> Enum.flat_map(&Map.get(&1, :paths, []))
+      |> Enum.uniq()
+
+    written_files =
+      events
+      |> Enum.filter(&(Map.get(&1, :file_access) == :write))
+      |> Enum.flat_map(&Map.get(&1, :paths, []))
+      |> Enum.uniq()
+
     %{
       event_count: length(events),
       grouped_event_count: Enum.count(grouped_events),
@@ -72,6 +86,8 @@ defmodule Foundry.ChatTrace do
       phase_groups: group_by_phase(grouped_events),
       tools: tools,
       files: files,
+      read_files: read_files,
+      written_files: written_files,
       tool_count: length(tools),
       file_count: length(files),
       phase_counts: Enum.frequencies_by(events, & &1.phase),
@@ -223,6 +239,41 @@ defmodule Foundry.ChatTrace do
       String.contains?(type, "agent_message") -> :message
       String.contains?(type, "completed") -> :result
       true -> :other
+    end
+  end
+
+  defp classify_file_access(_type, _item_type, _tool, _command, [], _raw_event), do: nil
+
+  defp classify_file_access(type, item_type, tool, command, _paths, raw_event) do
+    lowered_type = String.downcase(type || "")
+    lowered_tool = String.downcase(tool || "")
+    lowered_command = String.downcase(command || "")
+    lowered_message = String.downcase(Map.get(raw_event, "message", ""))
+
+    cond do
+      String.contains?(lowered_type, ["write", "edit", "patch", "create", "save"]) ->
+        :write
+
+      String.contains?(lowered_tool, ["apply_patch", "write", "edit", "create"]) ->
+        :write
+
+      String.contains?(lowered_command, ["apply_patch", "mv ", "cp ", "touch ", "mkdir ", "tee "]) ->
+        :write
+
+      String.contains?(lowered_command, [">", ">>"]) ->
+        :write
+
+      String.contains?(lowered_message, ["wrote", "edited", "updated", "created"]) ->
+        :write
+
+      item_type in ["custom_tool_call", "function_call", "tool_call"] and present?(command) ->
+        :read
+
+      present?(command) ->
+        :read
+
+      true ->
+        :read
     end
   end
 

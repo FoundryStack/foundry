@@ -138,45 +138,43 @@ defmodule Foundry.ClaudeCodeProvider do
   end
 
   defp collect_output(port, timeout_ms, on_event) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    do_collect(port, [], "", [], deadline, on_event)
+    do_collect(port, [], "", [], timeout_ms, on_event)
   end
 
-  defp do_collect(port, lines, buffer, streamed_chunks, deadline, on_event) do
-    remaining = deadline - System.monotonic_time(:millisecond)
+  defp do_collect(port, lines, buffer, streamed_chunks, timeout_ms, on_event) do
+    receive do
+      {^port, {:data, data}} ->
+        {complete_lines, next_buffer} = split_complete_lines(buffer <> data)
+        new_chunks = emit_stream_events(complete_lines, on_event)
 
-    if remaining <= 0 do
-      partial = parse_partial_result(lines)
-      {:error, {:timeout, partial}}
-    else
-      receive do
-        {^port, {:data, data}} ->
-          {complete_lines, next_buffer} = split_complete_lines(buffer <> data)
-          new_chunks = emit_stream_events(complete_lines, on_event)
+        do_collect(
+          port,
+          [data | lines],
+          next_buffer,
+          new_chunks ++ streamed_chunks,
+          timeout_ms,
+          on_event
+        )
 
-          do_collect(
-            port,
-            [data | lines],
-            next_buffer,
-            new_chunks ++ streamed_chunks,
-            deadline,
-            on_event
-          )
+      {^port, {:exit_status, 0}} ->
+        parse_result(lines, buffer, streamed_chunks, on_event)
 
-        {^port, {:exit_status, 0}} ->
-          parse_result(lines, streamed_chunks, on_event)
+      {^port, {:exit_status, code}} ->
+        {:error, {:exit_code, code, parse_partial_result(lines, buffer)}}
 
-        {^port, {:exit_status, code}} ->
-          {:error, {:exit_code, code, parse_partial_result(lines)}}
+      _other ->
+        do_collect(port, lines, buffer, streamed_chunks, timeout_ms, on_event)
+    after
+      timeout_ms ->
+        case parse_result(lines, buffer, streamed_chunks, on_event) do
+          {:ok, _text, _metadata} = ok ->
+            ok
 
-        _other ->
-          # Handle unexpected messages
-          do_collect(port, lines, buffer, streamed_chunks, deadline, on_event)
-      after
-        remaining ->
-          partial = parse_partial_result(lines)
-          {:error, {:timeout, partial}}
-      end
+          _ ->
+            {:error,
+             {:timeout, parse_partial_result(lines, buffer),
+              parse_partial_metadata(lines, buffer)}}
+        end
     end
   end
 
@@ -199,8 +197,8 @@ defmodule Foundry.ClaudeCodeProvider do
     end)
   end
 
-  defp parse_result(lines, streamed_chunks, on_event) do
-    full_text = Enum.reverse(lines) |> IO.iodata_to_binary()
+  defp parse_result(lines, buffer, streamed_chunks, on_event) do
+    full_text = full_output(lines, buffer)
 
     # Parse stream-json lines and extract the final result
     case parse_stream_json(full_text) do
@@ -224,13 +222,26 @@ defmodule Foundry.ClaudeCodeProvider do
     end
   end
 
-  defp parse_partial_result(lines) do
-    full_text = Enum.reverse(lines) |> IO.iodata_to_binary()
+  defp parse_partial_result(lines, buffer) do
+    full_text = full_output(lines, buffer)
     # Try to extract partial result from stream-json events
     case parse_stream_json(full_text) do
       {:ok, result, _} -> result
       _ -> full_text
     end
+  end
+
+  defp parse_partial_metadata(lines, buffer) do
+    full_text = full_output(lines, buffer)
+
+    case parse_stream_json(full_text) do
+      {:ok, _result, metadata} -> Map.put(metadata, :partial, true)
+      _ -> %{partial: true}
+    end
+  end
+
+  defp full_output(lines, buffer) do
+    Enum.reverse([buffer | lines]) |> IO.iodata_to_binary()
   end
 
   defp parse_stream_json(raw_output) do
