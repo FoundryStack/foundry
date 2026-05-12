@@ -47,6 +47,7 @@ defmodule FoundryWeb.ChatProviders do
              _event -> :ok
            end) do
         {:ok, _text, metadata} ->
+          Logger.info("ChatProviders: Sending llm_stream_done to #{inspect(liveview_pid)} with ref #{inspect(request_ref)}")
           send(liveview_pid, {:llm_stream_done, request_ref, "", metadata})
 
         {:error, :not_installed} ->
