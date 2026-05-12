@@ -82,7 +82,8 @@ defmodule Foundry.TestScenario.RuntimeCapture do
     not duplicate_ash_runtime_call?(module_function)
   end
 
-  defp persist_trace_call?(%{"module_function" => module_function}) when is_binary(module_function) do
+  defp persist_trace_call?(%{"module_function" => module_function})
+       when is_binary(module_function) do
     not duplicate_ash_runtime_call?(module_function)
   end
 
@@ -91,7 +92,14 @@ defmodule Foundry.TestScenario.RuntimeCapture do
   defp persist_trace_call?(_attrs), do: false
 
   defp duplicate_ash_runtime_call?(module_function) do
-    module_function in ["Ash.create", "Ash.read", "Ash.read_one", "Ash.get", "Ash.update", "Ash.destroy"]
+    module_function in [
+      "Ash.create",
+      "Ash.read",
+      "Ash.read_one",
+      "Ash.get",
+      "Ash.update",
+      "Ash.destroy"
+    ]
   end
 
   defp flush_trace(outcome) do
@@ -187,18 +195,10 @@ defmodule Foundry.TestScenario.RuntimeCapture do
 
   defp drain_liveview_events do
     case Process.get(@trace_key) do
-      %{metadata: metadata, sequence: seq} = trace ->
+      %{metadata: metadata} ->
         metadata
         |> trace_id()
-        |> Foundry.TestScenario.EventBuffer.take()
-        |> Enum.reduce({trace, seq}, fn event_attrs, {current_trace, current_seq} ->
-          updated_trace =
-            event_attrs
-            |> Map.put_new(:node_id, Map.get(event_attrs, :node_id))
-            |> persist_event(current_trace, current_seq)
-
-          {updated_trace, updated_trace.sequence}
-        end)
+        |> drain_pending_events()
 
         :ok
 
@@ -238,6 +238,71 @@ defmodule Foundry.TestScenario.RuntimeCapture do
         drain_mailbox_events()
     after
       0 -> :ok
+    end
+  end
+
+  defp drain_pending_events(trace_id, attempts_left \\ 6)
+
+  defp drain_pending_events(_trace_id, attempts_left) when attempts_left <= 0 do
+    drain_available_events(nil)
+    :ok
+  end
+
+  defp drain_pending_events(trace_id, attempts_left) do
+    drained_count = drain_available_events(trace_id)
+
+    if drained_count == 0 do
+      Process.sleep(5)
+    end
+
+    drain_pending_events(trace_id, attempts_left - 1)
+  end
+
+  defp drain_available_events(trace_id) do
+    buffered_count = drain_buffered_events(trace_id)
+    mailbox_count = drain_mailbox_events_count()
+    buffered_count + mailbox_count
+  end
+
+  defp drain_buffered_events(nil), do: 0
+
+  defp drain_buffered_events(trace_id) do
+    trace_id
+    |> Foundry.TestScenario.EventBuffer.take()
+    |> Enum.reduce(0, fn event_attrs, count ->
+      case Process.get(@trace_key) do
+        %{sequence: seq} = trace ->
+          event_attrs
+          |> Map.put_new(:node_id, Map.get(event_attrs, :node_id))
+          |> persist_event(trace, seq)
+
+          count + 1
+
+        _ ->
+          count
+      end
+    end)
+  end
+
+  defp drain_mailbox_events_count do
+    receive do
+      {:foundry_ash_event, event_attrs} ->
+        count =
+          case Process.get(@trace_key) do
+            %{sequence: seq} = trace ->
+              event_attrs
+              |> Map.put_new(:node_id, Map.get(event_attrs, :node_id))
+              |> persist_event(trace, seq)
+
+              1
+
+            _ ->
+              0
+          end
+
+        count + drain_mailbox_events_count()
+    after
+      0 -> 0
     end
   end
 end

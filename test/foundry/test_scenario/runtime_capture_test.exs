@@ -164,6 +164,42 @@ defmodule Foundry.TestScenario.RuntimeCaptureTest do
                ]
       end)
     end
+
+    test "persists delayed live view events before flushing the trace" do
+      project_root = tmp_project_root()
+      context = scenario_context("delayed live view event")
+
+      in_project_root(project_root, fn ->
+        RuntimeCapture.capture(context, fn ->
+          trace_id = RuntimeCapture.current_trace_id()
+
+          spawn(fn ->
+            Process.sleep(10)
+
+            Foundry.TestScenario.EventBuffer.push(trace_id, %{
+              node_id: "Demo.PageLive",
+              action_kind: :entry,
+              capture_origin: :live_view_mount
+            })
+          end)
+        end)
+
+        [trace_path] = trace_files(project_root)
+        payload = decode_trace!(trace_path)
+
+        assert payload["events"] == [
+                 %{
+                   "capture_origin" => "live_view_mount",
+                   "node_id" => "Demo.PageLive",
+                   "provenance" => "executed",
+                   "sequence" => 1,
+                   "status" => "passed",
+                   "action_kind" => "entry",
+                   "focus_node_id" => "Demo.PageLive"
+                 }
+               ]
+      end)
+    end
   end
 
   defp scenario_context(test_name, opts \\ []) do

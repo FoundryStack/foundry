@@ -1517,6 +1517,114 @@ defmodule Foundry.Context.ScenarioExtractorTest do
                "IgamingRef.Gaming.GameSession:action:read"
              ]
     end
+
+    test "page scenarios fall back to static route inference when runtime traces are absent" do
+      tmpdir = tmp_project_root()
+
+      write_test_file(
+        tmpdir,
+        "home_live_test.exs",
+        """
+        defmodule IgamingRef.Web.HomeLiveTest do
+          use IgamingRef.ConnCase, async: false
+          import Phoenix.LiveViewTest
+          import Foundry.TestScenario
+
+          describe "home page" do
+            test "renders featured games and active promotions from live data" do
+              capture do
+                {:ok, _view, _html} = live(build_conn_with_trace(), "/")
+              end
+            end
+          end
+        end
+        """
+      )
+
+      nodes = [
+        page_node("IgamingRef.Web.HomeLive", "/", [
+          %{"resource" => "IgamingRef.Gaming.Game", "action" => :read, "action_name" => "read"},
+          %{
+            "resource" => "IgamingRef.Promotions.BonusCampaign",
+            "action" => :read,
+            "action_name" => "read"
+          }
+        ]),
+        resource_node("IgamingRef.Gaming.Game", [%{name: "read", type: "read"}]),
+        resource_node("IgamingRef.Promotions.BonusCampaign", [%{name: "read", type: "read"}])
+      ]
+
+      [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert scenario.evidence_mode == :static
+      assert scenario.runtime_flow == []
+
+      assert Enum.map(scenario.flow, & &1.node_id) == [
+               "IgamingRef.Web.HomeLive",
+               "IgamingRef.Gaming.Game",
+               "IgamingRef.Promotions.BonusCampaign"
+             ]
+
+      assert scenario.graph_path == [
+               "IgamingRef.Web.HomeLive",
+               "IgamingRef.Gaming.Game:action:read",
+               "IgamingRef.Promotions.BonusCampaign:action:read"
+             ]
+    end
+
+    test "page static fallback includes page fixture assertion helpers as readable resource steps" do
+      tmpdir = tmp_project_root()
+
+      write_test_file(
+        tmpdir,
+        "game_live_test.exs",
+        """
+        defmodule IgamingRef.Web.GameLiveTest do
+          use IgamingRef.ConnCase, async: false
+          import Phoenix.LiveViewTest
+          import Foundry.TestScenario
+
+          alias IgamingRef.PageFixtures
+
+          describe "game page" do
+            test "clicking play creates a game session for the routed game" do
+              capture do
+                {:ok, view, _html} = live(build_conn_with_trace(%{"player_id" => "player-1"}), "/games/game-1")
+                render_click(element(view, "button", "Play"))
+                PageFixtures.session_for("player-1", "game-1")
+              end
+            end
+          end
+        end
+        """
+      )
+
+      nodes = [
+        page_node("IgamingRef.Web.GameLive", "/games/:id", [
+          %{"resource" => "IgamingRef.Gaming.Game", "action" => :read, "action_name" => "read"},
+          %{"resource" => "IgamingRef.Finance.Wallet", "action" => :read, "action_name" => "read"}
+        ]),
+        resource_node("IgamingRef.Gaming.Game", [%{name: "read", type: "read"}]),
+        resource_node("IgamingRef.Finance.Wallet", [%{name: "read", type: "read"}]),
+        resource_node("IgamingRef.Gaming.GameSession", [%{name: "read", type: "read"}])
+      ]
+
+      [scenario] = ScenarioExtractor.extract(tmpdir, nodes)
+
+      assert Enum.map(scenario.flow, & &1.node_id) == [
+               "IgamingRef.Web.GameLive",
+               "IgamingRef.Gaming.Game",
+               "IgamingRef.Finance.Wallet",
+               "IgamingRef.Gaming.GameSession"
+             ]
+
+      assert scenario.graph_path == [
+               "IgamingRef.Web.GameLive",
+               "IgamingRef.Gaming.Game:action:read",
+               "IgamingRef.Finance.Wallet:action:read",
+               "IgamingRef.Gaming.GameSession:action:read"
+             ]
+    end
   end
 
   defp node(module_name, type) do
@@ -1526,6 +1634,29 @@ defmodule Foundry.Context.ScenarioExtractorTest do
       type: type,
       domain: module_name |> String.split(".") |> Enum.at(1) || "Test",
       description: module_name
+    }
+  end
+
+  defp page_node(module_name, route, calls_actions) do
+    %NodeEntry{
+      id: module_name,
+      module: module_name,
+      type: "page",
+      domain: module_name |> String.split(".") |> Enum.at(1) || "Test",
+      description: module_name,
+      page_route: route,
+      calls_actions: calls_actions
+    }
+  end
+
+  defp resource_node(module_name, actions) do
+    %NodeEntry{
+      id: module_name,
+      module: module_name,
+      type: "resource",
+      domain: module_name |> String.split(".") |> Enum.at(1) || "Test",
+      description: module_name,
+      actions: actions
     }
   end
 
