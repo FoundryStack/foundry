@@ -52,15 +52,15 @@ end
     socket
   end
 
-  def handle_process_down(socket, {_down, ref, :process, _pid, reason}) do
-    Logger.warning("Task process died: ref=#{inspect(ref)}, reason=#{inspect(reason)}")
+  def handle_process_down(socket, {_down, ref, :process, pid, reason}) do
+    Logger.warning("Task process died: pid=#{inspect(pid)}, reason=#{inspect(reason)}")
     current_ref = socket.assigns[:current_request_ref]
 
     if current_ref == ref do
       socket
       |> assign(:loading, false)
       |> assign(:current_request_ref, nil)
-      |> assign(:error, "Task interrupted")
+      |> assign(:error, "Task interrupted: #{inspect(reason)}")
     else
       socket
     end

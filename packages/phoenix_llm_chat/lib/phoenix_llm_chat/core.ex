@@ -106,7 +106,7 @@ defmodule PhoenixLLMChat.Core do
 
   defp submit_to_llm(socket, user_message) do
     case LLMContext.call_llm(socket, user_message) do
-      {:ok, _} -> {:ok, socket}
+      {:ok, updated_socket} -> {:ok, updated_socket}
       {:error, reason} -> {:error, reason}
     end
   end

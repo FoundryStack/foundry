@@ -23,7 +23,7 @@ defmodule PhoenixLLMChat.LLMContext do
 
     case call_llm_stream(socket, provider, messages, options) do
       {:ok, request_ref} ->
-        assign(socket, :current_request_ref, request_ref)
+        {:ok, assign(socket, :current_request_ref, request_ref)}
 
       {:error, reason} ->
         Logger.error("Failed to call LLM: #{inspect(reason)}")
