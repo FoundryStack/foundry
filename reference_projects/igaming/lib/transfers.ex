@@ -242,7 +242,7 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
 
   alias IgamingRef.Finance.{Wallet, LedgerEntry}
   alias IgamingRef.Promotions.{BonusCampaign, BonusGrant}
-  alias IgamingRef.Promotions.Rules.{PlayerEligibleForCampaign, CampaignNotExpired}
+  alias IgamingRef.Promotions.Rules.{CampaignNotExpired, CampaignNotStarted}
   alias IgamingRef.Players.Rules.PlayerNotSelfExcluded
 
   input(:player_id)
@@ -302,12 +302,15 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
           campaign_grants: campaign_grants
         }
 
-        with :ok <- PlayerNotSelfExcluded.evaluate(rule_ctx, nil),
+        with :ok <- CampaignNotStarted.evaluate(%{campaign: campaign}, nil),
+             {:ok, eligibility_rule} <- eligibility_rule_module(campaign.eligibility_rule),
+             :ok <- PlayerNotSelfExcluded.evaluate(rule_ctx, nil),
              :ok <- CampaignNotExpired.evaluate(rule_ctx, nil),
-             :ok <- PlayerEligibleForCampaign.evaluate(rule_ctx, nil) do
+             :ok <- eligibility_rule.evaluate(rule_ctx, nil) do
           {:ok, :rules_passed}
         else
           {:error, code, message} -> {:error, {code, message}}
+          {:error, error} -> {:error, error}
         end
       end
     end)
@@ -349,12 +352,13 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
       if existing_active_grant || existing_ledger_entry do
         :ok
       else
-        wallet
-        |> Ash.Changeset.for_update(:debit, %{amount: campaign.bonus_amount})
-        |> Ash.update(actor: %{is_system: true})
+        case wallet
+             |> Ash.Changeset.for_update(:debit, %{amount: campaign.bonus_amount})
+             |> Ash.update(actor: %{is_system: true}) do
+          {:ok, _wallet} -> :ok
+          {:error, error} -> {:error, error}
+        end
       end
-
-      :ok
     end)
   end
 
@@ -467,4 +471,19 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   defp bonus_grant_ledger_key(player_id, campaign_id) do
     "bonus_grant:#{player_id}:#{campaign_id}"
   end
+
+  defp eligibility_rule_module(rule_name) when is_binary(rule_name) do
+    module =
+      rule_name
+      |> String.split(".")
+      |> Module.concat()
+
+    if Code.ensure_loaded?(module) and function_exported?(module, :evaluate, 2) do
+      {:ok, module}
+    else
+      {:error, {:invalid_eligibility_rule, rule_name}}
+    end
+  end
+
+  defp eligibility_rule_module(_), do: {:error, {:invalid_eligibility_rule, nil}}
 end

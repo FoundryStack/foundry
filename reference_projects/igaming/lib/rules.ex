@@ -220,6 +220,43 @@ defmodule IgamingRef.Promotions.Rules.CampaignNotExpired do
   def description, do: "Campaign must not have expired"
 end
 
+defmodule IgamingRef.Promotions.Rules.CampaignNotStarted do
+  @moduledoc """
+  Rule: the campaign's starts_at has passed.
+
+  Applied by: IgamingRef.Promotions.BonusGrantTransfer
+  Compliance: RG-MGA-005
+  """
+
+  use Foundry.Annotations
+
+  @compliance [:RG_MGA_005]
+  @spec_invariants [
+    "rule rejects when campaign.starts_at is in the future",
+    "rule passes when campaign.starts_at is in the past",
+    "rule prevents grant-time activation of future campaigns"
+  ]
+
+  @behaviour IgamingRef.Rule
+
+  @impl IgamingRef.Rule
+  def evaluate(%{campaign: campaign}, _context) do
+    now = DateTime.utc_now()
+
+    case DateTime.compare(campaign.starts_at, now) do
+      :gt ->
+        {:error, :campaign_not_started,
+         "Campaign #{campaign.id} starts at #{campaign.starts_at} and cannot be granted yet (RG-MGA-005)"}
+
+      _ ->
+        :ok
+    end
+  end
+
+  @impl IgamingRef.Rule
+  def description, do: "Campaign must have reached its starts_at"
+end
+
 defmodule IgamingRef.Finance.Rules.PlayerKYCVerified do
   @moduledoc """
   Rule: the player must have verified KYC status before certain transactions.

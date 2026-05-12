@@ -192,7 +192,13 @@ defmodule IgamingRef.Promotions.BonusGrantTransferTest do
 
   alias IgamingRef.Finance.{LedgerEntry, Wallet}
   alias IgamingRef.Promotions.{BonusCampaign, BonusGrant, BonusGrantTransfer}
-  alias IgamingRef.Promotions.Rules.{PlayerEligibleForCampaign, CampaignNotExpired}
+
+  alias IgamingRef.Promotions.Rules.{
+    CampaignNotExpired,
+    CampaignNotStarted,
+    PlayerEligibleForCampaign
+  }
+
   alias IgamingRef.Players.Rules.PlayerNotSelfExcluded
 
   describe "Rule: CampaignNotExpired" do
@@ -208,6 +214,25 @@ defmodule IgamingRef.Promotions.BonusGrantTransferTest do
     test "passes for active campaign with future expiry" do
       campaign = campaign_fixture()
       assert :ok = CampaignNotExpired.evaluate(%{campaign: campaign}, nil)
+    end
+  end
+
+  describe "Rule: CampaignNotStarted" do
+    @scenario category: :invariant
+
+    test "rejects campaigns that start in the future" do
+      campaign =
+        campaign_fixture(%{
+          starts_at: DateTime.add(DateTime.utc_now(), 3_600, :second)
+        })
+
+      assert {:error, :campaign_not_started, _} =
+               CampaignNotStarted.evaluate(%{campaign: campaign}, nil)
+    end
+
+    test "passes for campaigns that already started" do
+      campaign = campaign_fixture()
+      assert :ok = CampaignNotStarted.evaluate(%{campaign: campaign}, nil)
     end
   end
 

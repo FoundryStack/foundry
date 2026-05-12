@@ -170,7 +170,19 @@ defmodule IgamingRef.Promotions.BonusCampaign do
     end
 
     update :activate do
-      description("Activate the campaign. Validates starts_at is not in the past.")
+      description("Activate the campaign. Validates starts_at is not in the future.")
+      require_atomic?(false)
+
+      validate(fn changeset, _ ->
+        starts_at = Ash.Changeset.get_attribute(changeset, :starts_at)
+
+        if DateTime.compare(starts_at, DateTime.utc_now()) in [:lt, :eq] do
+          :ok
+        else
+          {:error, "campaign cannot be activated before starts_at"}
+        end
+      end)
+
       change(transition_state(:active))
     end
 

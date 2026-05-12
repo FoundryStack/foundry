@@ -8,6 +8,7 @@ defmodule IgamingRef.Promotions.BonusScenarioTest do
   require Ash.Query
 
   alias IgamingRef.Finance.{LedgerEntry, Wallet}
+
   alias IgamingRef.Promotions.{
     BonusCampaign,
     BonusCondition,
@@ -18,6 +19,34 @@ defmodule IgamingRef.Promotions.BonusScenarioTest do
     BonusGrant,
     BonusTrigger
   }
+
+  describe "BonusCampaign activation respects the campaign start window" do
+    @scenario category: :compliance, compliance_links: ["RG-MGA-005", "RG-UK-011"]
+
+    test "rejects activation before starts_at" do
+      {:ok, campaign} =
+        Ash.create(
+          BonusCampaign,
+          %{
+            name: "Future bonus",
+            kind: :deposit_match,
+            eligibility_rule: "IgamingRef.Promotions.Rules.PlayerEligibleForCampaign",
+            bonus_amount: Money.new(50_00, :GBP),
+            wagering_multiplier: Decimal.new("5.0"),
+            max_redemptions: nil,
+            starts_at: DateTime.add(DateTime.utc_now(), 3_600, :second),
+            expires_at: DateTime.add(DateTime.utc_now(), 86_400, :second)
+          },
+          action: :create,
+          actor: %{role: :operator}
+        )
+
+      assert {:error, _} =
+               campaign
+               |> Ash.Changeset.for_update(:activate, %{})
+               |> Ash.update(actor: %{role: :operator})
+    end
+  end
 
   describe "Flow: BonusEvaluationReactor awards bonuses through nested condition trees" do
     @scenario category: :compliance, compliance_links: ["RG-MGA-005", "RG-UK-011", "RG-UK-008"]

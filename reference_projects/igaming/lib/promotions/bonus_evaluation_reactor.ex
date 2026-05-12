@@ -72,8 +72,10 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
 
     run(fn %{event_state: %{should_process: should_process}}, _ ->
       if should_process do
+        now = DateTime.utc_now()
+
         BonusCampaign
-        |> Ash.Query.filter(status: :active)
+        |> Ash.Query.filter(status == :active and starts_at <= ^now)
         |> Ash.read(actor: :system)
       else
         {:ok, []}
@@ -88,7 +90,13 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
     argument(:player, result(:load_player))
     argument(:campaigns, result(:load_active_campaigns))
 
-    run(fn %{event_state: %{should_process: should_process}, event: event, player: player, campaigns: campaigns}, _ ->
+    run(fn %{
+             event_state: %{should_process: should_process},
+             event: event,
+             player: player,
+             campaigns: campaigns
+           },
+           _ ->
       if should_process do
         matches =
           campaigns
@@ -109,7 +117,13 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
     argument(:event, result(:load_event))
     argument(:player, result(:load_player))
 
-    run(fn %{event_state: %{should_process: should_process}, campaign_ids: campaign_ids, event: event, player: player}, _ ->
+    run(fn %{
+             event_state: %{should_process: should_process},
+             campaign_ids: campaign_ids,
+             event: event,
+             player: player
+           },
+           _ ->
       if should_process do
         Enum.reduce_while(campaign_ids, {:ok, []}, fn campaign_id, {:ok, acc} ->
           case execute_campaign(campaign_id, player, event) do
@@ -196,11 +210,30 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
         false
 
       true ->
-        Enum.all?(root_groups, &evaluate_group(&1, groups_by_parent, conditions_by_group, campaign, player, event, MapSet.new()))
+        Enum.all?(
+          root_groups,
+          &evaluate_group(
+            &1,
+            groups_by_parent,
+            conditions_by_group,
+            campaign,
+            player,
+            event,
+            MapSet.new()
+          )
+        )
     end
   end
 
-  defp evaluate_group(group, groups_by_parent, conditions_by_group, campaign, player, event, visited) do
+  defp evaluate_group(
+         group,
+         groups_by_parent,
+         conditions_by_group,
+         campaign,
+         player,
+         event,
+         visited
+       ) do
     if MapSet.member?(visited, group.id) do
       false
     else
@@ -216,7 +249,17 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
         groups_by_parent
         |> Map.get(group.id, [])
         |> Enum.sort_by(& &1.position)
-        |> Enum.map(&evaluate_group(&1, groups_by_parent, conditions_by_group, campaign, player, event, visited))
+        |> Enum.map(
+          &evaluate_group(
+            &1,
+            groups_by_parent,
+            conditions_by_group,
+            campaign,
+            player,
+            event,
+            visited
+          )
+        )
 
       combine_group_results(group.combinator, direct_results ++ child_results)
     end
@@ -266,11 +309,9 @@ defmodule IgamingRef.Promotions.BonusEvaluationReactor do
   end
 
   defp no_active_bonus?(player_id) do
-    case (
-           BonusGrant
-           |> Ash.Query.filter(player_id: player_id, status: :active)
-           |> Ash.read(actor: %{is_system: true})
-         ) do
+    case BonusGrant
+         |> Ash.Query.filter(player_id: player_id, status: :active)
+         |> Ash.read(actor: %{is_system: true}) do
       {:ok, []} -> true
       {:ok, _active_grants} -> false
       _ -> false
