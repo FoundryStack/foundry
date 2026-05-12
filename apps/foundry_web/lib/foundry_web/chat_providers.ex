@@ -84,21 +84,29 @@ defmodule FoundryWeb.ChatProviders do
         conversation_window: :all
       ]
 
-      case Foundry.CodexProvider.stream(messages, opts, fn
-             {:delta, text} -> on_event.({:delta, text})
-             {:trace, event} -> on_event.({:trace, event})
-             _event -> :ok
-           end) do
+      Logger.info("ChatProviders.call_codex: Starting stream with Codex")
+      result = Foundry.CodexProvider.stream(messages, opts, fn
+        {:delta, text} -> on_event.({:delta, text})
+        {:trace, event} -> on_event.({:trace, event})
+        _event -> :ok
+      end)
+      Logger.info("ChatProviders.call_codex: Provider returned #{inspect(result, limit: 100)}")
+
+      case result do
         {:ok, _text, metadata} ->
+          Logger.info("ChatProviders: Sending llm_stream_done to #{inspect(liveview_pid)} with ref #{inspect(request_ref)}")
           send(liveview_pid, {:llm_stream_done, request_ref, "", metadata})
 
         {:error, :not_installed} ->
+          Logger.error("ChatProviders.call_codex: Codex not installed")
           send(liveview_pid, {:llm_stream_error, request_ref, :codex_not_installed})
 
         {:error, {:timeout, _partial_text, _metadata}} ->
+          Logger.error("ChatProviders.call_codex: Timeout")
           send(liveview_pid, {:llm_stream_error, request_ref, :timeout})
 
         {:error, reason} ->
+          Logger.error("ChatProviders.call_codex: Error #{inspect(reason)}")
           send(liveview_pid, {:llm_stream_error, request_ref, reason})
       end
     end)
