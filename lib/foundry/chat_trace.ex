@@ -54,7 +54,7 @@ defmodule Foundry.ChatTrace do
   end
 
   def summarize_run(events) when is_list(events) do
-    filtered_events = Enum.reject(events, &(&1.type == "item.completed"))
+    filtered_events = Enum.reject(events, &(&1.type in ~w(item.completed thread.started)))
     grouped_events = grouped_timeline(filtered_events)
 
     tools =
