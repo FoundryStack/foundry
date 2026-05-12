@@ -46,6 +46,7 @@ defmodule Foundry.Chat.Retrieval do
         module_contexts: module_contexts,
         documents: document_contexts,
         proposal_status: summarize_proposal(session_digest),
+        scenario_coverage: summarize_scenarios(cached_context),
         retrieval_guidance:
           build_retrieval_guidance(
             project_root,
@@ -134,18 +135,33 @@ defmodule Foundry.Chat.Retrieval do
     """
     ## Governed Change Run
 
-    This request is in `change` mode. Do not behave like a direct file editor.
-    Work from the proposal metadata and Foundry retrieval results below:
+    You are acting as a governed proposal author, not a file editor.
+    Advance this change by following the three-part sequence below.
+    Do not apply files directly. Produce a governed proposal response.
 
     ```json
     #{Jason.encode!(%{proposal: proposal, retrieval: tool_results}, pretty: true)}
     ```
 
-    Provide:
-    1. the governed interpretation of the requested change,
-    2. the expected spec-kit requirements,
-    3. the likely affected modules and tests,
-    4. next approval/apply expectations for this proposal.
+    ### (a) Spec-kit requirements
+    Cite every NodeEntry constraint relevant to this change: ADR references,
+    compliance requirement IDs (INV-001..INV-018), runbook obligations, and
+    @description field contracts on touched attributes. State any spec-kit artifact
+    (ADR draft / runbook stub) that must be produced before code is written.
+
+    ### (b) Igniter operation schema
+    Emit the exact Igniter operation payload this proposal should execute, scoped to
+    the modules identified in the retrieval results. Use the
+    Foundry.Studio.ChatProposal operation format. Do not invent operations outside
+    the schema.
+
+    ### (c) Affected modules and test skeletons
+    List every module that will be read, written, or deleted. For each written module,
+    provide a minimal ExUnit test skeleton derived from the DSL declarations and ADR
+    boundary conditions already loaded. Do not write implementation code.
+
+    After completing (a), (b), and (c), state the proposal ID and whether auto-apply
+    is permitted based on the change class in the proposal metadata above.
     """
   end
 
@@ -196,6 +212,31 @@ defmodule Foundry.Chat.Retrieval do
   defp summarize_proposal(%{"last_proposal_id" => nil}), do: nil
   defp summarize_proposal(%{"last_proposal_id" => id}) when is_binary(id), do: %{id: id}
   defp summarize_proposal(_digest), do: nil
+
+  defp summarize_scenarios(_cached_context) do
+    report = Foundry.Context.ScenarioCache.get()
+
+    if is_nil(report) do
+      %{status: :unavailable}
+    else
+      warnings = report.warnings || []
+      coverage = report.coverage || %{}
+      uncovered = coverage_uncovered_node_ids(coverage)
+
+      %{
+        scenario_count: length(report.scenarios || []),
+        warnings: Enum.take(warnings, 5),
+        uncovered_node_count: length(uncovered),
+        uncovered_nodes: Enum.take(uncovered, 10),
+        failing_scenarios:
+          report.scenarios
+          |> List.wrap()
+          |> Enum.filter(&(&1.trace_status == :failed))
+          |> Enum.map(&%{id: &1.id, title: &1.title})
+          |> Enum.take(10)
+      }
+    end
+  end
 
   defp build_retrieval_guidance(
          project_root,
@@ -708,4 +749,10 @@ defmodule Foundry.Chat.Retrieval do
 
   defp trim_elixir_prefix("Elixir." <> rest), do: rest
   defp trim_elixir_prefix(value), do: value
+
+  defp coverage_uncovered_node_ids(%{uncovered_node_ids: uncovered_node_ids})
+       when is_list(uncovered_node_ids),
+       do: uncovered_node_ids
+
+  defp coverage_uncovered_node_ids(_coverage), do: []
 end

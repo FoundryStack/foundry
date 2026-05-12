@@ -222,6 +222,9 @@ defmodule Foundry.PreviewServer do
   def handle_info({port, {:data, data}}, %{port: port} = state) do
     next_state = append_output(state, data)
 
+    # Forward each output line to Foundry logger with [IGAMING] tag
+    log_preview_output(data)
+
     case build_lock_error(data) do
       nil ->
         {:noreply, next_state}
@@ -250,6 +253,21 @@ defmodule Foundry.PreviewServer do
   end
 
   # Private
+
+  defp log_preview_output(data) when is_binary(data) do
+    data
+    |> String.split("\n", trim: true)
+    |> Enum.each(fn line ->
+      cond do
+        String.downcase(line) =~ ~r/error|exception|failed/ ->
+          Logger.error("[IGAMING] #{line}")
+        String.downcase(line) =~ ~r/warn/ ->
+          Logger.warning("[IGAMING] #{line}")
+        true ->
+          Logger.debug("[IGAMING] #{line}")
+      end
+    end)
+  end
 
   defp load_manifest_config(project_root) do
     manifest_path = Path.join(project_root, "manifest.exs")
