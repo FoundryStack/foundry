@@ -22,10 +22,20 @@ defmodule IgamingRef.Web.Endpoint do
     longpoll: [connect_info: [session: @session_options]]
 
   plug Plug.Static,
+    at: "/assets",
+    from: {:phoenix, "priv/static"},
+    gzip: false
+
+  plug Plug.Static,
+    at: "/assets",
+    from: {:phoenix_live_view, "priv/static"},
+    gzip: false
+
+  plug Plug.Static,
     at: "/",
     from: :igaming_ref,
     gzip: false,
-    only: []
+    only: ~w(favicon.ico robots.txt)
 
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
