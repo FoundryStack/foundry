@@ -59,6 +59,7 @@ defmodule FoundryWeb.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 1.0"},
       {:foundry, in_umbrella: true},
+      {:phoenix_llm_chat, path: "../../packages/phoenix_llm_chat"},
       {:jason, "~> 1.2"},
       {:bandit, "~> 1.5"}
     ]
