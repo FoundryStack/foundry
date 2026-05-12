@@ -195,25 +195,21 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
 
     # Sum completed withdrawal amounts in the last 24 hours
     # Full implementation queries LedgerEntry - stubbed for reference project
-    case (
-           LedgerEntry
-           |> Ash.Query.filter(
-             wallet_id in ^player_wallet_ids(player_id) and kind == :withdrawal and
-               direction == :debit and inserted_at >= ^since
-           )
-           |> Ash.read(actor: %{is_system: true})
-         ) do
+    case LedgerEntry
+         |> Ash.Query.filter(
+           wallet_id in ^player_wallet_ids(player_id) and kind == :withdrawal and
+             direction == :debit and inserted_at >= ^since
+         )
+         |> Ash.read(actor: %{is_system: true}) do
       {:ok, entries} -> Enum.reduce(entries, Money.new(0, :GBP), &Money.add!(&2, &1.amount))
       _ -> Money.new(0, :GBP)
     end
   end
 
   defp player_wallet_ids(player_id) do
-    case (
-           Wallet
-           |> Ash.Query.filter(player_id: player_id)
-           |> Ash.read(actor: %{is_system: true})
-         ) do
+    case Wallet
+         |> Ash.Query.filter(player_id: player_id)
+         |> Ash.read(actor: %{is_system: true}) do
       {:ok, wallets} -> Enum.map(wallets, & &1.id)
       _ -> []
     end
@@ -263,14 +259,19 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
            {:ok, campaign} <- Ash.get(BonusCampaign, cid, actor: %{is_system: true}),
            {:ok, wallet} <- primary_wallet(pid),
            {:ok, grants} <- existing_grants(pid, cid),
-           {:ok, campaign_grants} <- campaign_grants(cid) do
+           {:ok, campaign_grants} <- campaign_grants(cid),
+           {:ok, ledger_entry} <- existing_ledger_entry(pid, cid) do
+        existing_active_grant = Enum.find(grants, &(&1.status == :active))
+
         {:ok,
          %{
            player: player,
            campaign: campaign,
            wallet: wallet,
            existing_grants: grants,
-           campaign_grants: campaign_grants
+           campaign_grants: campaign_grants,
+           existing_active_grant: existing_active_grant,
+           existing_ledger_entry: ledger_entry
          }}
       end
     end)
@@ -285,23 +286,29 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
                player: player,
                campaign: campaign,
                existing_grants: grants,
-               campaign_grants: campaign_grants
+               campaign_grants: campaign_grants,
+               existing_active_grant: existing_active_grant,
+               existing_ledger_entry: existing_ledger_entry
              }
            },
            _ ->
-      rule_ctx = %{
-        player: player,
-        campaign: campaign,
-        existing_grants: grants,
-        campaign_grants: campaign_grants
-      }
-
-      with :ok <- PlayerNotSelfExcluded.evaluate(rule_ctx, nil),
-           :ok <- CampaignNotExpired.evaluate(rule_ctx, nil),
-           :ok <- PlayerEligibleForCampaign.evaluate(rule_ctx, nil) do
-        {:ok, :rules_passed}
+      if existing_active_grant || existing_ledger_entry do
+        {:ok, :already_applied}
       else
-        {:error, code, message} -> {:error, {code, message}}
+        rule_ctx = %{
+          player: player,
+          campaign: campaign,
+          existing_grants: grants,
+          campaign_grants: campaign_grants
+        }
+
+        with :ok <- PlayerNotSelfExcluded.evaluate(rule_ctx, nil),
+             :ok <- CampaignNotExpired.evaluate(rule_ctx, nil),
+             :ok <- PlayerEligibleForCampaign.evaluate(rule_ctx, nil) do
+          {:ok, :rules_passed}
+        else
+          {:error, code, message} -> {:error, {code, message}}
+        end
       end
     end)
   end
@@ -311,16 +318,41 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
     argument(:ctx, result(:load_context))
     wait_for(:evaluate_rules)
 
-    run(fn %{ctx: %{wallet: wallet, campaign: campaign}}, _ ->
-      wallet
-      |> Ash.Changeset.for_update(:credit, %{amount: campaign.bonus_amount})
-      |> Ash.update(actor: %{is_system: true})
+    run(fn %{
+             ctx: %{
+               wallet: wallet,
+               campaign: campaign,
+               existing_active_grant: existing_active_grant,
+               existing_ledger_entry: existing_ledger_entry
+             }
+           },
+           _ ->
+      if existing_active_grant || existing_ledger_entry do
+        {:ok, wallet}
+      else
+        wallet
+        |> Ash.Changeset.for_update(:credit, %{amount: campaign.bonus_amount})
+        |> Ash.update(actor: %{is_system: true})
+      end
     end)
 
-    compensate(fn _, %{ctx: %{wallet: wallet, campaign: campaign}}, _ ->
-      wallet
-      |> Ash.Changeset.for_update(:debit, %{amount: campaign.bonus_amount})
-      |> Ash.update(actor: %{is_system: true})
+    compensate(fn _,
+                  %{
+                    ctx: %{
+                      wallet: wallet,
+                      campaign: campaign,
+                      existing_active_grant: existing_active_grant,
+                      existing_ledger_entry: existing_ledger_entry
+                    }
+                  },
+                  _ ->
+      if existing_active_grant || existing_ledger_entry do
+        :ok
+      else
+        wallet
+        |> Ash.Changeset.for_update(:debit, %{amount: campaign.bonus_amount})
+        |> Ash.update(actor: %{is_system: true})
+      end
 
       :ok
     end)
@@ -332,17 +364,31 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
     argument(:player_id, input(:player_id))
     argument(:campaign_id, input(:campaign_id))
 
-    run(fn %{ctx: %{campaign: campaign, wallet: wallet}, player_id: pid, campaign_id: cid}, _ ->
-      LedgerEntry
-      |> Ash.Changeset.for_create(:record, %{
-        wallet_id: wallet.id,
-        amount: campaign.bonus_amount,
-        direction: :credit,
-        kind: :bonus,
-        idempotency_key: "bonus_grant:#{pid}:#{cid}",
-        reference_id: cid
-      })
-      |> Ash.create(actor: %{is_system: true})
+    run(fn %{
+             ctx: %{
+               campaign: campaign,
+               wallet: wallet,
+               existing_active_grant: existing_active_grant,
+               existing_ledger_entry: existing_ledger_entry
+             },
+             player_id: pid,
+             campaign_id: cid
+           },
+           _ ->
+      if existing_active_grant || existing_ledger_entry do
+        {:ok, existing_ledger_entry}
+      else
+        LedgerEntry
+        |> Ash.Changeset.for_create(:record, %{
+          wallet_id: wallet.id,
+          amount: campaign.bonus_amount,
+          direction: :credit,
+          kind: :bonus,
+          idempotency_key: bonus_grant_ledger_key(pid, cid),
+          reference_id: cid
+        })
+        |> Ash.create(actor: %{is_system: true})
+      end
     end)
   end
 
@@ -352,23 +398,32 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
     argument(:player_id, input(:player_id))
     argument(:campaign_id, input(:campaign_id))
 
-    run(fn %{ctx: %{campaign: campaign}, player_id: pid, campaign_id: cid}, _ ->
-      wagering_required =
-        Decimal.mult(
-          Money.to_decimal(campaign.bonus_amount),
-          campaign.wagering_multiplier
-        )
+    run(fn %{
+             ctx: %{campaign: campaign, existing_active_grant: existing_active_grant},
+             player_id: pid,
+             campaign_id: cid
+           },
+           _ ->
+      if existing_active_grant do
+        {:ok, existing_active_grant}
+      else
+        wagering_required =
+          Decimal.mult(
+            Money.to_decimal(campaign.bonus_amount),
+            campaign.wagering_multiplier
+          )
 
-      BonusGrant
-      |> Ash.Changeset.for_create(:grant, %{
-        player_id: pid,
-        campaign_id: cid,
-        amount: campaign.bonus_amount,
-        wagering_remaining: wagering_required,
-        granted_at: DateTime.utc_now(),
-        expires_at: campaign.expires_at
-      })
-      |> Ash.create(actor: %{is_system: true})
+        BonusGrant
+        |> Ash.Changeset.for_create(:grant, %{
+          player_id: pid,
+          campaign_id: cid,
+          amount: campaign.bonus_amount,
+          wagering_remaining: wagering_required,
+          granted_at: DateTime.utc_now(),
+          expires_at: campaign.expires_at
+        })
+        |> Ash.create(actor: %{is_system: true})
+      end
     end)
   end
 
@@ -377,11 +432,9 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
   # ---------------------------------------------------------------------------
 
   defp primary_wallet(player_id) do
-    case (
-          Wallet
-          |> Ash.Query.filter(player_id: player_id, status: :active)
-           |> Ash.read(actor: %{is_system: true})
-         ) do
+    case Wallet
+         |> Ash.Query.filter(player_id: player_id, status: :active)
+         |> Ash.read(actor: %{is_system: true}) do
       {:ok, [wallet | _]} -> {:ok, wallet}
       {:ok, []} -> {:error, "No active wallet found for player #{player_id}"}
       {:error, err} -> {:error, err}
@@ -398,5 +451,20 @@ defmodule IgamingRef.Promotions.BonusGrantTransfer do
     BonusGrant
     |> Ash.Query.filter(campaign_id: campaign_id)
     |> Ash.read(actor: %{is_system: true})
+  end
+
+  defp existing_ledger_entry(player_id, campaign_id) do
+    LedgerEntry
+    |> Ash.Query.filter(idempotency_key: bonus_grant_ledger_key(player_id, campaign_id))
+    |> Ash.read(actor: %{is_system: true})
+    |> case do
+      {:ok, [entry | _]} -> {:ok, entry}
+      {:ok, []} -> {:ok, nil}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp bonus_grant_ledger_key(player_id, campaign_id) do
+    "bonus_grant:#{player_id}:#{campaign_id}"
   end
 end

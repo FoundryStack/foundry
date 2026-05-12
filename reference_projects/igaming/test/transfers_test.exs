@@ -181,12 +181,17 @@ defmodule IgamingRef.Promotions.BonusGrantTransferTest do
   Property tests for the BonusGrantTransfer rule set.
   """
 
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   use ExUnitProperties
   use Foundry.TestScenario
+  use IgamingRef.DataCase
+
+  require Ash.Query
 
   import IgamingRefTest.Generators
 
+  alias IgamingRef.Finance.{LedgerEntry, Wallet}
+  alias IgamingRef.Promotions.{BonusCampaign, BonusGrant, BonusGrantTransfer}
   alias IgamingRef.Promotions.Rules.{PlayerEligibleForCampaign, CampaignNotExpired}
   alias IgamingRef.Players.Rules.PlayerNotSelfExcluded
 
@@ -258,6 +263,143 @@ defmodule IgamingRef.Promotions.BonusGrantTransferTest do
                )
     end
   end
+
+  describe "Flow: BonusGrantTransfer" do
+    @scenario category: :compliance, compliance_links: ["RG-MGA-005", "RG-UK-011"]
+
+    test "creates a grant, credits the wallet, and records an immutable ledger entry" do
+      {player, wallet, campaign} = seed_bonus_grant_transfer()
+
+      assert {:ok, _grant} =
+               Reactor.run(
+                 BonusGrantTransfer,
+                 %{player_id: player.id, campaign_id: campaign.id, actor: %{is_system: true}},
+                 %{},
+                 async?: false
+               )
+
+      {:ok, reloaded_wallet} = Ash.get(Wallet, wallet.id, actor: %{is_system: true})
+      assert reloaded_wallet.balance == campaign.bonus_amount
+
+      {:ok, grants} =
+        BonusGrant
+        |> Ash.Query.filter(player_id: player.id, campaign_id: campaign.id)
+        |> Ash.read(actor: %{is_system: true})
+
+      assert length(grants) == 1
+      [grant] = grants
+
+      assert grant.amount == campaign.bonus_amount
+      assert grant.status == :active
+
+      assert Decimal.eq?(
+               grant.wagering_remaining,
+               Decimal.mult(Money.to_decimal(campaign.bonus_amount), campaign.wagering_multiplier)
+             )
+
+      {:ok, ledger_entries} =
+        LedgerEntry
+        |> Ash.Query.filter(reference_id: campaign.id, wallet_id: wallet.id)
+        |> Ash.read(actor: %{is_system: true})
+
+      assert length(ledger_entries) == 1
+      [ledger_entry] = ledger_entries
+      assert ledger_entry.kind == :bonus
+      assert ledger_entry.direction == :credit
+      assert ledger_entry.amount == campaign.bonus_amount
+      assert ledger_entry.idempotency_key == "bonus_grant:#{player.id}:#{campaign.id}"
+    end
+
+    test "is idempotent when retried with the same player and campaign" do
+      {player, wallet, campaign} = seed_bonus_grant_transfer()
+
+      assert {:ok, _first_run} =
+               Reactor.run(
+                 BonusGrantTransfer,
+                 %{player_id: player.id, campaign_id: campaign.id, actor: %{is_system: true}},
+                 %{},
+                 async?: false
+               )
+
+      assert {:ok, _second_run} =
+               Reactor.run(
+                 BonusGrantTransfer,
+                 %{player_id: player.id, campaign_id: campaign.id, actor: %{is_system: true}},
+                 %{},
+                 async?: false
+               )
+
+      {:ok, grants} =
+        BonusGrant
+        |> Ash.Query.filter(player_id: player.id, campaign_id: campaign.id)
+        |> Ash.read(actor: %{is_system: true})
+
+      {:ok, ledger_entries} =
+        LedgerEntry
+        |> Ash.Query.filter(reference_id: campaign.id, wallet_id: wallet.id)
+        |> Ash.read(actor: %{is_system: true})
+
+      {:ok, reloaded_wallet} = Ash.get(Wallet, wallet.id, actor: %{is_system: true})
+
+      assert length(grants) == 1
+      assert length(ledger_entries) == 1
+      assert reloaded_wallet.balance == campaign.bonus_amount
+    end
+  end
+
+  defp seed_bonus_grant_transfer do
+    {:ok, player} =
+      Ash.create(
+        IgamingRef.Players.Player,
+        %{
+          email: unique_email(),
+          username: unique_username(),
+          date_of_birth: ~D[1990-01-01],
+          country_code: "GB"
+        },
+        action: :register
+      )
+
+    {:ok, wallet} =
+      Ash.create(
+        Wallet,
+        %{player_id: player.id, currency: "GBP"},
+        action: :create,
+        actor: %{is_system: true}
+      )
+
+    {:ok, campaign} =
+      Ash.create(
+        BonusCampaign,
+        %{
+          name: "Grant transfer compliance",
+          kind: :deposit_match,
+          eligibility_rule: "IgamingRef.Promotions.Rules.PlayerEligibleForCampaign",
+          bonus_amount: Money.new(50_00, :GBP),
+          wagering_multiplier: Decimal.new("5.0"),
+          max_redemptions: nil,
+          starts_at: DateTime.add(DateTime.utc_now(), -3_600, :second),
+          expires_at: DateTime.add(DateTime.utc_now(), 86_400, :second)
+        },
+        action: :create,
+        actor: %{role: :operator}
+      )
+
+    {:ok, campaign} =
+      campaign
+      |> Ash.Changeset.for_update(:activate, %{})
+      |> Ash.update(actor: %{role: :operator})
+
+    {player, wallet, campaign}
+  end
+
+  defp unique_email do
+    "bonus_transfer_#{System.unique_integer([:positive])}@example.test"
+  end
+
+  defp unique_username do
+    "bonus_transfer_#{System.unique_integer([:positive])}"
+  end
 end
 
 # ---------------------------------------------------------------------------
@@ -271,6 +413,9 @@ end
 defmodule IgamingRef.Compliance.MgaTest do
   @moduledoc "E2E compliance scenario stubs for MGA requirements."
   use ExUnit.Case
+  use IgamingRef.DataCase
+
+  require Ash.Query
 
   @moduletag :compliance
 
@@ -295,8 +440,73 @@ defmodule IgamingRef.Compliance.MgaTest do
 
   @tag :rg_mga_005
   test "RG-MGA-005: bonus terms enforced at grant time" do
-    # TODO: verify wagering_remaining is set correctly from campaign multiplier.
-    :ok
+    {:ok, player} =
+      Ash.create(
+        IgamingRef.Players.Player,
+        %{
+          email: "mga_005_#{System.unique_integer([:positive])}@example.test",
+          username: "mga_005_#{System.unique_integer([:positive])}",
+          date_of_birth: ~D[1990-01-01],
+          country_code: "GB"
+        },
+        action: :register
+      )
+
+    {:ok, wallet} =
+      Ash.create(
+        IgamingRef.Finance.Wallet,
+        %{player_id: player.id, currency: "GBP"},
+        action: :create,
+        actor: %{is_system: true}
+      )
+
+    {:ok, campaign} =
+      Ash.create(
+        IgamingRef.Promotions.BonusCampaign,
+        %{
+          name: "MGA bonus terms",
+          kind: :deposit_match,
+          eligibility_rule: "IgamingRef.Promotions.Rules.PlayerEligibleForCampaign",
+          bonus_amount: Money.new(20_00, :GBP),
+          wagering_multiplier: Decimal.new("4.0"),
+          max_redemptions: nil,
+          starts_at: DateTime.add(DateTime.utc_now(), -3_600, :second),
+          expires_at: DateTime.add(DateTime.utc_now(), 86_400, :second)
+        },
+        action: :create,
+        actor: %{role: :operator}
+      )
+
+    {:ok, campaign} =
+      campaign
+      |> Ash.Changeset.for_update(:activate, %{})
+      |> Ash.update(actor: %{role: :operator})
+
+    assert {:ok, _grant} =
+             Reactor.run(
+               IgamingRef.Promotions.BonusGrantTransfer,
+               %{player_id: player.id, campaign_id: campaign.id, actor: %{is_system: true}},
+               %{},
+               async?: false
+             )
+
+    {:ok, grants} =
+      IgamingRef.Promotions.BonusGrant
+      |> Ash.Query.filter(player_id: player.id, campaign_id: campaign.id)
+      |> Ash.read(actor: %{is_system: true})
+
+    [grant] = grants
+    assert grant.amount == campaign.bonus_amount
+
+    assert Decimal.eq?(
+             grant.wagering_remaining,
+             Decimal.mult(Money.to_decimal(campaign.bonus_amount), campaign.wagering_multiplier)
+           )
+
+    {:ok, reloaded_wallet} =
+      Ash.get(IgamingRef.Finance.Wallet, wallet.id, actor: %{is_system: true})
+
+    assert reloaded_wallet.balance == campaign.bonus_amount
   end
 
   @tag :rg_mga_007
@@ -315,6 +525,9 @@ end
 defmodule IgamingRef.Compliance.UkgcTest do
   @moduledoc "E2E compliance scenario stubs for UKGC requirements."
   use ExUnit.Case
+  use IgamingRef.DataCase
+
+  require Ash.Query
 
   @moduletag :compliance
 
@@ -339,8 +552,65 @@ defmodule IgamingRef.Compliance.UkgcTest do
 
   @tag :rg_uk_011
   test "RG-UK-011: bonus wagering requirements disclosed at grant time" do
-    # TODO: verify BonusGrant.wagering_remaining is set and non-zero at creation.
-    :ok
+    {:ok, player} =
+      Ash.create(
+        IgamingRef.Players.Player,
+        %{
+          email: "uk_011_#{System.unique_integer([:positive])}@example.test",
+          username: "uk_011_#{System.unique_integer([:positive])}",
+          date_of_birth: ~D[1990-01-01],
+          country_code: "GB"
+        },
+        action: :register
+      )
+
+    {:ok, _wallet} =
+      Ash.create(
+        IgamingRef.Finance.Wallet,
+        %{player_id: player.id, currency: "GBP"},
+        action: :create,
+        actor: %{is_system: true}
+      )
+
+    {:ok, campaign} =
+      Ash.create(
+        IgamingRef.Promotions.BonusCampaign,
+        %{
+          name: "UKGC bonus disclosure",
+          kind: :deposit_match,
+          eligibility_rule: "IgamingRef.Promotions.Rules.PlayerEligibleForCampaign",
+          bonus_amount: Money.new(35_00, :GBP),
+          wagering_multiplier: Decimal.new("3.0"),
+          max_redemptions: nil,
+          starts_at: DateTime.add(DateTime.utc_now(), -3_600, :second),
+          expires_at: DateTime.add(DateTime.utc_now(), 86_400, :second)
+        },
+        action: :create,
+        actor: %{role: :operator}
+      )
+
+    {:ok, campaign} =
+      campaign
+      |> Ash.Changeset.for_update(:activate, %{})
+      |> Ash.update(actor: %{role: :operator})
+
+    assert {:ok, _grant} =
+             Reactor.run(
+               IgamingRef.Promotions.BonusGrantTransfer,
+               %{player_id: player.id, campaign_id: campaign.id, actor: %{is_system: true}},
+               %{},
+               async?: false
+             )
+
+    {:ok, [grant]} =
+      IgamingRef.Promotions.BonusGrant
+      |> Ash.Query.filter(player_id: player.id, campaign_id: campaign.id)
+      |> Ash.read(actor: %{is_system: true})
+
+    assert Decimal.positive?(grant.wagering_remaining)
+
+    assert grant.wagering_remaining ==
+             Decimal.mult(Money.to_decimal(campaign.bonus_amount), campaign.wagering_multiplier)
   end
 
   @tag :rg_uk_014
