@@ -601,17 +601,21 @@ defmodule FoundryWeb.ChatSession do
         send(live_view_pid, {:llm_stream_trace, request_ref, event})
       end)
 
-      case call_llm_stream(
-             messages,
-             fn event ->
-               send(live_view_pid, format_stream_event(request_ref, event))
-             end,
-             run_context
-           ) do
-        {:ok, _ref} ->
-          :ok
+      result = call_llm_stream(
+        messages,
+        fn event ->
+          send(live_view_pid, format_stream_event(request_ref, event))
+        end,
+        run_context
+      )
+
+      case result do
+        {:ok, _text, metadata} ->
+          Logger.info("start_llm_stream: Sending llm_stream_done to #{inspect(live_view_pid)}")
+          send(live_view_pid, {:llm_stream_done, request_ref, "", metadata})
 
         {:error, reason} ->
+          Logger.error("start_llm_stream: Sending llm_stream_error: #{inspect(reason)}")
           send(live_view_pid, {:llm_stream_error, request_ref, reason})
       end
     end)
