@@ -32,6 +32,7 @@ defmodule FoundryWeb.ChatProviders do
 
   defp call_claude_code(messages, on_event, run_context) do
     request_ref = make_ref()
+    liveview_pid = self()
 
     Task.start_link(fn ->
       opts = [
@@ -46,16 +47,16 @@ defmodule FoundryWeb.ChatProviders do
              _event -> :ok
            end) do
         {:ok, _text, _metadata} ->
-          send(self(), {:llm_stream_done, request_ref, ""})
+          send(liveview_pid, {:llm_stream_done, request_ref, ""})
 
         {:error, :not_installed} ->
-          send(self(), {:llm_stream_error, request_ref, :claude_code_not_installed})
+          send(liveview_pid, {:llm_stream_error, request_ref, :claude_code_not_installed})
 
         {:error, {:timeout, _partial_text, _metadata}} ->
-          send(self(), {:llm_stream_error, request_ref, :timeout})
+          send(liveview_pid, {:llm_stream_error, request_ref, :timeout})
 
         {:error, reason} ->
-          send(self(), {:llm_stream_error, request_ref, reason})
+          send(liveview_pid, {:llm_stream_error, request_ref, reason})
       end
     end)
 
@@ -66,6 +67,7 @@ defmodule FoundryWeb.ChatProviders do
 
   defp call_codex(messages, on_event, run_context) do
     request_ref = make_ref()
+    liveview_pid = self()
 
     Task.start_link(fn ->
       config = ChatConfig.codex_config()
@@ -87,16 +89,16 @@ defmodule FoundryWeb.ChatProviders do
              _event -> :ok
            end) do
         {:ok, _text, _metadata} ->
-          send(self(), {:llm_stream_done, request_ref, ""})
+          send(liveview_pid, {:llm_stream_done, request_ref, ""})
 
         {:error, :not_installed} ->
-          send(self(), {:llm_stream_error, request_ref, :codex_not_installed})
+          send(liveview_pid, {:llm_stream_error, request_ref, :codex_not_installed})
 
         {:error, {:timeout, _partial_text, _metadata}} ->
-          send(self(), {:llm_stream_error, request_ref, :timeout})
+          send(liveview_pid, {:llm_stream_error, request_ref, :timeout})
 
         {:error, reason} ->
-          send(self(), {:llm_stream_error, request_ref, reason})
+          send(liveview_pid, {:llm_stream_error, request_ref, reason})
       end
     end)
 
@@ -107,6 +109,7 @@ defmodule FoundryWeb.ChatProviders do
 
   defp call_lm_studio(messages, on_event, run_context) do
     request_ref = make_ref()
+    liveview_pid = self()
 
     Task.start_link(fn ->
       config = ChatConfig.lm_studio_config()
@@ -123,13 +126,13 @@ defmodule FoundryWeb.ChatProviders do
              _event -> :ok
            end) do
         {:ok, _text, _metadata} ->
-          send(self(), {:llm_stream_done, request_ref, ""})
+          send(liveview_pid, {:llm_stream_done, request_ref, ""})
 
         {:error, :not_installed} ->
-          send(self(), {:llm_stream_error, request_ref, :lm_studio_not_installed})
+          send(liveview_pid, {:llm_stream_error, request_ref, :lm_studio_not_installed})
 
         {:error, reason} ->
-          send(self(), {:llm_stream_error, request_ref, reason})
+          send(liveview_pid, {:llm_stream_error, request_ref, reason})
       end
     end)
 
