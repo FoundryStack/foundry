@@ -1,10 +1,6 @@
 defmodule FoundryWeb.PageController do
   use FoundryWeb, :controller
 
-  def home(conn, _params) do
-    render(conn, :home)
-  end
-
   def preview_launch(conn, params) do
     case Foundry.PreviewServer.get_status() do
       {:ok, %{state: state}} when state not in [:starting, :running] ->

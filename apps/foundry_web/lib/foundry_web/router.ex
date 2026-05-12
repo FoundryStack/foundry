@@ -47,14 +47,13 @@ defmodule FoundryWeb.Router do
     scope "/", FoundryWeb do
       pipe_through :browser
 
-      live "/studio", SystemMapLive
+      live "/", SystemMapLive
     end
   end
 
   scope "/", FoundryWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
     get "/preview-launch", PageController, :preview_launch
     get "/preview-status", PageController, :preview_status
   end
