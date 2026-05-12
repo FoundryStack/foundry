@@ -20,7 +20,7 @@ defmodule FoundryWeb.LLMProviders.Mock do
 
         [word | rest] ->
           Process.sleep(delay_ms)
-          {{:text, word}, rest}
+          {{:delta, word}, rest}
       end,
       fn _ ->
         Logger.info("Mock LLM stream completed")

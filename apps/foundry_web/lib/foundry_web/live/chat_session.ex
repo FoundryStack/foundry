@@ -480,7 +480,7 @@ defmodule FoundryWeb.ChatSession do
           {:error, reason} -> {:error, reason}
         end
 
-      finish_stream(socket, messages, save_result)
+      finish_stream(socket, messages, save_result, digest)
     else
       {:noreply, socket}
     end
@@ -502,7 +502,7 @@ defmodule FoundryWeb.ChatSession do
       socket =
         DomainLogic.fail_activity_run(socket, request_ref, reason, &format_request_error/1)
 
-      finish_stream(socket, socket.assigns.messages, {:error, reason})
+      finish_stream(socket, socket.assigns.messages, {:error, reason}, socket.assigns.session_digest)
     else
       {:noreply, socket}
     end
@@ -517,7 +517,7 @@ defmodule FoundryWeb.ChatSession do
       Logger.warning("Task process died: pid=#{inspect(pid)}, reason=#{inspect(reason)}")
       task_error = format_task_shutdown_error(reason)
       socket = DomainLogic.fail_activity_run(socket, socket.assigns.active_request_ref, reason, &format_request_error/1)
-      finish_stream(socket, socket.assigns.messages, {:error, task_error})
+      finish_stream(socket, socket.assigns.messages, {:error, task_error}, socket.assigns.session_digest)
     else
       {:noreply, socket}
     end
@@ -596,12 +596,12 @@ defmodule FoundryWeb.ChatSession do
     end
   end
 
-  defp finish_stream(socket, messages, save_result, base_error \\ nil) do
+  defp finish_stream(socket, messages, save_result, digest, base_error \\ nil) do
     socket =
       socket
       |> assign(:messages, messages)
       |> assign(:loading, false)
-      |> assign(:session_digest, socket.assigns.session_digest)
+      |> assign(:session_digest, digest)
       |> clear_active_request()
       |> assign(:error, merge_errors(base_error, save_result))
 
