@@ -339,12 +339,20 @@ defmodule FoundryWeb.ChatComponents do
                 </div>
               <% end %>
               <div class="mt-3 flex items-center justify-between gap-3">
-                <p class="text-[11px] leading-5 text-neutral-content">
-                  <span class="inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-300/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-neutral-content">
-                    <span class="size-1.5 rounded-full bg-success"></span>
-                    {provider_label(@llm_provider)}
-                  </span>
-                </p>
+                <div class="flex items-center gap-2">
+                  <select
+                    id="provider-select"
+                    name="provider"
+                    phx-change="set_llm_provider"
+                    disabled={@loading}
+                    class="rounded-selector border border-base-300 bg-base-300/70 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-base-content focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="codex" selected={@llm_provider == :codex}>Codex (Local)</option>
+                    <option value="claude_code" selected={@llm_provider == :claude_code}>Claude Code (Local)</option>
+                    <option value="lm_studio" selected={@llm_provider == :lm_studio}>LM Studio</option>
+                    <option value="anthropic" selected={@llm_provider == :anthropic}>Anthropic (API)</option>
+                  </select>
+                </div>
                 <div class="flex items-center gap-2">
                   <button
                     type="button"

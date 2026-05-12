@@ -43,6 +43,8 @@ defmodule FoundryWeb.ChatSession do
   alias Foundry.Chat.MessageClassifier
   alias PhoenixLLMChat.Core
   alias FoundryWeb.ChatSessionDomainLogic, as: DomainLogic
+  alias FoundryWeb.ChatConfig
+  alias FoundryWeb.ChatProviders
 
   # --- Mount ---
 
@@ -52,7 +54,7 @@ defmodule FoundryWeb.ChatSession do
     {messages, session_digest, load_error} =
       case DomainLogic.load_session(session_id) do
         {:ok, chat_session} when not is_nil(chat_session) ->
-          {chat_session.messages, chat_session.session_digest || %{}, nil}
+          {chat_session["messages"] || [], chat_session["session_digest"] || %{}, nil}
 
         {:ok, nil} ->
           {[], %{}, nil}
@@ -70,11 +72,11 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:error, load_error)
       |> assign(:active_request_ref, nil)
       |> assign(:active_request_task, nil)
-      |> assign(:project_root, project_root())
+      |> assign(:project_root, ChatConfig.igaming_project_root())
       |> assign(:show_system_context, false)
       |> assign(:system_context_prompt, nil)
       |> assign(:system_context_error, nil)
-      |> assign(:llm_provider, llm_provider())
+      |> assign(:llm_provider, ChatConfig.llm_provider())
       |> assign(:llm_diagnostics, llm_diagnostics())
       |> assign(:chat_view, :conversation)
       |> assign(:activity_runs, [])
@@ -312,7 +314,7 @@ defmodule FoundryWeb.ChatSession do
                 message,
                 request_ref,
                 run_context,
-                &llm_provider/0,
+                fn -> ChatConfig.llm_provider() end,
                 &llm_diagnostics/1
               )
 
@@ -369,8 +371,14 @@ defmodule FoundryWeb.ChatSession do
     end
   end
 
-  def handle_event("update_chat_input", %{"message" => message}, socket) do
+  def handle_event("update_chat_input", params, socket) do
+    message = params["value"] || ""
     {:noreply, assign(socket, :input, message)}
+  end
+
+  def handle_event("set_llm_provider", %{"provider" => provider}, socket) do
+    provider_atom = String.to_atom(provider)
+    {:noreply, assign(socket, :llm_provider, provider_atom)}
   end
 
   def handle_event("set_chat_view", %{"view" => view}, socket) do
@@ -387,20 +395,17 @@ defmodule FoundryWeb.ChatSession do
   end
 
   def handle_event("summarize_session", _params, socket) do
-    case build_session_summary(
-           socket.assigns.session_digest,
-           socket.assigns.messages,
-           socket.assigns.activity_runs
-         ) do
-      {:ok, summary} ->
-        {:noreply,
-         socket
-         |> assign(:session_summary, summary)
-         |> assign(:last_session_summary_at, DateTime.utc_now())}
+    summary =
+      build_session_summary(
+        socket.assigns.session_digest,
+        socket.assigns.messages,
+        socket.assigns.activity_runs
+      )
 
-      {:error, _reason} ->
-        {:noreply, socket}
-    end
+    {:noreply,
+     socket
+     |> assign(:session_summary, summary)
+     |> assign(:last_session_summary_at, DateTime.utc_now())}
   end
 
   # --- Proposal Events ---
@@ -526,7 +531,7 @@ defmodule FoundryWeb.ChatSession do
     DomainLogic.build_run_context(
       socket,
       message,
-      &hook/1,
+      fn key -> ChatConfig.hook(key) end,
       &DomainLogic.normalize_session_digest/1,
       &build_run_system_prompt/5,
       socket.assigns.project_root
@@ -713,9 +718,6 @@ defmodule FoundryWeb.ChatSession do
   defp persistence_reason(_reason),
     do: "Unknown error"
 
-  defp show_debug_details? do
-    Application.get_env(:foundry_web, :show_debug_details, false)
-  end
 
   defp sandbox_restriction?(output) when is_binary(output) do
     String.contains?(output, [
@@ -741,7 +743,7 @@ defmodule FoundryWeb.ChatSession do
   end
 
   defp summarize_output(output) when is_binary(output) do
-    if show_debug_details?() do
+    if ChatConfig.show_debug_details?() do
       output
     else
       output
@@ -754,114 +756,7 @@ defmodule FoundryWeb.ChatSession do
   # --- Provider Selection ---
 
   defp call_llm_stream(messages, on_event, run_context) do
-    case run_context.mode do
-      :change -> call_claude_code_stream(messages, on_event, run_context)
-      :codex -> call_codex_stream(messages, on_event, run_context)
-      :lm_studio -> call_lm_studio_stream(messages, on_event, run_context)
-      _ -> call_req_llm_stream(messages, on_event, run_context)
-    end
-  end
-
-  defp call_claude_code_stream(messages, on_event, run_context) do
-    request_ref = make_ref()
-
-    _task =
-      Task.start_link(fn ->
-        case Claude.Code.run_stream(
-               %{
-                 prompt: run_context.system_prompt
-               },
-               messages,
-               on_event
-             ) do
-          {:ok, _response} -> send(self(), {:llm_stream_done, request_ref, ""})
-          {:error, reason} -> send(self(), {:llm_stream_error, request_ref, reason})
-        end
-      end)
-
-    {:ok, request_ref}
-  rescue
-    _ -> {:error, {:claude_error, "Claude Code not available"}}
-  end
-
-  defp call_codex_stream(messages, on_event, run_context) do
-    request_ref = make_ref()
-
-    _task =
-      Task.start_link(fn ->
-        case Codex.stream(
-               project_root: run_context.system_prompt,
-               prompt: messages,
-               on_event: on_event
-             ) do
-          {:ok, _} -> send(self(), {:llm_stream_done, request_ref, ""})
-          {:error, reason} -> send(self(), {:llm_stream_error, request_ref, reason})
-        end
-      end)
-
-    {:ok, request_ref}
-  rescue
-    _ -> {:error, {:codex_error, "Codex not available"}}
-  end
-
-  defp call_lm_studio_stream(messages, on_event, run_context) do
-    request_ref = make_ref()
-
-    _task =
-      Task.start_link(fn ->
-        case LMStudio.stream(
-               endpoint: "http://localhost:1234",
-               model: lm_studio_model(),
-               messages: messages,
-               system_prompt: run_context.system_prompt,
-               on_event: on_event
-             ) do
-          {:ok, _} -> send(self(), {:llm_stream_done, request_ref, ""})
-          {:error, reason} -> send(self(), {:llm_stream_error, request_ref, reason})
-        end
-      end)
-
-    {:ok, request_ref}
-  rescue
-    _ -> {:error, {:lm_studio_error, "LM Studio not available"}}
-  end
-
-  defp call_req_llm_stream(messages, on_event, _run_context) do
-    request_ref = make_ref()
-
-    _task =
-      Task.start_link(fn ->
-        case Req.post("http://localhost:11434/api/chat",
-               json: %{
-                 model: "neural-chat",
-                 messages: messages,
-                 stream: true
-               }
-             ) do
-          {:ok, response} ->
-            response.body
-            |> String.split("\n")
-            |> Enum.filter(&(&1 != ""))
-            |> Enum.each(fn line ->
-              case Jason.decode(line) do
-                {:ok, %{"message" => %{"content" => delta}}} ->
-                  on_event.({:delta, delta})
-
-                _ ->
-                  :ok
-              end
-            end)
-
-            send(self(), {:llm_stream_done, request_ref, ""})
-
-          {:error, reason} ->
-            send(self(), {:llm_stream_error, request_ref, reason})
-        end
-      end)
-
-    {:ok, request_ref}
-  rescue
-    _ -> {:error, {:unknown_provider, "http_stream"}}
+    ChatProviders.call_stream(messages, on_event, run_context)
   end
 
   # --- System Prompt Building ---
@@ -900,7 +795,7 @@ defmodule FoundryWeb.ChatSession do
     - Potential side effects
 
     Proposal: #{proposal && proposal.title || "TBD"}
-    Context: #{retrieval && retrieval.tool_results && length(retrieval.tool_results) || 0} relevant files analyzed
+    Context: #{retrieval && retrieval.tool_results && map_size(retrieval.tool_results) || 0} relevant files analyzed
     """
   end
 
@@ -917,42 +812,13 @@ defmodule FoundryWeb.ChatSession do
 
   # --- Provider Utilities ---
 
-  defp project_root do
-    case System.get_env("PROJECT_ROOT") do
-      nil ->
-        target_project_header(
-          System.get_env("HOME") || "/tmp"
-        ) <> "/reference"
-
-      path ->
-        path
-    end
-  end
-
-  defp target_project_header(home) do
-    home
-  end
-
-  defp llm_provider do
-    Application.get_env(:foundry_web, :llm_provider, :anthropic)
-  end
-
   defp llm_diagnostics(extra \\ %{}) do
     %{
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
-      provider: llm_provider(),
+      provider: ChatConfig.llm_provider(),
       node: Node.self(),
       extra: extra
     }
-  end
-
-  defp lm_studio_model do
-    Application.get_env(:foundry_web, :lm_studio_model, "neural-chat")
-  end
-
-  defp hook(key) do
-    hooks = Application.get_env(:foundry_web, :hooks, %{})
-    Map.get(hooks, key)
   end
 
   # --- Session Helpers ---
@@ -972,7 +838,7 @@ defmodule FoundryWeb.ChatSession do
   defp parse_chat_view(_view), do: :conversation
 
   defp project_fingerprint do
-    project_root()
+    ChatConfig.igaming_project_root()
     |> File.stat!()
     |> then(fn %{mtime: mtime} -> :erlang.phash2(mtime) end)
   rescue
@@ -986,8 +852,8 @@ defmodule FoundryWeb.ChatSession do
       {:ok, session} when not is_nil(session) ->
         socket
         |> assign(:session_id, session_id)
-        |> assign(:messages, session.messages || [])
-        |> assign(:session_digest, session.session_digest || %{})
+        |> assign(:messages, session["messages"] || [])
+        |> assign(:session_digest, session["session_digest"] || %{})
 
       _ ->
         socket

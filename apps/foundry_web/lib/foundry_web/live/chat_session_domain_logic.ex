@@ -21,7 +21,6 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   alias Foundry.Chat.FileSessionStore
   alias Foundry.Chat.MessageClassifier
   alias Foundry.Chat.Retrieval, as: ChatRetrieval
-  alias Foundry.Chat.Session, as: ChatRecord
   alias Foundry.ChatTrace
   alias Foundry.SpecKit.SessionMemory
 
@@ -124,7 +123,8 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   end
 
   def append_trace_event_to_run(run, trace_event) do
-    events = [trace_event | run.events] |> Enum.take(250)
+    normalized = ChatTrace.normalize(trace_event["provider"] || "unknown", trace_event)
+    events = [normalized | run.events] |> Enum.take(250)
     summary = ChatTrace.summarize_run(events)
 
     run
@@ -434,8 +434,8 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
 
   def load_session(session_id) do
     case FileSessionStore.load(session_id) do
-      {:ok, %ChatRecord{} = chat_session} ->
-        {:ok, %ChatRecord{} = chat_session}
+      {:ok, session} when is_map(session) ->
+        {:ok, session}
 
       {:ok, nil} ->
         {:ok, nil}
@@ -446,59 +446,27 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   end
 
   def save_session_state(session_id, messages, session_digest) do
-    invoke_save_hook(
-      fn ->
-        case load_session(session_id) do
-          {:ok, %ChatRecord{} = existing} ->
-            update_session(existing, messages, session_digest)
-
-          {:ok, nil} ->
-            create_session(session_id, messages, session_digest)
-
-          {:error, reason} ->
-            {:error, reason}
+    case load_session(session_id) do
+      {:ok, existing} when is_map(existing) ->
+        FileSessionStore.update(session_id, %{messages: messages, session_digest: session_digest})
+        |> case do
+          {:ok, _} -> :ok
+          {:error, reason} -> {:error, reason}
         end
-      end,
-      session_id,
-      messages,
-      session_digest
-    )
-  end
 
-  defp create_session(session_id, messages, session_digest) do
-    changeset =
-      ChatRecord.create(
-        %{
+      {:ok, nil} ->
+        FileSessionStore.create(%{
           id: session_id,
           messages: messages,
           session_digest: session_digest
-        }
-      )
+        })
+        |> case do
+          {:ok, _} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
 
-    case Ash.create(changeset) do
-      {:ok, _record} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp update_session(existing, messages, session_digest) do
-    changeset =
-      existing
-      |> Ash.Changeset.for_update(:update, %{
-        messages: messages,
-        session_digest: session_digest
-      })
-
-    case Ash.update(changeset) do
-      {:ok, _record} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp invoke_save_hook(fun, _session_id, _messages, _session_digest) do
-    case fun.() do
-      {:error, %Ash.Error.Invalid{} = reason} -> {:error, reason}
-      result -> result
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

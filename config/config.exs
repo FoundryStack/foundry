@@ -24,7 +24,8 @@ config :foundry, Foundry.Mailer, adapter: Swoosh.Adapters.Local
 
 config :foundry_web,
   generators: [context_app: :foundry],
-  igaming_project_root: Path.expand("../reference_projects/igaming", __DIR__)
+  igaming_project_root: Path.expand("../reference_projects/igaming", __DIR__),
+  llm_provider: :codex
 
 # Configures the endpoint
 config :foundry_web, FoundryWeb.Endpoint,
