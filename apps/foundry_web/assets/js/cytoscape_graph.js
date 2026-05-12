@@ -241,6 +241,25 @@ export class CytoscapeGraph {
     this._applyCoverageOverlayStyles()
   }
 
+  applyScenarioStatusOverlay({ failing_node_ids: failingNodeIds = [], untraced_node_ids: untracedNodeIds = [] } = {}) {
+    const failingSet = new Set(Array.isArray(failingNodeIds) ? failingNodeIds : [])
+    const untracedSet = new Set(Array.isArray(untracedNodeIds) ? untracedNodeIds : [])
+
+    this.cy.batch(() => {
+      this.cy.nodes().forEach(node => {
+        const id = node.id()
+        const isFailing = failingSet.has(id)
+        const isUntraced = untracedSet.has(id)
+
+        if (isFailing) {
+          node.addClass('scenario-failing')
+        } else if (isUntraced) {
+          node.addClass('scenario-untraced')
+        }
+      })
+    })
+  }
+
   applyScenarioOverlay({
     nodes,
     graph_path: graphPath,

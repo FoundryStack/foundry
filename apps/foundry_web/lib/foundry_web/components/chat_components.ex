@@ -303,6 +303,41 @@ defmodule FoundryWeb.ChatComponents do
                 class="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-base-content outline-none placeholder:text-neutral-content/50"
                 disabled={@loading}
               ><%= @input %></textarea>
+              <%
+                active_proposal_id = @session_digest["active_proposal_id"]
+                active_proposal_status = @session_digest["active_proposal_status"]
+                show_proposal_actions =
+                  is_binary(active_proposal_id) and
+                  active_proposal_status not in ["applied", "cancelled"]
+              %>
+              <%= if show_proposal_actions do %>
+                <div class="mt-2 flex items-center gap-2">
+                  <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content">
+                    Active proposal:
+                  </p>
+                  <button
+                    type="button"
+                    phx-click="proposal_apply"
+                    phx-value-id={active_proposal_id}
+                    disabled={@loading}
+                    class="rounded-selector bg-success/90 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-base-100 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >Apply</button>
+                  <button
+                    type="button"
+                    phx-click="proposal_revise"
+                    phx-value-id={active_proposal_id}
+                    disabled={@loading}
+                    class="rounded-selector border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning transition-colors hover:bg-warning/15 disabled:cursor-not-allowed disabled:opacity-50"
+                  >Revise</button>
+                  <button
+                    type="button"
+                    phx-click="proposal_cancel"
+                    phx-value-id={active_proposal_id}
+                    disabled={@loading}
+                    class="rounded-selector border border-base-300 bg-base-100/70 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content transition-colors hover:text-base-content disabled:cursor-not-allowed disabled:opacity-50"
+                  >Cancel</button>
+                </div>
+              <% end %>
               <div class="mt-3 flex items-center justify-between gap-3">
                 <p class="text-[11px] leading-5 text-neutral-content">
                   <span class="inline-flex items-center gap-1 rounded-full border border-base-300 bg-base-300/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-neutral-content">

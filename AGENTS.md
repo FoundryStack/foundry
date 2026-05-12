@@ -545,7 +545,7 @@ The complete sequence the agent follows before emitting any proposal:
 1.  Read system map spec overview (Tier 2) — identify relevant ADRs/INVs/regulations by node link or tag
 2.  Read those documents via bash — follow cross-references
 3.  Run pre-generation checklist — identify missing spec-kit items
-4.  Read module context: mix foundry.context <Module> --json
+4.  Read module context: mix foundry.project.context <Module>
 5.  Fetch closest pattern example: mix foundry.pattern.find <type> --domain <D>
 6.  Check @description fields on all touched attributes against proposed change
 7.  Run contradiction check — BLOCKED if violated, else proceed

@@ -234,6 +234,11 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
+  def handle_event("update_chat_input", params, socket) do
+    ChatSession.handle_event("update_chat_input", params, socket)
+  end
+
+  @impl true
   def handle_event("proposal_apply", params, socket) do
     ChatSession.handle_event("proposal_apply", params, socket)
   end
@@ -526,6 +531,10 @@ defmodule FoundryWeb.SystemMapLive do
      |> clear_selected_scenario_if_filtered_out(filtered_scenario_ids)
      |> push_event("graph:coverage_overlay", %{
        uncovered_node_ids: coverage_uncovered_node_ids(report.coverage || %{})
+     })
+     |> push_event("graph:scenario_status_overlay", %{
+       failing_node_ids: scenario_failing_node_ids(report),
+       untraced_node_ids: coverage_uncovered_node_ids(report.coverage || %{})
      })}
   end
 
@@ -1185,5 +1194,13 @@ defmodule FoundryWeb.SystemMapLive do
       subheader: subheader,
       command: command
     }
+  end
+
+  defp scenario_failing_node_ids(report) do
+    report.scenarios
+    |> List.wrap()
+    |> Enum.filter(&(&1.trace_status == :failed))
+    |> Enum.flat_map(&List.wrap(&1.node_ids || []))
+    |> Enum.uniq()
   end
 end

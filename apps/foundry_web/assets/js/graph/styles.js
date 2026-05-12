@@ -142,6 +142,20 @@ export const STATIC_STYLES = [
     },
   },
   {
+    selector: 'node.scenario-failing',
+    style: {
+      'border-width': 2.5,
+      'border-style': 'solid',
+    },
+  },
+  {
+    selector: 'node.scenario-untraced',
+    style: {
+      'border-width': 2,
+      'border-style': 'dashed',
+    },
+  },
+  {
     selector: 'node[type="external"]',
     style: { 'border-style': 'dashed', 'border-width': 1, 'opacity': 0.7 },
   },
@@ -248,6 +262,20 @@ export function dynamicStyles(c) {
       style: {
         'border-color': c.yw,
         'background-blacken': 0.08,
+      },
+    },
+    {
+      selector: 'node.scenario-failing',
+      style: {
+        'border-color': c.rd,
+        'background-blacken': 0.12,
+      },
+    },
+    {
+      selector: 'node.scenario-untraced',
+      style: {
+        'border-color': c.gy,
+        'background-blacken': 0.06,
       },
     },
     { selector: 'node.sensitive', style: { 'border-width': 2, 'border-color': c.rd } },

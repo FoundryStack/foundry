@@ -122,6 +122,12 @@ export const SystemMapHook = {
         }
       })
 
+      this.handleEvent('graph:scenario_status_overlay', (payload) => {
+        if (this.graph) {
+          this.graph.applyScenarioStatusOverlay(payload)
+        }
+      })
+
       this.handleEvent('drawer:open_flow', () => {
         this.drawer?.open()
       })

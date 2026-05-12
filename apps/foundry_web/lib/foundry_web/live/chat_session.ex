@@ -6,6 +6,7 @@ defmodule FoundryWeb.ChatSession do
   require Ash.Query
 
   alias Foundry.Chat.FileSessionStore
+  alias Foundry.Chat.MessageClassifier
   alias Foundry.Chat.Retrieval, as: ChatRetrieval
   alias Foundry.Chat.Session, as: ChatRecord
   alias Foundry.ChatTrace
@@ -252,62 +253,79 @@ defmodule FoundryWeb.ChatSession do
     if message == "" do
       {:noreply, socket}
     else
-      with {:ok, run_context} <- build_run_context(socket, message) do
-        user_msg = %{
-          "role" => "user",
-          "content" => message,
-          "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
-        }
+      case MessageClassifier.classify_proposal_command(message, socket.assigns.session_digest || %{}) do
+        {:proposal_action, action, proposal_id} ->
+          user_msg = %{
+            "role" => "user",
+            "content" => message,
+            "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+          }
 
-        request_ref = make_ref()
-        activity_run = new_activity_run(message, request_ref, run_context)
-        persisted_messages = socket.assigns.messages ++ [user_msg]
+          socket =
+            socket
+            |> update(:messages, &(&1 ++ [user_msg]))
+            |> assign(:input, "")
 
-        assistant_msg = %{
-          "role" => "assistant",
-          "content" => "",
-          "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
-        }
+          handle_event(action, %{"id" => proposal_id}, socket)
 
-        messages = persisted_messages ++ [assistant_msg]
+        :not_a_proposal_command ->
+          with {:ok, run_context} <- build_run_context(socket, message) do
+            user_msg = %{
+              "role" => "user",
+              "content" => message,
+              "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+            }
 
-        case save_session_state(
-               socket.assigns.session_id,
-               persisted_messages,
-               run_context.session_digest
-             ) do
-          :ok ->
-            task = start_llm_stream(request_ref, persisted_messages, self(), run_context)
+            request_ref = make_ref()
+            activity_run = new_activity_run(message, request_ref, run_context)
+            persisted_messages = socket.assigns.messages ++ [user_msg]
 
-            socket =
-              socket
-              |> cancel_active_task()
-              |> assign(:messages, messages)
-              |> assign(:session_digest, run_context.session_digest)
-              |> assign(:input, "")
-              |> assign(:loading, true)
-              |> assign(:error, nil)
-              |> assign(:active_request_ref, request_ref)
-              |> assign(:active_request_task, task)
-              |> assign(:llm_diagnostics, llm_diagnostics(run_context.diagnostics))
-              |> assign(
-                :activity_runs,
-                [activity_run | socket.assigns.activity_runs] |> Enum.take(12)
-              )
-              |> assign(:selected_activity_run_id, activity_run.id)
-              |> push_event("chat:scroll_to_bottom", %{force: true})
+            assistant_msg = %{
+              "role" => "assistant",
+              "content" => "",
+              "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+            }
 
-            {:noreply, socket}
+            messages = persisted_messages ++ [assistant_msg]
 
-          {:error, reason} ->
-            {:noreply,
-             socket
-             |> assign(:error, persistence_error("Failed to save chat session", reason))
-             |> assign(:loading, false)}
-        end
-      else
-        {:error, reason} ->
-          {:noreply, assign(socket, :error, format_request_error(reason))}
+            case save_session_state(
+                   socket.assigns.session_id,
+                   persisted_messages,
+                   run_context.session_digest
+                 ) do
+              :ok ->
+                task = start_llm_stream(request_ref, persisted_messages, self(), run_context)
+
+                socket =
+                  socket
+                  |> cancel_active_task()
+                  |> assign(:messages, messages)
+                  |> assign(:session_digest, run_context.session_digest)
+                  |> assign(:input, "")
+                  |> assign(:loading, true)
+                  |> assign(:error, nil)
+                  |> assign(:active_request_ref, request_ref)
+                  |> assign(:active_request_task, task)
+                  |> assign(:llm_diagnostics, llm_diagnostics(run_context.diagnostics))
+                  |> assign(
+                    :activity_runs,
+                    [activity_run | socket.assigns.activity_runs] |> Enum.take(12)
+                  )
+                  |> assign(:selected_activity_run_id, activity_run.id)
+                  |> push_event("chat:scroll_to_bottom", %{force: true})
+
+                {:noreply, socket}
+
+              {:error, reason} ->
+                {:noreply,
+                 socket
+                 |> assign(:error, persistence_error("Failed to save chat session", reason))
+                 |> assign(:loading, false)}
+            end
+          else
+            {:error, reason} ->
+              {:noreply, assign(socket, :error, format_request_error(reason))}
+          end
       end
     end
   end
@@ -535,7 +553,7 @@ defmodule FoundryWeb.ChatSession do
     case hook(:build_run_context) do
       nil ->
         project_root = socket.assigns.project_root
-        mode = classify_mode(message)
+        mode = MessageClassifier.classify_mode(message)
 
         with {:ok, retrieval} <-
                ChatRetrieval.prepare(project_root, message, socket.assigns.session_digest || %{}) do
@@ -1731,30 +1749,6 @@ defmodule FoundryWeb.ChatSession do
     """
   end
 
-  defp classify_mode(message) do
-    lowered = String.downcase(message)
-
-    if String.contains?(lowered, [
-         "fix",
-         "implement",
-         "edit",
-         "update",
-         "change",
-         "create",
-         "add",
-         "remove",
-         "delete",
-         "rename",
-         "refactor",
-         "migrate",
-         "write test",
-         "write tests"
-       ]) do
-      :change
-    else
-      :ask
-    end
-  end
 
   defp parse_chat_view("trace"), do: :trace
   defp parse_chat_view("session"), do: :session

@@ -90,8 +90,26 @@ defmodule ScenarioTracer.MixTask do
                 executed_flow =
                   CallTracer.collect_executed_trace(test_block, alias_map, lookup, adapters)
 
+                page_fallback_flow =
+                  (
+                    page_test_flow_module =
+                      Module.concat(Foundry.Context.Scenarios, PageTestFlow)
+
+                    if Code.ensure_loaded?(page_test_flow_module) do
+                      apply(page_test_flow_module, :infer_static_flow, [
+                        test_block,
+                        alias_map,
+                        lookup
+                      ])
+                    else
+                      []
+                    end
+                  )
+
                 flow =
-                  Enum.flat_map(executed_flow, &FlowExpander.expand_step(&1, lookup, adapters))
+                  (executed_flow ++ page_fallback_flow)
+                  |> Enum.sort_by(&{&1.line || test_block.line || 0, step_sort_weight(&1)})
+                  |> Enum.flat_map(&FlowExpander.expand_step(&1, lookup, adapters))
 
                 runtime_trace =
                   lookup.runtime
@@ -176,7 +194,7 @@ defmodule ScenarioTracer.MixTask do
                   id: scenario_id,
                   name: to_string(describe_name),
                   category: infer_category(scenario_meta, traced_tests),
-                  level: infer_level(traced_tests, lookup),
+                  level: infer_level(traced_tests, flow, lookup),
                   source_file: file_path,
                   source_module: source_module,
                   evidence_mode: if(has_runtime, do: :runtime, else: :static),
@@ -226,13 +244,20 @@ defmodule ScenarioTracer.MixTask do
     end
   end
 
-  defp infer_level(traced_tests, lookup) do
+  defp infer_level(traced_tests, flow, lookup) do
     traced_tests
     |> Enum.flat_map(&Map.get(&1, :executed_flow, []))
     |> Enum.map(&ModuleIndex.entry_point_level(&1, lookup))
     |> Enum.reject(&is_nil/1)
     |> highest_level()
+    |> case do
+      nil -> infer_page_level(flow, lookup)
+      level -> level
+    end
   end
+
+  defp step_sort_weight(%{provenance: :expanded}), do: 1
+  defp step_sort_weight(_step), do: 0
 
   defp highest_level(levels) do
     cond do
@@ -243,6 +268,18 @@ defmodule ScenarioTracer.MixTask do
       :action in levels -> :action
       :rule in levels -> :rule
       true -> nil
+    end
+  end
+
+  defp infer_page_level(flow, lookup) do
+    if Enum.any?(flow, fn step ->
+         step.node_id &&
+           match?(
+             %{type: "page"},
+             Map.get(lookup.by_id, ExTracer.Utils.base_node_id(step.node_id))
+           )
+       end) do
+      :page
     end
   end
 
