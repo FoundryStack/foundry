@@ -46,8 +46,8 @@ defmodule FoundryWeb.ChatProviders do
              {:delta, text} -> on_event.({:delta, text})
              _event -> :ok
            end) do
-        {:ok, _text, _metadata} ->
-          send(liveview_pid, {:llm_stream_done, request_ref, ""})
+        {:ok, _text, metadata} ->
+          send(liveview_pid, {:llm_stream_done, request_ref, "", metadata})
 
         {:error, :not_installed} ->
           send(liveview_pid, {:llm_stream_error, request_ref, :claude_code_not_installed})
@@ -88,8 +88,8 @@ defmodule FoundryWeb.ChatProviders do
              {:trace, event} -> on_event.({:trace, event})
              _event -> :ok
            end) do
-        {:ok, _text, _metadata} ->
-          send(liveview_pid, {:llm_stream_done, request_ref, ""})
+        {:ok, _text, metadata} ->
+          send(liveview_pid, {:llm_stream_done, request_ref, "", metadata})
 
         {:error, :not_installed} ->
           send(liveview_pid, {:llm_stream_error, request_ref, :codex_not_installed})
@@ -125,8 +125,8 @@ defmodule FoundryWeb.ChatProviders do
              {:delta, text} -> on_event.({:delta, text})
              _event -> :ok
            end) do
-        {:ok, _text, _metadata} ->
-          send(liveview_pid, {:llm_stream_done, request_ref, ""})
+        {:ok, _text, metadata} ->
+          send(liveview_pid, {:llm_stream_done, request_ref, "", metadata})
 
         {:error, :not_installed} ->
           send(liveview_pid, {:llm_stream_error, request_ref, :lm_studio_not_installed})

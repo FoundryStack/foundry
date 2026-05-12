@@ -637,7 +637,7 @@ defmodule FoundryWeb.ChatSession do
   defp drop_empty_streaming_response(messages) do
     case List.last(messages) do
       %{"role" => "assistant", "content" => ""} ->
-        Enum.slice(messages, 0..-2//-1)
+        Enum.slice(messages, 0..-2//1)
 
       _ ->
         messages
