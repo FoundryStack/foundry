@@ -1,232 +1,552 @@
 defmodule FoundryWeb.ChatSessionDomainLogic do
   @moduledoc """
-  Foundry-specific domain logic for chat.
+  Foundry-specific domain logic for chat sessions.
 
-  Extracted from ChatSession to separate generic streaming patterns
-  from Foundry-specific concerns:
-  - Proposal/change management
-  - Activity run tracking with ChatTrace
-  - Session memory integration with SpecKit
-  - Foundry retrieval context (tool results)
-  - Project-specific system prompts
+  This module encapsulates all Foundry-specific concerns extracted from ChatSession:
+  - Proposal management (apply, revise, cancel)
+  - Activity run tracking with ChatTrace integration
+  - Session memory and digest building
+  - Run context preparation (retrieval, proposals, system prompts)
+  - Message formatting and metadata attachment
+  - Session persistence via FileSessionStore
+
+  ChatSession acts as the orchestration layer calling these functions,
+  keeping the live view code focused on event routing and state management.
   """
 
-  import Phoenix.Component, only: [assign: 3]
+  import Phoenix.Component, only: [update: 3]
   require Ash.Query
+  require Logger
 
-  # --- Proposal / Change Management ---
+  alias Foundry.Chat.FileSessionStore
+  alias Foundry.Chat.MessageClassifier
+  alias Foundry.Chat.Retrieval, as: ChatRetrieval
+  alias Foundry.Chat.Session, as: ChatRecord
+  alias Foundry.ChatTrace
+  alias Foundry.SpecKit.SessionMemory
 
-  def apply_proposal(socket, _proposal_id) do
-    # 100% Foundry-specific: proposal workflow
+  # --- Proposal Management ---
+
+  def handle_proposal_apply(socket, proposal_id) do
     socket
-    |> assign(:proposal_id, nil)
-    |> assign(:pending_proposal, nil)
+    |> update(:messages, &update_latest_proposal_message(&1, proposal_id, :applied))
+    |> update(:session_digest, fn digest ->
+      digest
+      |> normalize_session_digest()
+      |> Map.put("active_proposal_id", nil)
+      |> Map.put("active_proposal_status", "applied")
+    end)
+    |> Phoenix.LiveView.push_event("graph:proposal_overlay", %{clear: true})
+    |> Phoenix.LiveView.push_event(
+      "graph:delta",
+      active_proposal_delta(socket.assigns.messages, proposal_id)
+    )
+    |> persist_updated_chat()
   end
 
-  def revise_proposal(socket, _proposal_id, _changes) do
-    # Foundry SpecKit integration
+  def handle_proposal_revise(socket, proposal_id) do
     socket
+    |> update(:messages, &update_latest_proposal_message(&1, proposal_id, :awaiting_revision))
+    |> update(:session_digest, fn digest ->
+      digest
+      |> normalize_session_digest()
+      |> Map.put("active_proposal_id", proposal_id)
+      |> Map.put("active_proposal_status", "awaiting_revision")
+      |> Map.put("revision_of_proposal_id", proposal_id)
+    end)
+    |> Phoenix.LiveView.push_event(
+      "graph:proposal_overlay",
+      active_proposal_overlay(socket.assigns.messages, proposal_id)
+    )
+    |> persist_updated_chat()
   end
 
-  def cancel_proposal(socket, _proposal_id) do
+  def handle_proposal_cancel(socket, proposal_id) do
     socket
-    |> assign(:proposal_id, nil)
+    |> update(:messages, &update_latest_proposal_message(&1, proposal_id, :cancelled))
+    |> update(:session_digest, fn digest ->
+      digest
+      |> normalize_session_digest()
+      |> Map.put("active_proposal_id", nil)
+      |> Map.put("active_proposal_status", "cancelled")
+      |> Map.put("revision_of_proposal_id", nil)
+    end)
+    |> Phoenix.LiveView.push_event("graph:proposal_overlay", %{clear: true})
+    |> persist_updated_chat()
   end
 
-  # --- Activity Run Tracking ---
+  def get_proposal_file_preview(socket, proposal_id, path) do
+    proposal_file_preview_payload(socket.assigns.messages, proposal_id, path)
+  end
 
-  def create_activity_run(socket, metadata \\ %{}) do
-    run_id = Ecto.UUID.generate()
+  # --- Activity Run Management ---
 
-    activity_runs = socket.assigns[:activity_runs] || []
-    new_run = %{
-      id: run_id,
+  def create_activity_run(message, request_ref, run_context, llm_provider_fn, llm_diagnostics_fn) do
+    %{
+      id: System.unique_integer([:positive, :monotonic]),
+      request_ref: request_ref,
+      started_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+      finished_at: nil,
       status: :running,
-      created_at: DateTime.utc_now(),
-      metadata: metadata,
-      trace_events: []
+      provider: llm_provider_fn.(),
+      diagnostics: llm_diagnostics_fn.(run_context.diagnostics),
+      mode: run_context.mode,
+      proposal: run_context.proposal,
+      user_message: message,
+      response_preview: nil,
+      events: [],
+      grouped_events: [],
+      phase_groups: [],
+      phase_counts: %{},
+      provenance: %{},
+      event_count: 0,
+      grouped_event_count: 0,
+      tool_count: 0,
+      file_count: 0,
+      tools: [],
+      files: [],
+      read_files: [],
+      written_files: [],
+      token_usage: %{},
+      total_tokens: nil,
+      metadata: %{},
+      error: nil
     }
-
-    assign(socket, :activity_runs, [new_run | activity_runs])
   end
 
-  def complete_activity_run(socket, run_id, result_metadata \\ %{}) do
-    activity_runs = socket.assigns[:activity_runs] || []
-
-    updated_runs =
-      Enum.map(activity_runs, fn
-        %{id: ^run_id} = run ->
-          run
-          |> Map.put(:status, :completed)
-          |> Map.put(:completed_at, DateTime.utc_now())
-          |> Map.merge(result_metadata)
-
-        run ->
-          run
+  def update_activity_run(socket, request_ref, fun) do
+    update(socket, :activity_runs, fn runs ->
+      Enum.map(runs, fn
+        %{request_ref: ^request_ref} = run -> fun.(run)
+        run -> run
       end)
-
-    assign(socket, :activity_runs, updated_runs)
+    end)
   end
 
-  def fail_activity_run(socket, run_id, error) do
-    activity_runs = socket.assigns[:activity_runs] || []
+  def append_trace_event_to_run(run, trace_event) do
+    events = [trace_event | run.events] |> Enum.take(250)
+    summary = ChatTrace.summarize_run(events)
 
-    updated_runs =
-      Enum.map(activity_runs, fn
-        %{id: ^run_id} = run ->
-          run
-          |> Map.put(:status, :failed)
-          |> Map.put(:error, error)
-          |> Map.put(:failed_at, DateTime.utc_now())
+    run
+    |> Map.put(:events, events)
+    |> Map.merge(summary)
+  end
 
-        run ->
-          run
-      end)
+  def complete_activity_run(socket, request_ref, response, metadata) do
+    update_activity_run(socket, request_ref, fn run ->
+      usage = normalize_usage(metadata)
 
-    assign(socket, :activity_runs, updated_runs)
+      run
+      |> Map.put(:status, :completed)
+      |> Map.put(:finished_at, DateTime.utc_now() |> DateTime.to_iso8601())
+      |> Map.put(:response_preview, summarize_response(response))
+      |> Map.put(:metadata, metadata || %{})
+      |> Map.put(:token_usage, usage)
+      |> Map.put(:total_tokens, usage_total(usage))
+    end)
+  end
+
+  def fail_activity_run(socket, request_ref, reason, format_error_fn) do
+    update_activity_run(socket, request_ref, fn run ->
+      run
+      |> Map.put(:status, :error)
+      |> Map.put(:finished_at, DateTime.utc_now() |> DateTime.to_iso8601())
+      |> Map.put(:error, format_error_fn.(reason))
+    end)
+  end
+
+  def find_activity_run(activity_runs, request_ref) do
+    Enum.find(activity_runs, fn run -> run.request_ref == request_ref end)
+  end
+
+  # --- Run Context Building ---
+
+  def build_run_context(
+        socket,
+        message,
+        hook_fn,
+        normalize_digest_fn,
+        build_prompt_fn,
+        project_root
+      ) do
+    case hook_fn.(:build_run_context) do
+      nil ->
+        mode = MessageClassifier.classify_mode(message)
+
+        with {:ok, retrieval} <-
+               ChatRetrieval.prepare(project_root, message, socket.assigns.session_digest || %{}) do
+          proposal =
+            if mode == :change do
+              case ChatRetrieval.create_proposal(
+                     message,
+                     "studio@local",
+                     retrieval.tool_results,
+                     socket.assigns.session_digest || %{},
+                     project_root
+                   ) do
+                {:ok, proposal} -> proposal
+                {:error, _reason} -> nil
+              end
+            end
+
+          session_digest =
+            socket.assigns.session_digest
+            |> normalize_digest_fn.()
+            |> prepare_session_digest(retrieval, mode, proposal)
+
+          system_prompt =
+            build_prompt_fn.(project_root, retrieval, session_digest, mode, proposal)
+
+          proposal_trace =
+            if proposal do
+              [
+                %{
+                  "provider" => "foundry",
+                  "type" => "foundry.proposal.created",
+                  "phase" => "proposal",
+                  "message" => "Created proposal draft #{proposal.id}",
+                  "proposal" => proposal
+                }
+              ]
+            else
+              []
+            end
+
+          {:ok,
+           %{
+             mode: mode,
+             retrieval: retrieval,
+             proposal: proposal,
+             session_digest: session_digest,
+             system_prompt: system_prompt,
+             trace_events: retrieval.trace_events ++ proposal_trace,
+             diagnostics: %{
+               mode: Atom.to_string(mode),
+               context_cache: Atom.to_string(retrieval.cached_context.cache),
+               context_fingerprint: retrieval.cached_context.fingerprint,
+               proposal_id: proposal && proposal.id
+             }
+           }}
+        end
+
+      fun ->
+        fun.(socket, message)
+    end
   end
 
   # --- Session Memory & Digest ---
 
-  def persist_session_memory(socket, _session_id, _memory_data) do
-    # Foundry SpecKit integration
-    # This would call SessionMemory.persist/2 in real implementation
-    socket
+  def finalize_session_digest(socket, request_ref, _response, artifact \\ nil) do
+    run = find_activity_run(socket.assigns.activity_runs, request_ref)
+
+    socket.assigns.session_digest
+    |> normalize_session_digest()
+    |> prepend_recent_finding(artifact)
+    |> maybe_put_proposal(run && run.proposal)
   end
 
-  def build_session_digest(socket, _options \\ []) do
-    messages = socket.assigns[:messages] || []
-    project_root = socket.assigns[:project_root] || ""
-
-    digest = %{
-      messages_count: length(messages),
-      last_updated: DateTime.utc_now(),
-      project_context: project_root,
-      proposals: socket.assigns[:pending_proposals] || []
-    }
-
-    assign(socket, :session_digest, digest)
+  def prepare_session_digest(digest, retrieval, mode, proposal) do
+    digest
+    |> Map.put("retrieval_mode", Atom.to_string(mode))
+    |> Map.put("cached_context_fingerprint", retrieval.cached_context.fingerprint)
+    |> Map.put("proposal_draft", proposal && stringify_atom_keys(proposal))
   end
 
-  # --- Foundry System Prompt Building ---
+  def normalize_session_digest(nil), do: %{}
+  def normalize_session_digest(digest) when is_map(digest), do: digest
+  def normalize_session_digest(_digest), do: %{}
 
-  def build_run_system_prompt(socket, run_context \\ nil) do
-    project_root = socket.assigns[:project_root] || ""
+  # --- Persist & Message Updates ---
 
-    base_prompt = """
-    # Target Project Boundary
+  def persist_updated_chat(socket) do
+    session_id = socket.assigns.session_id
+    messages = socket.assigns.messages
+    session_digest = socket.assigns.session_digest
 
-    The target platform for this chat is the reference iGaming project.
-    Target project root: #{project_root}
+    case save_session_state(session_id, messages, session_digest) do
+      :ok ->
+        socket
 
-    Treat this directory as the authoritative workspace for project discovery,
-    code inspection, and Mix commands.
+      {:error, reason} ->
+        Logger.error("Failed to persist chat: #{inspect(reason)}")
+        socket
+    end
+  end
 
-    ---
-    """
+  def persist_turn_memory(socket, request_ref, response) do
+    project_root = socket.assigns.project_root
+    run = find_activity_run(socket.assigns.activity_runs, request_ref)
 
-    case run_context do
+    metadata = run && run.metadata
+
+    case SessionMemory.persist(
+           project_root,
+           socket.assigns.session_id,
+           %{
+             messages: socket.assigns.messages,
+             response: response
+           },
+           metadata
+         ) do
+      {:ok, payload} ->
+        %{response: response, artifact: payload[:artifact], error: nil}
+
+      {:error, reason} ->
+        Logger.warning("Failed to persist memory: #{inspect(reason)}")
+        %{response: response, artifact: nil, error: reason}
+    end
+  end
+
+  def maybe_record_memory_trace(socket, _request_ref, %{artifact: nil, error: nil}), do: socket
+
+  def maybe_record_memory_trace(socket, request_ref, %{artifact: artifact}) when artifact != nil do
+    update_activity_run(socket, request_ref, fn run ->
+      trace_event = %{
+        "type" => "foundry.memory.recorded",
+        "phase" => "memory",
+        "message" => "Recorded turn in session memory"
+      }
+
+      append_trace_event_to_run(run, trace_event)
+    end)
+  end
+
+  def maybe_record_memory_trace(socket, request_ref, %{error: error}) when error != nil do
+    update_activity_run(socket, request_ref, fn run ->
+      trace_event = %{
+        "type" => "foundry.memory.failed",
+        "phase" => "memory",
+        "message" => "Failed to record session memory: #{inspect(error)}"
+      }
+
+      append_trace_event_to_run(run, trace_event)
+    end)
+  end
+
+  def maybe_attach_message_metadata(message, nil), do: message
+
+  def maybe_attach_message_metadata(message, run) do
+    message
+    |> maybe_put_partial(run)
+    |> maybe_put_message_proposal(run.proposal)
+  end
+
+  def maybe_put_partial(message, %{metadata: metadata}) when is_map(metadata) do
+    case metadata["partial"] do
+      true -> Map.put(message, "partial", true)
+      _ -> message
+    end
+  end
+
+  def maybe_put_partial(message, _run), do: message
+
+  def maybe_put_message_proposal(message, nil), do: message
+  def maybe_put_message_proposal(message, proposal), do: Map.put(message, "proposal", proposal)
+
+  # --- Message Helpers ---
+
+  def update_latest_proposal_message(messages, proposal_id, status) do
+    index = latest_proposal_message_index(messages, proposal_id)
+
+    case index do
       nil ->
-        base_prompt
+        messages
 
-      _context ->
-        session_digest = socket.assigns[:session_digest] || %{}
-        context_prompt = format_session_context(session_digest)
-        base_prompt <> "\n" <> context_prompt
+      idx ->
+        List.update_at(messages, idx, fn msg ->
+          proposal = msg["proposal"] || %{}
+          updated_proposal = Map.put(proposal, "status", Atom.to_string(status))
+          Map.put(msg, "proposal", updated_proposal)
+        end)
     end
   end
 
-  # --- Foundry Retrieval Context ---
+  def latest_proposal_message_index(messages, proposal_id) do
+    messages
+    |> Enum.with_index()
+    |> Enum.reverse()
+    |> Enum.find_value(fn
+      {%{"proposal" => %{"id" => id}}, idx} when id == proposal_id -> idx
+      _ -> nil
+    end)
+  end
 
-  def get_retrieval_context(socket, mode \\ :default) do
-    project_root = socket.assigns[:project_root] || ""
-    session_id = socket.assigns[:session_id]
+  def active_proposal_overlay(messages, proposal_id) do
+    proposal = find_proposal(messages, proposal_id)
 
-    case mode do
-      :full ->
-        %{
-          project_root: project_root,
-          session_id: session_id,
-          session_digest: socket.assigns[:session_digest],
-          activity_runs: socket.assigns[:activity_runs]
-        }
-
-      _ ->
-        %{
-          project_root: project_root,
-          session_id: session_id
-        }
+    if proposal do
+      %{
+        proposal_id: proposal_id,
+        proposal: stringify_atom_keys(proposal),
+        created_at: proposal[:created_at]
+      }
+    else
+      %{proposal_id: proposal_id}
     end
   end
 
-  def select_retrieval_mode(socket, mode) do
-    assign(socket, :retrieval_mode, mode)
-  end
+  def active_proposal_delta(messages, proposal_id) do
+    proposal = find_proposal(messages, proposal_id)
 
-  # --- Trace Events ---
-
-  def append_trace_event(socket, run_id, event) do
-    activity_runs = socket.assigns[:activity_runs] || []
-
-    updated_runs =
-      Enum.map(activity_runs, fn
-        %{id: ^run_id} = run ->
-          trace_events = run[:trace_events] || []
-          Map.put(run, :trace_events, [event | trace_events])
-
-        run ->
-          run
-      end)
-
-    assign(socket, :activity_runs, updated_runs)
-  end
-
-  # --- UI Rendering Helpers ---
-
-  def format_proposal_message(proposal) when is_map(proposal) do
     %{
-      id: proposal["id"],
-      title: proposal["title"] || "Untitled Change",
-      description: proposal["description"],
-      status: proposal["status"] || "pending"
+      proposal_id: proposal_id,
+      graph_update: proposal && Map.get(proposal, :graph_update, %{})
     }
   end
 
-  def format_activity_run(run) when is_map(run) do
-    %{
-      id: run[:id],
-      status: run[:status],
-      duration: calculate_duration(run),
-      event_count: length(run[:trace_events] || [])
-    }
-  end
+  def proposal_file_preview_payload(messages, proposal_id, path) do
+    proposal = find_proposal(messages, proposal_id)
 
-  # --- Private Helpers ---
-
-  defp format_session_context(digest) do
-    """
-    ## Session Context
-
-    Messages in session: #{digest[:messages_count] || 0}
-    Last activity: #{format_timestamp(digest[:last_updated])}
-    """
-  end
-
-  defp calculate_duration(run) do
-    case {run[:created_at], run[:completed_at] || run[:failed_at]} do
-      {start, finish} when not is_nil(start) and not is_nil(finish) ->
-        DateTime.diff(finish, start, :millisecond)
-
-      _ ->
+    case proposal do
+      nil ->
         nil
+
+      _ ->
+        files = proposal[:created_files] || proposal[:modified_files] || []
+        file = Enum.find(files, &(Map.get(&1, :path) == path))
+
+        if file do
+          %{
+            proposal_id: proposal_id,
+            path: path,
+            preview: Map.get(file, :preview),
+            language: Map.get(file, :language)
+          }
+        else
+          nil
+        end
     end
   end
 
-  defp format_timestamp(nil), do: "never"
+  def find_proposal(messages, proposal_id) do
+    Enum.find_value(messages, fn msg ->
+      proposal = msg["proposal"]
+      if proposal && proposal["id"] == proposal_id, do: proposal
+    end)
+  end
 
-  defp format_timestamp(datetime) do
-    datetime
-    |> DateTime.truncate(:second)
-    |> DateTime.to_iso8601()
+  # --- Session Persistence ---
+
+  def load_session(session_id) do
+    case FileSessionStore.load(session_id) do
+      {:ok, %ChatRecord{} = chat_session} ->
+        {:ok, %ChatRecord{} = chat_session}
+
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def save_session_state(session_id, messages, session_digest) do
+    invoke_save_hook(
+      fn ->
+        case load_session(session_id) do
+          {:ok, %ChatRecord{} = existing} ->
+            update_session(existing, messages, session_digest)
+
+          {:ok, nil} ->
+            create_session(session_id, messages, session_digest)
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end,
+      session_id,
+      messages,
+      session_digest
+    )
+  end
+
+  defp create_session(session_id, messages, session_digest) do
+    changeset =
+      ChatRecord.create(
+        %{
+          id: session_id,
+          messages: messages,
+          session_digest: session_digest
+        }
+      )
+
+    case Ash.create(changeset) do
+      {:ok, _record} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp update_session(existing, messages, session_digest) do
+    changeset =
+      existing
+      |> Ash.Changeset.for_update(:update, %{
+        messages: messages,
+        session_digest: session_digest
+      })
+
+    case Ash.update(changeset) do
+      {:ok, _record} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp invoke_save_hook(fun, _session_id, _messages, _session_digest) do
+    case fun.() do
+      {:error, %Ash.Error.Invalid{} = reason} -> {:error, reason}
+      result -> result
+    end
+  end
+
+  # --- Helpers ---
+
+  defp summarize_response(response) when is_binary(response) do
+    response
+    |> String.trim()
+    |> String.replace(~r/\s+/, " ")
+    |> String.slice(0, 180)
+  end
+
+  defp normalize_usage(metadata) when is_map(metadata) do
+    case metadata[:usage] || metadata["usage"] do
+      usage when is_map(usage) -> usage
+      _ -> %{}
+    end
+  end
+
+  defp normalize_usage(_metadata), do: %{}
+
+  defp usage_total(%{total_tokens: total}) when is_integer(total), do: total
+
+  defp usage_total(usage) when is_map(usage) do
+    (usage["input_tokens"] || 0) + (usage["output_tokens"] || 0) || nil
+  end
+
+  defp usage_total(_usage), do: nil
+
+  defp prepend_recent_finding(digest, nil), do: digest
+
+  defp prepend_recent_finding(digest, artifact) do
+    case format_recent_finding(artifact) do
+      nil -> digest
+      formatted -> Map.put(digest, "recent_finding", formatted)
+    end
+  end
+
+  defp format_recent_finding(%{title: title, path: path}),
+    do: %{title: title, path: path}
+
+  defp format_recent_finding(_artifact), do: nil
+
+  defp maybe_put_proposal(digest, nil), do: digest
+
+  defp maybe_put_proposal(digest, proposal) do
+    Map.put(digest, "last_proposal", stringify_atom_keys(proposal))
+  end
+
+  defp stringify_atom_keys(map) do
+    Enum.reduce(map, %{}, fn
+      {k, v}, acc when is_atom(k) -> Map.put(acc, Atom.to_string(k), v)
+      {k, v}, acc -> Map.put(acc, k, v)
+    end)
   end
 end
