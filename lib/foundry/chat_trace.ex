@@ -54,33 +54,34 @@ defmodule Foundry.ChatTrace do
   end
 
   def summarize_run(events) when is_list(events) do
-    grouped_events = grouped_timeline(events)
+    filtered_events = Enum.reject(events, &(&1.type == "item.completed"))
+    grouped_events = grouped_timeline(filtered_events)
 
     tools =
-      events
+      filtered_events
       |> Enum.map(& &1.tool)
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 
     files =
-      events
+      filtered_events
       |> Enum.flat_map(&Map.get(&1, :paths, []))
       |> Enum.uniq()
 
     read_files =
-      events
+      filtered_events
       |> Enum.filter(&(Map.get(&1, :file_access) == :read))
       |> Enum.flat_map(&Map.get(&1, :paths, []))
       |> Enum.uniq()
 
     written_files =
-      events
+      filtered_events
       |> Enum.filter(&(Map.get(&1, :file_access) == :write))
       |> Enum.flat_map(&Map.get(&1, :paths, []))
       |> Enum.uniq()
 
     %{
-      event_count: length(events),
+      event_count: length(filtered_events),
       grouped_event_count: Enum.count(grouped_events),
       grouped_events: grouped_events,
       phase_groups: group_by_phase(grouped_events),
@@ -90,8 +91,8 @@ defmodule Foundry.ChatTrace do
       written_files: written_files,
       tool_count: length(tools),
       file_count: length(files),
-      phase_counts: Enum.frequencies_by(events, & &1.phase),
-      provenance: provenance(events)
+      phase_counts: Enum.frequencies_by(filtered_events, & &1.phase),
+      provenance: provenance(filtered_events)
     }
   end
 
@@ -100,7 +101,7 @@ defmodule Foundry.ChatTrace do
     |> Enum.reverse()
     |> Enum.reduce([], fn event, acc ->
       case acc do
-        [%{duplicate_key: key} = existing | rest] when key == event.duplicate_key ->
+        [%{duplicate_key: key} = existing | rest] when key != nil and key == event.duplicate_key ->
           merged =
             existing
             |> Map.update(:count, 1, &(&1 + 1))
@@ -358,14 +359,13 @@ defmodule Foundry.ChatTrace do
     end
   end
 
-  defp duplicate_key(phase, category, tool, command, paths, type) do
+  defp duplicate_key(phase, category, tool, command, paths, _type) do
     {
       phase,
       category,
       tool,
       normalize_duplicate_command(command),
-      Enum.sort(paths),
-      type
+      Enum.sort(paths)
     }
   end
 

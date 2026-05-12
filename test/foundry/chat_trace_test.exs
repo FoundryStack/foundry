@@ -56,60 +56,63 @@ defmodule Foundry.ChatTraceTest do
   test "summarizes shell retrieval, true fallback, and redundant global fetches across a run" do
     events = [
       %{
+        type: "foundry.context",
         provider: :foundry,
         tool: nil,
         paths: [],
         phase: :context,
-        duplicate_key: {:context, :context, nil, nil, [], "foundry.context"}
+        duplicate_key: {:context, :context, nil, nil, []}
       },
       %{
+        type: "command_execution",
         provider: :codex,
         tool: nil,
         paths: ["apps/foundry_web/lib/foundry_web/live/chat_session.ex"],
         file_access: :read,
         phase: :shell_retrieval,
         duplicate_key:
-          {:shell_retrieval, :command, nil, "rg -n bonuses lib test", [], "command_execution"}
+          {:shell_retrieval, :command, nil, "rg -n bonuses lib test", []}
       },
       %{
+        type: "item.completed",
         provider: :codex,
         tool: "project_status",
         paths: [],
         phase: :retrieval,
-        duplicate_key: {:retrieval, :tool, "project_status", nil, [], "item.completed"}
+        duplicate_key: {:retrieval, :tool, "project_status", nil, []}
       },
       %{
+        type: "item.completed",
         provider: :codex,
         tool: "system_graph",
         paths: [],
         phase: :retrieval,
-        duplicate_key: {:retrieval, :tool, "system_graph", nil, [], "item.completed"}
+        duplicate_key: {:retrieval, :tool, "system_graph", nil, []}
       },
       %{
+        type: "command_execution",
         provider: :codex,
         tool: nil,
         paths: ["apps/foundry/lib/foundry/codex_provider.ex"],
         file_access: :write,
         phase: :shell_fallback,
         duplicate_key:
-          {:shell_fallback, :command, nil, "python scratch.py", [], "command_execution"}
+          {:shell_fallback, :command, nil, "python scratch.py", []}
       }
     ]
 
-    assert %{
-             event_count: 5,
-             grouped_event_count: 5,
-             file_count: 2,
-             read_files: ["apps/foundry_web/lib/foundry_web/live/chat_session.ex"],
-             written_files: ["apps/foundry/lib/foundry/codex_provider.ex"],
-             provenance: %{
-               cached_context_used: true,
-               shell_retrieval_used: true,
-               true_fallback_used: true,
-               shell_fallback_used: true,
-               redundant_global_context_fetches: 2
-             }
-           } = ChatTrace.summarize_run(events)
+    summary = ChatTrace.summarize_run(events)
+
+    assert summary.event_count == 3
+    assert summary.grouped_event_count == 3
+    assert summary.file_count == 2
+    assert summary.read_files == ["apps/foundry_web/lib/foundry_web/live/chat_session.ex"]
+    assert summary.written_files == ["apps/foundry/lib/foundry/codex_provider.ex"]
+    assert summary.provenance.cached_context_used == true
+    assert summary.provenance.shell_retrieval_used == true
+    assert summary.provenance.true_fallback_used == true
+    assert summary.provenance.shell_fallback_used == true
+    assert summary.provenance.redundant_global_context_fetches == 0
   end
 
   test "classifies apply_patch style events as file writes" do
@@ -126,5 +129,97 @@ defmodule Foundry.ChatTraceTest do
       })
 
     assert event.file_access == :write
+  end
+
+  test "filters out item.completed lifecycle events during summarization" do
+    events = [
+      %{
+        type: "function_call",
+        provider: :codex,
+        tool: nil,
+        paths: [],
+        phase: :final,
+        duplicate_key: {:final, :lifecycle, nil, nil, []}
+      },
+      %{
+        type: "item.completed",
+        provider: :codex,
+        tool: nil,
+        paths: [],
+        phase: :final,
+        duplicate_key: {:final, :lifecycle, nil, nil, []}
+      },
+      %{
+        type: "function_call_output",
+        provider: :codex,
+        tool: nil,
+        paths: [],
+        phase: :final,
+        duplicate_key: {:final, :lifecycle, nil, nil, []}
+      }
+    ]
+
+    summary = ChatTrace.summarize_run(events)
+
+    assert summary.event_count == 2
+    assert summary.grouped_event_count == 1
+    assert Enum.all?(summary.grouped_events, &(&1.type != "item.completed"))
+  end
+
+  test "deduplicates paired command events (invocation + result) into single grouped entry" do
+    events = [
+      %{
+        type: "function_call",
+        provider: :openai,
+        tool: "shell",
+        command: "ls -la /tmp",
+        paths: ["/tmp"],
+        phase: :shell_retrieval,
+        duplicate_key: {:shell_retrieval, :command, "shell", "ls -la /tmp", ["/tmp"]}
+      },
+      %{
+        type: "function_call_output",
+        provider: :openai,
+        tool: "shell",
+        command: "ls -la /tmp",
+        paths: ["/tmp"],
+        phase: :shell_retrieval,
+        duplicate_key: {:shell_retrieval, :command, "shell", "ls -la /tmp", ["/tmp"]}
+      }
+    ]
+
+    summary = ChatTrace.summarize_run(events)
+
+    assert summary.event_count == 2
+    assert summary.grouped_event_count == 1
+    grouped = List.first(summary.grouped_events)
+    assert grouped.count == 2
+    assert grouped.detail =~ "repeated 2x"
+  end
+
+  test "does not merge events with nil duplicate_key" do
+    events = [
+      %{
+        type: "raw_event",
+        provider: :unknown,
+        tool: nil,
+        paths: [],
+        phase: :activity,
+        duplicate_key: nil
+      },
+      %{
+        type: "raw_event",
+        provider: :unknown,
+        tool: nil,
+        paths: [],
+        phase: :activity,
+        duplicate_key: nil
+      }
+    ]
+
+    summary = ChatTrace.summarize_run(events)
+
+    assert summary.event_count == 2
+    assert summary.grouped_event_count == 2
   end
 end
