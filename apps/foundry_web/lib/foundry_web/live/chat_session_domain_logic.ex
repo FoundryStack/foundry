@@ -173,60 +173,65 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
       nil ->
         mode = MessageClassifier.classify_mode(message)
 
-        with {:ok, retrieval} <-
-               ChatRetrieval.prepare(project_root, message, socket.assigns.session_digest || %{}) do
-          proposal =
-            if mode == :change do
-              case ChatRetrieval.create_proposal(
-                     message,
-                     "studio@local",
-                     retrieval.tool_results,
-                     socket.assigns.session_digest || %{},
-                     project_root
-                   ) do
-                {:ok, proposal} -> proposal
-                {:error, _reason} -> nil
+        case ChatRetrieval.prepare(project_root, message, socket.assigns.session_digest || %{}) do
+          {:ok, retrieval} ->
+            Logger.debug("ChatRetrieval.prepare succeeded for project_root: #{project_root}")
+            proposal =
+              if mode == :change do
+                case ChatRetrieval.create_proposal(
+                       message,
+                       "studio@local",
+                       retrieval.tool_results,
+                       socket.assigns.session_digest || %{},
+                       project_root
+                     ) do
+                  {:ok, proposal} -> proposal
+                  {:error, _reason} -> nil
+                end
               end
-            end
 
-          session_digest =
-            socket.assigns.session_digest
-            |> normalize_digest_fn.()
-            |> prepare_session_digest(retrieval, mode, proposal)
+            session_digest =
+              socket.assigns.session_digest
+              |> normalize_digest_fn.()
+              |> prepare_session_digest(retrieval, mode, proposal)
 
-          system_prompt =
-            build_prompt_fn.(project_root, retrieval, session_digest, mode, proposal)
+            system_prompt =
+              build_prompt_fn.(project_root, retrieval, session_digest, mode, proposal)
 
-          proposal_trace =
-            if proposal do
-              [
-                %{
-                  "provider" => "foundry",
-                  "type" => "foundry.proposal.created",
-                  "phase" => "proposal",
-                  "message" => "Created proposal draft #{proposal.id}",
-                  "proposal" => proposal
-                }
-              ]
-            else
-              []
-            end
+            proposal_trace =
+              if proposal do
+                [
+                  %{
+                    "provider" => "foundry",
+                    "type" => "foundry.proposal.created",
+                    "phase" => "proposal",
+                    "message" => "Created proposal draft #{proposal.id}",
+                    "proposal" => proposal
+                  }
+                ]
+              else
+                []
+              end
 
-          {:ok,
-           %{
-             mode: mode,
-             retrieval: retrieval,
-             proposal: proposal,
-             session_digest: session_digest,
-             system_prompt: system_prompt,
-             trace_events: retrieval.trace_events ++ proposal_trace,
-             diagnostics: %{
-               mode: Atom.to_string(mode),
-               context_cache: Atom.to_string(retrieval.cached_context.cache),
-               context_fingerprint: retrieval.cached_context.fingerprint,
-               proposal_id: proposal && proposal.id
-             }
-           }}
+            {:ok,
+             %{
+               mode: mode,
+               retrieval: retrieval,
+               proposal: proposal,
+               session_digest: session_digest,
+               system_prompt: system_prompt,
+               trace_events: retrieval.trace_events ++ proposal_trace,
+               diagnostics: %{
+                 mode: Atom.to_string(mode),
+                 context_cache: Atom.to_string(retrieval.cached_context.cache),
+                 context_fingerprint: retrieval.cached_context.fingerprint,
+                 proposal_id: proposal && proposal.id
+               }
+             }}
+
+          {:error, reason} ->
+            Logger.error("ChatRetrieval.prepare failed: #{inspect(reason)}")
+            {:error, reason}
         end
 
       fun ->
