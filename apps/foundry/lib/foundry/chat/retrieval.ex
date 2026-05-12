@@ -271,7 +271,7 @@ defmodule Foundry.Chat.Retrieval do
   end
 
   defp grouped_shell_plan([], []) do
-    "Reuse the injected retrieval summary first. If source evidence is still required, run one grouped discovery command followed by one grouped read command."
+    "Reuse the injected retrieval summary first. Do not shell-search for AGENTS.md, module names, or spec-kit paths — these are already in your system prompt. If source evidence is still required, run one grouped discovery command followed by one grouped read command."
   end
 
   defp grouped_shell_plan(modules, file_hints) do
@@ -287,6 +287,7 @@ defmodule Foundry.Chat.Retrieval do
 
     [
       "Reuse the injected retrieval summary before any global refetch.",
+      "Do not shell-search for AGENTS.md, module names, or spec-kit paths — these are already in your system prompt.",
       if(module_hint != "", do: "Start with grouped module discovery around #{module_hint}."),
       if(file_hint != "",
         do: "If exact source evidence is needed, inspect grouped files such as #{file_hint}."
@@ -309,7 +310,7 @@ defmodule Foundry.Chat.Retrieval do
     %{
       summary: proposal_summary(message, tool_results, files),
       change_summary: change_summary,
-      diff: build_unified_diff(files, message),
+      diff: build_unified_diff(files, message, tool_results),
       files: files,
       graph_overlay: graph_overlay,
       actions: %{
@@ -471,9 +472,9 @@ defmodule Foundry.Chat.Retrieval do
     "Update #{module_name}: #{description}"
   end
 
-  defp build_unified_diff([], message), do: proposal_diff_placeholder(message, %{})
+  defp build_unified_diff([], message, tool_results), do: proposal_diff_placeholder(message, tool_results)
 
-  defp build_unified_diff(files, _message) do
+  defp build_unified_diff(files, _message, _tool_results) do
     files
     |> Enum.map(& &1.diff)
     |> Enum.join("\n")
@@ -729,7 +730,7 @@ defmodule Foundry.Chat.Retrieval do
 
   defp proposal_diff_placeholder(message, tool_results) do
     affected_modules =
-      tool_results.module_contexts
+      (tool_results[:module_contexts] || [])
       |> Enum.map(& &1.id)
       |> Enum.join(", ")
 

@@ -72,6 +72,7 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:error, load_error)
       |> assign(:active_request_ref, nil)
       |> assign(:active_request_task, nil)
+      |> assign(:pending_messages, [])
       |> assign(:project_root, ChatConfig.igaming_project_root())
       |> assign(:show_system_context, false)
       |> assign(:system_context_prompt, nil)
@@ -284,89 +285,97 @@ defmodule FoundryWeb.ChatSession do
     if message == "" do
       {:noreply, socket}
     else
-      case MessageClassifier.classify_proposal_command(message, socket.assigns.session_digest || %{}) do
-        {:proposal_action, action, proposal_id} ->
-          user_msg = %{
-            "role" => "user",
-            "content" => message,
-            "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
-          }
-
-          socket =
-            socket
-            |> update(:messages, &(&1 ++ [user_msg]))
-            |> assign(:input, "")
-
-          handle_event(action, %{"id" => proposal_id}, socket)
-
-        :not_a_proposal_command ->
-          with {:ok, run_context} <- build_run_context(socket, message) do
+      if socket.assigns.active_request_ref do
+        {:noreply,
+         socket
+         |> update(:pending_messages, &(&1 ++ [%{"content" => message, "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()}]))
+         |> assign(:input, "")}
+      else
+        case MessageClassifier.classify_proposal_command(message, socket.assigns.session_digest || %{}) do
+          {:proposal_action, action, proposal_id} ->
             user_msg = %{
               "role" => "user",
               "content" => message,
               "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
             }
 
-            request_ref = make_ref()
+            socket =
+              socket
+              |> update(:messages, &(&1 ++ [user_msg]))
+              |> assign(:input, "")
 
-            activity_run =
-              DomainLogic.create_activity_run(
-                message,
-                request_ref,
-                run_context,
-                fn -> ChatConfig.llm_provider() end,
-                &llm_diagnostics/1
-              )
+            handle_event(action, %{"id" => proposal_id}, socket)
 
-            persisted_messages = socket.assigns.messages ++ [user_msg]
+          :not_a_proposal_command ->
+            with {:ok, run_context} <- build_run_context(socket, message) do
+              user_msg = %{
+                "role" => "user",
+                "content" => message,
+                "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+              }
 
-            assistant_msg = %{
-              "role" => "assistant",
-              "content" => "",
-              "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
-            }
+              request_ref = make_ref()
 
-            messages = persisted_messages ++ [assistant_msg]
+              activity_run =
+                DomainLogic.create_activity_run(
+                  message,
+                  request_ref,
+                  run_context,
+                  fn -> ChatConfig.llm_provider() end,
+                  &llm_diagnostics/1
+                )
 
-            case DomainLogic.save_session_state(
-                   socket.assigns.session_id,
-                   persisted_messages,
-                   run_context.session_digest
-                 ) do
-              :ok ->
-                task = start_llm_stream(request_ref, persisted_messages, self(), run_context)
+              persisted_messages = socket.assigns.messages ++ [user_msg]
 
-                socket =
-                  socket
-                  |> cancel_active_task()
-                  |> assign(:messages, messages)
-                  |> assign(:session_digest, run_context.session_digest)
-                  |> assign(:input, "")
-                  |> assign(:loading, true)
-                  |> assign(:error, nil)
-                  |> assign(:active_request_ref, request_ref)
-                  |> assign(:active_request_task, task)
-                  |> assign(:llm_diagnostics, llm_diagnostics(run_context.diagnostics))
-                  |> assign(
-                    :activity_runs,
-                    [activity_run | socket.assigns.activity_runs] |> Enum.take(12)
-                  )
-                  |> assign(:selected_activity_run_id, activity_run.id)
-                  |> push_event("chat:scroll_to_bottom", %{force: true})
+              assistant_msg = %{
+                "role" => "assistant",
+                "content" => "",
+                "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+              }
 
-                {:noreply, socket}
+              messages = persisted_messages ++ [assistant_msg]
 
+              case DomainLogic.save_session_state(
+                     socket.assigns.session_id,
+                     persisted_messages,
+                     run_context.session_digest,
+                     socket.assigns.workspace_id
+                   ) do
+                :ok ->
+                  task = start_llm_stream(request_ref, persisted_messages, self(), run_context)
+
+                  socket =
+                    socket
+                    |> cancel_active_task()
+                    |> assign(:messages, messages)
+                    |> assign(:session_digest, run_context.session_digest)
+                    |> assign(:input, "")
+                    |> assign(:loading, true)
+                    |> assign(:error, nil)
+                    |> assign(:active_request_ref, request_ref)
+                    |> assign(:active_request_task, task)
+                    |> assign(:llm_diagnostics, llm_diagnostics(run_context.diagnostics))
+                    |> assign(
+                      :activity_runs,
+                      [activity_run | socket.assigns.activity_runs] |> Enum.take(12)
+                    )
+                    |> assign(:selected_activity_run_id, activity_run.id)
+                    |> push_event("chat:scroll_to_bottom", %{force: true})
+
+                  {:noreply, socket}
+
+                {:error, reason} ->
+                  {:noreply,
+                   socket
+                   |> assign(:error, persistence_error("Failed to save chat session", reason))
+                   |> assign(:loading, false)}
+              end
+            else
               {:error, reason} ->
-                {:noreply,
-                 socket
-                 |> assign(:error, persistence_error("Failed to save chat session", reason))
-                 |> assign(:loading, false)}
+                Logger.error("build_run_context failed: #{inspect(reason)}")
+                {:noreply, assign(socket, :error, format_request_error(reason))}
             end
-          else
-            {:error, reason} ->
-              Logger.error("build_run_context failed: #{inspect(reason)}")
-              {:noreply, assign(socket, :error, format_request_error(reason))}
-          end
+        end
       end
     end
   end
@@ -474,7 +483,8 @@ defmodule FoundryWeb.ChatSession do
         case DomainLogic.save_session_state(
                socket.assigns.session_id,
                messages,
-               digest
+               digest,
+               socket.assigns.workspace_id
             ) do
           :ok -> :ok
           {:error, reason} -> {:error, reason}
@@ -605,7 +615,20 @@ defmodule FoundryWeb.ChatSession do
       |> clear_active_request()
       |> assign(:error, merge_errors(base_error, save_result))
 
-    {:noreply, socket}
+    if Enum.empty?(socket.assigns.pending_messages) do
+      {:noreply, socket}
+    else
+      pending = socket.assigns.pending_messages
+      socket = assign(socket, :pending_messages, [])
+
+      socket =
+        Enum.reduce(pending, socket, fn pending_msg, acc ->
+          {:noreply, new_socket} = handle_event("send_message", %{"message" => pending_msg["content"]}, acc)
+          new_socket
+        end)
+
+      {:noreply, socket}
+    end
   end
 
   defp clear_active_request(socket), do: assign(socket, :active_request_ref, nil)

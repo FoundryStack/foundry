@@ -222,4 +222,110 @@ defmodule Foundry.ChatTraceTest do
     assert summary.event_count == 2
     assert summary.grouped_event_count == 2
   end
+
+  test "filters out thread.started lifecycle events during summarization" do
+    events = [
+      %{
+        type: "thread.started",
+        provider: :openai,
+        tool: nil,
+        paths: [],
+        phase: :retrieval,
+        duplicate_key: nil
+      },
+      %{
+        type: "command_execution",
+        provider: :codex,
+        tool: nil,
+        paths: ["file.ex"],
+        phase: :shell_retrieval,
+        duplicate_key: {:shell_retrieval, :command, nil, "rg test", ["file.ex"]}
+      },
+      %{
+        type: "thread.started",
+        provider: :openai,
+        tool: nil,
+        paths: [],
+        phase: :retrieval,
+        duplicate_key: nil
+      }
+    ]
+
+    summary = ChatTrace.summarize_run(events)
+
+    assert summary.event_count == 1
+    assert summary.grouped_event_count == 1
+    assert Enum.all?(summary.grouped_events, &(&1.type != "thread.started"))
+  end
+
+  test "does not merge events with nil duplicate_key (even if phase/category match)" do
+    events = [
+      %{
+        type: "thread.started",
+        provider: :openai,
+        tool: nil,
+        paths: [],
+        phase: :retrieval,
+        duplicate_key: nil
+      },
+      %{
+        type: "thread.started",
+        provider: :openai,
+        tool: nil,
+        paths: [],
+        phase: :retrieval,
+        duplicate_key: nil
+      }
+    ]
+
+    grouped = ChatTrace.grouped_timeline(events)
+
+    # Both events should remain separate (not merged) because duplicate_key is nil
+    assert length(grouped) == 2
+    assert Enum.all?(grouped, &(&1.count == 1))
+  end
+
+  test "filters both item.completed and thread.started in a single run" do
+    events = [
+      %{
+        type: "thread.started",
+        provider: :openai,
+        tool: nil,
+        paths: [],
+        phase: :retrieval,
+        duplicate_key: nil
+      },
+      %{
+        type: "command_execution",
+        provider: :codex,
+        tool: nil,
+        paths: ["lib/bonus.ex"],
+        phase: :shell_retrieval,
+        duplicate_key: {:shell_retrieval, :command, nil, "rg bonus", ["lib/bonus.ex"]}
+      },
+      %{
+        type: "item.completed",
+        provider: :codex,
+        tool: "project_status",
+        paths: [],
+        phase: :retrieval,
+        duplicate_key: {:retrieval, :tool, "project_status", nil, []}
+      },
+      %{
+        type: "thread.started",
+        provider: :openai,
+        tool: nil,
+        paths: [],
+        phase: :retrieval,
+        duplicate_key: nil
+      }
+    ]
+
+    summary = ChatTrace.summarize_run(events)
+
+    # Only the command_execution event should remain
+    assert summary.event_count == 1
+    assert summary.grouped_event_count == 1
+    assert List.first(summary.grouped_events).type == "command_execution"
+  end
 end

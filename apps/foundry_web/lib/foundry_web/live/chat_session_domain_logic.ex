@@ -267,8 +267,9 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
     session_id = socket.assigns.session_id
     messages = socket.assigns.messages
     session_digest = socket.assigns.session_digest
+    workspace_id = socket.assigns.workspace_id
 
-    case save_session_state(session_id, messages, session_digest) do
+    case save_session_state(session_id, messages, session_digest, workspace_id) do
       :ok ->
         socket
 
@@ -445,7 +446,7 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
     end
   end
 
-  def save_session_state(session_id, messages, session_digest) do
+  def save_session_state(session_id, messages, session_digest, workspace_id) do
     case load_session(session_id) do
       {:ok, existing} when is_map(existing) ->
         FileSessionStore.update(session_id, %{messages: messages, session_digest: session_digest})
@@ -457,6 +458,8 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
       {:ok, nil} ->
         FileSessionStore.create(%{
           id: session_id,
+          workspace_id: workspace_id,
+          project_fingerprint: "default",
           messages: messages,
           session_digest: session_digest
         })

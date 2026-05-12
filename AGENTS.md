@@ -3,9 +3,6 @@
 > This file is the primary context document for any AI agent working on the Foundry codebase.
 > Read this before reading any other file. It tells you what this system is, what it must never do,
 > and where to find authoritative answers to specific questions.
-> 
-> **Amendment 2026-04 (b):** Side-effect governance (INV-019, INV-020), epistemic markers on proposals, BLOCKER/REFUSE distinction, spec-gap escalation. See ADR-022.
-> **Amendment 2026-04:** MCP server role, Tidewave, ash_ai agent steps, Igniter discovery API, policy self-audit
 
 ---
 
@@ -14,6 +11,7 @@
 **Foundry** is a governed build environment for complex domain platforms on the Elixir/Ash/Phoenix stack.
 
 It is not an IDE. It is not a code generator. It is an environment where:
+
 - Domain structure is declared once via Spark DSL
 - Invariants are enforced by the compiler and linter
 - AI agents propose changes; humans approve them
@@ -25,17 +23,19 @@ The **target users** are teams building platforms in regulated domains (fintech,
 The **target stack** is Elixir + Ash Framework 3.x + Phoenix LiveView + Spark DSL extensions.
 
 Foundry has two modes:
+
 - `local` — runs as `mix foundry.studio` in a target project directory, reads files directly
 - `cloud` — hosted service, connects to a git repo, runs Mix tasks via subprocess, streams results over WebSocket
 
 **Terminology:**
-- *Foundry* — this meta-platform
-- *Target platform* — a platform built using Foundry (e.g., an iGaming back office, a fintech ledger system)
-- *Spec-kit* — the canonical document families that capture what code cannot: ADRs, Regulations, Runbooks, AGENTS.md, and durable `docs/findings/*.md` technical findings captured from copilot sessions
-- *Project context* — the full system map produced by `mix foundry.project.context`:
+
+- _Foundry_ — this meta-platform
+- _Target platform_ — a platform built using Foundry (e.g., an iGaming back office, a fintech ledger system)
+- _Spec-kit_ — the canonical document families that capture what code cannot: ADRs, Regulations, Runbooks, AGENTS.md, and durable `docs/findings/*.md` technical findings captured from copilot sessions
+- _Project context_ — the full system map produced by `mix foundry.project.context`:
   all nodes, edges, and spec-kit navigation metadata for the current project. **Included in Tier 2 LLM context**
   for agent discovery, governance validation, and change impact analysis.
-- *Project status* — the health summary produced by `mix foundry.project.status`:
+- _Project status_ — the health summary produced by `mix foundry.project.status`:
   lint, migrations, proposals, compliance gaps. Also in Tier 2 LLM context. Replaces "project snapshot".
 
 ---
@@ -55,20 +55,22 @@ Foundry is partially composed of independently-published Elixir packages.
 These packages have no Foundry-specific assumptions — they are reusable primitives
 that Foundry depends on. Rationale for each extraction decision is in ADR-019.
 
-| Package | Role | Used by Foundry via |
-|---|---|---|
-| `spark_meta` | Generic Spark DSL walker → struct tree. Opt-in `SparkMeta.Extension` hook for richer output; unknown extensions get a raw key-value fallback. | `Foundry.Context.*` Mix tasks — powers `mix foundry.context` |
-| `spark_lint` | Rule runner engine only: `SparkLint.Rule` behaviour, `SparkLint.Violation` struct, `mix spark_lint.check` task. Ships zero rules. | `Foundry.LintRules.*` plugs Foundry's INV-011..017 rule modules into it |
-| `ash_ai` | MCP server (`AshAi.Mcp.Router`), tool declarations (`Foundry.Context` domain), optional prompt-backed internal reasoning actions. See ADR-024. | Target platforms use `ash_ai` directly; Foundry uses MCP server endpoint for external agent integration |
-| `ash_diagram` | Ash DSL data extraction for ERD + policy flowcharts in `mix foundry.project.context`. Foundry implements `AshDiagram.Data.Extension`. See ADR-021. | `Foundry.AshDiagramExtension` annotates diagrams with governance metadata |
-| `req_llm` | LLM HTTP client used by `ash_ai` internally. Foundry configures a dedicated Finch pool. See ADR-001. | Transitive via `ash_ai` |
-| `Foundry.Copilot.Tools` | Declares the bash tool with shell constraint enforcement
-  (permitted/blocked command list per ADR-010 §Shell Constraints). No other tool
-  schemas — the agent uses Mix tasks directly via bash for all retrieval. Internal
-  module, not a Hex package. | `Foundry.Copilot.Engine` dispatches all tool calls
-  through this module |
+| Package                 | Role                                                                                                                                               | Used by Foundry via                                                                                     |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `spark_meta`            | Generic Spark DSL walker → struct tree. Opt-in `SparkMeta.Extension` hook for richer output; unknown extensions get a raw key-value fallback.      | `Foundry.Context.*` Mix tasks — powers `mix foundry.context`                                            |
+| `spark_lint`            | Rule runner engine only: `SparkLint.Rule` behaviour, `SparkLint.Violation` struct, `mix spark_lint.check` task. Ships zero rules.                  | `Foundry.LintRules.*` plugs Foundry's INV-011..017 rule modules into it                                 |
+| `ash_ai`                | MCP server (`AshAi.Mcp.Router`), tool declarations (`Foundry.Context` domain), optional prompt-backed internal reasoning actions. See ADR-024.     | Target platforms use `ash_ai` directly; Foundry uses MCP server endpoint for external agent integration |
+| `ash_diagram`           | Ash DSL data extraction for ERD + policy flowcharts in `mix foundry.project.context`. Foundry implements `AshDiagram.Data.Extension`. See ADR-021. | `Foundry.AshDiagramExtension` annotates diagrams with governance metadata                               |
+| `req_llm`               | LLM HTTP client used by `ash_ai` internally. Foundry configures a dedicated Finch pool. See ADR-001.                                               | Transitive via `ash_ai`                                                                                 |
+| `Foundry.Copilot.Tools` | Declares the bash tool with shell constraint enforcement                                                                                           |
+
+(permitted/blocked command list per ADR-010 §Shell Constraints). No other tool
+schemas — the agent uses Mix tasks directly via bash for all retrieval. Internal
+module, not a Hex package. | `Foundry.Copilot.Engine` dispatches all tool calls
+through this module |
 
 **What is NOT a separate package and why:**
+
 - `Foundry.Diff` — ADR-005 change classifier using `Sourceror`. Logic is tightly coupled to the
   manifest sensitive-resources list and Foundry's classification ruleset. Too specific to extract.
 - `Foundry.SpecKit` — spec-kit document parser using `MDEx` + `NimbleOptions`. "Spec-kit" is
@@ -91,6 +93,7 @@ that Foundry depends on. Rationale for each extraction decision is in ADR-019.
 **Telemetry:**
 Ash and Reactor already emit telemetry for all actions and steps. Foundry adds exactly three
 custom spans via `:telemetry.span/3`, no macros, no mandatory behaviour:
+
 - `[:foundry, :llm, :call]` — each LLM API call (model, task_type, prompt_tokens, latency_ms)
 - `[:foundry, :context, :subprocess]` — each `mix foundry.context` invocation (module, cached, latency_ms)
 - `[:foundry, :proposal, :transition]` — each proposal state transition (proposal_id, from, to, change_class)
@@ -132,13 +135,14 @@ a compact constraint summary.
 **Inputs:** NodeEntry (from CodeContextGatherer) + Tier 2 system map spec references/tag match.
 **Tools:** `bash` (cat, grep) — read-only.
 **Execution:**
+
 1. Read each ADR identified by Tier 1 tag match + NodeEntry `adrs` field
 2. Follow `Extends:` headers — read those ADRs too
 3. Read regulation files from NodeEntry `compliance` field; follow requirement → ADR links
 4. Read runbook from NodeEntry `runbook` field if a Reactor is in scope
 5. Check all INV-001..INV-023 against the proposed change
-**Returns:** Applicable constraints, contradiction result (`blocked: bool, rule: string`),
-spec-kit gap list.
+   **Returns:** Applicable constraints, contradiction result (`blocked: bool, rule: string`),
+   spec-kit gap list.
 
 ---
 
@@ -149,12 +153,13 @@ spec-kit gap list.
 **Inputs:** Target module names (inferred from message), inferred construct type.
 **Tools:** `bash` (mix foundry.project.context, mix foundry.pattern.find, mix foundry.exdoc).
 **Execution:**
+
 1. `mix foundry.project.context <Module>` — live NodeEntry (source of truth)
 2. `mix foundry.pattern.find <type> --domain <D>` — closest existing example
 3. `mix foundry.exdoc <Module> --function <fn>` — only when a specific DSL option
    is unresolved after reading the pattern
-**Returns:** NodeEntry struct, pattern example source, current `@description` field values,
-`pending_migrations` status.
+   **Returns:** NodeEntry struct, pattern example source, current `@description` field values,
+   `pending_migrations` status.
 
 ---
 
@@ -296,6 +301,7 @@ review and manual commit, as no proposal branch is warranted.
 There is no catalogue of pre-built operation modules. The agent uses raw Igniter API
 (`Igniter.create_new_file/3`, `Igniter.Project.Module.create_module/3`,
 `Igniter.Project.Module.find_and_update_module/3`) guided by:
+
 - The closest existing project example (`mix foundry.pattern.find <type>`)
 - Foundry conventions (`cat .foundry/usage_rules/foundry_conventions.md`)
 - Exact DSL API (`mix foundry.exdoc <Module>`)
@@ -306,6 +312,7 @@ equivalent) and `Op.AddAgentStep` (Phase 8 governance scaffold with dual-proposa
 cascade). All other generation uses raw Igniter directly.
 
 **The prohibition is on the mechanism, not the capability:**
+
 - Never: `File.write!/2`, `File.stream!/2`, or any direct IO on source files
 - Never: string interpolation assembled into source and written to disk directly
 - Always: content → Igniter pipeline → formatted, AST-valid output → git branch → diff → review
@@ -446,13 +453,14 @@ design tree, not by a turn counter.
 Test skeletons must be committed on the proposal branch before any implementation code.
 The test assertions define what "correct" means for this change. Implementation must be
 written to satisfy the tests. The copilot may never:
+
 - Write implementation code before test skeletons are committed
 - Modify an assertion value to make a failing test pass
 - Remove a test to reduce the failure count
 - Generate a test that trivially passes without testing the specified behavior
-When `mix test` fails after implementation: correct the implementation (max 3 attempts at
-compile level, 1 attempt at assertion logic). If still failing: surface `APPLY_FAILED` —
-do not make the tests easier.
+  When `mix test` fails after implementation: correct the implementation (max 3 attempts at
+  compile level, 1 attempt at assertion logic). If still failing: surface `APPLY_FAILED` —
+  do not make the tests easier.
 
 ---
 
@@ -461,12 +469,12 @@ do not make the tests easier.
 Every proposed change must be classified. The four classes are **domain-agnostic** —
 the examples use a fintech/iGaming context but the model applies to any regulated domain.
 
-| Class | Trigger pattern | Approver | Auto-apply | Audit logged |
-|---|---|---|---|---|
-| `:structural` | New resource, attribute, relationship, description updates, test skeletons | Any developer | Configurable | No |
-| `:behavioral` | New Rule, Transfer step, Blueprint, Reactor, Oban job, state machine transition | Domain lead | Never | Yes |
-| `:sensitive` | Resources/attributes marked `:sensitive` in the manifest — ledger entries, PII, audit records, access control | Sensitive lead + one other (dual) | Never | Yes, mandatory |
-| `:compliance` | Changes to `compliance:` declarations, policy modules, requirement links | Compliance officer | Never | Yes, ADR required |
+| Class         | Trigger pattern                                                                                               | Approver                          | Auto-apply   | Audit logged      |
+| ------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------- | ------------ | ----------------- |
+| `:structural` | New resource, attribute, relationship, description updates, test skeletons                                    | Any developer                     | Configurable | No                |
+| `:behavioral` | New Rule, Transfer step, Blueprint, Reactor, Oban job, state machine transition                               | Domain lead                       | Never        | Yes               |
+| `:sensitive`  | Resources/attributes marked `:sensitive` in the manifest — ledger entries, PII, audit records, access control | Sensitive lead + one other (dual) | Never        | Yes, mandatory    |
+| `:compliance` | Changes to `compliance:` declarations, policy modules, requirement links                                      | Compliance officer                | Never        | Yes, ADR required |
 
 **The `:sensitive` class is configured per project, not hardcoded.**
 A healthcare platform marks `:phi` resources as sensitive. A legal platform marks `:privileged`
@@ -618,31 +626,31 @@ This sequence applies to all `change` intents. When `change_generation_enabled: 
 
 ## Where to Find Authoritative Information
 
-| Question | Where to look |
-|---|---|
-| What does resource X do? | `mix foundry.context MyApp.Domain.Resource` |
-| What compliance requirements affect feature Y? | `mix foundry.compliance.check --filter=Y` |
-| What changed in the system recently? | `git log` + `mix foundry.diagram.diff` |
-| Full system map (all nodes + edges)? | `mix foundry.project.context` — Tier 2 LLM context (always available to agents) |
-| Current project health (lint, proposals, gaps)? | `mix foundry.project.status` — Tier 2 context |
-| Which spec-kit document covers a concept? | Spec-kit overview inside full project context (Tier 2) — agent reads summaries and tags, then `bash("cat <path>")` |
-| Correct DSL syntax for X? | `bash("mix foundry.exdoc <Module>")` or `bash("cat .foundry/usage_rules/<lib>.md")` |
-| Pattern for a new construct type? | `bash("mix foundry.pattern.find <type> --domain <D>")` |
-| Operation parameter schema? | `bash("cat .foundry/usage_rules/foundry_operations.md")` or `bash("mix foundry.operation.schema <Op>")` |
-| Read a source file or spec-kit document? | `Foundry.FileSystem.read/2` via FoundryChannel `fetch_file` / `fetch_document` |
-| Spec-kit task postures? | §Spec-Kit Tasks above |
+| Question                                        | Where to look                                                                                                      |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| What does resource X do?                        | `mix foundry.context MyApp.Domain.Resource`                                                                        |
+| What compliance requirements affect feature Y?  | `mix foundry.compliance.check --filter=Y`                                                                          |
+| What changed in the system recently?            | `git log` + `mix foundry.diagram.diff`                                                                             |
+| Full system map (all nodes + edges)?            | `mix foundry.project.context` — Tier 2 LLM context (always available to agents)                                    |
+| Current project health (lint, proposals, gaps)? | `mix foundry.project.status` — Tier 2 context                                                                      |
+| Which spec-kit document covers a concept?       | Spec-kit overview inside full project context (Tier 2) — agent reads summaries and tags, then `bash("cat <path>")` |
+| Correct DSL syntax for X?                       | `bash("mix foundry.exdoc <Module>")` or `bash("cat .foundry/usage_rules/<lib>.md")`                                |
+| Pattern for a new construct type?               | `bash("mix foundry.pattern.find <type> --domain <D>")`                                                             |
+| Operation parameter schema?                     | `bash("cat .foundry/usage_rules/foundry_operations.md")` or `bash("mix foundry.operation.schema <Op>")`            |
+| Read a source file or spec-kit document?        | `Foundry.FileSystem.read/2` via FoundryChannel `fetch_file` / `fetch_document`                                     |
+| Spec-kit task postures?                         | §Spec-Kit Tasks above                                                                                              |
 
 ### System Map vs Bash — The Decision Rule
 
 **The system map answers "which?" — bash answers "what?"**
 
-| Answer comes from full project context (already in Tier 2 prompt) | Answer requires bash |
-|---|---|
-| Which ADRs are relevant to this topic? | What does ADR-013 §Confidence actually say? |
-| Which modules exist in the Finance domain? | What attributes does Wallet currently have? |
-| Which INV rules apply to `:sensitive` resources? | Full text of a specific regulation requirement |
-| Does a pattern exist for `transfer` type? | The actual pattern source code |
-| Which spec-kit files exist? | Contents of a specific spec-kit file |
+| Answer comes from full project context (already in Tier 2 prompt) | Answer requires bash                           |
+| ----------------------------------------------------------------- | ---------------------------------------------- |
+| Which ADRs are relevant to this topic?                            | What does ADR-013 §Confidence actually say?    |
+| Which modules exist in the Finance domain?                        | What attributes does Wallet currently have?    |
+| Which INV rules apply to `:sensitive` resources?                  | Full text of a specific regulation requirement |
+| Does a pattern exist for `transfer` type?                         | The actual pattern source code                 |
+| Which spec-kit files exist?                                       | Contents of a specific spec-kit file           |
 
 Never run bash to answer a question the system map already resolves. Never trust a
 system-map summary as the full constraint text for a contradiction check — always fetch
@@ -677,13 +685,13 @@ Target projects scaffolded by `mix foundry.spec_kit.init` include Tidewave as a
 `:dev` dependency. This gives external agents (Claude Code, Cursor) runtime intelligence
 about the target project without Foundry providing it:
 
-| Tidewave tool | What it provides | Relationship to Foundry |
-|---|---|---|
-| `get_docs` | Version-exact documentation for any module/function | Supplements `mix foundry.exdoc` for interactive sessions |
-| `get_ash_resources` | Text list of Ash resources with their domains | Complements `get_module_context` (text vs structured JSON) |
-| `project_eval` | Live code evaluation in app runtime | Lets agents validate Igniter output before submitting proposals |
-| `execute_sql_query` | Direct database queries | Lets agents verify migration results post-approval |
-| `get_logs` | Application logs | Lets agents diagnose runtime errors in context |
+| Tidewave tool       | What it provides                                    | Relationship to Foundry                                         |
+| ------------------- | --------------------------------------------------- | --------------------------------------------------------------- |
+| `get_docs`          | Version-exact documentation for any module/function | Supplements `mix foundry.exdoc` for interactive sessions        |
+| `get_ash_resources` | Text list of Ash resources with their domains       | Complements `get_module_context` (text vs structured JSON)      |
+| `project_eval`      | Live code evaluation in app runtime                 | Lets agents validate Igniter output before submitting proposals |
+| `execute_sql_query` | Direct database queries                             | Lets agents verify migration results post-approval              |
+| `get_logs`          | Application logs                                    | Lets agents diagnose runtime errors in context                  |
 
 Tidewave is dev-only. It is not present in production. It is not Foundry's MCP server.
 The two MCP surfaces are additive and non-overlapping (ADR-024).
@@ -710,6 +718,7 @@ end
 ```
 
 The pre-generation checklist items INV-014..017 apply to this syntax:
+
 - INV-014: `confidence_threshold` required on `:decision` and `:scorer` steps
 - INV-015: `human_gate` or `on_low_confidence: :escalate_human` required on compliance-gated flows
 - INV-016: `tools:` list must be explicitly declared
@@ -719,29 +728,29 @@ The pre-generation checklist items INV-014..017 apply to this syntax:
 
 ## ADR Index
 
-| ID | Slug | Decision summary |
-|---|---|---|
-| ADR-001 | stack-selection | Elixir/Ash 3.x/Phoenix/Spark — full ecosystem including ash_postgres, money stack, auth, observability |
-| ADR-002 | code-generation | Igniter operations (structured or raw) — no string interpolation; migration generation included |
-| ADR-003 | agent-context-strategy | Structured retrieval over live DSL introspection, not RAG over code; full context schema |
-| ADR-004 | dependency-governance | Category-based approval, forbidden list, ecto direct-only rule, test tool assignments |
-| ADR-005 | change-approval-model | Four-class classification, dual approval for :sensitive, migration classification, audit log always |
-| ADR-006 | infrastructure-governance | Proposal-only from agents, human apply, base CI pipeline owned by platform |
-| ADR-007 | test-generation-strategy | DSL declarations drive skeleton generation, compliance reqs drive E2E, tool assignments |
-| ADR-008 | visualization-paradigm | Read-only system map, Activity Feed is the only change interface |
-| ADR-009 | concurrent-proposals | Optimistic locking via git blob hashes — stale proposals are surfaced, not silently applied |
-| ADR-010 | llm-model-and-context | Claude Sonnet, bounded context budgets, full ecosystem version manifest, structured retrieval |
-| ADR-011 | project-manifest | **Deferred** — write when `Foundry.Manifest` Ash resource is defined; pre-ADR schema in `docs/manifest-schema-draft.md` |
-| ADR-012 | studio-ux-specification | Command palette (Cmd+K), review panel, panel interactions, approval tracking UI, performance budgets, data retention |
-| ADR-013 | copilot-agent-behavior | Epistemic contract, confidence states, clarifying question UX, error recovery, phase-gated behaviour |
-| ADR-014 | proposal-lifecycle | Proposal state machine, dual approval mechanics, ADR linking for :compliance, apply step, compilation failure path |
-| ADR-015 | storage-model | Git-backed files + ETS only — no Postgres dependency for Foundry itself |
-| ADR-016 | visualization-paradigm-v2 | Four C4 levels, 11 node types, 8 edge types, authorization matrix view, agent node type (⊕). Data source: `mix foundry.project.context` (amended by ADR-020). JS architecture: `CytoscapeGraph` (pure wrapper) + `FoundryGraph` (Foundry config layer). Amended by ADR-027 (LiveView node extensions). |
-| ADR-017 | agent-injection-governance | AshAI integration model, 10 agent types, human-in-the-loop gate spec, change classification for agent constructs |
-| ADR-020 | project-context-filesystem-umbrella | Unified `mix foundry.project.context` command, `Foundry.FileSystem` read boundary, umbrella and related-project support, `snapshot` → `status` rename |
-| ADR-022 | side-effect-governance-and-copilot-precision | `SideEffectEntry` in NodeEntry/StepEntry; INV-019/020/021; BLOCKER/REFUSE distinction; epistemic markers; pre-mortem block; spec-gap escalation |
-| ADR-024 | mcp-server-architecture | Foundry IS the MCP server; external agents connect to it; AshAi.Mcp.Router; Tidewave complement; optional internal LLM |
-| ADR-027 | ui-surface-nodes | LiveView (▣) node extended with SDUI subtype, router-inferred routes, Sourceror action call scanning, `calls_action`+`feature_flagged_by` edges, dev server preview, igaming web layer |
+| ID      | Slug                                         | Decision summary                                                                                                                                                                                                                                                                                       |
+| ------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ADR-001 | stack-selection                              | Elixir/Ash 3.x/Phoenix/Spark — full ecosystem including ash_postgres, money stack, auth, observability                                                                                                                                                                                                 |
+| ADR-002 | code-generation                              | Igniter operations (structured or raw) — no string interpolation; migration generation included                                                                                                                                                                                                        |
+| ADR-003 | agent-context-strategy                       | Structured retrieval over live DSL introspection, not RAG over code; full context schema                                                                                                                                                                                                               |
+| ADR-004 | dependency-governance                        | Category-based approval, forbidden list, ecto direct-only rule, test tool assignments                                                                                                                                                                                                                  |
+| ADR-005 | change-approval-model                        | Four-class classification, dual approval for :sensitive, migration classification, audit log always                                                                                                                                                                                                    |
+| ADR-006 | infrastructure-governance                    | Proposal-only from agents, human apply, base CI pipeline owned by platform                                                                                                                                                                                                                             |
+| ADR-007 | test-generation-strategy                     | DSL declarations drive skeleton generation, compliance reqs drive E2E, tool assignments                                                                                                                                                                                                                |
+| ADR-008 | visualization-paradigm                       | Read-only system map, Activity Feed is the only change interface                                                                                                                                                                                                                                       |
+| ADR-009 | concurrent-proposals                         | Optimistic locking via git blob hashes — stale proposals are surfaced, not silently applied                                                                                                                                                                                                            |
+| ADR-010 | llm-model-and-context                        | Claude Sonnet, bounded context budgets, full ecosystem version manifest, structured retrieval                                                                                                                                                                                                          |
+| ADR-011 | project-manifest                             | **Deferred** — write when `Foundry.Manifest` Ash resource is defined; pre-ADR schema in `docs/manifest-schema-draft.md`                                                                                                                                                                                |
+| ADR-012 | studio-ux-specification                      | Command palette (Cmd+K), review panel, panel interactions, approval tracking UI, performance budgets, data retention                                                                                                                                                                                   |
+| ADR-013 | copilot-agent-behavior                       | Epistemic contract, confidence states, clarifying question UX, error recovery, phase-gated behaviour                                                                                                                                                                                                   |
+| ADR-014 | proposal-lifecycle                           | Proposal state machine, dual approval mechanics, ADR linking for :compliance, apply step, compilation failure path                                                                                                                                                                                     |
+| ADR-015 | storage-model                                | Git-backed files + ETS only — no Postgres dependency for Foundry itself                                                                                                                                                                                                                                |
+| ADR-016 | visualization-paradigm-v2                    | Four C4 levels, 11 node types, 8 edge types, authorization matrix view, agent node type (⊕). Data source: `mix foundry.project.context` (amended by ADR-020). JS architecture: `CytoscapeGraph` (pure wrapper) + `FoundryGraph` (Foundry config layer). Amended by ADR-027 (LiveView node extensions). |
+| ADR-017 | agent-injection-governance                   | AshAI integration model, 10 agent types, human-in-the-loop gate spec, change classification for agent constructs                                                                                                                                                                                       |
+| ADR-020 | project-context-filesystem-umbrella          | Unified `mix foundry.project.context` command, `Foundry.FileSystem` read boundary, umbrella and related-project support, `snapshot` → `status` rename                                                                                                                                                  |
+| ADR-022 | side-effect-governance-and-copilot-precision | `SideEffectEntry` in NodeEntry/StepEntry; INV-019/020/021; BLOCKER/REFUSE distinction; epistemic markers; pre-mortem block; spec-gap escalation                                                                                                                                                        |
+| ADR-024 | mcp-server-architecture                      | Foundry IS the MCP server; external agents connect to it; AshAi.Mcp.Router; Tidewave complement; optional internal LLM                                                                                                                                                                                 |
+| ADR-027 | ui-surface-nodes                             | LiveView (▣) node extended with SDUI subtype, router-inferred routes, Sourceror action call scanning, `calls_action`+`feature_flagged_by` edges, dev server preview, igaming web layer                                                                                                                 |
 
 ---
 
@@ -894,16 +903,16 @@ surfaces only the finished output: a confirmed plan, a review diff, or a BLOCKED
 
 ### Skill invocation map
 
-| Skill | When copilot invokes | What it produces | Feeds into |
-|---|---|---|---|
-| `speckit.specify` | `change` intent describes a feature without an existing spec | Feature spec from natural language | `speckit.plan` |
-| `speckit.clarify` | Intent confidence below threshold — before the one permitted question | Up to 5 targeted gaps identified | Copilot distills to the single most critical (INV-005) |
-| `speckit.plan` | After spec exists; before session plan is presented to human | Design artifacts: approach, alternatives, trade-offs | PlanArchitect sub-agent |
-| `speckit.tasks` | After plan is confirmed by human | Dependency-ordered task list | CodeGenerator execution queue |
-| `speckit.analyze` | After task list is generated; before plan is shown to human | Cross-artifact consistency report (spec ↔ plan ↔ tasks) | Copilot resolves conflicts before surfacing plan |
-| `speckit.implement` | On human confirmation (Phase 4+) | Executes tasks in dependency order | Igniter + branch operations |
-| `speckit.constitution` | When AGENTS.md or a project constitution would change | Keeps all dependent templates in sync | SpecKitDrafter (constitution update is first file on branch) |
-| `speckit.taskstoissues` | When user requests GitHub issue creation from a confirmed proposal | Dependency-ordered GitHub issues from tasks.md | External (GitHub) |
+| Skill                   | When copilot invokes                                                  | What it produces                                        | Feeds into                                                   |
+| ----------------------- | --------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
+| `speckit.specify`       | `change` intent describes a feature without an existing spec          | Feature spec from natural language                      | `speckit.plan`                                               |
+| `speckit.clarify`       | Intent confidence below threshold — before the one permitted question | Up to 5 targeted gaps identified                        | Copilot distills to the single most critical (INV-005)       |
+| `speckit.plan`          | After spec exists; before session plan is presented to human          | Design artifacts: approach, alternatives, trade-offs    | PlanArchitect sub-agent                                      |
+| `speckit.tasks`         | After plan is confirmed by human                                      | Dependency-ordered task list                            | CodeGenerator execution queue                                |
+| `speckit.analyze`       | After task list is generated; before plan is shown to human           | Cross-artifact consistency report (spec ↔ plan ↔ tasks) | Copilot resolves conflicts before surfacing plan             |
+| `speckit.implement`     | On human confirmation (Phase 4+)                                      | Executes tasks in dependency order                      | Igniter + branch operations                                  |
+| `speckit.constitution`  | When AGENTS.md or a project constitution would change                 | Keeps all dependent templates in sync                   | SpecKitDrafter (constitution update is first file on branch) |
+| `speckit.taskstoissues` | When user requests GitHub issue creation from a confirmed proposal    | Dependency-ordered GitHub issues from tasks.md          | External (GitHub)                                            |
 
 ### Invocation rules
 
@@ -978,7 +987,7 @@ Never mix the two codebases' invariants.
 Foundry copilot. When the copilot is used to modify Foundry itself, the change approval
 model still applies — Foundry's own `manifest.exs` declares its sensitive resources and
 approvers. This is not a special case. The context-switching rule is the same: load
-*this* AGENTS.md, apply *these* ADRs. The copilot does not need a special mode for
+_this_ AGENTS.md, apply _these_ ADRs. The copilot does not need a special mode for
 this — it simply operates on Foundry as it would on any other project.
 
 **The bootstrap case:** A new target project has no spec-kit yet. Foundry runs in bootstrap
