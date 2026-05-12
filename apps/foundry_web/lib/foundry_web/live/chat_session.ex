@@ -647,7 +647,7 @@ defmodule FoundryWeb.ChatSession do
   defp update_last_message(messages, fun) do
     case List.last(messages) do
       nil -> messages
-      last -> Enum.slice(messages, 0..-2//-1) ++ [fun.(last)]
+      last -> Enum.slice(messages, 0..-2//1) ++ [fun.(last)]
     end
   end
 
