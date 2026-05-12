@@ -166,7 +166,7 @@ defmodule FoundryWeb.SystemMapLive do
     case ChatSession.handle_event("chat_session_new", params, socket) do
       {:noreply, socket} ->
         active_id = socket.assigns.active_session_id
-        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")}, else: {:noreply, socket}
+        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")}, else: {:noreply, socket}
     end
   end
 
@@ -175,7 +175,7 @@ defmodule FoundryWeb.SystemMapLive do
     case ChatSession.handle_event("chat_session_open", params, socket) do
       {:noreply, socket} ->
         active_id = socket.assigns.active_session_id
-        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")}, else: {:noreply, socket}
+        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")}, else: {:noreply, socket}
     end
   end
 
@@ -184,7 +184,7 @@ defmodule FoundryWeb.SystemMapLive do
     case ChatSession.handle_event("chat_session_switch", params, socket) do
       {:noreply, socket} ->
         active_id = socket.assigns.active_session_id
-        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")}, else: {:noreply, socket}
+        if active_id, do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")}, else: {:noreply, socket}
     end
   end
 
