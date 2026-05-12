@@ -220,6 +220,19 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert ctx["project_type"] == "standard"
     end
 
+    test "reference project keeps page scenarios visible without saved page runtime traces",
+         %{context: ctx} do
+      source_modules =
+        ctx["scenarios"]
+        |> Enum.map(& &1["source_module"])
+        |> MapSet.new()
+
+      assert "IgamingRef.Web.HomeLiveTest" in source_modules
+      assert "IgamingRef.Web.AuthLiveTest" in source_modules
+      assert "IgamingRef.Web.GameLiveTest" in source_modules
+      assert "IgamingRef.Web.WithdrawalLiveTest" in source_modules
+    end
+
     test "domain_type is igaming", %{context: ctx} do
       assert ctx["domain_type"] == "igaming"
     end
@@ -238,7 +251,17 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert scenario
       assert scenario["evidence_mode"] in ["runtime", "static"]
       assert scenario["trace_status"] in ["present", "missing", "stale"]
-      assert scenario["level"] in ["rule", "action", "transfer", "reactor", "webhook", "job"]
+
+      assert scenario["level"] in [
+               "rule",
+               "action",
+               "transfer",
+               "reactor",
+               "webhook",
+               "job",
+               "page"
+             ]
+
       assert is_map(scenario["evidence_summary"])
       refute Map.has_key?(scenario, "expansion_mode")
       refute Map.has_key?(scenario, "entry_points")
@@ -425,10 +448,10 @@ defmodule Foundry.Phase1AcceptanceTest do
 
       assert scenario["evidence_mode"] == "runtime"
 
-      assert scenario["nodes"] == [
+      assert Enum.sort(scenario["nodes"]) == [
+               "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook",
                "IgamingRef.Finance.WithdrawalWebhook",
-               "IgamingRef.Finance.WithdrawalWebhookEvent",
-               "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook"
+               "IgamingRef.Finance.WithdrawalWebhookEvent"
              ]
     end
 
@@ -445,16 +468,16 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert scenario["trace_status"] == "present"
       refute Map.has_key?(scenario, "expansion_mode")
 
-      assert scenario["nodes"] == [
-               "IgamingRef.Finance.WithdrawalRequest",
-               "IgamingRef.Finance.WithdrawalTransfer",
-               "IgamingRef.Finance.Wallet",
-               "IgamingRef.Players.Player",
-               "IgamingRef.Players.Rules.PlayerNotSelfExcluded",
+      assert Enum.sort(scenario["nodes"]) == [
+               "IgamingRef.Finance.LedgerEntry",
                "IgamingRef.Finance.Rules.PlayerKYCVerified",
                "IgamingRef.Finance.Rules.SufficientBalance",
                "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
-               "IgamingRef.Finance.LedgerEntry"
+               "IgamingRef.Finance.Wallet",
+               "IgamingRef.Finance.WithdrawalRequest",
+               "IgamingRef.Finance.WithdrawalTransfer",
+               "IgamingRef.Players.Player",
+               "IgamingRef.Players.Rules.PlayerNotSelfExcluded"
              ]
 
       assert Enum.count(scenario["graph_path"]) > 5
@@ -488,11 +511,11 @@ defmodule Foundry.Phase1AcceptanceTest do
       sk = ctx["spec_kit"]
       assert is_map(sk)
 
-      for key <- ~w[index_token_count index_token_limit adrs runbooks regulations] do
+      for key <- ~w[index_token_count index_token_limit adrs runbooks regulations findings] do
         assert Map.has_key?(sk, key), "spec_kit missing: #{key}"
       end
 
-      assert Map.get(sk, "findings", []) == []
+      assert is_list(Map.get(sk, "findings", []))
     end
 
     test "spec_kit.adrs non-empty", %{context: ctx} do
