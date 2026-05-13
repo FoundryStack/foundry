@@ -1,21 +1,93 @@
 use serde::Serialize;
+use serde_json::Value;
 use std::env;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+use url::form_urlencoded;
 
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(15);
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(180);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const STATUS_UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 const SIDECAR_NAME: &str = "foundry-sidecar";
 const STATUS_EVENT: &str = "foundry://launch-status";
 const ERROR_EVENT: &str = "foundry://launch-error";
+const FILE_OPEN_ID: &str = "file.open";
+const FILE_RECENT_PREFIX: &str = "file.recent.";
 
 #[derive(Clone, Serialize)]
 pub struct LaunchStatusPayload {
     pub message: String,
+}
+
+#[derive(Clone, Debug)]
+struct RecentProject {
+    label: String,
+    root: String,
+}
+
+pub fn build_menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let open_item = MenuItem::with_id(app, FILE_OPEN_ID, "Open...", true, None::<&str>)?;
+    let recent_items = build_recent_menu_items(app)?;
+    let recent_refs = recent_items
+        .iter()
+        .map(|item| item as _)
+        .collect::<Vec<_>>();
+    let recent_submenu = Submenu::with_items(app, "Open Recent", true, &recent_refs)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = PredefinedMenuItem::quit(app, None)?;
+    let file_menu = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&open_item, &recent_submenu, &separator, &quit],
+    )?;
+
+    Menu::with_items(app, &[&file_menu])
+}
+
+pub fn handle_menu_event<R: tauri::Runtime>(app: &AppHandle<R>, event: MenuEvent) {
+    let id = event.id().0.as_str();
+
+    if id == FILE_OPEN_ID {
+        let handle = app.clone();
+
+        app.dialog().file().pick_folder(move |folder| {
+            if let Some(folder) = folder {
+                let path = folder
+                    .into_path()
+                    .ok()
+                    .map(|path| path.to_string_lossy().to_string());
+
+                if let Some(path) = path {
+                    if let Err(message) =
+                        navigate_to_project_launch(&handle, &[("path", path.as_str())])
+                    {
+                        emit_status(&handle, ERROR_EVENT, message);
+                    }
+                }
+            }
+        });
+
+        return;
+    }
+
+    if let Some(index) = id.strip_prefix(FILE_RECENT_PREFIX) {
+        if let Ok(index) = index.parse::<usize>() {
+            if let Some(project) = load_recent_projects().get(index) {
+                if let Err(message) =
+                    navigate_to_project_launch(app, &[("path", project.root.as_str())])
+                {
+                    emit_status(app, ERROR_EVENT, message);
+                }
+            }
+        }
+    }
 }
 
 pub fn start_foundry(app: AppHandle) {
@@ -78,7 +150,7 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
         "Waiting for Foundry to become healthy...",
     );
 
-    let url = wait_for_health()?;
+    let url = wait_for_health(&app)?;
     emit_status(&app, STATUS_EVENT, format!("Foundry ready at {url}"));
 
     let window = app
@@ -95,12 +167,16 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn wait_for_health() -> Result<String, String> {
+fn wait_for_health(app: &AppHandle) -> Result<String, String> {
     let started_at = Instant::now();
+    let mut last_status_update: Option<u64> = None;
 
     loop {
         if started_at.elapsed() > HEALTH_TIMEOUT {
-            return Err("Foundry sidecar did not become healthy within 15 seconds.".to_string());
+            return Err(
+                "Foundry sidecar did not become healthy within 180 seconds. It may still be compiling; check sidecar logs for compile errors."
+                    .to_string(),
+            );
         }
 
         if let Ok(port) = read_port_file() {
@@ -109,6 +185,20 @@ fn wait_for_health() -> Result<String, String> {
             if health_check(&url) {
                 return Ok(url);
             }
+        }
+
+        let elapsed_secs = started_at.elapsed().as_secs();
+        let status_bucket = elapsed_secs / STATUS_UPDATE_INTERVAL.as_secs();
+
+        if last_status_update != Some(status_bucket) {
+            last_status_update = Some(status_bucket);
+            emit_status(
+                app,
+                STATUS_EVENT,
+                format!(
+                    "Foundry is still starting and compiling if needed... waiting for /healthz ({elapsed_secs}s)"
+                ),
+            );
         }
 
         std::thread::sleep(HEALTH_POLL_INTERVAL);
@@ -167,12 +257,76 @@ fn health_check(base_url: &str) -> bool {
     response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
 }
 
-fn emit_status<S: Into<String>>(app: &AppHandle, event: &str, message: S) {
+fn emit_status<R: tauri::Runtime, S: Into<String>>(app: &AppHandle<R>, event: &str, message: S) {
     let payload = LaunchStatusPayload {
         message: message.into(),
     };
 
     let _ = app.emit(event, payload);
+}
+
+fn build_recent_menu_items<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> tauri::Result<Vec<MenuItem<R>>> {
+    let recent_projects = load_recent_projects();
+
+    if recent_projects.is_empty() {
+        let empty = MenuItem::with_id(
+            app,
+            "file.recent.empty",
+            "No Recent Projects",
+            false,
+            None::<&str>,
+        )?;
+        return Ok(vec![empty]);
+    }
+
+    recent_projects
+        .iter()
+        .enumerate()
+        .map(|(index, project)| {
+            let title = format!("{}  {}", project.label, project.root);
+            MenuItem::with_id(
+                app,
+                format!("{FILE_RECENT_PREFIX}{index}"),
+                title,
+                true,
+                None::<&str>,
+            )
+        })
+        .collect()
+}
+
+fn navigate_to_project_launch<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    params: &[(&str, &str)],
+) -> Result<(), String> {
+    let base_url = running_base_url()?;
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+
+    for (key, value) in params {
+        serializer.append_pair(key, value);
+    }
+
+    let url = format!("{base_url}/project-launch?{}", serializer.finish());
+    let parsed = url
+        .parse()
+        .map_err(|error| format!("Failed to parse project launch URL {url}: {error}"))?;
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window is not available".to_string())?;
+
+    window
+        .navigate(parsed)
+        .map_err(|error| format!("Failed to navigate to project launch: {error}"))?;
+
+    Ok(())
+}
+
+fn running_base_url() -> Result<String, String> {
+    let port = read_port_file()?;
+    Ok(format!("http://127.0.0.1:{port}"))
 }
 
 fn normalize_project_root(explicit: Option<&str>) -> PathBuf {
@@ -189,9 +343,51 @@ fn fallback_project_root() -> PathBuf {
         .unwrap_or_else(|_| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."))
 }
 
+fn load_recent_projects() -> Vec<RecentProject> {
+    let path = persisted_state_path();
+    let Ok(body) = std::fs::read_to_string(path) else {
+        return vec![];
+    };
+
+    let Ok(json) = serde_json::from_str::<Value>(&body) else {
+        return vec![];
+    };
+
+    json.get("recent_projects")
+        .and_then(|value| value.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let root = entry.get("root")?.as_str()?.to_string();
+            let label = entry
+                .get("label")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| {
+                    Path::new(&root)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("Project")
+                })
+                .to_string();
+
+            Some(RecentProject { label, root })
+        })
+        .collect()
+}
+
+fn persisted_state_path() -> PathBuf {
+    let home_dir = env::var("FOUNDRY_HOME")
+        .map(PathBuf::from)
+        .or_else(|_| env::var("HOME").map(PathBuf::from))
+        .unwrap_or_else(|_| fallback_project_root());
+
+    home_dir.join(".foundry").join("project_manager.json")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{fallback_project_root, normalize_project_root};
+    use super::{fallback_project_root, normalize_project_root, persisted_state_path};
     use std::path::PathBuf;
 
     #[test]
@@ -213,5 +409,12 @@ mod tests {
             root.join(".foundry").exists(),
             "expected repo root .foundry directory"
         );
+    }
+
+    #[test]
+    fn persisted_state_path_ends_with_project_manager_json() {
+        assert!(persisted_state_path()
+            .to_string_lossy()
+            .ends_with(".foundry/project_manager.json"));
     }
 }

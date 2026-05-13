@@ -28,7 +28,8 @@ defmodule Foundry.Application do
       {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Foundry.PubSub},
       Foundry.Context.ScenarioCache,
-      {Foundry.PreviewServer, []}
+      {Foundry.PreviewServer, []},
+      {Foundry.ProjectManager, []}
       # Start a worker by calling: Foundry.Worker.start_link(arg)
       # {Foundry.Worker, arg}
     ]
@@ -53,6 +54,7 @@ defmodule Foundry.Application do
           {Phoenix.PubSub, name: Foundry.PubSub},
           Foundry.Context.ScenarioCache,
           {Foundry.PreviewServer, []},
+          {Foundry.ProjectManager, []},
           {Task, fn -> finalize_studio_launch(launch) end}
         ]
 

@@ -35,7 +35,7 @@ defmodule FoundryWeb.ChatProviders do
       system_prompt: run_context.system_prompt,
       timeout_ms: Keyword.get(ChatConfig.claude_code_config(), :timeout_ms, 120_000),
       model: Keyword.get(ChatConfig.claude_code_config(), :model),
-      project_root: ChatConfig.igaming_project_root()
+      project_root: ChatConfig.project_root()
     ]
 
     Foundry.ClaudeCodeProvider.stream(messages, opts, fn
@@ -56,7 +56,7 @@ defmodule FoundryWeb.ChatProviders do
       profile: Keyword.get(config, :profile),
       sandbox: Keyword.get(config, :sandbox, "workspace-write"),
       executable: Keyword.get(config, :executable, "codex"),
-      project_root: ChatConfig.igaming_project_root(),
+      project_root: ChatConfig.project_root(),
       conversation_window: :all
     ]
 

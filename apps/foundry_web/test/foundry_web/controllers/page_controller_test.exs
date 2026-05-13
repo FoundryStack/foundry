@@ -1,6 +1,24 @@
 defmodule FoundryWeb.PageControllerTest do
   use FoundryWeb.ConnCase
 
+  test "GET / renders the project manager shell", %{conn: conn} do
+    conn = get(conn, ~p"/")
+    html = html_response(conn, 200)
+
+    assert html =~ "Foundry Studio"
+    assert html =~ "Open..."
+    assert html =~ "Clone Git Repository..."
+  end
+
+  test "GET /project-status returns project manager status payload", %{conn: conn} do
+    conn = get(conn, ~p"/project-status")
+    body = json_response(conn, 200)
+
+    assert Map.has_key?(body, "state")
+    assert Map.has_key?(body, "logs")
+    assert Map.has_key?(body, "message")
+  end
+
   test "GET /preview-launch renders redirect shell for preview target", %{conn: conn} do
     conn = get(conn, ~p"/preview-launch?base=http://localhost:4001&route=/games")
     html = html_response(conn, 200)

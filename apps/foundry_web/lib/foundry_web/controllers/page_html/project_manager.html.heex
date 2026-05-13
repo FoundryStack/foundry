@@ -1,0 +1,127 @@
+<div class="min-h-screen bg-neutral text-neutral-content">
+  <div class="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-6 py-16">
+    <main class="w-full max-w-4xl overflow-hidden rounded-[32px] border border-white/10 bg-white/5 shadow-2xl backdrop-blur">
+      <div class="grid gap-0 md:grid-cols-[1.1fr_0.9fr]">
+        <section class="bg-[radial-gradient(circle_at_top,_rgba(244,196,48,0.18),_transparent_58%),linear-gradient(160deg,_rgba(13,18,14,0.96),_rgba(19,27,22,0.92))] p-8 md:p-12">
+          <p class="text-xs font-semibold uppercase tracking-[0.22em] text-amber-300/80">
+            Foundry Studio
+          </p>
+          <h1 class="mt-4 text-5xl font-semibold tracking-[-0.06em] text-white">
+            Editing evolved
+          </h1>
+          <p class="mt-5 max-w-xl text-sm leading-7 text-neutral-content/75">
+            Choose a project root, clone a repository into a local folder, or reopen a recent workspace.
+          </p>
+
+          <div class="mt-10 flex flex-col gap-4">
+            <button
+              type="button"
+              class="flex items-center justify-between rounded-2xl border border-white/10 bg-white/10 px-5 py-4 text-left text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+              onclick="document.getElementById('open-project-dialog').showModal()"
+              disabled={!@can_open_local_dir}
+            >
+              <span class="text-lg font-medium">Open...</span>
+              <span class="text-xs uppercase tracking-[0.18em] text-white/50">Local</span>
+            </button>
+
+            <button
+              type="button"
+              class="flex items-center justify-between rounded-2xl border border-amber-300/20 bg-amber-200/10 px-5 py-4 text-left text-white transition hover:bg-amber-200/15"
+              onclick="document.getElementById('clone-project-dialog').showModal()"
+            >
+              <span class="text-lg font-medium">Clone Git Repository...</span>
+              <span class="text-xs uppercase tracking-[0.18em] text-white/50">Git</span>
+            </button>
+          </div>
+        </section>
+
+        <aside class="border-t border-white/10 bg-black/20 p-8 md:border-l md:border-t-0 md:p-10">
+          <p class="text-sm font-semibold uppercase tracking-[0.18em] text-neutral-content/55">
+            Recent
+          </p>
+
+          <div class="mt-6 space-y-3">
+            <%= if @recent_projects == [] do %>
+              <p class="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-sm text-neutral-content/55">
+                No recent projects yet.
+              </p>
+            <% else %>
+              <%= for project <- @recent_projects do %>
+                <a
+                  href={~p"/project-launch?path=#{project["root"]}"}
+                  class="block rounded-2xl border border-white/10 bg-white/5 px-4 py-4 transition hover:bg-white/10"
+                >
+                  <p class="text-sm font-semibold text-white"><%= project["label"] %></p>
+                  <p class="mt-1 break-all text-xs leading-6 text-neutral-content/60"><%= project["root"] %></p>
+                </a>
+              <% end %>
+            <% end %>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+</div>
+
+<dialog id="open-project-dialog" class="rounded-[28px] border border-white/10 bg-neutral p-0 text-neutral-content shadow-2xl backdrop:bg-black/70">
+  <div class="w-[min(92vw,36rem)] p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-info">Open Project</p>
+        <h2 class="mt-2 text-2xl font-semibold text-white">Choose a local project root</h2>
+      </div>
+      <button class="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.14em] text-neutral-content/70">Close</button>
+    </div>
+
+    <form action={~p"/project-launch"} method="get" class="mt-6">
+      <label class="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-content/65">Project path</label>
+      <input
+        type="text"
+        name="path"
+        placeholder="~/Documents/Projects/my_app"
+        class="mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none ring-0 placeholder:text-neutral-content/35"
+      />
+      <div class="mt-5 flex justify-end gap-3">
+        <button type="button" onclick="document.getElementById('open-project-dialog').close()" class="rounded-full border border-white/10 px-4 py-2 text-sm text-neutral-content/70">Cancel</button>
+        <button type="submit" class="rounded-full bg-info px-5 py-2 text-sm font-semibold text-black">Open</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="clone-project-dialog" class="rounded-[28px] border border-white/10 bg-neutral p-0 text-neutral-content shadow-2xl backdrop:bg-black/70">
+  <div class="w-[min(92vw,40rem)] p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-warning">Clone</p>
+        <h2 class="mt-2 text-2xl font-semibold text-white">Clone a Git repository</h2>
+      </div>
+      <button class="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.14em] text-neutral-content/70">Close</button>
+    </div>
+
+    <form action={~p"/project-launch"} method="get" class="mt-6 space-y-4">
+      <div>
+        <label class="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-content/65">Repository URL</label>
+        <input
+          type="text"
+          name="repo_url"
+          placeholder="https://github.com/org/repo.git"
+          class="mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none ring-0 placeholder:text-neutral-content/35"
+        />
+      </div>
+      <div>
+        <label class="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-content/65">Destination parent folder</label>
+        <input
+          type="text"
+          name="parent_dir"
+          placeholder="~/Documents/Projects"
+          class="mt-2 w-full rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white outline-none ring-0 placeholder:text-neutral-content/35"
+        />
+      </div>
+      <div class="flex justify-end gap-3">
+        <button type="button" onclick="document.getElementById('clone-project-dialog').close()" class="rounded-full border border-white/10 px-4 py-2 text-sm text-neutral-content/70">Cancel</button>
+        <button type="submit" class="rounded-full bg-warning px-5 py-2 text-sm font-semibold text-black">Clone</button>
+      </div>
+    </form>
+  </div>
+</dialog>

@@ -1,3 +1,4 @@
 .foundry/scenario_traces
 .foundry/context.lock
 .foundry/local
+_build_codex

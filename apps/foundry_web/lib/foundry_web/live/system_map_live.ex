@@ -1,6 +1,7 @@
 defmodule FoundryWeb.SystemMapLive do
   use FoundryWeb, :live_view
   alias FoundryWeb.ChatSession
+  alias FoundryWeb.ChatConfig
   alias Foundry.Context.ScenarioCache
   alias Foundry.Context.ProjectContext
   alias ExTracer.Report
@@ -12,12 +13,7 @@ defmodule FoundryWeb.SystemMapLive do
     hooks = Application.get_env(:foundry_web, :system_map_live_hooks, [])
     build_context = Keyword.get(hooks, :build_context, &ProjectContext.build/1)
 
-    project_root =
-      Application.get_env(
-        :foundry_web,
-        :igaming_project_root,
-        Path.expand("../../reference_projects/igaming", __DIR__)
-      )
+    project_root = ChatConfig.project_root()
 
     # Ensure igaming ebin path is in the code path so modules can be loaded
     ebin_path = Path.join([project_root, "_build", "dev", "lib", "igaming_ref", "ebin"])
@@ -168,7 +164,7 @@ defmodule FoundryWeb.SystemMapLive do
         active_id = socket.assigns.active_session_id
 
         if active_id,
-          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")},
+          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")},
           else: {:noreply, socket}
     end
   end
@@ -180,7 +176,7 @@ defmodule FoundryWeb.SystemMapLive do
         active_id = socket.assigns.active_session_id
 
         if active_id,
-          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")},
+          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")},
           else: {:noreply, socket}
     end
   end
@@ -192,7 +188,7 @@ defmodule FoundryWeb.SystemMapLive do
         active_id = socket.assigns.active_session_id
 
         if active_id,
-          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")},
+          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")},
           else: {:noreply, socket}
     end
   end
@@ -543,6 +539,7 @@ defmodule FoundryWeb.SystemMapLive do
     case ChatSession.handle_info(message, socket) do
       :unhandled ->
         {:noreply, socket}
+
       reply ->
         reply
     end

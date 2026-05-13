@@ -2,40 +2,218 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Foundry Desktop</title>
+    <title>Foundry Studio</title>
+    <style>
+      :root {
+        --bg-dark: #050408;
+        --status-orange: #fd4f00;
+        --status-orange-soft: rgba(253, 79, 0, 0.74);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top, rgba(253, 79, 0, 0.1), transparent 32%),
+          var(--bg-dark);
+        overflow: hidden;
+        font-family:
+          "SF Pro Display", "Segoe UI", ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, sans-serif;
+      }
+
+      #fluid-canvas {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 1;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.5s ease-in;
+        filter: saturate(190%) brightness(150%) contrast(108%);
+      }
+
+      .ui-layer {
+        position: relative;
+        z-index: 10;
+        display: flex;
+        min-height: 100vh;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        pointer-events: none;
+      }
+
+      .shell-copy {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        text-align: center;
+      }
+
+      #logo {
+        display: block;
+        width: auto;
+        height: clamp(5rem, 12vw, 8.5rem);
+        opacity: 1 !important;
+        filter: drop-shadow(0 0 25px rgba(0, 0, 0, 0.9));
+      }
+
+      .shell-label {
+        margin: 0.35rem 0 0;
+        color: rgba(255, 255, 255, 0.48);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.38em;
+        text-transform: uppercase;
+      }
+
+      #shell-note {
+        padding-top: 1rem;
+        max-width: 32rem;
+        color: white;
+        font-size: clamp(0.95rem, 1.8vw, 1.1rem);
+        font-weight: 400;
+      }
+    </style>
     <script type="module" src="/src/main.ts" defer></script>
   </head>
 
   <body>
-    <main class="container">
-      <section class="panel">
-        <p class="eyebrow">Desktop Shell</p>
-        <h1>Foundry Desktop</h1>
-        <p class="lede">
-          The desktop wrapper stays thin. It launches the standalone Foundry
-          runtime, waits for health checks, and then hands the window to the
-          live Phoenix app.
-        </p>
+    <canvas id="fluid-canvas"></canvas>
 
-        <div class="status">
-          <div>
-            <span class="label">Runtime</span>
-            <strong id="runtime-status">Preparing sidecar</strong>
-          </div>
-          <div>
-            <span class="label">Window</span>
-            <strong id="window-status">Loading shell</strong>
-          </div>
-          <div>
-            <span class="label">Health</span>
-            <strong id="health-status">Waiting for startup</strong>
-          </div>
-        </div>
-
-        <p class="footnote" id="shell-note">Preparing Foundry sidecar...</p>
+    <main class="ui-layer">
+      <section class="shell-copy" aria-live="polite">
+        <img
+          id="logo"
+          src="/foundry-logo.png"
+          alt="Foundry Logo"
+        />
+        <p id="shell-note">Preparing Foundry sidecar...</p>
       </section>
     </main>
+
+    <script>
+      async function loadPatchedWebGLFluid() {
+        if (window.WebGLFluid) return;
+
+        const response = await fetch(
+          "https://cdn.jsdelivr.net/npm/webgl-fluid@0.3.0/dist/webgl-fluid.umd.js"
+        );
+        let source = await response.text();
+
+        source = source.replace("o.color=it()", "o.color=p.SPLAT_COLOR||it()");
+        source = source.replace(
+          "N.forEach(s=>{s.color=it()})",
+          "N.forEach(s=>{s.color=p.SPLAT_COLOR||it()})"
+        );
+        source = source.replace(
+          "const a=it();a.r*=10,a.g*=10,a.b*=10;",
+          "const a=p.SPLAT_COLOR?{...p.SPLAT_COLOR}:it();if(!p.SPLAT_COLOR){a.r*=10,a.g*=10,a.b*=10;}"
+        );
+
+        window.eval(source);
+      }
+
+      document.addEventListener("DOMContentLoaded", async () => {
+        try {
+          await loadPatchedWebGLFluid();
+
+          const canvas = document.getElementById("fluid-canvas");
+          const logo = document.getElementById("logo");
+
+          window.WebGLFluid(canvas, {
+            TRIGGER: "hover",
+            IMMEDIATE: false,
+            AUTO: false,
+            SIM_RESOLUTION: 128,
+            DYE_RESOLUTION: 1024,
+            DENSITY_DISSIPATION: 0.97,
+            VELOCITY_DISSIPATION: 0.96,
+            PRESSURE: 0.8,
+            CURL: 10,
+            SPLAT_RADIUS: 0.04,
+            SPLAT_FORCE: 820,
+            SHADING: true,
+            SPLAT_COLOR: { r: 1.65, g: 0.34, b: 0.03 },
+            COLORFUL: false,
+            TRANSPARENT: true,
+            BLOOM: true,
+            BLOOM_ITERATIONS: 8,
+            BLOOM_RESOLUTION: 256,
+            BLOOM_INTENSITY: 0.18,
+            BLOOM_THRESHOLD: 0.7,
+            SUNRAYS: false
+          });
+
+          window.setTimeout(() => {
+            canvas.style.opacity = "1";
+          }, 100);
+
+          let time = 0;
+          let pointerPrimed = false;
+
+          const spawnFire = () => {
+            if (!logo) return;
+
+            const rect = logo.getBoundingClientRect();
+
+            if (rect.width === 0) return;
+
+            time += 0.13;
+
+            const centerX = rect.left + rect.width / 2;
+            const spread = rect.width * 0.08;
+            const startX =
+              centerX +
+              Math.sin(time) * spread +
+              Math.sin(time * 1.7) * (spread * 0.15);
+            const startY = rect.top + rect.height * 0.8;
+            const endY = startY - 7;
+
+            if (!pointerPrimed) {
+              canvas.dispatchEvent(
+                new MouseEvent("mousedown", {
+                  clientX: startX,
+                  clientY: startY,
+                  bubbles: true
+                })
+              );
+              pointerPrimed = true;
+            }
+
+            canvas.dispatchEvent(
+              new MouseEvent("mousemove", {
+                clientX: startX,
+                clientY: startY,
+                bubbles: true
+              })
+            );
+
+            canvas.dispatchEvent(
+              new MouseEvent("mousemove", {
+                clientX: startX + (Math.random() - 0.5) * 0.6,
+                clientY: endY,
+                bubbles: true
+              })
+            );
+          };
+
+          window.setInterval(spawnFire, 60);
+        } catch (_error) {
+          const canvas = document.getElementById("fluid-canvas");
+          if (canvas) {
+            canvas.remove();
+          }
+        }
+      });
+    </script>
   </body>
 </html>

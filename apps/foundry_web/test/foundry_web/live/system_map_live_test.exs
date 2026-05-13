@@ -3,7 +3,10 @@ defmodule FoundryWeb.SystemMapLiveTest do
   import Phoenix.LiveViewTest
 
   setup_all do
-    project_root = Application.fetch_env!(:foundry_web, :igaming_project_root)
+    project_root =
+      Application.get_env(:foundry_web, :current_project_root) ||
+        Application.fetch_env!(:foundry_web, :igaming_project_root)
+
     {:ok, project_context} = Foundry.Context.ProjectContext.build(project_root)
 
     project_node =
@@ -22,7 +25,11 @@ defmodule FoundryWeb.SystemMapLiveTest do
   setup do
     llm_provider = Application.get_env(:foundry, :llm_provider)
     codex = Application.get_env(:foundry, :codex)
-    project_root = Application.get_env(:foundry_web, :igaming_project_root)
+
+    project_root =
+      Application.get_env(:foundry_web, :current_project_root) ||
+        Application.get_env(:foundry_web, :igaming_project_root)
+
     chat_live_hooks = Application.get_env(:foundry_web, :chat_live_hooks)
     system_map_live_hooks = Application.get_env(:foundry_web, :system_map_live_hooks)
 
@@ -51,29 +58,29 @@ defmodule FoundryWeb.SystemMapLiveTest do
   describe "mount" do
     @scenario category: :invariant
     test "renders page with data-context attribute when context available", %{conn: conn} do
-      {:ok, _live, html} = live(conn, "/")
+      {:ok, _live, html} = live(conn, "/studio")
       assert html =~ "data-context"
     end
 
     @scenario category: :invariant
     test "embeds valid JSON in data-context attribute", %{conn: conn} do
-      {:ok, _live, html} = live(conn, "/")
+      {:ok, _live, html} = live(conn, "/studio")
       assert Regex.match?(~r/data-context="[^"]+nodes[^"]*"/, html)
     end
 
     @scenario category: :invariant
     test "embeds preview base url for the system map hook", %{conn: conn} do
-      {:ok, _live, html} = live(conn, "/")
+      {:ok, _live, html} = live(conn, "/studio")
       assert html =~ ~s(data-preview-base-url="http://localhost:4001")
     end
 
     test "shows empty state when context unavailable", %{conn: conn} do
-      {:ok, _live, html} = live(conn, "/")
+      {:ok, _live, html} = live(conn, "/studio")
       assert html =~ "fm-workspace"
     end
 
     test "accepts session patches on the studio route", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       html = render_click(live, "chat_session_new", %{})
 
@@ -83,7 +90,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
     @scenario category: :invariant
     test "renders the integrated copilot workspace", %{conn: conn} do
-      {:ok, _live, html} = live(conn, "/")
+      {:ok, _live, html} = live(conn, "/studio")
 
       assert html =~ "Copilot"
       assert html =~ ~s(phx-click="set_feed_tab")
@@ -125,7 +132,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
   describe "handle_event node_selected" do
     test "opens details without switching to Coverage", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       html = render_click(live, "node_selected", %{"id" => "Finance.Wallet"})
 
@@ -144,7 +151,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         scenario_report(context.scenarios, node_index: build_node_index(context.scenarios))
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       _html = render_click(live, "node_selected", %{"id" => node_id})
       html = render_click(live, "set_sidebar_tab", %{"tab" => "test_coverage"})
@@ -168,7 +175,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "preserves the selected node when switching to Coverage and back", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       selected_html = render_click(live, "node_selected", %{"id" => "Finance.Wallet"})
       assert selected_html =~ ~s(data-selected-node-id="Finance.Wallet")
@@ -192,7 +199,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         scenario_report(context.scenarios, node_index: build_node_index(context.scenarios))
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       html = render_click(live, "show_node_coverage", %{"id" => node_id})
 
@@ -227,7 +234,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         scenario_report(context.scenarios, node_index: build_node_index(context.scenarios))
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       filtered_html = render_click(live, "show_node_coverage", %{"id" => node_id})
       assert filtered_html =~ "Scenario Filter"
@@ -254,7 +261,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         scenario_report(context.scenarios, node_index: build_node_index(context.scenarios))
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       html = render_click(live, "show_node_coverage", %{"id" => "#{node_id}:step:0"})
 
@@ -272,7 +279,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
   describe "handle_event filter_nodes" do
     test "filters the system map list and preserves the current query", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       html = render_keyup(live, "filter_nodes", %{"value" => "wallet"})
 
@@ -284,7 +291,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
   describe "handle_event fetch_node_detail" do
     test "pushes event to client on fetch request", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       # This would normally be triggered when clicking a node in large projects
       # For now, just verify the handler exists and doesn't crash
@@ -295,7 +302,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
   describe "handle_event fetch_file" do
     test "pushes file content for allowed project files", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       render_click(live, "fetch_file", %{"path" => "mix.exs", "line" => "1"})
 
@@ -304,7 +311,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "pushes a boundary error for disallowed paths", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       render_click(live, "fetch_file", %{"path" => ".env"})
 
@@ -316,7 +323,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     test "submits a chat message from the studio panel", %{conn: conn} do
       Application.put_env(:foundry, :llm_provider, :unknown_provider)
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       html = render_submit(live, "send_message", %{"message" => "Map the wallet flow"})
 
@@ -324,8 +331,11 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "shows the system context from the studio panel", %{conn: conn} do
-      {:ok, live, html} = live(conn, "/")
-      project_root = Application.fetch_env!(:foundry_web, :igaming_project_root)
+      {:ok, live, html} = live(conn, "/studio")
+
+      project_root =
+        Application.get_env(:foundry_web, :current_project_root) ||
+          Application.fetch_env!(:foundry_web, :igaming_project_root)
 
       refute html =~ "System Context Prompt"
 
@@ -339,7 +349,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       Application.put_env(:foundry, :llm_provider, :codex)
       Application.put_env(:foundry, :codex, [])
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       _html = render_submit(live, "send_message", %{"message" => "Map the wallet flow"})
       html = render_click(live, "set_chat_view", %{"view" => "trace"})
@@ -366,7 +376,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Hello"})
 
       assert_receive {:saved_messages, 1}
@@ -412,7 +422,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         call_llm_stream: fn _messages, _on_event -> {:ok, markdown} end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Format this"})
 
       assert eventually(fn ->
@@ -452,7 +462,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Stream this"})
 
       assert_receive :before_first_chunk
@@ -490,7 +500,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         call_llm_stream: fn _messages, _on_event -> {:ok, markdown} end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Format this"})
 
       assert eventually(fn ->
@@ -538,7 +548,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Run the test"})
 
       assert eventually(fn -> render(live) =~ "Done" end), render(live)
@@ -565,7 +575,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Explain the wallet flow"})
 
       html = render_click(live, "set_chat_view", %{"view" => "session"})
@@ -594,7 +604,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Implement this change"})
       assert_receive :stream_started
 
@@ -649,7 +659,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Implement it"})
       assert_receive :trace_visible
 
@@ -675,7 +685,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Implement it"})
 
       assert eventually(fn ->
@@ -724,7 +734,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Implement it"})
 
       assert eventually(fn ->
@@ -748,7 +758,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Implement scrolling"})
       assert eventually(fn -> render(live) =~ "Implemented wallet scrolling" end)
 
@@ -785,7 +795,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Explain the callback risk"})
 
       assert eventually(fn ->
@@ -810,7 +820,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         call_llm_stream: fn _messages, _on_event, _run_context -> {:ok, "Proposal drafted"} end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Implement a new transfer rule"})
 
       assert eventually(fn -> render(live) =~ "Proposal drafted" end)
@@ -830,7 +840,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         call_llm_stream: fn _messages, _on_event, _run_context -> {:ok, "Proposal drafted"} end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Implement a new transfer rule"})
 
       assert eventually(fn ->
@@ -856,7 +866,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       _html =
         render_submit(live, "send_message", %{
@@ -894,7 +904,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       _html =
         render_submit(live, "send_message", %{
@@ -914,7 +924,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         call_llm_stream: fn _messages, _on_event, _run_context -> {:ok, "Proposal drafted"} end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Implement a new transfer rule"})
       assert eventually(fn -> render(live) =~ "Apply" end)
 
@@ -932,7 +942,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         call_llm_stream: fn _messages, _on_event, _run_context -> {:ok, "Proposal drafted"} end
       )
 
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
       _html = render_submit(live, "send_message", %{"message" => "Implement a new transfer rule"})
       assert eventually(fn -> render(live) =~ "chat_components.ex" end)
 
@@ -1093,14 +1103,14 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
   describe "scenario selection" do
     test "mount populates scenarios from context", %{conn: conn, project_context: context} do
-      {:ok, _live, html} = live(conn, "/")
+      {:ok, _live, html} = live(conn, "/studio")
 
       assert context.scenarios |> Enum.count() > 0
       assert html =~ "Coverage"
     end
 
     test "scenario categories are present in template", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       # Switch to Coverage tab
       html = render_click(live, "set_sidebar_tab", %{"tab" => "test_coverage"})
@@ -1114,7 +1124,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       # Get first scenario from context
       scenario = List.first(context.scenarios)
@@ -1148,7 +1158,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario = List.first(context.scenarios)
 
@@ -1163,7 +1173,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "select_scenario opens flow drawer tab", %{conn: conn, project_context: context} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario = List.first(context.scenarios)
       name = scenario.name
@@ -1186,7 +1196,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       # Switch to Coverage tab to render scenario buttons
       coverage_html = render_click(live, "set_sidebar_tab", %{"tab" => "test_coverage"})
@@ -1216,7 +1226,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "select_scenario returns unchanged socket when scenario not found", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       # Try to select non-existent scenario
       _html = render_click(live, "select_scenario", %{"id" => "nonexistent.scenario"})
@@ -1229,7 +1239,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       # First select a scenario
       scenario = List.first(context.scenarios)
@@ -1248,7 +1258,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, _live, _html} = live(conn, "/")
+      {:ok, _live, _html} = live(conn, "/studio")
 
       # Verify scenarios have populated node lists (not empty)
       assert Enum.any?(context.scenarios, fn s -> Enum.count(s.nodes) > 0 end)
@@ -1258,7 +1268,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, _live, _html} = live(conn, "/")
+      {:ok, _live, _html} = live(conn, "/studio")
 
       # Verify scenarios have populated graph paths
       assert Enum.any?(context.scenarios, fn s -> Enum.count(s.graph_path) > 0 end)
@@ -1268,7 +1278,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, _live, _html} = live(conn, "/")
+      {:ok, _live, _html} = live(conn, "/studio")
 
       node_ids = MapSet.new(Enum.map(context.nodes, & &1.id))
       graph_node_ids = graph_node_ids(context)
@@ -1290,7 +1300,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, _live, _html} = live(conn, "/")
+      {:ok, _live, _html} = live(conn, "/studio")
 
       graph_node_ids = graph_node_ids(context)
 
@@ -1318,7 +1328,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, _live, _html} = live(conn, "/")
+      {:ok, _live, _html} = live(conn, "/studio")
 
       assert Enum.any?(context.scenarios, fn scenario ->
                Enum.any?(scenario.tests || [], fn test_case ->
@@ -1339,7 +1349,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
            conn: conn,
            project_context: context
          } do
-      {:ok, _live, _html} = live(conn, "/")
+      {:ok, _live, _html} = live(conn, "/studio")
 
       assert Enum.any?(context.nodes, fn node ->
                (node.scenario_refs || []) != [] and (node.scenario_origins || []) == []
@@ -1350,7 +1360,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, _live, _html} = live(conn, "/")
+      {:ok, _live, _html} = live(conn, "/studio")
 
       compliance_scenarios = Enum.filter(context.scenarios, &(&1.category == :compliance))
 
@@ -1362,7 +1372,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, _live, _html} = live(conn, "/")
+      {:ok, _live, _html} = live(conn, "/studio")
 
       # Get categories from context
       scenarios_by_category = Enum.group_by(context.scenarios, & &1.category)
@@ -1377,7 +1387,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "selected scenario button is highlighted", %{conn: conn, project_context: context} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario = List.first(context.scenarios)
 
@@ -1395,7 +1405,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "switching to Coverage tab shows scenario list", %{conn: conn} do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       # Verify we're in a different tab initially or switch to Coverage
       coverage_html = render_click(live, "set_sidebar_tab", %{"tab" => "test_coverage"})
@@ -1414,7 +1424,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         )
       )
 
-      {:ok, _live, html} = live(conn, "/")
+      {:ok, _live, html} = live(conn, "/studio")
 
       assert html =~
                ~s(data-uncovered-node-ids="[&quot;Finance.Wallet&quot;,&quot;Payments.Transfer&quot;]")
@@ -1424,7 +1434,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario = List.first(context.scenarios)
 
@@ -1496,7 +1506,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario = Enum.find(context.scenarios, &(Enum.count(&1.flow) > 1))
       assert scenario
@@ -1527,7 +1537,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario =
         Enum.find(context.scenarios, fn scenario ->
@@ -1551,7 +1561,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
            conn: conn,
            project_context: context
          } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario =
         Enum.find(context.scenarios, fn scenario ->
@@ -1581,7 +1591,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario =
         Enum.find(context.scenarios, fn scenario ->
@@ -1605,7 +1615,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario =
         Enum.find(context.scenarios, fn scenario ->
@@ -1634,7 +1644,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario =
         Enum.find(context.scenarios, fn scenario ->
@@ -1657,7 +1667,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario =
         Enum.find(context.scenarios, fn scenario ->
@@ -1684,7 +1694,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
            conn: conn,
            project_context: context
          } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario =
         Enum.find(context.scenarios, fn scenario ->
@@ -1720,7 +1730,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario = List.first(context.scenarios)
 
@@ -1740,7 +1750,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       conn: conn,
       project_context: context
     } do
-      {:ok, live, _html} = live(conn, "/")
+      {:ok, live, _html} = live(conn, "/studio")
 
       scenario = List.first(context.scenarios)
 

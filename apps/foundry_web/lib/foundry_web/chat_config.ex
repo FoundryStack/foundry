@@ -4,10 +4,19 @@ defmodule FoundryWeb.ChatConfig do
   Reads from Application env instead of hardcoding paths or duplicating config.
   """
 
-  def igaming_project_root do
-    {:ok, root} = Application.fetch_env(:foundry_web, :igaming_project_root)
-    root
+  def project_root do
+    Application.get_env(
+      :foundry_web,
+      :current_project_root,
+      Application.get_env(
+        :foundry_web,
+        :igaming_project_root,
+        Application.get_env(:foundry_web, :default_project_root)
+      )
+    )
   end
+
+  def igaming_project_root, do: project_root()
 
   def llm_provider do
     Application.get_env(:foundry_web, :llm_provider, :codex)

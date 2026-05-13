@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export PATH="/opt/homebrew/bin:/opt/homebrew/opt/erlang/bin:$PATH"
+export MIX_BUILD_PATH="${FOUNDRY_DESKTOP_MIX_BUILD_PATH:-/Users/maxsvargal/Documents/Projects/foundry/_build/foundry_desktop_sidecar}"
 cd "/Users/maxsvargal/Documents/Projects/foundry"
 exec "/opt/homebrew/bin/mix" foundry.studio "$@"

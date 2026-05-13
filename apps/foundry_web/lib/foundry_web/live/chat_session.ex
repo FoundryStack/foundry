@@ -73,7 +73,7 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:active_request_ref, nil)
       |> assign(:active_request_task, nil)
       |> assign(:pending_messages, [])
-      |> assign(:project_root, ChatConfig.igaming_project_root())
+      |> assign(:project_root, ChatConfig.project_root())
       |> assign(:show_system_context, false)
       |> assign(:system_context_prompt, nil)
       |> assign(:system_context_error, nil)
@@ -933,7 +933,7 @@ defmodule FoundryWeb.ChatSession do
   defp parse_chat_view(_view), do: :conversation
 
   defp project_fingerprint do
-    ChatConfig.igaming_project_root()
+    ChatConfig.project_root()
     |> File.stat!()
     |> then(fn %{mtime: mtime} -> :erlang.phash2(mtime) end)
   rescue

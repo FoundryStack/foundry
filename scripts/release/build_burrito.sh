@@ -68,6 +68,10 @@ ensure_burrito_zig() {
 
 ensure_burrito_zig
 
+if [[ "$(uname -s)" == "Darwin" ]] && command -v xcrun >/dev/null 2>&1; then
+  export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+fi
+
 export MIX_ENV=prod
 export PHX_SERVER=true
 export FOUNDRY_STANDALONE=1

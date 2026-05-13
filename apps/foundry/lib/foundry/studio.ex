@@ -65,6 +65,7 @@ defmodule Foundry.Studio do
     System.put_env("FOUNDRY_STANDALONE", "1")
     System.put_env("PHX_SERVER", "1")
 
+    Application.put_env(:foundry, :current_project_root, project_root)
     Application.put_env(:foundry, :igaming_project_root, project_root)
 
     endpoint_config =
@@ -74,6 +75,7 @@ defmodule Foundry.Studio do
       |> Keyword.put(:http, ip: {127, 0, 0, 1}, port: port)
 
     Application.put_env(:foundry_web, FoundryWeb.Endpoint, endpoint_config)
+    Application.put_env(:foundry_web, :current_project_root, project_root)
     Application.put_env(:foundry_web, :igaming_project_root, project_root)
     :ok
   end

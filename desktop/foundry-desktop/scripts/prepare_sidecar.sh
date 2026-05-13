@@ -41,6 +41,7 @@ create_mix_wrapper() {
 #!/usr/bin/env bash
 set -euo pipefail
 export PATH="/opt/homebrew/bin:/opt/homebrew/opt/erlang/bin:\$PATH"
+export MIX_BUILD_PATH="\${FOUNDRY_DESKTOP_MIX_BUILD_PATH:-${REPO_ROOT}/_build/foundry_desktop_sidecar}"
 cd "${REPO_ROOT}"
 exec "${mix_bin}" foundry.studio "\$@"
 EOF
