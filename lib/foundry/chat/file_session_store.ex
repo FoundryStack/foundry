@@ -159,12 +159,15 @@ defmodule Foundry.Chat.FileSessionStore do
 
   defp store_root do
     project_root =
-      :foundry_web
-      |> Application.fetch_env(:igaming_project_root)
-      |> case do
-        {:ok, root} -> root
-        :error -> Path.expand("../../reference_projects/igaming", __DIR__)
-      end
+      Application.get_env(
+        :foundry_web,
+        :current_project_root,
+        Application.get_env(
+          :foundry_web,
+          :igaming_project_root,
+          Path.expand("../../reference_projects/igaming", __DIR__)
+        )
+      )
       |> Path.expand()
 
     Path.join([project_root, ".foundry", "local", "chat_sessions"])

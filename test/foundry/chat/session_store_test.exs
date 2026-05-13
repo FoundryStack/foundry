@@ -9,7 +9,9 @@ defmodule Foundry.Chat.SessionStoreTest do
     File.mkdir_p!(test_store_root)
 
     # Override the default store root for this test
-    original_env = Application.get_env(:foundry_web, :igaming_project_root)
+    original_env =
+      Application.get_env(:foundry_web, :current_project_root) ||
+        Application.get_env(:foundry_web, :igaming_project_root)
 
     Application.put_env(:foundry_web, :igaming_project_root, test_store_root)
 
