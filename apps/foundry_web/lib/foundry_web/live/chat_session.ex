@@ -862,13 +862,31 @@ defmodule FoundryWeb.ChatSession do
   # --- Provider Utilities ---
 
   defp llm_diagnostics(extra \\ %{}) do
+    provider = ChatConfig.llm_provider()
+    model = get_model_for_provider(provider)
+
     %{
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
-      provider: ChatConfig.llm_provider(),
+      provider: provider,
+      model: model,
       node: Node.self(),
       extra: extra
     }
   end
+
+  defp get_model_for_provider(:claude_code) do
+    Keyword.get(ChatConfig.claude_code_config(), :model)
+  end
+
+  defp get_model_for_provider(:codex) do
+    Keyword.get(ChatConfig.codex_config(), :model)
+  end
+
+  defp get_model_for_provider(:lm_studio) do
+    Keyword.get(ChatConfig.lm_studio_config(), :model, ChatConfig.lm_studio_model())
+  end
+
+  defp get_model_for_provider(_), do: nil
 
   # --- Session Helpers ---
 

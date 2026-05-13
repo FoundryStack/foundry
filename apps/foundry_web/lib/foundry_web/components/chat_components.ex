@@ -358,11 +358,24 @@ defmodule FoundryWeb.ChatComponents do
                     type="button"
                     phx-click="summarize_session"
                     disabled={@loading}
-                    class="rounded-selector border border-base-300 bg-base-200/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content transition-colors hover:border-primary/40 hover:bg-base-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    title={token_meter_title(@token_meter)}
+                    class="group relative grid h-10 w-10 place-items-center rounded-full border border-base-300/80 bg-base-200/70 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+                    data-role="token-meter-summarize"
+                    style={token_meter_style(@token_meter)}
                   >
-                    Summarize
+                    <div class="grid h-7 w-7 place-items-center rounded-full bg-base-100/95 text-[9px] font-semibold uppercase tracking-[0.08em] text-base-content">
+                      {token_meter_inner_label(@token_meter)}
+                    </div>
+                    <div class="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden w-48 -translate-x-1/2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-[10px] text-base-content shadow-lg group-hover:block">
+                      <p class="font-semibold uppercase tracking-[0.12em] text-neutral-content">
+                        {token_meter_summary(@token_meter)}
+                      </p>
+                      <p class="mt-1 text-xs leading-4 text-base-content/70">
+                        Click to summarize session
+                      </p>
+                      <div class="pointer-events-none absolute -bottom-1 left-1/2 -translate-x-1/2 size-2 -rotate-45 border-r border-t border-base-300 bg-base-100"></div>
+                    </div>
                   </button>
-                  <.token_meter meter={@token_meter} />
                   <button
                     type="submit"
                     disabled={@loading}
