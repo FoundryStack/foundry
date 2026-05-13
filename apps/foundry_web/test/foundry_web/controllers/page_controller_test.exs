@@ -17,4 +17,13 @@ defmodule FoundryWeb.PageControllerTest do
     assert Map.has_key?(body, "output")
     assert Map.has_key?(body, "last_error")
   end
+
+  test "GET /healthz returns runtime metadata", %{conn: conn} do
+    conn = get(conn, ~p"/healthz")
+    body = json_response(conn, 200)
+
+    assert body["ok"] == true
+    assert body["mode"] in ["local", "standalone"]
+    assert is_binary(body["version"])
+  end
 end

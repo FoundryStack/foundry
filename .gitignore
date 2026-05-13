@@ -23,4 +23,5 @@ erl_crash.dump
 .specify
 .specstory
 .vscode
+.foundry/tools/
 package-lock.json

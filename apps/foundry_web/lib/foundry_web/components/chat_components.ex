@@ -303,13 +303,12 @@ defmodule FoundryWeb.ChatComponents do
                 class="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-base-content outline-none placeholder:text-neutral-content/50"
                 disabled={@loading}
               ><%= @input %></textarea>
-              <%
-                active_proposal_id = @session_digest["active_proposal_id"]
-                active_proposal_status = @session_digest["active_proposal_status"]
-                show_proposal_actions =
-                  is_binary(active_proposal_id) and
-                  active_proposal_status not in ["applied", "cancelled"]
-              %>
+              <% active_proposal_id = @session_digest["active_proposal_id"]
+              active_proposal_status = @session_digest["active_proposal_status"]
+
+              show_proposal_actions =
+                is_binary(active_proposal_id) and
+                  active_proposal_status not in ["applied", "cancelled"] %>
               <%= if show_proposal_actions do %>
                 <div class="mt-2 flex items-center gap-2">
                   <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content">
@@ -321,21 +320,27 @@ defmodule FoundryWeb.ChatComponents do
                     phx-value-id={active_proposal_id}
                     disabled={@loading}
                     class="rounded-selector bg-success/90 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-base-100 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >Apply</button>
+                  >
+                    Apply
+                  </button>
                   <button
                     type="button"
                     phx-click="proposal_revise"
                     phx-value-id={active_proposal_id}
                     disabled={@loading}
                     class="rounded-selector border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning transition-colors hover:bg-warning/15 disabled:cursor-not-allowed disabled:opacity-50"
-                  >Revise</button>
+                  >
+                    Revise
+                  </button>
                   <button
                     type="button"
                     phx-click="proposal_cancel"
                     phx-value-id={active_proposal_id}
                     disabled={@loading}
                     class="rounded-selector border border-base-300 bg-base-100/70 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content transition-colors hover:text-base-content disabled:cursor-not-allowed disabled:opacity-50"
-                  >Cancel</button>
+                  >
+                    Cancel
+                  </button>
                 </div>
               <% end %>
               <div class="mt-3 flex items-center justify-between gap-3">
@@ -348,9 +353,15 @@ defmodule FoundryWeb.ChatComponents do
                     class="rounded-selector border border-base-300 bg-base-300/70 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-base-content focus:outline-none focus:ring-2 focus:ring-primary"
                   >
                     <option value="codex" selected={@llm_provider == :codex}>Codex (Local)</option>
-                    <option value="claude_code" selected={@llm_provider == :claude_code}>Claude Code (Local)</option>
-                    <option value="lm_studio" selected={@llm_provider == :lm_studio}>LM Studio</option>
-                    <option value="anthropic" selected={@llm_provider == :anthropic}>Anthropic (API)</option>
+                    <option value="claude_code" selected={@llm_provider == :claude_code}>
+                      Claude Code (Local)
+                    </option>
+                    <option value="lm_studio" selected={@llm_provider == :lm_studio}>
+                      LM Studio
+                    </option>
+                    <option value="anthropic" selected={@llm_provider == :anthropic}>
+                      Anthropic (API)
+                    </option>
                   </select>
                 </div>
                 <div class="flex items-center gap-2">
@@ -373,7 +384,8 @@ defmodule FoundryWeb.ChatComponents do
                       <p class="mt-1 text-xs leading-4 text-base-content/70">
                         Click to summarize session
                       </p>
-                      <div class="pointer-events-none absolute -bottom-1 left-1/2 -translate-x-1/2 size-2 -rotate-45 border-r border-t border-base-300 bg-base-100"></div>
+                      <div class="pointer-events-none absolute -bottom-1 left-1/2 -translate-x-1/2 size-2 -rotate-45 border-r border-t border-base-300 bg-base-100">
+                      </div>
                     </div>
                   </button>
                   <button

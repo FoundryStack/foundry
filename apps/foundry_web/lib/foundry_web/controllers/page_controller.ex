@@ -5,6 +5,7 @@ defmodule FoundryWeb.PageController do
     case Foundry.PreviewServer.get_status() do
       {:ok, %{state: state}} when state not in [:starting, :running] ->
         Foundry.PreviewServer.start_preview(preview_project_root())
+
       _ ->
         :ok
     end
@@ -20,6 +21,14 @@ defmodule FoundryWeb.PageController do
       end
 
     json(conn, status)
+  end
+
+  def healthz(conn, _params) do
+    json(conn, %{
+      ok: true,
+      mode: (System.get_env("FOUNDRY_STANDALONE", "0") == "1" && "standalone") || "local",
+      version: to_string(Application.spec(:foundry, :vsn) || "0.0.0")
+    })
   end
 
   defp preview_target_url(%{"base" => base, "route" => route}) do

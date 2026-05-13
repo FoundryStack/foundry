@@ -7,8 +7,18 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
+standalone_command? =
+  case System.argv() do
+    ["studio" | _] -> true
+    _ -> false
+  end
+
+standalone_mode? = System.get_env("FOUNDRY_STANDALONE", "0") == "1" or standalone_command?
+server_enabled? = System.get_env("PHX_SERVER") in ["true", "1"] or standalone_mode?
+
 config :foundry_web, FoundryWeb.Endpoint,
-  http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+  http: [port: String.to_integer(System.get_env("PORT", "4000"))],
+  server: server_enabled?
 
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
@@ -18,10 +28,14 @@ if config_env() == :prod do
   # variable instead.
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      You can generate one by calling: mix phx.gen.secret
-      """
+      if standalone_mode? do
+        "foundry-standalone-secret-key-base-change-me-if-exposed"
+      else
+        raise """
+        environment variable SECRET_KEY_BASE is missing.
+        You can generate one by calling: mix phx.gen.secret
+        """
+      end
 
   config :foundry_web, FoundryWeb.Endpoint,
     http: [
@@ -29,7 +43,8 @@ if config_env() == :prod do
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
     ],
-    secret_key_base: secret_key_base
+    secret_key_base: secret_key_base,
+    server: server_enabled?
 
   # ## Using releases
   #

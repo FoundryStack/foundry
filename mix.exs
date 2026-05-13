@@ -8,7 +8,8 @@ defmodule Foundry.Umbrella.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      releases: releases()
     ]
   end
 
@@ -33,7 +34,8 @@ defmodule Foundry.Umbrella.MixProject do
   defp deps do
     [
       # Required to run "mix format" on ~H/.heex files from the umbrella root
-      {:phoenix_live_view, ">= 0.0.0"}
+      {:phoenix_live_view, ">= 0.0.0"},
+      {:burrito, "~> 1.5"}
     ]
   end
 
@@ -51,6 +53,22 @@ defmodule Foundry.Umbrella.MixProject do
       # run `mix setup` in all child apps
       setup: ["cmd mix setup"],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+    ]
+  end
+
+  defp releases do
+    [
+      foundry: [
+        applications: [foundry: :permanent, foundry_web: :permanent],
+        steps: [:assemble, &Burrito.wrap/1],
+        burrito: [
+          targets: [
+            macos: [os: :darwin, cpu: :x86_64],
+            macos_silicon: [os: :darwin, cpu: :aarch64],
+            linux: [os: :linux, cpu: :x86_64]
+          ]
+        ]
+      ]
     ]
   end
 end

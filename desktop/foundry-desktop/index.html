@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Foundry Desktop</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <section class="panel">
+        <p class="eyebrow">Desktop Shell</p>
+        <h1>Foundry Desktop</h1>
+        <p class="lede">
+          The desktop wrapper stays thin. It launches the standalone Foundry
+          runtime, waits for health checks, and then hands the window to the
+          live Phoenix app.
+        </p>
+
+        <div class="status">
+          <div>
+            <span class="label">Runtime</span>
+            <strong id="runtime-status">Preparing sidecar</strong>
+          </div>
+          <div>
+            <span class="label">Window</span>
+            <strong id="window-status">Loading shell</strong>
+          </div>
+          <div>
+            <span class="label">Health</span>
+            <strong id="health-status">Waiting for startup</strong>
+          </div>
+        </div>
+
+        <p class="footnote" id="shell-note">Preparing Foundry sidecar...</p>
+      </section>
+    </main>
+  </body>
+</html>

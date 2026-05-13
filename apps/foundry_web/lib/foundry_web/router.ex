@@ -54,6 +54,7 @@ defmodule FoundryWeb.Router do
   scope "/", FoundryWeb do
     pipe_through :browser
 
+    get "/healthz", PageController, :healthz
     get "/preview-launch", PageController, :preview_launch
     get "/preview-status", PageController, :preview_status
   end

@@ -288,10 +288,22 @@ defmodule FoundryWeb.ChatSession do
       if socket.assigns.active_request_ref do
         {:noreply,
          socket
-         |> update(:pending_messages, &(&1 ++ [%{"content" => message, "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()}]))
+         |> update(
+           :pending_messages,
+           &(&1 ++
+               [
+                 %{
+                   "content" => message,
+                   "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+                 }
+               ])
+         )
          |> assign(:input, "")}
       else
-        case MessageClassifier.classify_proposal_command(message, socket.assigns.session_digest || %{}) do
+        case MessageClassifier.classify_proposal_command(
+               message,
+               socket.assigns.session_digest || %{}
+             ) do
           {:proposal_action, action, proposal_id} ->
             user_msg = %{
               "role" => "user",
@@ -434,7 +446,11 @@ defmodule FoundryWeb.ChatSession do
     {:noreply, socket}
   end
 
-  def handle_event("open_proposal_file_preview", %{"proposal_id" => proposal_id, "path" => path}, socket) do
+  def handle_event(
+        "open_proposal_file_preview",
+        %{"proposal_id" => proposal_id, "path" => path},
+        socket
+      ) do
     socket =
       case DomainLogic.get_proposal_file_preview(socket, proposal_id, path) do
         nil ->
@@ -477,7 +493,13 @@ defmodule FoundryWeb.ChatSession do
       run = DomainLogic.find_activity_run(socket.assigns.activity_runs, request_ref)
       messages = finalize_streaming_response(socket.assigns.messages, memory_result.response, run)
 
-      digest = DomainLogic.finalize_session_digest(socket, request_ref, memory_result.response, memory_result.artifact)
+      digest =
+        DomainLogic.finalize_session_digest(
+          socket,
+          request_ref,
+          memory_result.response,
+          memory_result.artifact
+        )
 
       socket =
         socket
@@ -555,7 +577,11 @@ defmodule FoundryWeb.ChatSession do
 
       socket =
         socket
-        |> DomainLogic.fail_activity_run(socket.assigns.active_request_ref, reason, &format_request_error/1)
+        |> DomainLogic.fail_activity_run(
+          socket.assigns.active_request_ref,
+          reason,
+          &format_request_error/1
+        )
         |> assign(:messages, messages)
         |> assign(:loading, false)
         |> assign(:session_digest, digest)
@@ -599,13 +625,14 @@ defmodule FoundryWeb.ChatSession do
         send(live_view_pid, {:llm_stream_trace, request_ref, event})
       end)
 
-      result = call_llm_stream(
-        messages,
-        fn event ->
-          send(live_view_pid, format_stream_event(request_ref, event))
-        end,
-        run_context
-      )
+      result =
+        call_llm_stream(
+          messages,
+          fn event ->
+            send(live_view_pid, format_stream_event(request_ref, event))
+          end,
+          run_context
+        )
 
       case result do
         {:ok, _text, metadata} ->
@@ -661,7 +688,9 @@ defmodule FoundryWeb.ChatSession do
       socket = assign(socket, :pending_messages, [])
 
       Enum.reduce(pending, socket, fn pending_msg, acc ->
-        {:noreply, new_socket} = handle_event("send_message", %{"message" => pending_msg["content"]}, acc)
+        {:noreply, new_socket} =
+          handle_event("send_message", %{"message" => pending_msg["content"]}, acc)
+
         new_socket
       end)
     end
@@ -767,7 +796,6 @@ defmodule FoundryWeb.ChatSession do
   defp persistence_reason(_reason),
     do: "Unknown error"
 
-
   defp sandbox_restriction?(output) when is_binary(output) do
     String.contains?(output, [
       "sandbox",
@@ -843,8 +871,8 @@ defmodule FoundryWeb.ChatSession do
     - Rationale for changes
     - Potential side effects
 
-    Proposal: #{proposal && proposal.title || "TBD"}
-    Context: #{retrieval && retrieval.tool_results && map_size(retrieval.tool_results) || 0} relevant files analyzed
+    Proposal: #{(proposal && proposal.title) || "TBD"}
+    Context: #{(retrieval && retrieval.tool_results && map_size(retrieval.tool_results)) || 0} relevant files analyzed
     """
   end
 
@@ -855,7 +883,7 @@ defmodule FoundryWeb.ChatSession do
     You are a code assistant helping the developer understand and explore the codebase.
     Provide clear, concise explanations with code examples when relevant.
 
-    Session context: #{session_digest && map_size(session_digest) || 0} entries
+    Session context: #{(session_digest && map_size(session_digest)) || 0} entries
     """
   end
 
