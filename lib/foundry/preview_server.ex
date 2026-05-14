@@ -1,3 +1,31 @@
+defmodule Foundry.PreviewServer.OutputCollector do
+  @moduledoc false
+
+  defstruct [:owner, :runner_pid]
+end
+
+defimpl Collectable, for: Foundry.PreviewServer.OutputCollector do
+  def into(%Foundry.PreviewServer.OutputCollector{} = collector) do
+    collector_fun = fn
+      collector, {:cont, data} ->
+        send(
+          collector.owner,
+          {:preview_output, collector.runner_pid, IO.iodata_to_binary(data)}
+        )
+
+        collector
+
+      collector, :done ->
+        collector
+
+      _collector, :halt ->
+        :ok
+    end
+
+    {collector, collector_fun}
+  end
+end
+
 defmodule Foundry.PreviewServer do
   @moduledoc """
   Manages a dev server subprocess for live preview of reference projects.
@@ -5,13 +33,16 @@ defmodule Foundry.PreviewServer do
   Spawns and monitors a server process (e.g., `mix phx.server`) from a manifest configuration.
   Provides start/stop events accessible via Foundry Studio UI.
   """
+
   use GenServer
+
   require Logger
+
   @default_preview_port 4001
   @startup_check_delay_ms 250
   @startup_timeout_ms 10_000
+  @delay_to_sigkill_ms 1_000
 
-  # State keys
   @state_idle :idle
   @state_starting :starting
   @state_running :running
@@ -52,7 +83,6 @@ defmodule Foundry.PreviewServer do
     {:ok,
      %{
        state: @state_idle,
-       port: nil,
        project_root: nil,
        command: nil,
        env: [],
@@ -62,7 +92,10 @@ defmodule Foundry.PreviewServer do
        last_activity_at: nil,
        output: "",
        output_buffer: "",
-       last_error: nil
+       last_error: nil,
+       runner_pid: nil,
+       runner_ref: nil,
+       pending_terminal_state: nil
      }}
   end
 
@@ -85,29 +118,37 @@ defmodule Foundry.PreviewServer do
   end
 
   @impl true
-  def handle_cast({:start, _project_root}, %{state: state} = s)
-      when state in [@state_starting, @state_running] do
-    {:noreply, s}
+  def handle_cast({:start, _project_root}, %{state: state} = current_state)
+      when state in [@state_starting, @state_running, @state_stopping] do
+    {:noreply, current_state}
   end
 
   def handle_cast({:start, project_root}, state) do
     case load_manifest_config(project_root) do
       {:ok, config} ->
-        new_state = %{
-          state
-          | state: @state_starting,
-            project_root: project_root,
-            command: config[:command] || "mix phx.server",
-            env: config[:env] || [],
-            port_num: config[:port] || @default_preview_port,
-            startup_started_at: now_ms(),
-            last_activity_at: now_ms(),
-            output: "",
-            output_buffer: "",
-            last_error: nil
-        }
+        with {:ok, command_spec} <- normalize_command(config[:command] || "mix phx.server") do
+          new_state = %{
+            state
+            | state: @state_starting,
+              project_root: project_root,
+              command: command_spec.command,
+              env: config[:env] || [],
+              port_num: config[:port] || @default_preview_port,
+              os_pid: nil,
+              startup_started_at: now_ms(),
+              last_activity_at: now_ms(),
+              output: "",
+              output_buffer: "",
+              last_error: nil,
+              pending_terminal_state: nil
+          }
 
-        {:noreply, start_server_process(new_state)}
+          {:noreply, start_server_process(new_state, command_spec)}
+        else
+          {:error, reason} ->
+            Logger.error("Failed to normalize preview command: #{reason}")
+            {:noreply, %{state | state: @state_failed, last_error: reason}}
+        end
 
       {:error, reason} ->
         Logger.error("Failed to load manifest config: #{reason}")
@@ -116,100 +157,51 @@ defmodule Foundry.PreviewServer do
   end
 
   @impl true
-  def handle_cast(:stop, %{state: @state_idle} = state) do
+  def handle_cast(:stop, %{state: @state_idle, runner_pid: nil} = state) do
     {:noreply, state}
   end
 
-  def handle_cast(:stop, %{state: @state_failed} = state) do
-    {:noreply,
-         %{
-       state
-       | state: @state_idle,
-         output: "",
-         output_buffer: "",
-         last_error: nil,
-         startup_started_at: nil,
-         last_activity_at: nil
-     }}
+  def handle_cast(:stop, %{state: @state_failed, runner_pid: nil} = state) do
+    {:noreply, reset_failed_state(state)}
   end
 
-  @impl true
   def handle_cast(:stop, state) do
-    case state.port do
-      nil ->
-        {:noreply, %{state | state: @state_idle}}
+    stop_runner(state)
 
-      port ->
-        if is_integer(state.os_pid), do: System.cmd("kill", ["-TERM", "#{state.os_pid}"])
-        if port_open?(port), do: Port.close(port)
-        {:noreply, %{state | state: @state_stopping, port: nil}}
-    end
+    {:noreply,
+     %{
+       state
+       | state: @state_stopping,
+         pending_terminal_state: @state_idle
+     }}
   end
 
   @impl true
   def terminate(_reason, state) do
-    # Ensure the preview server process is killed when the GenServer terminates
-    case state.port do
-      nil -> :ok
-      port ->
-        if is_integer(state.os_pid), do: System.cmd("kill", ["-TERM", "#{state.os_pid}"])
-        Port.close(port)
-        :ok
-    end
+    stop_runner(state)
+    :ok
   end
 
   @impl true
-  def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
-    Logger.info("Preview server exited with status: #{status}")
-
-    {next_state, last_error} =
-      cond do
-        state.state == @state_stopping ->
-          {@state_idle, nil}
-
-        state.state == @state_starting and status == 0 ->
-          {@state_failed, "Preview process exited before opening the HTTP port."}
-
-        status == 0 ->
-          {@state_idle, state.last_error}
-
-        true ->
-          {@state_failed, "Preview server exited with status #{status}"}
-      end
-
-    {:noreply,
-     %{
-         state
-         | state: next_state,
-           port: nil,
-           os_pid: nil,
-           startup_started_at: nil,
-           last_activity_at: nil,
-           last_error: last_error
-     }}
-  end
-
   def handle_info(:check_started, %{state: @state_starting} = state) do
     cond do
       preview_reachable?(state.port_num) ->
         {:noreply, %{state | state: @state_running, last_error: nil}}
 
       startup_timed_out?(state) ->
-        if is_integer(state.os_pid), do: System.cmd("kill", ["-TERM", "#{state.os_pid}"])
-        if port_open?(state.port), do: Port.close(state.port)
+        stop_runner(state)
 
         {:noreply,
          %{
            state
            | state: @state_failed,
-             port: nil,
-             os_pid: nil,
              startup_started_at: nil,
              last_activity_at: nil,
-             last_error: startup_timeout_error(state)
+             last_error: startup_timeout_error(state),
+             pending_terminal_state: @state_failed
          }}
 
-      port_open?(state.port) ->
+      runner_alive?(state.runner_pid) ->
         Process.send_after(self(), :check_started, @startup_check_delay_ms)
         {:noreply, state}
 
@@ -218,11 +210,8 @@ defmodule Foundry.PreviewServer do
     end
   end
 
-  @impl true
-  def handle_info({port, {:data, data}}, %{port: port} = state) do
+  def handle_info({:preview_output, runner_pid, data}, %{runner_pid: runner_pid} = state) do
     next_state = append_output(state, data)
-
-    # Forward each output line to Foundry logger with [IGAMING] tag
     log_preview_output(data)
 
     case build_lock_error(data) do
@@ -230,43 +219,51 @@ defmodule Foundry.PreviewServer do
         {:noreply, next_state}
 
       error ->
-        if is_integer(next_state.os_pid), do: System.cmd("kill", ["-TERM", "#{next_state.os_pid}"])
-        if port_open?(next_state.port), do: Port.close(next_state.port)
+        stop_runner(next_state)
 
         {:noreply,
          %{
            next_state
            | state: @state_failed,
-             port: nil,
-             os_pid: nil,
              startup_started_at: nil,
              last_activity_at: nil,
-             last_error: error
+             last_error: error,
+             pending_terminal_state: @state_failed
          }}
     end
+  end
+
+  def handle_info({:preview_output, _runner_pid, _data}, state) do
+    {:noreply, state}
+  end
+
+  def handle_info({:preview_exit, runner_pid, exit_result}, %{runner_pid: runner_pid} = state) do
+    Logger.info("Preview server exited with result: #{inspect(exit_result)}")
+    {:noreply, finalize_runner_exit(state, exit_result)}
+  end
+
+  def handle_info({:preview_exit, _runner_pid, _exit_result}, state) do
+    {:noreply, state}
+  end
+
+  def handle_info(
+        {:DOWN, ref, :process, runner_pid, reason},
+        %{runner_ref: ref, runner_pid: runner_pid} = state
+      ) do
+    next_state =
+      if state.runner_pid == nil do
+        state
+      else
+        finalize_runner_exit(state, down_reason_to_exit_result(reason))
+      end
+
+    {:noreply, next_state}
   end
 
   @impl true
   def handle_info(msg, state) do
     Logger.debug("PreviewServer ignoring message: #{inspect(msg)}")
     {:noreply, state}
-  end
-
-  # Private
-
-  defp log_preview_output(data) when is_binary(data) do
-    data
-    |> String.split("\n", trim: true)
-    |> Enum.each(fn line ->
-      cond do
-        String.downcase(line) =~ ~r/error|exception|failed/ ->
-          Logger.error("[IGAMING] #{line}")
-        String.downcase(line) =~ ~r/warn/ ->
-          Logger.warning("[IGAMING] #{line}")
-        true ->
-          Logger.debug("[IGAMING] #{line}")
-      end
-    end)
   end
 
   defp load_manifest_config(project_root) do
@@ -288,23 +285,24 @@ defmodule Foundry.PreviewServer do
     end
   end
 
-  defp start_server_process(%{state: @state_starting} = state) do
-    case start_port(state) do
-      {:ok, port, os_pid} ->
+  defp start_server_process(%{state: @state_starting} = state, command_spec) do
+    case start_runner(self(), state, command_spec) do
+      {:ok, runner_pid} ->
+        runner_ref = Process.monitor(runner_pid)
         Process.send_after(self(), :check_started, @startup_check_delay_ms)
 
         Logger.info(
-          "Preview server started on port #{state.port_num} (PID: #{os_pid}) in #{state.project_root}"
+          "Preview server started on port #{state.port_num} with command #{command_spec.command} in #{state.project_root}"
         )
 
-        %{state | port: port, os_pid: os_pid}
+        %{state | runner_pid: runner_pid, runner_ref: runner_ref}
 
       {:error, reason} ->
         Logger.error("Failed to start preview server: #{reason}")
+
         %{
           state
           | state: @state_failed,
-            port: nil,
             startup_started_at: nil,
             last_activity_at: nil,
             last_error: reason
@@ -312,42 +310,156 @@ defmodule Foundry.PreviewServer do
     end
   end
 
-  defp start_port(state) do
-    full_env =
-      state.env
-      |> Kernel.++([
-        {~c"MIX_ENV", ~c"dev"},
-        {~c"PORT", String.to_charlist("#{state.port_num}")}
-      ])
-      |> Enum.map(&normalize_env_entry/1)
+  defp start_runner(owner, state, command_spec) do
+    Task.start(fn ->
+      run_preview_command(owner, state, command_spec)
+    end)
+  end
+
+  defp run_preview_command(owner, state, command_spec) do
+    collector = %Foundry.PreviewServer.OutputCollector{owner: owner, runner_pid: self()}
 
     opts = [
-      :stream,
-      :binary,
-      :exit_status,
-      :use_stdio,
-      :stderr_to_stdout,
       cd: state.project_root,
-      env: full_env
+      env: normalized_env(state),
+      stderr_to_stdout: true,
+      delay_to_sigkill: @delay_to_sigkill_ms,
+      into: collector
     ]
 
-    try do
-      port = Port.open({:spawn, state.command}, opts)
-      # Extract OS PID from the port (implementation varies by platform)
-      os_pid = extract_pid(port)
-      {:ok, port, os_pid}
-    rescue
-      e -> {:error, Exception.message(e)}
+    exit_result =
+      try do
+        case MuonTrap.cmd(command_spec.executable, command_spec.args, opts) do
+          {_collector, status} -> normalize_exit_result(status)
+          other -> normalize_exit_result(other)
+        end
+      rescue
+        error -> {:error, Exception.message(error)}
+      catch
+        kind, reason -> {:error, Exception.format(kind, reason, __STACKTRACE__)}
+      end
+
+    send(owner, {:preview_exit, self(), exit_result})
+  end
+
+  defp normalized_env(state) do
+    state.env
+    |> Kernel.++([
+      {"MIX_ENV", "dev"},
+      {"PORT", Integer.to_string(state.port_num)}
+    ])
+    |> Enum.map(&normalize_env_entry/1)
+  end
+
+  defp normalize_command(command) when is_binary(command) do
+    case OptionParser.split(command) do
+      [] ->
+        {:error, "Preview command is empty."}
+
+      [executable | args] ->
+        {:ok, %{command: command, executable: executable, args: args}}
     end
   end
 
-  # Attempt to extract OS PID from port info
-  defp extract_pid(port) do
-    case Port.info(port, :os_pid) do
-      {:os_pid, pid} -> pid
-      _ -> nil
+  defp normalize_command(command) when is_list(command) do
+    command
+    |> Enum.map(&normalize_command_part/1)
+    |> case do
+      [] ->
+        {:error, "Preview command is empty."}
+
+      [executable | args] ->
+        {:ok,
+         %{
+           command: Enum.join(Enum.map([executable | args], &inspect/1), " "),
+           executable: executable,
+           args: args
+         }}
     end
+  rescue
+    _ ->
+      {:error, "Preview command list must contain only string-like arguments."}
   end
+
+  defp normalize_command(_command) do
+    {:error, "Preview command must be a string or a list of arguments."}
+  end
+
+  defp normalize_command_part(part) when is_binary(part), do: part
+  defp normalize_command_part(part) when is_atom(part), do: Atom.to_string(part)
+  defp normalize_command_part(part) when is_list(part), do: List.to_string(part)
+  defp normalize_command_part(part), do: to_string(part)
+
+  defp finalize_runner_exit(state, exit_result) do
+    {next_state, last_error} =
+      cond do
+        state.pending_terminal_state == @state_idle ->
+          {@state_idle, nil}
+
+        state.pending_terminal_state == @state_failed ->
+          {@state_failed, state.last_error}
+
+        state.state == @state_starting and exit_result == 0 ->
+          {@state_failed, "Preview process exited before opening the HTTP port."}
+
+        exit_result == 0 ->
+          {@state_idle, state.last_error}
+
+        is_integer(exit_result) ->
+          {@state_failed, "Preview server exited with status #{exit_result}"}
+
+        match?({:error, _}, exit_result) ->
+          {:error, reason} = exit_result
+          {@state_failed, reason}
+
+        true ->
+          {@state_failed, "Preview server exited unexpectedly"}
+      end
+
+    clear_runner_state(state, next_state, last_error)
+  end
+
+  defp clear_runner_state(state, next_state, last_error) do
+    %{
+      state
+      | state: next_state,
+        runner_pid: nil,
+        runner_ref: nil,
+        os_pid: nil,
+        startup_started_at: nil,
+        last_activity_at: nil,
+        last_error: last_error,
+        pending_terminal_state: nil
+    }
+  end
+
+  defp reset_failed_state(state) do
+    %{
+      state
+      | state: @state_idle,
+        output: "",
+        output_buffer: "",
+        last_error: nil,
+        startup_started_at: nil,
+        last_activity_at: nil,
+        pending_terminal_state: nil
+    }
+  end
+
+  defp normalize_exit_result(status) when is_integer(status), do: status
+  defp normalize_exit_result({:error, _reason} = error), do: error
+  defp normalize_exit_result(:timeout), do: {:error, "Preview command timed out."}
+
+  defp normalize_exit_result(other),
+    do: {:error, "Preview command exited unexpectedly: #{inspect(other)}"}
+
+  defp down_reason_to_exit_result(:normal), do: 0
+  defp down_reason_to_exit_result(:shutdown), do: 0
+  defp down_reason_to_exit_result({:shutdown, _}), do: 0
+  defp down_reason_to_exit_result({:error, _reason} = error), do: error
+
+  defp down_reason_to_exit_result(reason),
+    do: {:error, "Preview command crashed: #{inspect(reason)}"}
 
   defp preview_reachable?(nil), do: false
 
@@ -362,13 +474,23 @@ defmodule Foundry.PreviewServer do
     end
   end
 
-  defp port_open?(nil), do: false
-  defp port_open?(port), do: Port.info(port) != nil
-
   defp startup_timed_out?(%{startup_started_at: nil}), do: false
 
   defp startup_timed_out?(state) do
     now_ms() - (state.last_activity_at || state.startup_started_at) >= @startup_timeout_ms
+  end
+
+  defp runner_alive?(nil), do: false
+  defp runner_alive?(pid), do: Process.alive?(pid)
+
+  defp stop_runner(%{runner_pid: nil}), do: :ok
+
+  defp stop_runner(%{runner_pid: runner_pid}) do
+    if Process.alive?(runner_pid) do
+      Process.exit(runner_pid, :shutdown)
+    end
+
+    :ok
   end
 
   defp append_output(state, data) do
@@ -401,6 +523,23 @@ defmodule Foundry.PreviewServer do
         last_activity_at: now_ms(),
         last_error: last_error
     }
+  end
+
+  defp log_preview_output(data) when is_binary(data) do
+    data
+    |> String.split("\n", trim: true)
+    |> Enum.each(fn line ->
+      cond do
+        String.downcase(line) =~ ~r/error|exception|failed/ ->
+          Logger.error("[IGAMING] #{line}")
+
+        String.downcase(line) =~ ~r/warn/ ->
+          Logger.warning("[IGAMING] #{line}")
+
+        true ->
+          Logger.debug("[IGAMING] #{line}")
+      end
+    end)
   end
 
   defp build_lock_error(data) do
@@ -444,11 +583,11 @@ defmodule Foundry.PreviewServer do
   defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp normalize_env_entry({key, value}) do
-    {to_env_charlist(key), to_env_charlist(value)}
+    {to_env_string(key), to_env_string(value)}
   end
 
-  defp to_env_charlist(value) when is_list(value), do: value
-  defp to_env_charlist(value) when is_binary(value), do: String.to_charlist(value)
-  defp to_env_charlist(value) when is_atom(value), do: Atom.to_charlist(value)
-  defp to_env_charlist(value), do: value |> to_string() |> String.to_charlist()
+  defp to_env_string(value) when is_binary(value), do: value
+  defp to_env_string(value) when is_atom(value), do: Atom.to_string(value)
+  defp to_env_string(value) when is_list(value), do: List.to_string(value)
+  defp to_env_string(value), do: to_string(value)
 end
