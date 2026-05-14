@@ -11,7 +11,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "prepare:sidecar": "./scripts/prepare_sidecar.sh",
-    "prepare:sidecar:dev": "FOUNDRY_DESKTOP_FORCE_MIX_FALLBACK=1 ./scripts/prepare_sidecar.sh"
+    "prepare:sidecar:dev": "./scripts/prepare_sidecar.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

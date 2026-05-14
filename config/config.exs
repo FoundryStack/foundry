@@ -32,6 +32,7 @@ config :foundry_web,
 config :foundry_web, FoundryWeb.Endpoint,
   url: [host: "127.0.0.1", port: 4000],
   adapter: Bandit.PhoenixAdapter,
+  force_ssl: false,
   render_errors: [
     formats: [html: FoundryWeb.ErrorHTML, json: FoundryWeb.ErrorJSON],
     layout: false
