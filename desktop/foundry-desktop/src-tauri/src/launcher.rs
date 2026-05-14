@@ -203,7 +203,7 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
     );
 
     let url = wait_for_health(&app)?;
-    emit_status(&app, STATUS_EVENT, format!("Foundry ready at {url}"));
+    emit_status(&app, STATUS_EVENT, format!("Foundry ready..."));
 
     let window = app
         .get_webview_window("main")
