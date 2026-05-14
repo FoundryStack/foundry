@@ -4,11 +4,15 @@ use std::env;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime};
 use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+use tauri_plugin_shell::{
+    process::{CommandChild, CommandEvent},
+    ShellExt,
+};
 use url::form_urlencoded;
 
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(180);
@@ -19,6 +23,11 @@ const STATUS_EVENT: &str = "foundry://launch-status";
 const ERROR_EVENT: &str = "foundry://launch-error";
 const FILE_OPEN_ID: &str = "file.open";
 const FILE_RECENT_PREFIX: &str = "file.recent.";
+
+#[derive(Default)]
+pub struct FoundrySidecarState {
+    child: Mutex<Option<CommandChild>>,
+}
 
 #[derive(Clone, Serialize)]
 pub struct LaunchStatusPayload {
@@ -93,9 +102,16 @@ pub fn handle_menu_event<R: tauri::Runtime>(app: &AppHandle<R>, event: MenuEvent
 pub fn start_foundry(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         if let Err(message) = launch_and_navigate(app.clone()).await {
+            shutdown_sidecar(&app);
             emit_status(&app, ERROR_EVENT, message);
         }
     });
+}
+
+pub fn handle_run_event<R: Runtime>(app: &AppHandle<R>, event: &RunEvent) {
+    if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+        shutdown_sidecar(app);
+    }
 }
 
 async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
@@ -117,9 +133,13 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
             "--no-browser",
         ]);
 
-    let (mut rx, _child) = command
+    let (mut rx, child) = command
         .spawn()
         .map_err(|error| format!("Failed to spawn Foundry sidecar: {error}"))?;
+
+    store_sidecar(&app, child);
+
+    let reader_app = app.clone();
 
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
@@ -138,6 +158,13 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
                 }
                 CommandEvent::Error(error) => {
                     eprintln!("[foundry-sidecar:error] {error}");
+                }
+                CommandEvent::Terminated(payload) => {
+                    eprintln!(
+                        "[foundry-sidecar:exit] code={:?} signal={:?}",
+                        payload.code, payload.signal
+                    );
+                    clear_sidecar(&reader_app);
                 }
                 _ => {}
             }
@@ -383,6 +410,30 @@ fn persisted_state_path() -> PathBuf {
         .unwrap_or_else(|_| fallback_project_root());
 
     home_dir.join(".foundry").join("project_manager.json")
+}
+
+fn store_sidecar<R: Runtime>(app: &AppHandle<R>, child: CommandChild) {
+    let state = app.state::<FoundrySidecarState>();
+    let mut lock = state.child.lock().unwrap();
+    *lock = Some(child);
+}
+
+fn clear_sidecar<R: Runtime>(app: &AppHandle<R>) {
+    let state = app.state::<FoundrySidecarState>();
+    let mut lock = state.child.lock().unwrap();
+    let _ = lock.take();
+}
+
+fn shutdown_sidecar<R: Runtime>(app: &AppHandle<R>) {
+    let state = app.state::<FoundrySidecarState>();
+    let child = {
+        let mut lock = state.child.lock().unwrap();
+        lock.take()
+    };
+
+    if let Some(child) = child {
+        let _ = child.kill();
+    }
 }
 
 #[cfg(test)]

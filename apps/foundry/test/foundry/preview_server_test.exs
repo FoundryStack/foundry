@@ -26,7 +26,9 @@ defmodule Foundry.PreviewServerTest do
     {:ok, project_root: project_root}
   end
 
-  test "starts preview process when manifest env entries are charlists", %{project_root: project_root} do
+  test "starts preview process when manifest env entries are charlists", %{
+    project_root: project_root
+  } do
     File.write!(
       Path.join(project_root, "manifest.exs"),
       """
@@ -113,6 +115,7 @@ defmodule Foundry.PreviewServerTest do
              "Preview HTTP port 4404 did not open within 10000ms after the last process output. No explicit error was emitted. Last log line: waiting",
              500
            )
+
     assert {:ok, status} = PreviewServer.get_status()
     assert status.state == :failed
     assert status.output =~ "waiting"
@@ -165,7 +168,9 @@ defmodule Foundry.PreviewServerTest do
     assert status.output =~ "Waiting for lock on the build directory"
   end
 
-  test "marks a clean early exit as failed when the HTTP port never opened", %{project_root: project_root} do
+  test "marks a clean early exit as failed when the HTTP port never opened", %{
+    project_root: project_root
+  } do
     File.write!(
       Path.join(project_root, "manifest.exs"),
       """
@@ -186,6 +191,33 @@ defmodule Foundry.PreviewServerTest do
     assert status.state == :failed
     assert status.last_error == "Preview process exited before opening the HTTP port."
     assert status.output =~ "finished"
+  end
+
+  test "stop_preview terminates a long-running preview command and returns to idle", %{
+    project_root: project_root
+  } do
+    File.write!(
+      Path.join(project_root, "manifest.exs"),
+      """
+      [
+        preview_server: [
+          command: "sh -c 'echo booted; sleep 30'",
+          port: 4707,
+          env: []
+        ]
+      ]
+      """
+    )
+
+    PreviewServer.start_preview(project_root)
+
+    assert wait_for_output("booted\n", 100)
+    PreviewServer.stop_preview()
+
+    assert wait_for_state(:idle, 120)
+    assert {:ok, status} = PreviewServer.get_status()
+    assert status.state == :idle
+    assert status.last_error == nil
   end
 
   defp wait_for_state(expected_state, attempts_left \\ 40)

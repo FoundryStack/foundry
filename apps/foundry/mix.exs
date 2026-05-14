@@ -50,6 +50,7 @@ defmodule Foundry.MixProject do
       {:swoosh, "~> 1.23"},
       {:req, "~> 0.5"},
       {:req_llm, "~> 1.0"},
+      {:muontrap, "~> 1.8"},
       {:ex_tracer, path: "../../packages/ex_tracer"},
       {:scenario_tracer, path: "../../packages/scenario_tracer"},
       {:spark_meta, path: "../../packages/spark_meta"},

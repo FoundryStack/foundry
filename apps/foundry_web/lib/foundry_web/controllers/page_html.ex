@@ -66,7 +66,6 @@ defmodule FoundryWeb.PageHTML do
         width: auto;
         height: clamp(5rem, 12vw, 8.5rem);
         margin: 0 auto;
-        filter: drop-shadow(0 0 25px rgba(0, 0, 0, 0.9));
       }
 
       .project-shell-kicker {
