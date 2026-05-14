@@ -42,10 +42,18 @@ runtime_port =
       4000
   end
 
+endpoint_check_origin =
+  if standalone_mode? do
+    ["http://127.0.0.1", "http://localhost"]
+  else
+    true
+  end
+
 config :foundry_web, FoundryWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: runtime_port],
   url: [host: "127.0.0.1", port: runtime_port],
-  server: server_enabled?
+  server: server_enabled?,
+  check_origin: endpoint_check_origin
 
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
