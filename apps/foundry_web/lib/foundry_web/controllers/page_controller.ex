@@ -41,10 +41,6 @@ defmodule FoundryWeb.PageController do
     })
   end
 
-  def redirect_to_home(conn, _params) do
-    redirect(conn, to: ~p"/")
-  end
-
   def recent_projects(conn, _params) do
     json(conn, %{recent_projects: ProjectManager.recent_projects()})
   end
