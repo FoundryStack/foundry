@@ -85,6 +85,7 @@ IO.warn("  server_enabled?: #{server_enabled?}")
 IO.warn("  runtime_port: #{runtime_port}")
 IO.warn("  check_origin: #{if standalone_mode?, do: "false", else: "explicit list"}")
 IO.warn("  url: [host: \"127.0.0.1\", port: #{runtime_port}]")
+IO.warn("  endpoint_config: #{inspect(endpoint_config)}")
 IO.warn("=" <> String.duplicate("=", 78))
 
 config :foundry_web, FoundryWeb.Endpoint, endpoint_config

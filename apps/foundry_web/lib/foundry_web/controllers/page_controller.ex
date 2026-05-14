@@ -5,11 +5,11 @@ defmodule FoundryWeb.PageController do
   def home(conn, _params) do
     cond do
       ProjectManager.active_project_root() ->
-        redirect(conn, to: ~p"/studio")
+        redirect(conn, to: ~p"/")
 
       auto_reopen?(conn) ->
         case ProjectManager.reopen_last_project() do
-          :ok -> render(conn, :project_launch, target_url: ~p"/studio")
+          :ok -> render(conn, :project_launch, target_url: ~p"/")
           {:error, _reason} -> render_manager(conn)
         end
 
@@ -42,9 +42,9 @@ defmodule FoundryWeb.PageController do
 
   def project_launch(conn, params) do
     case maybe_start_project_action(params) do
-      :ok -> render(conn, :project_launch, target_url: ~p"/studio")
-      {:error, :busy} -> render(conn, :project_launch, target_url: ~p"/studio")
-      {:error, _reason} -> render(conn, :project_launch, target_url: ~p"/studio")
+      :ok -> render(conn, :project_launch, target_url: ~p"/")
+      {:error, :busy} -> render(conn, :project_launch, target_url: ~p"/")
+      {:error, _reason} -> render(conn, :project_launch, target_url: ~p"/")
     end
   end
 

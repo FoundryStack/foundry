@@ -11,7 +11,6 @@ config :foundry_web, FoundryWeb.Endpoint,
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {127, 0, 0, 1}, port: 4000],
   url: [host: "127.0.0.1", port: 4000],
-  check_origin: false,
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "NqdqX0xNYqxz05nRLichAa+N4WJR4ijlRgLMkcLismBif5aPk1Du4mIk4KfR8kBy",
