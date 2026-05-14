@@ -83,20 +83,12 @@ defmodule Foundry.Studio do
   end
 
   @spec configure_runtime(String.t(), pos_integer()) :: :ok
-  def configure_runtime(project_root, port) do
+  def configure_runtime(project_root, _port) do
     System.put_env("FOUNDRY_STANDALONE", "1")
     System.put_env("PHX_SERVER", "1")
 
     Application.put_env(:foundry, :current_project_root, project_root)
     Application.put_env(:foundry, :igaming_project_root, project_root)
-
-    endpoint_config =
-      Application.get_env(:foundry_web, FoundryWeb.Endpoint, [])
-      |> Keyword.put(:server, true)
-      |> Keyword.put(:url, host: "127.0.0.1", port: port)
-      |> Keyword.put(:http, ip: {127, 0, 0, 1}, port: port)
-
-    Application.put_env(:foundry_web, FoundryWeb.Endpoint, endpoint_config)
     Application.put_env(:foundry_web, :current_project_root, project_root)
     Application.put_env(:foundry_web, :igaming_project_root, project_root)
     :ok

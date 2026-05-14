@@ -40,34 +40,38 @@ defmodule Foundry.Application do
   defp start_studio_mode(launch_opts) do
     init_mnesia()
 
-    case Foundry.Studio.prepare_launch(launch_opts) do
-      {:ok, %{reused?: true, url: url} = launch} ->
-        Foundry.Studio.complete_reused_launch(launch)
-        IO.puts("Foundry Studio already running at #{url}")
-        System.halt(0)
+    # In standalone mode, the port was already selected by runtime.exs before
+    # the endpoint started. Read it from the endpoint config instead of
+    # re-selecting via prepare_launch, which would diverge from the running endpoint.
+    port = get_in(
+      Application.get_env(:foundry_web, FoundryWeb.Endpoint, []),
+      [:http, :port]
+    ) || 4000
 
-      {:ok, launch} ->
-        :ok = Foundry.Studio.configure_runtime(launch.project_root, launch.port)
+    project_root = Keyword.get(launch_opts, :project_root, File.cwd!()) |> Path.expand()
+    open_browser? = Keyword.get(launch_opts, :open_browser?, true)
+    url = Foundry.Studio.url_for_port(port)
 
-        children = [
-          {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},
-          {Phoenix.PubSub, name: Foundry.PubSub},
-          Foundry.Context.ScenarioCache,
-          {Foundry.PreviewServer, []},
-          {Foundry.ProjectManager, []},
-          {Task, fn -> finalize_studio_launch(launch) end}
-        ]
+    :ok = Foundry.Studio.configure_runtime(project_root, port)
 
-        Supervisor.start_link(children, strategy: :one_for_one, name: Foundry.Supervisor)
+    launch = %{
+      open_browser?: open_browser?,
+      port: port,
+      project_root: project_root,
+      reused?: false,
+      url: url
+    }
 
-      {:error, {:port_unavailable, port}} ->
-        IO.puts(:stderr, "Foundry Studio could not use port #{port}.")
-        System.halt(1)
+    children = [
+      {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},
+      {Phoenix.PubSub, name: Foundry.PubSub},
+      Foundry.Context.ScenarioCache,
+      {Foundry.PreviewServer, []},
+      {Foundry.ProjectManager, []},
+      {Task, fn -> finalize_studio_launch(launch) end}
+    ]
 
-      {:error, reason} ->
-        IO.puts(:stderr, "Failed to prepare Foundry Studio: #{inspect(reason)}")
-        System.halt(1)
-    end
+    Supervisor.start_link(children, strategy: :one_for_one, name: Foundry.Supervisor)
   end
 
   defp finalize_studio_launch(launch) do
