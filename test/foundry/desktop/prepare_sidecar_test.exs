@@ -8,12 +8,12 @@ defmodule Foundry.Desktop.PrepareSidecarTest do
     tmp_dir = unique_tmp_dir!("standalone-sidecar")
     binaries_dir = Path.join(tmp_dir, "binaries")
     burrito_out_dir = Path.join(tmp_dir, "burrito_out")
-    artifact_path = Path.join(burrito_out_dir, "foundry")
+    artifact_path = Path.join(burrito_out_dir, "foundry_macos_silicon")
 
     File.mkdir_p!(binaries_dir)
     File.mkdir_p!(burrito_out_dir)
     File.cp!("/bin/sh", artifact_path)
-    File.chmod!(artifact_path, 0o755)
+    File.chmod!(artifact_path, 0o744)
 
     {_output, 0} =
       System.cmd("bash", [@script],
@@ -25,6 +25,31 @@ defmodule Foundry.Desktop.PrepareSidecarTest do
 
     assert File.exists?(sidecar_path)
     refute File.read!(sidecar_path) =~ "mix foundry.studio"
+  end
+
+  test "release preparation prefers the target-specific Burrito artifact name" do
+    tmp_dir = unique_tmp_dir!("standalone-target-specific")
+    binaries_dir = Path.join(tmp_dir, "binaries")
+    burrito_out_dir = Path.join(tmp_dir, "burrito_out")
+    preferred_artifact = Path.join(burrito_out_dir, "foundry_macos_silicon")
+    fallback_artifact = Path.join(burrito_out_dir, "foundry")
+
+    File.mkdir_p!(binaries_dir)
+    File.mkdir_p!(burrito_out_dir)
+    File.cp!("/bin/sh", preferred_artifact)
+    File.cp!("/bin/cat", fallback_artifact)
+    File.chmod!(preferred_artifact, 0o744)
+    File.chmod!(fallback_artifact, 0o755)
+
+    {_output, 0} =
+      System.cmd("bash", [@script],
+        cd: @root,
+        env: sidecar_env(tmp_dir, binaries_dir, burrito_out_dir)
+      )
+
+    sidecar_path = Path.join(binaries_dir, "foundry-sidecar-aarch64-apple-darwin")
+
+    assert File.read!(sidecar_path) == File.read!(preferred_artifact)
   end
 
   test "release preparation rejects a wrapper script artifact" do
@@ -52,6 +77,28 @@ defmodule Foundry.Desktop.PrepareSidecarTest do
 
     assert exit_code != 0
     assert output =~ "not standalone"
+  end
+
+  test "release preparation reuses an existing standalone sidecar" do
+    tmp_dir = unique_tmp_dir!("reuse-existing-sidecar")
+    binaries_dir = Path.join(tmp_dir, "binaries")
+    burrito_out_dir = Path.join(tmp_dir, "burrito_out")
+    sidecar_path = Path.join(binaries_dir, "foundry-sidecar-aarch64-apple-darwin")
+
+    File.mkdir_p!(binaries_dir)
+    File.mkdir_p!(burrito_out_dir)
+    File.cp!("/bin/sh", sidecar_path)
+    File.chmod!(sidecar_path, 0o744)
+
+    {output, 0} =
+      System.cmd("bash", [@script],
+        cd: @root,
+        stderr_to_stdout: true,
+        env: sidecar_env(tmp_dir, binaries_dir, burrito_out_dir)
+      )
+
+    assert output =~ "Reusing existing standalone sidecar"
+    assert File.read!(sidecar_path) == File.read!("/bin/sh")
   end
 
   test "dev fallback still produces a local mix wrapper when explicitly requested" do
