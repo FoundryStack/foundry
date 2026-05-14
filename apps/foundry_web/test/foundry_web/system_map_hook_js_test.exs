@@ -4,6 +4,7 @@ defmodule FoundryWeb.SystemMapHookJsTest do
   @root Path.expand("../../../..", __DIR__)
   @hook_path Path.join(@root, "apps/foundry_web/assets/js/hooks/system_map_hook.js")
   @graph_path Path.join(@root, "apps/foundry_web/assets/js/cytoscape_graph.js")
+  @drawer_path Path.join(@root, "apps/foundry_web/assets/js/hooks/system_map/drawer_manager.js")
   @sidebar_path Path.join(@root, "apps/foundry_web/assets/js/hooks/system_map/sidebar_manager.js")
 
   test "switching from coverage back to system map rebinds the sidebar list click handler" do
@@ -294,6 +295,114 @@ defmodule FoundryWeb.SystemMapHookJsTest do
       """)
 
     assert result == ["sidebar.highlight:Finance.Wallet", "graph.focus:Finance.Wallet"]
+  end
+
+  test "preview launch opens canonical target in a browser tab on web" do
+    result =
+      run_js("""
+      const hooks = await importBundledModule([#{js_string_literal(@hook_path)}])
+      const hook = hooks.SystemMapHook
+      const calls = []
+
+      globalThis.window = {
+        location: { origin: 'http://localhost:4000' },
+        open: (url, target) => calls.push({ type: 'window.open', url, target }),
+      }
+
+      const state = {
+        _previewBaseUrl: 'http://localhost:4001',
+        _buildPreviewTargetUrl: hook._buildPreviewTargetUrl,
+        _normalizePreviewRoute: hook._normalizePreviewRoute,
+        _openPreviewLaunch: hook._openPreviewLaunch,
+        _isTauriRuntime: hook._isTauriRuntime,
+        _openExternalUrl: hook._openExternalUrl,
+      }
+
+      await hook._startPreview.call(state, 'games')
+      printJson(calls)
+      """)
+
+    assert result == [
+             %{
+               "type" => "window.open",
+               "target" => "_blank",
+               "url" =>
+                 "http://localhost:4000/preview-launch?target=http%3A%2F%2Flocalhost%3A4001%2Fgames"
+             }
+           ]
+  end
+
+  test "preview launch uses the Tauri opener when running in desktop" do
+    result =
+      run_js("""
+      const hooks = await importBundledModule([#{js_string_literal(@hook_path)}])
+      const hook = hooks.SystemMapHook
+      const calls = []
+
+      globalThis.window = {
+        location: { origin: 'http://localhost:4000' },
+        open: (url, target) => calls.push({ type: 'window.open', url, target }),
+        __TAURI_INTERNALS__: {
+          invoke: async (command, payload) => {
+            calls.push({ type: 'tauri.invoke', command, payload })
+          },
+        },
+      }
+
+      const state = {
+        _previewBaseUrl: 'http://127.0.0.1:4001',
+        _buildPreviewTargetUrl: hook._buildPreviewTargetUrl,
+        _normalizePreviewRoute: hook._normalizePreviewRoute,
+        _openPreviewLaunch: hook._openPreviewLaunch,
+        _isTauriRuntime: hook._isTauriRuntime,
+        _openExternalUrl: hook._openExternalUrl,
+      }
+
+      await hook._startPreview.call(state, '/pages/home')
+      printJson(calls)
+      """)
+
+    assert result == [
+             %{
+               "type" => "tauri.invoke",
+               "command" => "plugin:opener|open_url",
+               "payload" => %{
+                 "url" =>
+                   "http://localhost:4000/preview-launch?target=http%3A%2F%2F127.0.0.1%3A4001%2Fpages%2Fhome"
+               }
+             }
+           ]
+  end
+
+  test "preview route normalization keeps dynamic and empty page routes previewable" do
+    result =
+      run_js("""
+      globalThis.UI_CONFIG = {
+        storageKeys: { drawerWidth: 'drawer-width' },
+        drawerWidth: { default: 480, min: 320, max: 720 },
+      }
+      globalThis.ResizablePanel = class {
+        sync() {}
+      }
+      globalThis.document = {
+        getElementById: () => null,
+      }
+
+      const drawerModule = await importBundledModule([#{js_string_literal(@drawer_path)}])
+      const drawer = new drawerModule.DrawerManager(new Map(), () => {})
+
+      printJson({
+        dynamic: drawer._previewRouteForNode({ page_route: 'games/:game_id' }),
+        empty: drawer._previewRouteForNode({ page_route: '' }),
+        missing: drawer._previewRouteForNode({}),
+      })
+      """)
+
+    assert result == %{
+             "dynamic" => "/games/preview",
+             "empty" => "/",
+             "missing" => "/"
+           }
   end
 
   test "focused node keeps only its immediate neighborhood active" do

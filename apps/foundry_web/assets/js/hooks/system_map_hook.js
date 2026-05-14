@@ -208,11 +208,52 @@ export const SystemMapHook = {
   },
 
   _startPreview(route = '/') {
-    const base = this._previewBaseUrl || 'http://localhost:4001'
+    const previewTargetUrl = this._buildPreviewTargetUrl(route)
     const launchUrl = new URL('/preview-launch', window.location.origin)
-    launchUrl.searchParams.set('base', base)
-    launchUrl.searchParams.set('route', route)
-    window.open(launchUrl.toString(), '_blank')
+    launchUrl.searchParams.set('target', previewTargetUrl)
+    this._openPreviewLaunch(launchUrl.toString())
+  },
+
+  _buildPreviewTargetUrl(route = '/') {
+    const base = this._previewBaseUrl || 'http://localhost:4001'
+    const normalizedRoute = this._normalizePreviewRoute(route)
+    return new URL(normalizedRoute, base).toString()
+  },
+
+  _normalizePreviewRoute(route = '/') {
+    if (typeof route !== 'string' || route.trim() === '') return '/'
+    return route.startsWith('/') ? route : `/${route}`
+  },
+
+  async _openPreviewLaunch(launchUrl) {
+    if (this._isTauriRuntime()) {
+      try {
+        await this._openExternalUrl(launchUrl)
+        return
+      } catch (error) {
+        console.error('SystemMapHook preview opener error:', error)
+      }
+    }
+
+    window.open(launchUrl, '_blank')
+  },
+
+  _isTauriRuntime() {
+    return !!(window.__TAURI_INTERNALS__ || window.__TAURI__)
+  },
+
+  async _openExternalUrl(url) {
+    if (window.__TAURI_INTERNALS__?.invoke) {
+      await window.__TAURI_INTERNALS__.invoke('plugin:opener|open_url', { url })
+      return
+    }
+
+    if (window.__TAURI__?.core?.invoke) {
+      await window.__TAURI__.core.invoke('plugin:opener|open_url', { url })
+      return
+    }
+
+    throw new Error('Tauri opener API unavailable')
   },
 
   _showHoverCard(nodeId, nodeData = null, event = null) {

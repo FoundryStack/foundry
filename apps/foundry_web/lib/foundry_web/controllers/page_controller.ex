@@ -64,13 +64,19 @@ defmodule FoundryWeb.PageController do
     json(conn, %{recent_projects: ProjectManager.recent_projects()})
   end
 
+  defp preview_target_url(%{"target" => target}) when is_binary(target) do
+    case validate_preview_target(target) do
+      {:ok, normalized_target} -> normalized_target
+      :error -> preview_target_url(%{})
+    end
+  end
+
   defp preview_target_url(%{"base" => base, "route" => route}) do
-    with %URI{scheme: "http", host: "localhost"} = uri <- URI.parse(base),
-         true <- is_integer(uri.port),
+    with %URI{} = base_uri <- validate_preview_base(base),
          normalized_route <- normalize_route(route) do
-      URI.to_string(%{uri | path: normalized_route, query: nil, fragment: nil})
+      URI.to_string(%{base_uri | path: normalized_route, query: nil, fragment: nil})
     else
-      _ -> "http://localhost:4001/"
+      _ -> preview_target_url(%{})
     end
   end
 
@@ -79,6 +85,28 @@ defmodule FoundryWeb.PageController do
   defp preview_project_root do
     FoundryWeb.ChatConfig.project_root()
   end
+
+  defp validate_preview_target(target) do
+    with %URI{} = uri <- URI.parse(target),
+         true <- preview_host?(uri.host),
+         true <- is_integer(uri.port) do
+      {:ok, URI.to_string(%{uri | query: nil, fragment: nil, path: normalize_route(uri.path)})}
+    else
+      _ -> :error
+    end
+  end
+
+  defp validate_preview_base(base) do
+    with %URI{} = uri <- URI.parse(base),
+         true <- preview_host?(uri.host),
+         true <- is_integer(uri.port) do
+      uri
+    else
+      _ -> :error
+    end
+  end
+
+  defp preview_host?(host), do: host in ["localhost", "127.0.0.1"]
 
   defp normalize_route("/" <> _ = route), do: route
   defp normalize_route(route) when is_binary(route), do: "/" <> route

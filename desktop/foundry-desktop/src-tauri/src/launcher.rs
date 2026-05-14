@@ -223,7 +223,7 @@ fn wait_for_health(app: &AppHandle) -> Result<String, String> {
                 app,
                 STATUS_EVENT,
                 format!(
-                    "Foundry is still starting and compiling if needed... waiting for /healthz ({elapsed_secs}s)"
+                    "Foundry is starting and compiling..."
                 ),
             );
         }

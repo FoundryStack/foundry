@@ -221,10 +221,18 @@ export class DrawerManager {
     if (!node) return
 
     const showPreview = node.type === 'page'
-    const rawRoute = node.page_route || '/'
-    const previewRoute = rawRoute.replace(/:([^/]+)/g, 'preview')
+    const previewRoute = this._previewRouteForNode(node)
     this._setHeader(this._displayNodeLabel(node), node.type || 'node', { showPreview, previewRoute })
     this._renderDetailsPanel(node)
+  }
+
+  _previewRouteForNode(node) {
+    const rawRoute = typeof node?.page_route === 'string' ? node.page_route.trim() : ''
+
+    if (rawRoute === '') return '/'
+
+    const normalizedRoute = rawRoute.startsWith('/') ? rawRoute : `/${rawRoute}`
+    return normalizedRoute.replace(/:([^/]+)/g, 'preview')
   }
 
   renderForScenario(scenario) {

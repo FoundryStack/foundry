@@ -132,7 +132,7 @@ defmodule FoundryWeb.ChatComponents do
           <% end %>
         </div>
 
-        <div class="grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
+        <%!-- <div class="grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
           <%= if @latest_run do %>
             <div class="grid grid-cols-4 gap-2">
               <.trace_stat label="Last run" value={status_label(@latest_run.status)} />
@@ -141,7 +141,7 @@ defmodule FoundryWeb.ChatComponents do
               <.trace_stat label="Tokens" value={run_total_tokens(@latest_run) || "n/a"} />
             </div>
           <% end %>
-        </div>
+        </div> --%>
       </div>
 
       <%= if @show_system_context do %>
@@ -222,7 +222,7 @@ defmodule FoundryWeb.ChatComponents do
                   </div>
                 <% end %>
 
-                <%= if @latest_run do %>
+                <%!-- <%= if @latest_run do %>
                   <div class="rounded-box border border-base-300/80 bg-base-200/55 px-4 py-3">
                     <div class="flex flex-wrap items-center gap-2">
                       <span class={mode_badge_class(@latest_run.mode)}>
@@ -241,7 +241,7 @@ defmodule FoundryWeb.ChatComponents do
                       Context cache {trace_cache_label(@latest_run)}. Foundry preloads global context and may inspect source directly when exact evidence is needed, while governed change requests stay attached to proposal metadata.
                     </p>
                   </div>
-                <% end %>
+                <% end %> --%>
 
                 <%= for {msg, index} <- Enum.with_index(@messages) do %>
                   <.message_bubble

@@ -7,17 +7,35 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
-standalone_command? =
-  case System.argv() do
-    ["studio" | _] -> true
-    _ -> false
-  end
+standalone_command? = Foundry.Studio.mix_task_invoked?("foundry.studio")
+phoenix_server_command? = Foundry.Studio.mix_task_invoked?("phx.server")
 
 standalone_mode? = System.get_env("FOUNDRY_STANDALONE", "0") == "1" or standalone_command?
-server_enabled? = System.get_env("PHX_SERVER") in ["true", "1"] or standalone_mode?
+
+server_enabled? =
+  System.get_env("PHX_SERVER") in ["true", "1"] or standalone_mode? or phoenix_server_command?
+
+runtime_port =
+  cond do
+    port = System.get_env("PORT") ->
+      String.to_integer(port)
+
+    server_enabled? and not standalone_mode? ->
+      case Foundry.Studio.resolve_generic_server_port() do
+        {:ok, port} ->
+          _ = Foundry.Studio.write_port_file(port)
+          port
+
+        {:error, _reason} ->
+          4000
+      end
+
+    true ->
+      4000
+  end
 
 config :foundry_web, FoundryWeb.Endpoint,
-  http: [port: String.to_integer(System.get_env("PORT", "4000"))],
+  http: [port: runtime_port],
   server: server_enabled?
 
 if config_env() == :prod do

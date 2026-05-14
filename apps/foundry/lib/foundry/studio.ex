@@ -43,6 +43,28 @@ defmodule Foundry.Studio do
 
   def parse_studio_argv(_argv), do: :no_command
 
+  @spec mix_task_invoked?(String.t(), keyword()) :: boolean()
+  def mix_task_invoked?(task_name, opts \\ []) when is_binary(task_name) do
+    argv = Keyword.get(opts, :argv, System.argv())
+
+    plain_args =
+      Keyword.get(opts, :plain_args, :init.get_plain_arguments())
+      |> Enum.map(&List.to_string/1)
+
+    task_args? = fn args ->
+      Enum.chunk_every(args, 2, 1, :discard)
+      |> Enum.any?(fn
+        [mix_command, ^task_name] when is_binary(mix_command) ->
+          Path.basename(mix_command) == "mix"
+
+        _other ->
+          false
+      end)
+    end
+
+    match?([^task_name | _], argv) or task_args?.(argv) or task_args?.(plain_args)
+  end
+
   @spec prepare_launch(keyword()) :: {:ok, map()} | {:error, term()}
   def prepare_launch(opts) do
     project_root = Keyword.get(opts, :project_root, File.cwd!()) |> Path.expand()
@@ -105,6 +127,21 @@ defmodule Foundry.Studio do
   def find_open_port(start_port \\ @default_port)
       when is_integer(start_port) and start_port > 0 do
     do_find_open_port(start_port, 100)
+  end
+
+  @spec resolve_generic_server_port() :: {:ok, pos_integer()} | {:error, :no_open_port}
+  def resolve_generic_server_port do
+    case read_port_file() do
+      {:ok, port} when port > 0 ->
+        if port_available?(port) do
+          {:ok, port}
+        else
+          find_open_port(@default_port)
+        end
+
+      _ ->
+        find_open_port(@default_port)
+    end
   end
 
   @spec port_file_path() :: String.t()
