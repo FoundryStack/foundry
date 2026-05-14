@@ -1,89 +1,4 @@
 <style>
-  :root {
-    --launch-bg-dark: #050408;
-    --launch-orange: #fd4f00;
-    --launch-orange-soft: rgba(253, 79, 0, 0.74);
-  }
-
-  #project-launch-root {
-    min-height: 100vh;
-    background:
-      radial-gradient(circle at top, rgba(253, 79, 0, 0.1), transparent 32%),
-      var(--launch-bg-dark);
-    overflow: hidden;
-  }
-
-  #project-launch-canvas {
-    position: fixed;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 1;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.5s ease-in;
-    filter: saturate(190%) brightness(150%) contrast(108%);
-  }
-
-  #project-launch-shell {
-    position: relative;
-    z-index: 10;
-    display: flex;
-    min-height: 100vh;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem 1.5rem;
-    transition: opacity 0.5s ease;
-  }
-
-  #project-launch-panel {
-    width: 100%;
-    max-width: 44rem;
-    text-align: center;
-  }
-
-  #project-launch-logo {
-    display: block;
-    width: auto;
-    height: clamp(5rem, 12vw, 8.5rem);
-    margin: 0 auto;
-    filter: drop-shadow(0 0 25px rgba(0, 0, 0, 0.9));
-  }
-
-  #project-launch-kicker {
-    margin-top: 1rem;
-    color: rgba(255, 255, 255, 0.48);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.38em;
-    text-transform: uppercase;
-  }
-
-  #project-launch-state {
-    margin-top: 0.85rem;
-    color: white;
-    font-size: clamp(0.92rem, 1.7vw, 1.05rem);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  #project-launch-title {
-    margin-top: 1rem;
-    color: white;
-    font-size: clamp(2rem, 4vw, 2.85rem);
-    font-weight: 600;
-    line-height: 1.1;
-  }
-
-  #project-launch-message {
-    margin: 1rem auto 0;
-    max-width: 34rem;
-    color: rgba(255, 255, 255, 0.72);
-    font-size: 1rem;
-    line-height: 1.8;
-  }
-
   #project-launch-log {
     margin: 2rem auto 0;
     max-width: 42rem;
@@ -103,31 +18,28 @@
   }
 </style>
 
-<div id="project-launch-root">
-  <canvas id="project-launch-canvas"></canvas>
-
-  <main id="project-launch-shell">
-    <section id="project-launch-panel">
-      <img id="project-launch-logo" src={~p"/images/foundry-logo.png"} alt="Foundry Logo" />
-      <p id="project-launch-kicker">Project Launch</p>
-      <p id="project-launch-state">Waiting for launch updates</p>
-      <h1 id="project-launch-title">Preparing project…</h1>
-      <p id="project-launch-message">Foundry is getting the selected project ready.</p>
-      <pre id="project-launch-log">Waiting for launch updates…</pre>
-    </section>
-  </main>
-</div>
+<.project_shell
+  root_id="project-launch-root"
+  canvas_id="project-launch-canvas"
+  panel_id="project-launch-panel"
+  kicker="Project Launch"
+  state="Waiting for launch updates"
+  title="Preparing project…"
+  message="Foundry is getting the selected project ready."
+>
+  <pre id="project-launch-log">Waiting for launch updates…</pre>
+</.project_shell>
 
 <script>
   (() => {
     const targetUrl = <%= Phoenix.HTML.raw(Jason.encode!(@target_url)) %>;
     const canvasEl = document.getElementById("project-launch-canvas");
-    const logoEl = document.getElementById("project-launch-logo");
-    const titleEl = document.getElementById("project-launch-title");
-    const messageEl = document.getElementById("project-launch-message");
-    const stateEl = document.getElementById("project-launch-state");
+    const logoEl = document.querySelector("#project-launch-panel .project-shell-logo");
+    const titleEl = document.querySelector("#project-launch-panel .project-shell-title");
+    const messageEl = document.querySelector("#project-launch-panel .project-shell-message");
+    const stateEl = document.querySelector("#project-launch-panel .project-shell-state");
     const logEl = document.getElementById("project-launch-log");
-    const shellEl = document.getElementById("project-launch-shell");
+    const shellEl = document.querySelector("#project-launch-root .project-shell-stage");
     let pollTimer = null;
     let fireTimer = null;
 
