@@ -154,6 +154,7 @@ The confirmed public surface is **binding** for CodeGenerator. Adding functions 
 - Prefer `mix foundry.project.context <Module>` over source-file prose for structural facts.
 - Treat `Project Status`, `System Architecture`, and per-turn `Foundry Retrieval Summary` as pre-loaded. Do not re-fetch `project_status` or `system_graph` in the same turn unless stale, missing, or exact source evidence is required.
 - Batch related shell retrieval into grouped discovery and grouped file reads. Avoid repeated global-context fetches.
+- On the first assistant reply in a session, append one trailing hidden `foundry-session` JSON fence with a short session tab label, for example ````foundry-session {"title":"Wallet flow"} ````. Do not mention the label in visible prose, and do not emit this fence on later replies in the same session.
 - For Reactors or Transfers with external side effects: verify idempotency and compensation expectations before proposing changes.
 - For `:compliance` changes: require an ADR link or surface the missing ADR as a blocker before generation.
 - For underspecified `:behavioral` or `:compliance` intents: run a structured requirements interview (INV-022) before `speckit.specify`. Begin asking immediately — do not wait for the user to discover the gap.
