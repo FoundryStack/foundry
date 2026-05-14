@@ -124,14 +124,30 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
     let foundry_home = foundry_home_dir();
     let secret_key_base = ensure_standalone_secret(&foundry_home)?;
 
-    let command = app
+    let mut command = app
         .shell()
         .sidecar(SIDECAR_NAME)
         .map_err(|error| format!("Failed to prepare sidecar: {error}"))?
         .env("FOUNDRY_HOME", foundry_home.as_os_str())
         .env("FOUNDRY_STANDALONE", "1")
         .env("PHX_SERVER", "1")
-        .env("SECRET_KEY_BASE", &secret_key_base)
+        .env("SECRET_KEY_BASE", &secret_key_base);
+
+    // Add common Elixir/mix paths to PATH for development environments
+    if let Ok(current_path) = env::var("PATH") {
+        let paths = vec![
+            "/opt/homebrew/bin",
+            "/opt/homebrew/opt/elixir/bin",
+            "/opt/homebrew/opt/erlang/bin",
+            "/usr/local/bin",
+        ];
+        let mut new_path = paths.join(":");
+        new_path.push(':');
+        new_path.push_str(&current_path);
+        command = command.env("PATH", new_path);
+    }
+
+    let command = command
         .args([
             "studio",
             "--project",

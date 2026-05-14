@@ -10,7 +10,13 @@ import Config
 standalone_command? = Foundry.Studio.mix_task_invoked?("foundry.studio")
 phoenix_server_command? = Foundry.Studio.mix_task_invoked?("phx.server")
 
+# CRITICAL: Check if FOUNDRY_STANDALONE is set - this is set by Tauri's launcher.rs
 standalone_mode? = System.get_env("FOUNDRY_STANDALONE", "0") == "1" or standalone_command?
+
+# Debug log to verify env var is being read
+if System.get_env("FOUNDRY_STANDALONE") != nil do
+  IO.warn("FOUNDRY_STANDALONE is set to: #{System.get_env("FOUNDRY_STANDALONE")}")
+end
 
 server_enabled? =
   System.get_env("PHX_SERVER") in ["true", "1"] or standalone_mode? or phoenix_server_command?
@@ -21,12 +27,9 @@ runtime_port =
       String.to_integer(port)
 
     server_enabled? and standalone_mode? ->
-      # Standalone mode: select an open port at config time so the endpoint
-      # starts on the correct port before Application.start runs.
-      case Foundry.Studio.find_open_port() do
-        {:ok, port} -> port
-        {:error, _} -> 4000
-      end
+      # Standalone mode: always use port 4000 for consistency.
+      # The Tauri client expects the server on 4000.
+      4000
 
     server_enabled? and not standalone_mode? ->
       case Foundry.Studio.resolve_generic_server_port() do
@@ -42,18 +45,48 @@ runtime_port =
       4000
   end
 
-endpoint_check_origin =
+# Build endpoint config with explicit settings for all modes
+check_origin_list = [
+  "http://127.0.0.1:4000",
+  "http://localhost:4000",
+  "//127.0.0.1:4000",
+  "//localhost:4000",
+  "http://127.0.0.1",
+  "http://localhost",
+  "//127.0.0.1",
+  "//localhost",
+  "tauri://localhost",
+  "tauri://localhost:4000"
+]
+
+endpoint_config =
   if standalone_mode? do
-    ["http://127.0.0.1", "http://localhost"]
+    [
+      http: [ip: {127, 0, 0, 1}, port: runtime_port],
+      url: [host: "127.0.0.1", port: runtime_port],
+      server: server_enabled?,
+      check_origin: false,
+      force_ssl: false
+    ]
   else
-    true
+    [
+      http: [ip: {127, 0, 0, 1}, port: runtime_port],
+      url: [host: "127.0.0.1", port: runtime_port],
+      server: server_enabled?,
+      check_origin: check_origin_list
+    ]
   end
 
-config :foundry_web, FoundryWeb.Endpoint,
-  http: [ip: {127, 0, 0, 1}, port: runtime_port],
-  url: [host: "127.0.0.1", port: runtime_port],
-  server: server_enabled?,
-  check_origin: endpoint_check_origin
+IO.warn("=" <> String.duplicate("=", 78))
+IO.warn("ENDPOINT CONFIG (runtime.exs)")
+IO.warn("  standalone_mode?: #{standalone_mode?}")
+IO.warn("  server_enabled?: #{server_enabled?}")
+IO.warn("  runtime_port: #{runtime_port}")
+IO.warn("  check_origin: #{if standalone_mode?, do: "false", else: "explicit list"}")
+IO.warn("  url: [host: \"127.0.0.1\", port: #{runtime_port}]")
+IO.warn("=" <> String.duplicate("=", 78))
+
+config :foundry_web, FoundryWeb.Endpoint, endpoint_config
 
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
@@ -73,13 +106,7 @@ if config_env() == :prod do
       end
 
   config :foundry_web, FoundryWeb.Endpoint,
-    http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0}
-    ],
-    secret_key_base: secret_key_base,
-    server: server_enabled?
+    secret_key_base: secret_key_base
 
   # ## Using releases
   #

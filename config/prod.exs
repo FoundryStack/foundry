@@ -6,18 +6,22 @@ import Config
 # which you should run after static files are built and
 # before starting your production server.
 config :foundry_web, FoundryWeb.Endpoint,
-  url: [host: "example.com", port: 80],
-  cache_static_manifest: "priv/static/cache_manifest.json"
-
-# Force using SSL in production. This also sets the "strict-security-transport" header,
-# known as HSTS. If you have a health check endpoint, you may want to exclude it below.
-# Note `:force_ssl` is required to be set at compile-time.
-config :foundry_web, FoundryWeb.Endpoint,
-  force_ssl: [rewrite_on: [:x_forwarded_proto]],
-  exclude: [
-    # paths: ["/health"],
-    hosts: ["localhost", "127.0.0.1"]
-  ]
+  url: [host: "127.0.0.1", port: 4000],
+  http: [ip: {127, 0, 0, 1}, port: 4000],
+  cache_static_manifest: "priv/static/cache_manifest.json",
+  check_origin: [
+    "http://127.0.0.1:4000",
+    "http://localhost:4000",
+    "//127.0.0.1:4000",
+    "//localhost:4000",
+    "http://127.0.0.1",
+    "http://localhost",
+    "//127.0.0.1",
+    "//localhost",
+    "tauri://localhost",
+    "tauri://localhost:4000"
+  ],
+  force_ssl: false
 
 # Configure Swoosh API Client
 config :swoosh, :api_client, Swoosh.ApiClient.Req

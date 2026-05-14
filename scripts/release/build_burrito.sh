@@ -202,6 +202,20 @@ main() {
   else
     mix release --overwrite foundry
   fi
+
+  # CRITICAL: Enable runtime.exs configuration in the release
+  # By default, Elixir releases have RUNTIME_CONFIG=false in sys.config,
+  # which prevents runtime.exs from being loaded. We need to enable it so
+  # FOUNDRY_STANDALONE env var can be read at startup and endpoint config applied.
+  local sys_config="_build/prod/rel/foundry/releases/0.1.0/sys.config"
+  if [[ -f "$sys_config" ]]; then
+    if sed -i.bak 's/RUNTIME_CONFIG=false/RUNTIME_CONFIG=true/' "$sys_config"; then
+      echo "✓ Enabled RUNTIME_CONFIG in sys.config"
+      rm -f "${sys_config}.bak"
+    else
+      echo "⚠ Failed to enable RUNTIME_CONFIG in sys.config" >&2
+    fi
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
