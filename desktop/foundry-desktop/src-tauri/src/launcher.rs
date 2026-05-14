@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::env;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -23,6 +24,7 @@ const STATUS_EVENT: &str = "foundry://launch-status";
 const ERROR_EVENT: &str = "foundry://launch-error";
 const FILE_OPEN_ID: &str = "file.open";
 const FILE_RECENT_PREFIX: &str = "file.recent.";
+const STANDALONE_SECRET_FILE: &str = "standalone_secret_key_base";
 
 #[derive(Default)]
 pub struct FoundrySidecarState {
@@ -119,11 +121,17 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
 
     let project_root = normalize_project_root(env::var("FOUNDRY_PROJECT_ROOT").ok().as_deref());
     let project_root_string = project_root.to_string_lossy().to_string();
+    let foundry_home = foundry_home_dir();
+    let secret_key_base = ensure_standalone_secret(&foundry_home)?;
 
     let command = app
         .shell()
         .sidecar(SIDECAR_NAME)
         .map_err(|error| format!("Failed to prepare sidecar: {error}"))?
+        .env("FOUNDRY_HOME", foundry_home.as_os_str())
+        .env("FOUNDRY_STANDALONE", "1")
+        .env("PHX_SERVER", "1")
+        .env("SECRET_KEY_BASE", &secret_key_base)
         .args([
             "studio",
             "--project",
@@ -222,9 +230,7 @@ fn wait_for_health(app: &AppHandle) -> Result<String, String> {
             emit_status(
                 app,
                 STATUS_EVENT,
-                format!(
-                    "Foundry is starting and compiling..."
-                ),
+                format!("Foundry is starting and compiling..."),
             );
         }
 
@@ -404,12 +410,71 @@ fn load_recent_projects() -> Vec<RecentProject> {
 }
 
 fn persisted_state_path() -> PathBuf {
-    let home_dir = env::var("FOUNDRY_HOME")
-        .map(PathBuf::from)
-        .or_else(|_| env::var("HOME").map(PathBuf::from))
-        .unwrap_or_else(|_| fallback_project_root());
+    let home_dir = foundry_home_dir();
 
     home_dir.join(".foundry").join("project_manager.json")
+}
+
+fn foundry_home_dir() -> PathBuf {
+    env::var("FOUNDRY_HOME")
+        .map(PathBuf::from)
+        .or_else(|_| env::var("HOME").map(PathBuf::from))
+        .unwrap_or_else(|_| fallback_project_root())
+}
+
+fn standalone_secret_path(foundry_home: &Path) -> PathBuf {
+    foundry_home.join(".foundry").join(STANDALONE_SECRET_FILE)
+}
+
+fn ensure_standalone_secret(foundry_home: &Path) -> Result<String, String> {
+    let secret_path = standalone_secret_path(foundry_home);
+
+    if let Ok(existing) = fs::read_to_string(&secret_path) {
+        let secret = existing.trim().to_string();
+
+        if !secret.is_empty() {
+            return Ok(secret);
+        }
+    }
+
+    let secret = generate_standalone_secret()?;
+    let parent = secret_path.parent().ok_or_else(|| {
+        format!(
+            "Standalone secret path {} has no parent directory",
+            secret_path.display()
+        )
+    })?;
+
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("Failed to create {}: {error}", parent.display()))?;
+    fs::write(&secret_path, format!("{secret}\n"))
+        .map_err(|error| format!("Failed to write {}: {error}", secret_path.display()))?;
+
+    Ok(secret)
+}
+
+fn generate_standalone_secret() -> Result<String, String> {
+    let mut bytes = [0_u8; 64];
+    let mut random = File::open("/dev/urandom")
+        .map_err(|error| format!("Failed to open /dev/urandom: {error}"))?;
+
+    random
+        .read_exact(&mut bytes)
+        .map_err(|error| format!("Failed to read random bytes: {error}"))?;
+
+    Ok(hex_encode(&bytes))
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+
+    for byte in bytes {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+
+    output
 }
 
 fn store_sidecar<R: Runtime>(app: &AppHandle<R>, child: CommandChild) {
@@ -438,8 +503,14 @@ fn shutdown_sidecar<R: Runtime>(app: &AppHandle<R>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{fallback_project_root, normalize_project_root, persisted_state_path};
+    use super::{
+        ensure_standalone_secret, fallback_project_root, normalize_project_root,
+        persisted_state_path, standalone_secret_path,
+    };
+    use std::env;
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::{fs, process};
 
     #[test]
     fn normalize_project_root_prefers_override() {
@@ -467,5 +538,48 @@ mod tests {
         assert!(persisted_state_path()
             .to_string_lossy()
             .ends_with(".foundry/project_manager.json"));
+    }
+
+    #[test]
+    fn ensure_standalone_secret_reuses_existing_secret() {
+        let home_dir = unique_tmp_dir("secret-reuse");
+        let secret_path = standalone_secret_path(&home_dir);
+
+        fs::create_dir_all(secret_path.parent().unwrap()).unwrap();
+        fs::write(&secret_path, "existing-secret\n").unwrap();
+
+        assert_eq!(
+            ensure_standalone_secret(&home_dir).unwrap(),
+            "existing-secret"
+        );
+    }
+
+    #[test]
+    fn ensure_standalone_secret_generates_and_persists_secret() {
+        let home_dir = unique_tmp_dir("secret-generate");
+        let secret_path = standalone_secret_path(&home_dir);
+        let secret = ensure_standalone_secret(&home_dir).unwrap();
+
+        assert_eq!(secret.len(), 128);
+        assert!(secret.chars().all(|char| char.is_ascii_hexdigit()));
+        assert_eq!(
+            fs::read_to_string(secret_path).unwrap(),
+            format!("{secret}\n")
+        );
+    }
+
+    fn unique_tmp_dir(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = env::temp_dir().join(format!(
+            "foundry-desktop-{label}-{}-{unique}",
+            process::id()
+        ));
+
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        path
     }
 }

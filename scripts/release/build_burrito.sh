@@ -3,29 +3,146 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGET="${1:-}"
-REQUIRED_ZIG_VERSION="0.15.2"
+REQUIRED_ZIG_VERSION="${REQUIRED_ZIG_VERSION:-0.15.2}"
 
 cd "$ROOT_DIR"
 
-for candidate in /opt/homebrew/opt/zig/bin /opt/homebrew/opt/xz/bin; do
+prepend_path() {
+  local candidate="$1"
+
   if [[ -d "$candidate" && ":$PATH:" != *":$candidate:"* ]]; then
     export PATH="$candidate:$PATH"
   fi
+}
+
+for candidate in \
+  /opt/homebrew/opt/zig/bin \
+  /opt/homebrew/opt/zig@0.15/bin \
+  /opt/homebrew/opt/xz/bin \
+  /usr/local/opt/zig/bin \
+  /usr/local/opt/zig@0.15/bin
+do
+  prepend_path "$candidate"
 done
 
-ensure_burrito_zig() {
-  local current_version=""
+zig_smoke_test() {
+  local zig_bin="${1:-zig}"
+  local cache_root global_cache local_cache
 
-  if command -v zig >/dev/null 2>&1; then
-    current_version="$(zig version 2>/dev/null || true)"
-  fi
+  cache_root="$(mktemp -d "${TMPDIR:-/tmp}/foundry-burrito-zig.XXXXXX")"
+  global_cache="${cache_root}/global"
+  local_cache="${cache_root}/local"
 
-  if [[ "$current_version" == "$REQUIRED_ZIG_VERSION" ]]; then
+  mkdir -p "$global_cache" "$local_cache"
+
+  if env \
+    ZIG_GLOBAL_CACHE_DIR="$global_cache" \
+    ZIG_LOCAL_CACHE_DIR="$local_cache" \
+    "$zig_bin" libc >/dev/null 2>&1; then
+    rm -rf "$cache_root"
     return 0
   fi
 
-  local platform archive host_triple install_root archive_path download_url
+  rm -rf "$cache_root"
+  return 1
+}
+
+zig_version() {
+  local zig_bin="${1:-zig}"
+  "$zig_bin" version 2>/dev/null || true
+}
+
+zig_matches_required_version() {
+  local zig_bin="${1:-zig}"
+  [[ "$(zig_version "$zig_bin")" == "$REQUIRED_ZIG_VERSION" ]]
+}
+
+use_zig_binary() {
+  local zig_bin="$1"
+  local zig_dir
+
+  zig_dir="$(cd "$(dirname "$zig_bin")" && pwd)"
+  prepend_path "$zig_dir"
+}
+
+download_bundled_zig() {
+  local archive="$1"
+  local host_triple="$2"
+  local install_root archive_path download_url
+
+  install_root="${ROOT_DIR}/.foundry/tools/zig/${REQUIRED_ZIG_VERSION}/${host_triple}"
+  archive_path="${install_root}/${archive}"
+  download_url="https://ziglang.org/download/${REQUIRED_ZIG_VERSION}/${archive}"
+
+  if [[ ! -x "${install_root}/${archive%.tar.xz}/zig" ]]; then
+    mkdir -p "$install_root"
+
+    if [[ ! -f "$archive_path" ]]; then
+      curl -L "$download_url" -o "$archive_path"
+    fi
+
+    tar -xJf "$archive_path" -C "$install_root"
+  fi
+
+  printf '%s\n' "${install_root}/${archive%.tar.xz}/zig"
+}
+
+ensure_burrito_zig_on_darwin() {
+  local archive="$1"
+  local host_triple="$2"
+  local -a candidates=()
+  local zig_bin vendored_zig
+  local candidate_override
+
+  if zig_bin="$(command -v zig 2>/dev/null)"; then
+    candidates+=("$zig_bin")
+  fi
+
+  if [[ -n "${FOUNDRY_BURRITO_ZIG_CANDIDATES:-}" ]]; then
+    IFS=':' read -r -a candidate_override <<< "${FOUNDRY_BURRITO_ZIG_CANDIDATES}"
+  else
+    candidate_override=(
+      /opt/homebrew/opt/zig@0.15/bin/zig
+      /opt/homebrew/bin/zig
+      /usr/local/opt/zig@0.15/bin/zig
+      /usr/local/bin/zig
+    )
+  fi
+
+  for zig_bin in "${candidate_override[@]}"; do
+    [[ -x "$zig_bin" ]] || continue
+
+    if [[ " ${candidates[*]} " != *" ${zig_bin} "* ]]; then
+      candidates+=("$zig_bin")
+    fi
+  done
+
+  for zig_bin in "${candidates[@]}"; do
+    zig_matches_required_version "$zig_bin" || continue
+
+    if zig_smoke_test "$zig_bin"; then
+      use_zig_binary "$zig_bin"
+      return 0
+    fi
+  done
+
+  vendored_zig="$(download_bundled_zig "$archive" "$host_triple")"
+
+  if zig_smoke_test "$vendored_zig"; then
+    use_zig_binary "$vendored_zig"
+    return 0
+  fi
+
+  echo "The bundled Zig ${REQUIRED_ZIG_VERSION} is not compatible with the current macOS toolchain." >&2
+  echo "Burrito 1.5.0 requires Zig ${REQUIRED_ZIG_VERSION}; Zig 0.16.x is not supported for this build." >&2
+  echo "Install a patched Homebrew Zig ${REQUIRED_ZIG_VERSION} with \`brew install zig@0.15\` and rerun the release build." >&2
+  exit 1
+}
+
+ensure_burrito_zig() {
+  local current_version=""
   local uname_s uname_m
+  local archive host_triple
 
   uname_s="$(uname -s)"
   uname_m="$(uname -m)"
@@ -49,39 +166,44 @@ ensure_burrito_zig() {
       ;;
   esac
 
-  install_root="${ROOT_DIR}/.foundry/tools/zig/${REQUIRED_ZIG_VERSION}/${host_triple}"
-  archive_path="${install_root}/${archive}"
-  download_url="https://ziglang.org/download/${REQUIRED_ZIG_VERSION}/${archive}"
-
-  if [[ ! -x "${install_root}/${archive%.tar.xz}/zig" ]]; then
-    mkdir -p "$install_root"
-
-    if [[ ! -f "$archive_path" ]]; then
-      curl -L "$download_url" -o "$archive_path"
-    fi
-
-    tar -xJf "$archive_path" -C "$install_root"
+  if [[ "$uname_s" == "Darwin" ]]; then
+    ensure_burrito_zig_on_darwin "$archive" "$host_triple"
+    return 0
   fi
 
-  export PATH="${install_root}/${archive%.tar.xz}:$PATH"
+  if command -v zig >/dev/null 2>&1; then
+    current_version="$(zig version 2>/dev/null || true)"
+  fi
+
+  if [[ "$current_version" == "$REQUIRED_ZIG_VERSION" ]]; then
+    return 0
+  fi
+
+  use_zig_binary "$(download_bundled_zig "$archive" "$host_triple")"
 }
 
-ensure_burrito_zig
+main() {
+  ensure_burrito_zig
 
-if [[ "$(uname -s)" == "Darwin" ]] && command -v xcrun >/dev/null 2>&1; then
-  export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
-fi
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v xcrun >/dev/null 2>&1; then
+    export SDKROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path)}"
+  fi
 
-export MIX_ENV=prod
-export PHX_SERVER=true
-export FOUNDRY_STANDALONE=1
+  export MIX_ENV=prod
+  export PHX_SERVER=true
+  export FOUNDRY_STANDALONE=1
 
-mix deps.get
-mix compile
-mix cmd --app foundry_web mix assets.deploy
+  mix deps.get
+  mix compile
+  mix cmd --app foundry_web mix assets.deploy
 
-if [[ -n "$TARGET" ]]; then
-  BURRITO_TARGET="$TARGET" mix release --overwrite foundry
-else
-  mix release --overwrite foundry
+  if [[ -n "$TARGET" ]]; then
+    BURRITO_TARGET="$TARGET" mix release --overwrite foundry
+  else
+    mix release --overwrite foundry
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
 fi

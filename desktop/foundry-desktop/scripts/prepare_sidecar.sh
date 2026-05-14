@@ -56,6 +56,16 @@ verify_standalone_sidecar() {
   fi
 }
 
+reuse_existing_sidecar_if_available() {
+  if [[ ! -f "${SIDECAR_DEST}" ]]; then
+    return 1
+  fi
+
+  verify_standalone_sidecar "${SIDECAR_DEST}"
+  echo "Reusing existing standalone sidecar at ${SIDECAR_DEST}"
+  return 0
+}
+
 create_mix_wrapper() {
   local mix_bin
   mix_bin="$(command -v mix || true)"
@@ -79,11 +89,29 @@ EOF
 }
 
 copy_burrito_sidecar() {
-  local sidecar_source
+  local sidecar_source=""
+  local candidate
+  local expected_candidates=(
+    "${BURRITO_OUT_DIR}/foundry_${BURRITO_TARGET}"
+    "${BURRITO_OUT_DIR}/foundry-${BURRITO_TARGET}"
+    "${BURRITO_OUT_DIR}/foundry"
+  )
 
-  sidecar_source="$(
-    find "${BURRITO_OUT_DIR}" -maxdepth 1 -type f -perm -111 | sort | tail -n 1
-  )"
+  for candidate in "${expected_candidates[@]}"; do
+    if [[ -f "${candidate}" && -x "${candidate}" ]]; then
+      sidecar_source="${candidate}"
+      break
+    fi
+  done
+
+  if [[ -z "${sidecar_source}" ]]; then
+    while IFS= read -r candidate; do
+      if [[ -f "${candidate}" && -x "${candidate}" ]]; then
+        sidecar_source="${candidate}"
+        break
+      fi
+    done < <(find "${BURRITO_OUT_DIR}" -maxdepth 1 -type f | sort)
+  fi
 
   if [[ -z "${sidecar_source}" ]]; then
     echo "No Burrito executable was produced in ${BURRITO_OUT_DIR}" >&2
@@ -95,6 +123,10 @@ copy_burrito_sidecar() {
   verify_standalone_sidecar "${SIDECAR_DEST}"
   echo "Prepared Burrito sidecar at ${SIDECAR_DEST}"
 }
+
+if [[ "${FOUNDRY_DESKTOP_FORCE_REBUILD:-0}" != "1" ]] && reuse_existing_sidecar_if_available; then
+  exit 0
+fi
 
 if [[ "${FOUNDRY_DESKTOP_FORCE_MIX_FALLBACK:-0}" == "1" ]]; then
   create_mix_wrapper

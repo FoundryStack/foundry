@@ -861,7 +861,7 @@ defmodule FoundryWeb.ChatComponents do
           </p>
         </div>
         <div
-          class="space-y-3 break-words text-sm leading-6"
+          class="space-y-3 break-words leading-6"
           data-role="chat-markdown"
           data-variant={@markdown_variant}
         >

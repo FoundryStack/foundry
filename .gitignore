@@ -18,10 +18,11 @@ erl_crash.dump
 
 .DS_Store
 .elixir_ls
+.foundry/tools/
 .hex-docs
 .hex-packages
 .specify
 .specstory
 .vscode
-.foundry/tools/
+.zig-global-cache
 package-lock.json
