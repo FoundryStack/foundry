@@ -23,8 +23,8 @@ defmodule Foundry.Chat.FileSessionStore do
               |> Enum.filter(&String.ends_with?(&1, ".json"))
               |> Enum.flat_map(&load_file(store_root, &1))
               |> Enum.filter(fn session ->
-                session["workspace_id"] == workspace_id and
-                  session["project_fingerprint"] == project_fingerprint
+                project_matches?(session, project_fingerprint) and
+                  workspace_matches?(session, workspace_id)
               end)
               |> Enum.sort_by(& &1["updated_at"], :desc)
 
@@ -78,7 +78,9 @@ defmodule Foundry.Chat.FileSessionStore do
           "last_message_preview" => Map.get(attrs, :last_message_preview),
           "created_at" => now,
           "updated_at" => now,
-          "model" => Map.get(attrs, :model)
+          "model" => Map.get(attrs, :model),
+          "selected_model_id" => Map.get(attrs, :selected_model_id),
+          "selected_provider" => Map.get(attrs, :selected_provider)
         }
 
         write_session(store_root, session_id, session)
@@ -172,4 +174,14 @@ defmodule Foundry.Chat.FileSessionStore do
 
     Path.join([project_root, ".foundry", "local", "chat_sessions"])
   end
+
+  defp workspace_matches?(_session, nil), do: true
+  defp workspace_matches?(_session, ""), do: true
+  defp workspace_matches?(session, workspace_id), do: session["workspace_id"] == workspace_id
+
+  defp project_matches?(_session, nil), do: true
+  defp project_matches?(_session, ""), do: true
+
+  defp project_matches?(session, project_fingerprint),
+    do: session["project_fingerprint"] == project_fingerprint
 end
