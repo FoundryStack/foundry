@@ -56,6 +56,23 @@ defmodule Foundry.StudioLauncherTest do
     assert {:ok, 4311} = Studio.read_port_file()
   end
 
+  test "resolve_generic_server_port reuses an available port from the port file" do
+    assert :ok = Studio.write_port_file(4311)
+    assert {:ok, 4311} = Studio.resolve_generic_server_port()
+  end
+
+  test "resolve_generic_server_port skips an occupied port from the port file" do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}])
+    {:ok, port} = :inet.port(listener)
+
+    on_exit(fn -> :gen_tcp.close(listener) end)
+
+    assert :ok = Studio.write_port_file(port)
+    assert {:ok, next_port} = Studio.resolve_generic_server_port()
+    assert next_port != port
+    assert next_port >= 4000
+  end
+
   test "ignores invalid port file contents" do
     File.write!(Studio.port_file_path(), "not-a-port\n")
     assert {:error, :invalid_port} = Studio.read_port_file()
