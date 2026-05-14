@@ -1,4 +1,4 @@
-# iGaming Reference Project Docs
+# iGaming Fintech Foundry Example
 
 This file is a non-authoritative convenience note. Foundry does not load it as part
 of the governed spec-kit context.
