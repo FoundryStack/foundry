@@ -30,7 +30,7 @@ config :foundry_web,
 
 # Configures the endpoint
 config :foundry_web, FoundryWeb.Endpoint,
-  url: [host: "localhost"],
+  url: [host: "127.0.0.1", port: 4000],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
     formats: [html: FoundryWeb.ErrorHTML, json: FoundryWeb.ErrorJSON],
