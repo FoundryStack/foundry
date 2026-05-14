@@ -60,6 +60,7 @@ defmodule FoundryWeb.Router do
     get "/project-recent", PageController, :recent_projects
     get "/preview-launch", PageController, :preview_launch
     get "/preview-status", PageController, :preview_status
+    get "/studio", PageController, :redirect_to_home
   end
 
   # MCP server — exposes Foundry.Context tools to external agents
