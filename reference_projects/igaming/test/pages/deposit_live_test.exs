@@ -2,9 +2,12 @@ defmodule IgamingRef.Web.DepositLiveTest do
   use IgamingRef.ConnCase, async: false
   use IgamingRef.DataCase
 
+  require Ash.Query
+
   import Phoenix.LiveViewTest
   import Foundry.TestScenario
 
+  alias IgamingRef.Finance.LedgerEntry
   alias IgamingRef.PageFixtures
 
   describe "deposit page" do
@@ -31,14 +34,27 @@ defmodule IgamingRef.Web.DepositLiveTest do
         {:ok, view, _html} = live(build_conn_with_trace(%{"player_id" => player.id}), "/deposit")
 
         html = render_submit(view, "submit_deposit", %{"amount" => "100.00"})
+        retry_html = render_submit(view, "submit_deposit", %{"amount" => "100.00"})
 
         # Verify UI updated: balance re-rendered in the template (proof state changed)
         assert html =~ "£200.00"
+        assert retry_html =~ "£200.00"
 
         # Verify server-side state: transfer created
         transfer = PageFixtures.transfer_for_wallet(wallet.id)
         assert transfer.reason == "deposit"
         assert transfer.amount == Money.new(:GBP, "100.00")
+        assert transfer.reference_id
+
+        {:ok, [ledger_entry]} =
+          LedgerEntry
+          |> Ash.Query.filter(wallet_id: wallet.id, reference_id: transfer.reference_id)
+          |> Ash.read(actor: %{is_system: true})
+
+        assert ledger_entry.kind == :deposit
+        assert ledger_entry.direction == :credit
+        assert ledger_entry.amount == Money.new(:GBP, "100.00")
+        assert ledger_entry.idempotency_key == "deposit:#{transfer.reference_id}"
 
         # Verify server-side state: wallet balance updated in database
         updated_wallet = Ash.get!(IgamingRef.Finance.Wallet, wallet.id, actor: %{is_system: true})

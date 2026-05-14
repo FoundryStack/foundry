@@ -106,6 +106,48 @@ defmodule IgamingRef.Finance.WithdrawalTransferIntegrationTest do
         assert reloaded_request.provider_reference == processed_request.provider_reference
       end)
     end
+
+    test "sums withdrawal totals in the wallet currency", context do
+      capture(context, fn ->
+        {:ok, player} =
+          Ash.create(
+            Player,
+            %{
+              email: unique_email(),
+              username: unique_username(),
+              date_of_birth: ~D[1990-01-01],
+              country_code: "GB"
+            },
+            action: :register
+          )
+
+        {:ok, wallet} =
+          Ash.create(
+            Wallet,
+            %{player_id: player.id, currency: "EUR"},
+            action: :create,
+            actor: %{is_system: true}
+          )
+
+        {:ok, ledger_entry} =
+          Ash.create(
+            LedgerEntry,
+            %{
+              wallet_id: wallet.id,
+              amount: Money.new(250_00, :EUR),
+              direction: :debit,
+              kind: :withdrawal,
+              idempotency_key: "withdrawal-total-#{wallet.id}",
+              reference_id: "withdrawal-total-#{wallet.id}"
+            },
+            action: :record,
+            actor: %{is_system: true}
+          )
+
+        assert ledger_entry.amount == Money.new(250_00, :EUR)
+        assert WithdrawalTransfer.fetch_daily_withdrawal_total(wallet) == Money.new(250_00, :EUR)
+      end)
+    end
   end
 
   defp unique_email do

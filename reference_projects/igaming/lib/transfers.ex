@@ -88,7 +88,7 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
       req = Map.fetch!(inputs, :request)
       %{wallet: wallet, player: player} = Map.fetch!(inputs, :context)
 
-      daily_used = fetch_daily_withdrawal_total(player.id)
+      daily_used = fetch_daily_withdrawal_total(wallet)
 
       rule_context = %{
         wallet: wallet,
@@ -190,28 +190,21 @@ defmodule IgamingRef.Finance.WithdrawalTransfer do
   # Private helpers
   # ---------------------------------------------------------------------------
 
-  defp fetch_daily_withdrawal_total(player_id) do
+  def fetch_daily_withdrawal_total(wallet) do
     since = DateTime.add(DateTime.utc_now(), -86_400, :second)
 
-    # Sum completed withdrawal amounts in the last 24 hours
-    # Full implementation queries LedgerEntry - stubbed for reference project
+    # Sum completed withdrawal amounts in the last 24 hours in the wallet's currency.
     case LedgerEntry
          |> Ash.Query.filter(
-           wallet_id in ^player_wallet_ids(player_id) and kind == :withdrawal and
-             direction == :debit and inserted_at >= ^since
+           wallet_id == ^wallet.id and kind == :withdrawal and direction == :debit and
+             inserted_at >= ^since
          )
          |> Ash.read(actor: %{is_system: true}) do
-      {:ok, entries} -> Enum.reduce(entries, Money.new(0, :GBP), &Money.add!(&2, &1.amount))
-      _ -> Money.new(0, :GBP)
-    end
-  end
+      {:ok, entries} ->
+        Enum.reduce(entries, Money.new(0, wallet.balance.currency), &Money.add!(&2, &1.amount))
 
-  defp player_wallet_ids(player_id) do
-    case Wallet
-         |> Ash.Query.filter(player_id: player_id)
-         |> Ash.read(actor: %{is_system: true}) do
-      {:ok, wallets} -> Enum.map(wallets, & &1.id)
-      _ -> []
+      _ ->
+        Money.new(0, wallet.balance.currency)
     end
   end
 

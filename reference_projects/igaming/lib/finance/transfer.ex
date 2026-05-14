@@ -62,6 +62,15 @@ defmodule IgamingRef.Finance.Transfer do
       constraints(max_length: 255)
     end
 
+    attribute :reference_id, :string do
+      description(
+        "Stable external or workflow reference used to make a transfer idempotent across retries."
+      )
+
+      allow_nil?(true)
+      constraints(max_length: 255)
+    end
+
     timestamps()
   end
 
@@ -70,7 +79,7 @@ defmodule IgamingRef.Finance.Transfer do
 
     create :record do
       description("Record a new transfer between wallets.")
-      accept([:from_wallet_id, :to_wallet_id, :amount, :reason])
+      accept([:from_wallet_id, :to_wallet_id, :amount, :reason, :reference_id])
     end
 
     update :mark_completed do
@@ -93,6 +102,17 @@ defmodule IgamingRef.Finance.Transfer do
     policy action(:record) do
       description("Internal system actor may record transfers.")
       authorize_if(always())
+    end
+
+    policy action_type(:update) do
+      description("Internal system actor may manage transfer lifecycle states.")
+      authorize_if(IgamingRef.Policies.InternalSystemActor)
+    end
+  end
+
+  identities do
+    identity :unique_reference_id, [:reference_id] do
+      description("Prevents duplicate transfer records for the same deposit workflow reference.")
     end
   end
 end

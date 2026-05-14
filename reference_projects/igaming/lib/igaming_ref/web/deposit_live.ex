@@ -4,8 +4,9 @@ defmodule IgamingRef.Web.DepositLive do
   require Ash.Query
   require Logger
 
+  alias IgamingRef.Finance.DepositTransfer
+  alias IgamingRef.Finance.Wallet
   alias IgamingRef.Web.PreviewSupport
-  alias IgamingRef.Finance.LedgerEntry
 
   @page_group :player
 
@@ -34,7 +35,13 @@ defmodule IgamingRef.Web.DepositLive do
         )
       end
 
-    {:ok, assign(socket, wallet: wallet, player_id: player_id, preview?: preview?)}
+    {:ok,
+     assign(socket,
+       wallet: wallet,
+       player_id: player_id,
+       preview?: preview?,
+       deposit_intent_id: Ash.UUID.generate()
+     )}
   end
 
   @impl true
@@ -44,11 +51,21 @@ defmodule IgamingRef.Web.DepositLive do
     case parse_amount(socket.assigns.wallet, amount) do
       {:ok, parsed_amount} ->
         if socket.assigns.preview? do
-          Logger.info("DepositLive: preview mode - simulating deposit of #{inspect(parsed_amount)}")
+          Logger.info(
+            "DepositLive: preview mode - simulating deposit of #{inspect(parsed_amount)}"
+          )
+
           updated_wallet = update_wallet_balance(socket.assigns.wallet, parsed_amount)
           PreviewSupport.save_preview_wallet(updated_wallet.id, updated_wallet)
-          Logger.info("DepositLive: saved updated preview wallet with new balance = #{inspect(updated_wallet.balance)}")
-          {:noreply, socket |> assign(wallet: updated_wallet) |> put_flash(:info, "Deposit successful (preview)")}
+
+          Logger.info(
+            "DepositLive: saved updated preview wallet with new balance = #{inspect(updated_wallet.balance)}"
+          )
+
+          {:noreply,
+           socket
+           |> assign(wallet: updated_wallet)
+           |> put_flash(:info, "Deposit successful (preview)")}
         else
           handle_real_deposit(socket, parsed_amount)
         end
@@ -60,42 +77,43 @@ defmodule IgamingRef.Web.DepositLive do
   end
 
   defp handle_real_deposit(socket, parsed_amount) do
-    with {:ok, updated_wallet} <-
-           (Logger.info("DepositLive: crediting wallet #{socket.assigns.wallet.id} with #{inspect(parsed_amount)}")
-            socket.assigns.wallet
-            |> Ash.Changeset.for_update(:credit, %{amount: parsed_amount})
-            |> Ash.update(actor: %{is_system: true})),
-         {:ok, _transfer} <-
-           (Logger.info("DepositLive: creating transfer record for #{inspect(parsed_amount)}")
-            IgamingRef.Finance.Transfer
-            |> Ash.Changeset.for_create(:record, %{
-                to_wallet_id: socket.assigns.wallet.id,
-                amount: parsed_amount,
-                reason: "deposit"
-              })
-            |> Ash.create(actor: %{is_system: true})),
-         {:ok, _ledger} <-
-           (Logger.info("DepositLive: creating ledger entry for #{inspect(parsed_amount)}")
-            LedgerEntry
-            |> Ash.Changeset.for_create(:record, %{
-                wallet_id: socket.assigns.wallet.id,
-                amount: parsed_amount,
-                direction: :credit,
-                kind: :deposit,
-                idempotency_key: "deposit:#{socket.assigns.wallet.id}:#{System.unique_integer()}",
-                reference_id: socket.assigns.wallet.id
-              })
-            |> Ash.create(actor: %{is_system: true})) do
-      Logger.info("DepositLive: deposit successful, new balance = #{inspect(updated_wallet.balance)}")
-      {:noreply, socket |> assign(wallet: updated_wallet) |> put_flash(:info, "Deposit successful")}
-    else
+    case Reactor.run(
+           DepositTransfer,
+           %{
+             wallet_id: socket.assigns.wallet.id,
+             amount: parsed_amount,
+             deposit_intent_id: socket.assigns.deposit_intent_id
+           },
+           %{},
+           async?: false
+         ) do
+      {:ok, _result} ->
+        case Ash.get(Wallet, socket.assigns.wallet.id, actor: %{is_system: true}) do
+          {:ok, updated_wallet} ->
+            Logger.info(
+              "DepositLive: deposit successful, new balance = #{inspect(updated_wallet.balance)}"
+            )
+
+            {:noreply,
+             socket
+             |> assign(wallet: updated_wallet)
+             |> put_flash(:info, "Deposit successful")}
+
+          {:error, error} ->
+            Logger.warning(
+              "DepositLive: deposit succeeded but wallet reload failed - #{inspect(error)}"
+            )
+
+            {:noreply, socket |> put_flash(:error, "Deposit failed")}
+        end
+
       {:error, %Ash.Error.Invalid{} = error} ->
         message = error.errors |> Enum.map(& &1.message) |> Enum.join(", ")
         Logger.warning("DepositLive: deposit failed - Ash error: #{message}")
         {:noreply, socket |> put_flash(:error, message)}
 
-      {:error, e} ->
-        Logger.warning("DepositLive: deposit failed - #{inspect(e)}")
+      {:error, error} ->
+        Logger.warning("DepositLive: deposit failed - #{inspect(error)}")
         {:noreply, socket |> put_flash(:error, "Deposit failed")}
     end
   end
@@ -128,7 +146,10 @@ defmodule IgamingRef.Web.DepositLive do
     result =
       case Money.new(amount, atom_currency) do
         {:ok, money} ->
-          Logger.debug("DepositLive.parse_amount: successfully parsed #{amount} as #{inspect(money)}")
+          Logger.debug(
+            "DepositLive.parse_amount: successfully parsed #{amount} as #{inspect(money)}"
+          )
+
           {:ok, money}
 
         {:error, _} ->
