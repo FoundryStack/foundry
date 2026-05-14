@@ -234,12 +234,7 @@ defmodule Foundry.ProjectManager do
   end
 
   defp configure_runtime(project_root) do
-    endpoint_port =
-      Application.get_env(:foundry_web, FoundryWeb.Endpoint, [])
-      |> Keyword.get(:http, [])
-      |> Keyword.get(:port, 4000)
-
-    Foundry.Studio.configure_runtime(project_root, endpoint_port)
+    Foundry.Studio.configure_runtime(project_root)
   end
 
   defp run_command(server, action_ref, executable, args, cd) do

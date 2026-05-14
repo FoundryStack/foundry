@@ -35,24 +35,24 @@ verify_standalone_sidecar() {
 
   if [[ ! -f "${sidecar_path}" ]]; then
     echo "Expected standalone sidecar at ${sidecar_path}, but the file does not exist." >&2
-    exit 1
+    return 1
   fi
 
   sidecar_type="$(file -b "${sidecar_path}")"
 
   if [[ "${sidecar_type}" == *"shell script"* || "${sidecar_type}" == *"text executable"* ]]; then
     echo "Prepared sidecar is not standalone: ${sidecar_type}" >&2
-    exit 1
+    return 1
   fi
 
-  if grep -q "mix foundry.studio" "${sidecar_path}" 2>/dev/null; then
+  if grep -qa "mix foundry.studio" "${sidecar_path}" 2>/dev/null; then
     echo "Prepared sidecar still references mix foundry.studio and is not standalone." >&2
-    exit 1
+    return 1
   fi
 
-  if grep -q "MIX_BUILD_PATH" "${sidecar_path}" 2>/dev/null; then
+  if grep -qa "MIX_BUILD_PATH" "${sidecar_path}" 2>/dev/null; then
     echo "Prepared sidecar still depends on MIX_BUILD_PATH and is not standalone." >&2
-    exit 1
+    return 1
   fi
 }
 
@@ -118,11 +118,18 @@ copy_burrito_sidecar() {
     exit 1
   fi
 
+  trap 'rm -f "${SIDECAR_DEST}"' ERR
   cp "${sidecar_source}" "${SIDECAR_DEST}"
   chmod +x "${SIDECAR_DEST}"
   verify_standalone_sidecar "${SIDECAR_DEST}"
+  trap - ERR
   echo "Prepared Burrito sidecar at ${SIDECAR_DEST}"
 }
+
+if [[ -z "${HOST_TRIPLE}" ]]; then
+  echo "Could not determine host triple: is rustc on PATH?" >&2
+  exit 1
+fi
 
 if [[ "${FOUNDRY_DESKTOP_FORCE_REBUILD:-0}" != "1" ]] && reuse_existing_sidecar_if_available; then
   exit 0
@@ -132,7 +139,7 @@ if [[ "${FOUNDRY_DESKTOP_FORCE_MIX_FALLBACK:-0}" == "1" ]]; then
   create_mix_wrapper
 else
   if [[ "${FOUNDRY_DESKTOP_SKIP_BURRITO_BUILD:-0}" != "1" ]]; then
-    ./scripts/release/build_burrito.sh "${BURRITO_TARGET}"
+    "${REPO_ROOT}/scripts/release/build_burrito.sh" "${BURRITO_TARGET}"
   fi
 
   copy_burrito_sidecar

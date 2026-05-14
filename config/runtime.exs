@@ -13,11 +13,6 @@ phoenix_server_command? = Foundry.Studio.mix_task_invoked?("phx.server")
 # CRITICAL: Check if FOUNDRY_STANDALONE is set - this is set by Tauri's launcher.rs
 standalone_mode? = System.get_env("FOUNDRY_STANDALONE", "0") == "1" or standalone_command?
 
-# Debug log to verify env var is being read
-if System.get_env("FOUNDRY_STANDALONE") != nil do
-  IO.warn("FOUNDRY_STANDALONE is set to: #{System.get_env("FOUNDRY_STANDALONE")}")
-end
-
 server_enabled? =
   System.get_env("PHX_SERVER") in ["true", "1"] or standalone_mode? or phoenix_server_command?
 
@@ -68,15 +63,6 @@ endpoint_config = [
   force_ssl: false
 ]
 
-IO.warn("=" <> String.duplicate("=", 78))
-IO.warn("ENDPOINT CONFIG (runtime.exs)")
-IO.warn("  standalone_mode?: #{standalone_mode?}")
-IO.warn("  server_enabled?: #{server_enabled?}")
-IO.warn("  runtime_port: #{runtime_port}")
-IO.warn("  check_origin: explicit list (#{length(check_origin_list)} origins)")
-IO.warn("  url: [host: \"127.0.0.1\", port: #{runtime_port}]")
-IO.warn("=" <> String.duplicate("=", 78))
-
 config :foundry_web, FoundryWeb.Endpoint, endpoint_config
 
 if config_env() == :prod do
@@ -98,66 +84,6 @@ if config_env() == :prod do
 
   config :foundry_web, FoundryWeb.Endpoint,
     secret_key_base: secret_key_base
-
-  # ## Using releases
-  #
-  # If you are doing OTP releases, you need to instruct Phoenix
-  # to start each relevant endpoint:
-  #
-  #     config :foundry_web, FoundryWeb.Endpoint, server: true
-  #
-  # Then you can assemble a release by calling `mix release`.
-  # See `mix help release` for more information.
-
-  # ## SSL Support
-  #
-  # To get SSL working, you will need to add the `https` key
-  # to your endpoint configuration:
-  #
-  #     config :foundry_web, FoundryWeb.Endpoint,
-  #       https: [
-  #         ...,
-  #         port: 443,
-  #         cipher_suite: :strong,
-  #         keyfile: System.get_env("SOME_APP_SSL_KEY_PATH"),
-  #         certfile: System.get_env("SOME_APP_SSL_CERT_PATH")
-  #       ]
-  #
-  # The `cipher_suite` is set to `:strong` to support only the
-  # latest and more secure SSL ciphers. This means old browsers
-  # and clients may not be supported. You can set it to
-  # `:compatible` for wider support.
-  #
-  # `:keyfile` and `:certfile` expect an absolute path to the key
-  # and cert in disk or a relative path inside priv, for example
-  # "priv/ssl/server.key". For all supported SSL configuration
-  # options, see https://hexdocs.pm/plug/Plug.SSL.html#configure/1
-  #
-  # We also recommend setting `force_ssl` in your config/prod.exs,
-  # ensuring no data is ever sent via http, always redirecting to https:
-  #
-  #     config :foundry_web, FoundryWeb.Endpoint,
-  #       force_ssl: [hsts: true]
-  #
-  # Check `Plug.SSL` for all available options in `force_ssl`.
-
-  # ## Configuring the mailer
-  #
-  # In production you need to configure the mailer to use a different adapter.
-  # Here is an example configuration for Mailgun:
-  #
-  #     config :foundry, Foundry.Mailer,
-  #       adapter: Swoosh.Adapters.Mailgun,
-  #       api_key: System.get_env("MAILGUN_API_KEY"),
-  #       domain: System.get_env("MAILGUN_DOMAIN")
-  #
-  # Most non-SMTP adapters require an API client. Swoosh supports Req, Hackney,
-  # and Finch out-of-the-box. This configuration is typically done at
-  # compile-time in your config/prod.exs:
-  #
-  #     config :swoosh, :api_client, Swoosh.ApiClient.Req
-  #
-  # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
 
   config :foundry, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 end

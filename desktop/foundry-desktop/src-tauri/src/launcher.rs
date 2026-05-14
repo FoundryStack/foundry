@@ -19,6 +19,13 @@ use url::form_urlencoded;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(180);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const STATUS_UPDATE_INTERVAL: Duration = Duration::from_secs(5);
+const HEALTH_CHECK_IO_TIMEOUT: Duration = Duration::from_millis(750);
+const EXTRA_PATH_ENTRIES: &[&str] = &[
+    "/opt/homebrew/bin",
+    "/opt/homebrew/opt/elixir/bin",
+    "/opt/homebrew/opt/erlang/bin",
+    "/usr/local/bin",
+];
 const SIDECAR_NAME: &str = "foundry-sidecar";
 const STATUS_EVENT: &str = "foundry://launch-status";
 const ERROR_EVENT: &str = "foundry://launch-error";
@@ -135,13 +142,7 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
 
     // Add common Elixir/mix paths to PATH for development environments
     if let Ok(current_path) = env::var("PATH") {
-        let paths = vec![
-            "/opt/homebrew/bin",
-            "/opt/homebrew/opt/elixir/bin",
-            "/opt/homebrew/opt/erlang/bin",
-            "/usr/local/bin",
-        ];
-        let mut new_path = paths.join(":");
+        let mut new_path = EXTRA_PATH_ENTRIES.join(":");
         new_path.push(':');
         new_path.push_str(&current_path);
         command = command.env("PATH", new_path);
@@ -163,7 +164,7 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
 
     store_sidecar(&app, child);
 
-    let reader_app = app.clone();
+    let sidecar_output_app = app.clone();
 
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
@@ -188,7 +189,7 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
                         "[foundry-sidecar:exit] code={:?} signal={:?}",
                         payload.code, payload.signal
                     );
-                    clear_sidecar(&reader_app);
+                    clear_sidecar(&sidecar_output_app);
                 }
                 _ => {}
             }
@@ -225,8 +226,10 @@ fn wait_for_health(app: &AppHandle) -> Result<String, String> {
     loop {
         if started_at.elapsed() > HEALTH_TIMEOUT {
             return Err(
-                "Foundry sidecar did not become healthy within 180 seconds. It may still be compiling; check sidecar logs for compile errors."
-                    .to_string(),
+                format!(
+                    "Foundry sidecar did not become healthy within {} seconds. It may still be compiling; check sidecar logs for compile errors.",
+                    HEALTH_TIMEOUT.as_secs()
+                )
             );
         }
 
@@ -246,7 +249,7 @@ fn wait_for_health(app: &AppHandle) -> Result<String, String> {
             emit_status(
                 app,
                 STATUS_EVENT,
-                format!("Foundry is starting and compiling..."),
+                "Foundry is starting and compiling...",
             );
         }
 
@@ -288,8 +291,8 @@ fn health_check(base_url: &str) -> bool {
         return false;
     };
 
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(750)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(750)));
+    let _ = stream.set_read_timeout(Some(HEALTH_CHECK_IO_TIMEOUT));
+    let _ = stream.set_write_timeout(Some(HEALTH_CHECK_IO_TIMEOUT));
 
     let request = format!("GET /healthz HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
 
@@ -495,20 +498,20 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 fn store_sidecar<R: Runtime>(app: &AppHandle<R>, child: CommandChild) {
     let state = app.state::<FoundrySidecarState>();
-    let mut lock = state.child.lock().unwrap();
+    let mut lock = state.child.lock().expect("sidecar state lock poisoned");
     *lock = Some(child);
 }
 
 fn clear_sidecar<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<FoundrySidecarState>();
-    let mut lock = state.child.lock().unwrap();
-    let _ = lock.take();
+    let mut lock = state.child.lock().expect("sidecar state lock poisoned");
+    lock.take();
 }
 
 fn shutdown_sidecar<R: Runtime>(app: &AppHandle<R>) {
     let state = app.state::<FoundrySidecarState>();
     let child = {
-        let mut lock = state.child.lock().unwrap();
+        let mut lock = state.child.lock().expect("sidecar state lock poisoned");
         lock.take()
     };
 

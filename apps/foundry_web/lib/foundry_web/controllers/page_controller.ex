@@ -2,22 +2,6 @@ defmodule FoundryWeb.PageController do
   use FoundryWeb, :controller
   alias Foundry.ProjectManager
 
-  def home(conn, _params) do
-    cond do
-      ProjectManager.active_project_root() ->
-        redirect(conn, to: ~p"/")
-
-      auto_reopen?(conn) ->
-        case ProjectManager.reopen_last_project() do
-          :ok -> render(conn, :project_launch, target_url: ~p"/")
-          {:error, _reason} -> render_manager(conn)
-        end
-
-      true ->
-        render_manager(conn)
-    end
-  end
-
   def preview_launch(conn, params) do
     case Foundry.PreviewServer.get_status() do
       {:ok, %{state: state}} when state not in [:starting, :running] ->
@@ -41,11 +25,8 @@ defmodule FoundryWeb.PageController do
   end
 
   def project_launch(conn, params) do
-    case maybe_start_project_action(params) do
-      :ok -> render(conn, :project_launch, target_url: ~p"/")
-      {:error, :busy} -> render(conn, :project_launch, target_url: ~p"/")
-      {:error, _reason} -> render(conn, :project_launch, target_url: ~p"/")
-    end
+    maybe_start_project_action(params)
+    render(conn, :project_launch, target_url: ~p"/")
   end
 
   def project_status(conn, _params) do
@@ -55,7 +36,7 @@ defmodule FoundryWeb.PageController do
   def healthz(conn, _params) do
     json(conn, %{
       ok: true,
-      mode: (System.get_env("FOUNDRY_STANDALONE", "0") == "1" && "standalone") || "local",
+      mode: if(System.get_env("FOUNDRY_STANDALONE", "0") == "1", do: "standalone", else: "local"),
       version: to_string(Application.spec(:foundry, :vsn) || "0.0.0")
     })
   end
@@ -116,13 +97,6 @@ defmodule FoundryWeb.PageController do
   defp normalize_route(route) when is_binary(route), do: "/" <> route
   defp normalize_route(_route), do: "/"
 
-  defp render_manager(conn) do
-    render(conn, :project_manager,
-      recent_projects: ProjectManager.recent_projects(),
-      can_open_local_dir: local_runtime?(conn)
-    )
-  end
-
   defp maybe_start_project_action(%{"repo_url" => repo_url, "parent_dir" => parent_dir})
        when repo_url != "" and parent_dir != "" do
     ProjectManager.clone_project(repo_url, parent_dir)
@@ -133,12 +107,4 @@ defmodule FoundryWeb.PageController do
   end
 
   defp maybe_start_project_action(_params), do: :ok
-
-  defp auto_reopen?(conn) do
-    local_runtime?(conn) and get_req_header(conn, "x-foundry-no-auto-open") == []
-  end
-
-  defp local_runtime?(conn) do
-    conn.host in ["127.0.0.1", "localhost"]
-  end
 end
