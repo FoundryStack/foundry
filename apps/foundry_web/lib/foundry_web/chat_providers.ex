@@ -15,11 +15,11 @@ defmodule FoundryWeb.ChatProviders do
   end
 
   defp dispatch_by_provider(messages, on_event, run_context) do
-    case ChatConfig.llm_provider() do
+    case provider_from_run_context(run_context) do
       :claude_code -> call_claude_code(messages, on_event, run_context)
       :codex -> call_codex(messages, on_event, run_context)
       :lm_studio -> call_lm_studio(messages, on_event, run_context)
-      _ -> {:error, {:unknown_provider, ChatConfig.llm_provider()}}
+      _ -> {:error, {:unknown_provider, provider_from_run_context(run_context)}}
     end
   end
 
@@ -34,7 +34,9 @@ defmodule FoundryWeb.ChatProviders do
     opts = [
       system_prompt: run_context.system_prompt,
       timeout_ms: Keyword.get(ChatConfig.claude_code_config(), :timeout_ms, 120_000),
-      model: Keyword.get(ChatConfig.claude_code_config(), :model),
+      model:
+        model_from_run_context(run_context) ||
+          Keyword.get(ChatConfig.claude_code_config(), :model),
       project_root: ChatConfig.project_root()
     ]
 
@@ -52,7 +54,7 @@ defmodule FoundryWeb.ChatProviders do
     opts = [
       system_prompt: run_context.system_prompt,
       timeout_ms: Keyword.get(config, :timeout_ms, 120_000),
-      model: Keyword.get(config, :model),
+      model: model_from_run_context(run_context) || Keyword.get(config, :model),
       profile: Keyword.get(config, :profile),
       sandbox: Keyword.get(config, :sandbox, "workspace-write"),
       executable: Keyword.get(config, :executable, "codex"),
@@ -74,8 +76,10 @@ defmodule FoundryWeb.ChatProviders do
 
     opts = [
       system_prompt: run_context.system_prompt,
-      endpoint: Keyword.get(config, :endpoint, "http://localhost:1234"),
-      model: Keyword.get(config, :model, ChatConfig.lm_studio_model()),
+      base_url: Keyword.get(config, :base_url, "http://localhost:1234/v1"),
+      model:
+        model_from_run_context(run_context) ||
+          Keyword.get(config, :model, ChatConfig.lm_studio_model()),
       timeout_ms: Keyword.get(config, :timeout_ms, 120_000)
     ]
 
@@ -86,4 +90,10 @@ defmodule FoundryWeb.ChatProviders do
   rescue
     _ -> {:error, {:lm_studio_error, "LM Studio not available"}}
   end
+
+  defp provider_from_run_context(%{selected_model: %{provider: provider}}), do: provider
+  defp provider_from_run_context(_run_context), do: ChatConfig.llm_provider()
+
+  defp model_from_run_context(%{selected_model: %{model_id: model_id}}), do: model_id
+  defp model_from_run_context(_run_context), do: nil
 end

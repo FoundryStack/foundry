@@ -14,7 +14,8 @@ defmodule FoundryWeb.ChatComponents do
   attr :show_system_context, :boolean, required: true
   attr :system_context_prompt, :string, default: nil
   attr :system_context_error, :string, default: nil
-  attr :llm_provider, :any, default: nil
+  attr :selected_model, :map, default: nil
+  attr :model_catalog, :list, default: []
   attr :llm_diagnostics, :map, default: %{}
   attr :chat_view, :atom, default: :conversation
   attr :activity_runs, :list, default: []
@@ -46,10 +47,10 @@ defmodule FoundryWeb.ChatComponents do
       id="studio-chat-panel"
       phx-hook="StudioChat"
       data-project-root={@project_root}
-      class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-base-200/30"
+      class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#171717]"
     >
       <%= if @open_session_ids != [] do %>
-        <div class="flex min-h-0 shrink-0 items-center gap-0 overflow-x-auto border-b border-base-300/80 bg-base-200/50 px-1">
+        <div class="flex min-h-0 shrink-0 items-center gap-1 overflow-x-auto border-b border-white/10 bg-[#111111] px-2 py-1">
           <%= for id <- @open_session_ids do %>
             <% session = Map.get(@sessions_by_id, id, %{})
             title = session["title"] || "Session"
@@ -57,8 +58,8 @@ defmodule FoundryWeb.ChatComponents do
             <div class={[
               "group flex min-w-0 max-w-[160px] shrink-0 items-center gap-1 rounded-t px-2 py-1.5 text-[11px] transition-colors",
               if(is_active,
-                do: "bg-base-100 text-base-content",
-                else: "text-neutral-content hover:bg-base-100/50 hover:text-base-content"
+                do: "border border-white/10 border-b-0 bg-[#1d1d1d] text-white",
+                else: "text-neutral-content hover:bg-white/5 hover:text-white"
               )
             ]}>
               <button
@@ -79,7 +80,7 @@ defmodule FoundryWeb.ChatComponents do
             </div>
           <% end %>
           <button
-            class="ml-1 shrink-0 rounded px-2 py-1 text-[11px] text-neutral-content transition-colors hover:bg-base-100/50 hover:text-base-content"
+            class="ml-1 shrink-0 rounded px-2 py-1 text-[11px] text-neutral-content transition-colors hover:bg-white/5 hover:text-white"
             phx-click="chat_session_new"
             title="New session"
           >
@@ -87,7 +88,7 @@ defmodule FoundryWeb.ChatComponents do
           </button>
         </div>
       <% else %>
-        <div class="flex shrink-0 items-center justify-between border-b border-base-300/80 bg-base-200/50 px-3 py-1.5">
+        <div class="flex shrink-0 items-center justify-between border-b border-white/10 bg-[#111111] px-3 py-1.5">
           <span class="text-[11px] text-neutral-content">No open sessions</span>
           <button
             class="rounded px-2 py-1 text-[11px] text-neutral-content transition-colors hover:bg-base-100/50 hover:text-base-content"
@@ -97,7 +98,7 @@ defmodule FoundryWeb.ChatComponents do
           </button>
         </div>
       <% end %>
-      <div class="border-b border-base-300/80 px-4 py-2">
+      <div class="border-b border-white/10 px-4 py-3">
         <div class="flex items-start justify-between gap-3">
           <div class="space-y-1">
             <div class="flex flex-wrap items-center gap-2">
@@ -167,8 +168,8 @@ defmodule FoundryWeb.ChatComponents do
         </div>
       <% end %>
 
-      <div class="min-h-0 flex-1 px-4 pb-4">
-        <div class="flex h-full min-h-0 flex-col rounded-box border border-base-300/80 bg-base-100/70 shadow-[0_18px_60px_rgba(0,0,0,0.12)]">
+      <div class="min-h-0 flex-1 px-4 pb-4 pt-3">
+        <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/10 bg-[#1f1f1f] shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
           <div>
             <div class="flex items-center justify-between gap-3">
               <div class="inline-flex rounded-selector border border-base-300 bg-base-200/80 p-1">
@@ -201,7 +202,7 @@ defmodule FoundryWeb.ChatComponents do
               <button
                 type="button"
                 phx-click="toggle_system_context"
-                class="shrink-0 rounded-selector border border-base-300 bg-base-300/70 px-3 py-2 text-xs font-medium text-neutral-content transition-colors hover:border-primary/40 hover:bg-base-300 hover:text-base-content"
+                class="shrink-0 rounded-selector border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-neutral-content transition-colors hover:border-primary/40 hover:bg-white/10 hover:text-white"
               >
                 {if @show_system_context, do: "Hide context", else: "Show context"}
               </button>
@@ -280,11 +281,12 @@ defmodule FoundryWeb.ChatComponents do
             </div>
           <% end %>
 
+          <% grouped_catalog = family_groups(@model_catalog) %>
           <form
             id="studio-chat-form"
             phx-submit="send_message"
             phx-change="update_chat_input"
-            class="border-t border-base-300/80 px-4 py-4"
+            class="border-t border-white/10 bg-[#171717] px-4 py-4"
           >
             <div>
               <label
@@ -300,8 +302,7 @@ defmodule FoundryWeb.ChatComponents do
                 placeholder="Ask about the system, or request a change..."
                 data-role="chat-input"
                 phx-debounce="150"
-                class="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-base-content outline-none placeholder:text-neutral-content/50"
-                disabled={@loading}
+                class="w-full resize-none rounded-[14px] border border-white/10 bg-[#202020] px-3 py-3 text-sm leading-6 text-white outline-none placeholder:text-neutral-content/50"
               ><%= @input %></textarea>
               <% active_proposal_id = @session_digest["active_proposal_id"]
               active_proposal_status = @session_digest["active_proposal_status"]
@@ -346,23 +347,31 @@ defmodule FoundryWeb.ChatComponents do
               <div class="mt-3 flex items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
                   <select
-                    id="provider-select"
-                    name="provider"
-                    phx-change="set_llm_provider"
-                    disabled={@loading}
-                    class="rounded-selector border border-base-300 bg-base-300/70 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-base-content focus:outline-none focus:ring-2 focus:ring-primary"
+                    id="model-select"
+                    name="model"
+                    phx-change="set_chat_model"
+                    class="min-w-[220px] rounded-selector border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-medium text-white focus:outline-none focus:ring-2 focus:ring-primary"
                   >
-                    <option value="codex" selected={@llm_provider == :codex}>Codex (Local)</option>
-                    <option value="claude_code" selected={@llm_provider == :claude_code}>
-                      Claude Code (Local)
-                    </option>
-                    <option value="lm_studio" selected={@llm_provider == :lm_studio}>
-                      LM Studio
-                    </option>
-                    <option value="anthropic" selected={@llm_provider == :anthropic}>
-                      Anthropic (API)
-                    </option>
+                    <optgroup :for={{family_label, entries} <- grouped_catalog} label={family_label}>
+                      <option
+                        :for={entry <- entries}
+                        value={entry.id}
+                        selected={@selected_model && @selected_model.id == entry.id}
+                        disabled={entry.availability != :available}
+                      >
+                        {entry.label}
+                        <%= if entry.availability != :available and is_binary(entry.disabled_reason) do %>
+                          {" - " <> entry.disabled_reason}
+                        <% end %>
+                      </option>
+                    </optgroup>
                   </select>
+                  <span
+                    :if={@selected_model}
+                    class="hidden rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content md:inline-flex"
+                  >
+                    {provider_label(@selected_model.provider)}
+                  </span>
                 </div>
                 <div class="flex items-center gap-2">
                   <button
@@ -390,8 +399,7 @@ defmodule FoundryWeb.ChatComponents do
                   </button>
                   <button
                     type="submit"
-                    disabled={@loading}
-                    class="inline-flex items-center rounded-selector bg-primary px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary-content transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    class="inline-flex items-center rounded-selector bg-primary px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary-content transition-opacity hover:opacity-90"
                   >
                     Send
                   </button>
@@ -844,6 +852,7 @@ defmodule FoundryWeb.ChatComponents do
       |> assign(:total_tokens, total_tokens)
       |> assign(:provider, runtime.provider)
       |> assign(:partial, runtime.partial)
+      |> assign(:delivery_status, assigns.message["delivery_status"])
       |> assign(:content, assigns.message["content"] || "")
       |> assign(:markdown_id, message_markdown_id(assigns.message, assigns.message_index))
       |> assign(:markdown_variant, if(is_user, do: "user", else: "assistant"))
@@ -865,6 +874,9 @@ defmodule FoundryWeb.ChatComponents do
           <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">
             {if @is_user, do: "You", else: "Assistant"}
           </p>
+          <span :if={@is_user and @delivery_status} class={delivery_status_class(@delivery_status)}>
+            {@delivery_status}
+          </span>
         </div>
         <div
           class="space-y-3 break-words text-sm leading-6"
@@ -1163,10 +1175,10 @@ defmodule FoundryWeb.ChatComponents do
   defp provider_label(nil), do: "Default"
 
   defp provider_label(provider) do
-    provider
-    |> to_string()
-    |> String.replace("_", " ")
+    FoundryWeb.ChatModelCatalog.pretty_provider_label(provider)
   end
+
+  defp family_groups(catalog), do: FoundryWeb.ChatModelCatalog.family_groups(catalog)
 
   defp selected_run([], _selected_id), do: nil
 
@@ -1175,12 +1187,28 @@ defmodule FoundryWeb.ChatComponents do
   end
 
   defp chat_tab_class(true) do
-    "rounded-selector bg-base-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content shadow-sm"
+    "rounded-selector bg-[#1f1f1f] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white shadow-sm"
   end
 
   defp chat_tab_class(false) do
-    "rounded-selector px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-content transition-colors hover:text-base-content"
+    "rounded-selector px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-content transition-colors hover:text-white"
   end
+
+  defp delivery_status_class("queued"),
+    do:
+      "rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
+
+  defp delivery_status_class("sending"),
+    do:
+      "rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info"
+
+  defp delivery_status_class("sent"),
+    do:
+      "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success"
+
+  defp delivery_status_class(_status),
+    do:
+      "rounded-full border border-base-300 bg-base-100/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
 
   defp trace_run_class(true) do
     "w-full rounded-box border border-primary/40 bg-primary/10 px-3 py-3 text-left shadow-sm"

@@ -39,8 +39,15 @@ defmodule FoundryWeb.ChatConfig do
   end
 
   def hook(key) do
-    hooks = Application.get_env(:foundry_web, :hooks, %{})
-    Map.get(hooks, key)
+    hooks =
+      Application.get_env(:foundry_web, :chat_live_hooks) ||
+        Application.get_env(:foundry_web, :hooks, %{})
+
+    cond do
+      is_map(hooks) -> Map.get(hooks, key)
+      Keyword.keyword?(hooks) -> Keyword.get(hooks, key)
+      true -> nil
+    end
   end
 
   def show_debug_details? do

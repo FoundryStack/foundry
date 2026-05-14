@@ -25,27 +25,23 @@ defmodule FoundryWeb.SystemMapLiveTest do
   setup do
     llm_provider = Application.get_env(:foundry, :llm_provider)
     codex = Application.get_env(:foundry, :codex)
-    current_project_root = Application.get_env(:foundry_web, :current_project_root)
 
-    igaming_project_root = Application.get_env(:foundry_web, :igaming_project_root)
+    project_root =
+      Application.get_env(:foundry_web, :current_project_root) ||
+        Application.get_env(:foundry_web, :igaming_project_root)
 
     chat_live_hooks = Application.get_env(:foundry_web, :chat_live_hooks)
     system_map_live_hooks = Application.get_env(:foundry_web, :system_map_live_hooks)
-    tmp_project_root = Path.join(System.tmp_dir!(), "foundry-chat-#{System.unique_integer([:positive])}")
-    File.mkdir_p!(Path.join(tmp_project_root, ".foundry/local/chat_sessions"))
-    Application.put_env(:foundry_web, :current_project_root, tmp_project_root)
 
     on_exit(fn ->
       restore_env(:foundry, :llm_provider, llm_provider)
       restore_env(:foundry, :codex, codex)
-      restore_env(:foundry_web, :current_project_root, current_project_root)
-      restore_env(:foundry_web, :igaming_project_root, igaming_project_root)
+      restore_env(:foundry_web, :igaming_project_root, project_root)
       restore_env(:foundry_web, :chat_live_hooks, chat_live_hooks)
       restore_env(:foundry_web, :system_map_live_hooks, system_map_live_hooks)
-      File.rm_rf(tmp_project_root)
     end)
 
-    {:ok, conn: Phoenix.ConnTest.build_conn(), tmp_project_root: tmp_project_root}
+    {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 
   setup %{project_context: project_context, project_node: project_node} do
@@ -335,6 +331,9 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
 
     test "workspace hydrate auto-creates the first session when none exist", %{conn: conn} do
+      put_temp_chat_project_root()
+      put_chat_hooks(load_session: nil, save_messages: nil)
+
       {:ok, live, _html} = live(conn, "/studio")
 
       html =
@@ -351,7 +350,11 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert payload.active_session_id in payload.open_session_ids
     end
 
-    test "workspace hydrate restores persisted sessions when browser state is empty", %{conn: conn} do
+    test "workspace hydrate restores persisted sessions when browser state is empty", %{
+      conn: conn
+    } do
+      put_temp_chat_project_root()
+      put_chat_hooks(load_session: nil, save_messages: nil)
       workspace_id = "workspace-b"
 
       {:ok, live, _html} = live(conn, "/studio")
@@ -410,7 +413,10 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       first_html = render_submit(live, "send_message", %{"message" => "First job"})
       assert first_html =~ "First job"
-      refute first_html =~ ~s(id="chat-message-studio" name="message" rows="3" placeholder="Ask about the system, or request a change..." data-role="chat-input" phx-debounce="150" class="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-base-content outline-none placeholder:text-neutral-content/50" disabled)
+
+      refute first_html =~
+               ~s(id="chat-message-studio" name="message" rows="3" placeholder="Ask about the system, or request a change..." data-role="chat-input" phx-debounce="150" class="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-base-content outline-none placeholder:text-neutral-content/50" disabled)
+
       refute first_html =~ ~s(type="submit" disabled)
       assert_receive {:llm_call, "First job", first_task}
 
@@ -1902,5 +1908,22 @@ defmodule FoundryWeb.SystemMapLiveTest do
     payload
     |> Map.get(:overlay_transitions, [])
     |> Enum.map(fn transition -> {transition.source, transition.target} end)
+  end
+
+  defp put_temp_chat_project_root do
+    previous = Application.get_env(:foundry_web, :current_project_root)
+
+    tmp_project_root =
+      Path.join(System.tmp_dir!(), "foundry-chat-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(Path.join(tmp_project_root, ".foundry/local/chat_sessions"))
+    Application.put_env(:foundry_web, :current_project_root, tmp_project_root)
+
+    ExUnit.Callbacks.on_exit(fn ->
+      restore_env(:foundry_web, :current_project_root, previous)
+      File.rm_rf(tmp_project_root)
+    end)
+
+    tmp_project_root
   end
 end

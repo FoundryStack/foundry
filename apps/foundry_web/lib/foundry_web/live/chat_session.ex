@@ -42,6 +42,7 @@ defmodule FoundryWeb.ChatSession do
   alias Foundry.Chat.FileSessionStore
   alias Foundry.Chat.MessageClassifier
   alias PhoenixLLMChat.Core
+  alias FoundryWeb.ChatModelCatalog
   alias FoundryWeb.ChatSessionDomainLogic, as: DomainLogic
   alias FoundryWeb.ChatConfig
   alias FoundryWeb.ChatProviders
@@ -50,18 +51,25 @@ defmodule FoundryWeb.ChatSession do
 
   def mount(socket, session) do
     session_id = Map.get(session, "chat_session_id", Ecto.UUID.generate())
+    model_catalog = ChatModelCatalog.catalog()
 
-    {messages, session_digest, load_error} =
+    {loaded_session, messages, session_digest, load_error} =
       case DomainLogic.load_session(session_id) do
         {:ok, chat_session} when not is_nil(chat_session) ->
-          {chat_session["messages"] || [], chat_session["session_digest"] || %{}, nil}
+          {chat_session, chat_session["messages"] || [], chat_session["session_digest"] || %{},
+           nil}
 
         {:ok, nil} ->
-          {[], %{}, nil}
+          {nil, [], %{}, nil}
 
         {:error, reason} ->
-          {[], %{}, persistence_error("Failed to load chat session", reason)}
+          {nil, [], %{}, persistence_error("Failed to load chat session", reason)}
       end
+
+    selected_model =
+      (loaded_session && loaded_session["selected_model_id"]) ||
+        Map.get(session, "selected_model_id")
+        |> resolve_selected_model(model_catalog)
 
     socket =
       socket
@@ -77,8 +85,11 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:show_system_context, false)
       |> assign(:system_context_prompt, nil)
       |> assign(:system_context_error, nil)
-      |> assign(:llm_provider, ChatConfig.llm_provider())
-      |> assign(:llm_diagnostics, llm_diagnostics())
+      |> assign(:model_catalog, model_catalog)
+      |> assign(:selected_model, selected_model)
+      |> assign(:project_fingerprint, project_fingerprint())
+      |> assign(:llm_provider, selected_model && selected_model.provider)
+      |> assign(:llm_diagnostics, llm_diagnostics(selected_model))
       |> assign(:chat_view, :conversation)
       |> assign(:activity_runs, [])
       |> assign(:selected_activity_run_id, nil)
@@ -95,38 +106,56 @@ defmodule FoundryWeb.ChatSession do
 
   def handle_event(
         "chat_workspace_hydrate",
-        %{"open_session_ids" => open_ids, "active_session_id" => active_id},
+        %{"open_session_ids" => open_ids, "active_session_id" => active_id} = params,
         socket
       ) do
     open_ids = Enum.filter(open_ids, &is_binary/1)
-    project_fp = project_fingerprint()
+    workspace_id = Map.get(params, "workspace_id") || socket.assigns.workspace_id
+    project_fp = socket.assigns.project_fingerprint
 
     sessions_by_id =
-      Enum.reduce(open_ids, %{}, fn id, acc ->
-        case FileSessionStore.load(id) do
-          {:ok, session} when is_map(session) -> Map.put(acc, id, session)
-          _ -> acc
-        end
-      end)
+      case open_ids do
+        [] ->
+          list_persisted_sessions(workspace_id, project_fp)
 
-    valid_open_ids = Enum.filter(open_ids, &Map.has_key?(sessions_by_id, &1))
+        _ ->
+          Enum.reduce(open_ids, %{}, fn id, acc ->
+            case FileSessionStore.load(id) do
+              {:ok, session} when is_map(session) -> Map.put(acc, id, session)
+              _ -> acc
+            end
+          end)
+      end
 
-    active_id =
-      cond do
-        active_id in valid_open_ids -> active_id
-        valid_open_ids != [] -> List.first(valid_open_ids)
-        true -> nil
+    valid_open_ids =
+      case open_ids do
+        [] -> Map.keys(sessions_by_id)
+        _ -> Enum.filter(open_ids, &Map.has_key?(sessions_by_id, &1))
+      end
+
+    {socket, valid_open_ids, sessions_by_id, active_id} =
+      if valid_open_ids == [] do
+        create_session_in_workspace(socket, workspace_id)
+      else
+        active_id =
+          cond do
+            active_id in valid_open_ids -> active_id
+            valid_open_ids != [] -> List.first(valid_open_ids)
+            true -> nil
+          end
+
+        {assign(socket, :workspace_id, workspace_id), valid_open_ids, sessions_by_id, active_id}
       end
 
     socket =
       socket
+      |> assign(:workspace_id, workspace_id)
       |> assign(:open_session_ids, valid_open_ids)
       |> assign(:active_session_id, active_id)
       |> assign(:sessions_by_id, sessions_by_id)
       |> maybe_load_active_session_into_chat(active_id)
       |> push_workspace_state()
 
-    _ = project_fp
     {:noreply, socket}
   end
 
@@ -135,33 +164,19 @@ defmodule FoundryWeb.ChatSession do
   end
 
   def handle_event("chat_session_new", _params, socket) do
-    session_id = Ecto.UUID.generate()
-    project_fp = project_fingerprint()
+    {socket, open_ids, sessions_by_id, session_id} =
+      create_session_in_workspace(socket, socket.assigns.workspace_id)
 
-    case FileSessionStore.create(%{
-           id: session_id,
-           workspace_id: socket.assigns.workspace_id,
-           project_fingerprint: project_fp,
-           title: "New session"
-         }) do
-      {:ok, session} ->
-        open_ids = [session_id | socket.assigns.open_session_ids]
-        sessions_by_id = Map.put(socket.assigns.sessions_by_id, session_id, session)
+    socket =
+      socket
+      |> assign(:open_session_ids, open_ids)
+      |> assign(:active_session_id, session_id)
+      |> assign(:sessions_by_id, sessions_by_id)
+      |> switch_to_session(session_id)
+      |> push_event("chat:scroll_to_bottom", %{force: true})
+      |> push_workspace_state()
 
-        socket =
-          socket
-          |> assign(:open_session_ids, open_ids)
-          |> assign(:active_session_id, session_id)
-          |> assign(:sessions_by_id, sessions_by_id)
-          |> switch_to_session(session_id)
-          |> push_event("chat:scroll_to_bottom", %{force: true})
-          |> push_workspace_state()
-
-        {:noreply, socket}
-
-      {:error, _reason} ->
-        {:noreply, socket}
-    end
+    {:noreply, socket}
   end
 
   def handle_event("chat_session_open", %{"id" => id}, socket) do
@@ -286,18 +301,12 @@ defmodule FoundryWeb.ChatSession do
       {:noreply, socket}
     else
       if socket.assigns.active_request_ref do
+        queued_message = build_user_message(message, "queued")
+
         {:noreply,
          socket
-         |> update(
-           :pending_messages,
-           &(&1 ++
-               [
-                 %{
-                   "content" => message,
-                   "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
-                 }
-               ])
-         )
+         |> update(:messages, &(&1 ++ [queued_message]))
+         |> update(:pending_messages, &(&1 ++ [queued_message]))
          |> assign(:input, "")}
       else
         case MessageClassifier.classify_proposal_command(
@@ -320,11 +329,7 @@ defmodule FoundryWeb.ChatSession do
 
           :not_a_proposal_command ->
             with {:ok, run_context} <- build_run_context(socket, message) do
-              user_msg = %{
-                "role" => "user",
-                "content" => message,
-                "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
-              }
+              user_msg = build_user_message(message, "sending")
 
               request_ref = make_ref()
 
@@ -333,8 +338,8 @@ defmodule FoundryWeb.ChatSession do
                   message,
                   request_ref,
                   run_context,
-                  fn -> ChatConfig.llm_provider() end,
-                  &llm_diagnostics/1
+                  fn -> socket.assigns.selected_model.provider end,
+                  fn extra -> llm_diagnostics(socket.assigns.selected_model, extra) end
                 )
 
               persisted_messages = socket.assigns.messages ++ [user_msg]
@@ -351,7 +356,9 @@ defmodule FoundryWeb.ChatSession do
                      socket.assigns.session_id,
                      persisted_messages,
                      run_context.session_digest,
-                     socket.assigns.workspace_id
+                     socket.assigns.workspace_id,
+                     socket.assigns.project_fingerprint,
+                     socket.assigns.selected_model
                    ) do
                 :ok ->
                   task = start_llm_stream(request_ref, persisted_messages, self(), run_context)
@@ -366,7 +373,10 @@ defmodule FoundryWeb.ChatSession do
                     |> assign(:error, nil)
                     |> assign(:active_request_ref, request_ref)
                     |> assign(:active_request_task, task)
-                    |> assign(:llm_diagnostics, llm_diagnostics(run_context.diagnostics))
+                    |> assign(
+                      :llm_diagnostics,
+                      llm_diagnostics(socket.assigns.selected_model, run_context.diagnostics)
+                    )
                     |> assign(
                       :activity_runs,
                       [activity_run | socket.assigns.activity_runs] |> Enum.take(12)
@@ -397,9 +407,27 @@ defmodule FoundryWeb.ChatSession do
     {:noreply, assign(socket, :input, message)}
   end
 
-  def handle_event("set_llm_provider", %{"provider" => provider}, socket) do
-    provider_atom = String.to_atom(provider)
-    {:noreply, assign(socket, :llm_provider, provider_atom)}
+  def handle_event("set_chat_model", %{"model" => model_id}, socket) do
+    selected_model =
+      model_id
+      |> resolve_selected_model(socket.assigns.model_catalog)
+      |> case do
+        nil -> socket.assigns.selected_model
+        entry -> entry
+      end
+
+    if ChatModelCatalog.available?(selected_model) do
+      socket =
+        socket
+        |> assign(:selected_model, selected_model)
+        |> assign(:llm_provider, selected_model.provider)
+        |> assign(:llm_diagnostics, llm_diagnostics(selected_model))
+        |> persist_session_selection()
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_event("set_chat_view", %{"view" => view}, socket) do
@@ -513,7 +541,9 @@ defmodule FoundryWeb.ChatSession do
           socket.assigns.session_id,
           messages,
           digest,
-          socket.assigns.workspace_id
+          socket.assigns.workspace_id,
+          socket.assigns.project_fingerprint,
+          socket.assigns.selected_model
         )
       end)
 
@@ -554,7 +584,9 @@ defmodule FoundryWeb.ChatSession do
           socket.assigns.session_id,
           messages,
           digest,
-          socket.assigns.workspace_id
+          socket.assigns.workspace_id,
+          socket.assigns.project_fingerprint,
+          socket.assigns.selected_model
         )
       end)
 
@@ -593,7 +625,9 @@ defmodule FoundryWeb.ChatSession do
           socket.assigns.session_id,
           messages,
           digest,
-          socket.assigns.workspace_id
+          socket.assigns.workspace_id,
+          socket.assigns.project_fingerprint,
+          socket.assigns.selected_model
         )
       end)
 
@@ -617,6 +651,13 @@ defmodule FoundryWeb.ChatSession do
       &build_run_system_prompt/5,
       socket.assigns.project_root
     )
+    |> case do
+      {:ok, run_context} ->
+        {:ok, Map.put(run_context, :selected_model, socket.assigns.selected_model)}
+
+      other ->
+        other
+    end
   end
 
   defp start_llm_stream(request_ref, messages, live_view_pid, run_context) do
@@ -635,8 +676,11 @@ defmodule FoundryWeb.ChatSession do
         )
 
       case result do
-        {:ok, _text, metadata} ->
-          send(live_view_pid, {:llm_stream_done, request_ref, "", metadata})
+        {:ok, text} ->
+          send(live_view_pid, {:llm_stream_done, request_ref, text, %{}})
+
+        {:ok, text, metadata} ->
+          send(live_view_pid, {:llm_stream_done, request_ref, text, metadata})
 
         {:error, reason} ->
           send(live_view_pid, {:llm_stream_error, request_ref, reason})
@@ -651,7 +695,10 @@ defmodule FoundryWeb.ChatSession do
     do: {:llm_stream_trace, request_ref, event}
 
   defp append_to_streaming_response(messages, delta) do
-    update_last_message(messages, &Map.update(&1, "content", delta, fn c -> c <> delta end))
+    update_last_assistant_message(
+      messages,
+      &Map.update(&1, "content", delta, fn c -> c <> delta end)
+    )
   end
 
   defp finalize_streaming_response(messages, "", _run), do: messages
@@ -659,17 +706,18 @@ defmodule FoundryWeb.ChatSession do
   defp finalize_streaming_response(messages, response, run) do
     messages
     |> drop_empty_streaming_response()
-    |> update_last_message(&Map.put(&1, "content", response))
-    |> update_last_message(&DomainLogic.maybe_attach_message_metadata(&1, run))
+    |> mark_latest_user_message_complete()
+    |> update_last_assistant_message(&Map.put(&1, "content", response))
+    |> update_last_assistant_message(&DomainLogic.maybe_attach_message_metadata(&1, run))
   end
 
   defp drop_empty_streaming_response(messages) do
-    case List.last(messages) do
-      %{"role" => "assistant", "content" => ""} ->
-        Enum.slice(messages, 0..-2//1)
-
-      _ ->
+    case latest_streaming_assistant_index(messages) do
+      nil ->
         messages
+
+      index ->
+        List.delete_at(messages, index)
     end
   end
 
@@ -680,23 +728,33 @@ defmodule FoundryWeb.ChatSession do
     end
   end
 
+  defp update_last_assistant_message(messages, fun) do
+    case latest_assistant_index(messages) do
+      nil -> messages
+      index -> List.update_at(messages, index, fun)
+    end
+  end
+
   defp process_pending_messages(socket) do
     if Enum.empty?(socket.assigns.pending_messages) do
       socket
     else
-      pending = socket.assigns.pending_messages
-      socket = assign(socket, :pending_messages, [])
+      [next_pending | rest] = socket.assigns.pending_messages
 
-      Enum.reduce(pending, socket, fn pending_msg, acc ->
-        {:noreply, new_socket} =
-          handle_event("send_message", %{"message" => pending_msg["content"]}, acc)
+      socket =
+        socket
+        |> assign(:pending_messages, rest)
+        |> update(:messages, &mark_message_status(&1, next_pending["id"], "sending"))
 
-        new_socket
-      end)
+      dispatch_queued_message(socket, next_pending)
     end
   end
 
-  defp clear_active_request(socket), do: assign(socket, :active_request_ref, nil)
+  defp clear_active_request(socket) do
+    socket
+    |> assign(:active_request_ref, nil)
+    |> assign(:active_request_task, nil)
+  end
 
   defp clear_active_task(socket) do
     task = socket.assigns.active_request_task
@@ -889,9 +947,9 @@ defmodule FoundryWeb.ChatSession do
 
   # --- Provider Utilities ---
 
-  defp llm_diagnostics(extra \\ %{}) do
-    provider = ChatConfig.llm_provider()
-    model = get_model_for_provider(provider)
+  defp llm_diagnostics(selected_model, extra \\ %{}) do
+    provider = selected_model && selected_model.provider
+    model = selected_model && selected_model.model_id
 
     %{
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601(),
@@ -901,20 +959,6 @@ defmodule FoundryWeb.ChatSession do
       extra: extra
     }
   end
-
-  defp get_model_for_provider(:claude_code) do
-    Keyword.get(ChatConfig.claude_code_config(), :model)
-  end
-
-  defp get_model_for_provider(:codex) do
-    Keyword.get(ChatConfig.codex_config(), :model)
-  end
-
-  defp get_model_for_provider(:lm_studio) do
-    Keyword.get(ChatConfig.lm_studio_config(), :model, ChatConfig.lm_studio_model())
-  end
-
-  defp get_model_for_provider(_), do: nil
 
   # --- Session Helpers ---
 
@@ -945,10 +989,22 @@ defmodule FoundryWeb.ChatSession do
   defp maybe_load_active_session_into_chat(socket, session_id) do
     case DomainLogic.load_session(session_id) do
       {:ok, session} when not is_nil(session) ->
+        selected_model =
+          session["selected_model_id"]
+          |> resolve_selected_model(socket.assigns.model_catalog)
+
         socket
         |> assign(:session_id, session_id)
         |> assign(:messages, session["messages"] || [])
         |> assign(:session_digest, session["session_digest"] || %{})
+        |> assign(:selected_model, selected_model)
+        |> assign(:llm_provider, selected_model && selected_model.provider)
+        |> assign(:llm_diagnostics, llm_diagnostics(selected_model))
+        |> assign(:loading, false)
+        |> assign(:error, nil)
+        |> assign(:active_request_ref, nil)
+        |> assign(:active_request_task, nil)
+        |> assign(:pending_messages, [])
 
       _ ->
         socket
@@ -961,9 +1017,230 @@ defmodule FoundryWeb.ChatSession do
 
   defp push_workspace_state(socket) do
     push_event(socket, "workspace:state", %{
+      workspace_id: socket.assigns.workspace_id,
       active_session_id: socket.assigns.active_session_id,
       open_session_ids: socket.assigns.open_session_ids,
       session_count: map_size(socket.assigns.sessions_by_id || %{})
     })
+  end
+
+  defp list_persisted_sessions(workspace_id, project_fingerprint) do
+    with {:ok, sessions} <- FileSessionStore.list(workspace_id, project_fingerprint) do
+      Map.new(sessions, &{&1["id"], &1})
+    else
+      _ -> %{}
+    end
+  end
+
+  defp create_session_in_workspace(socket, workspace_id) do
+    session_id = Ecto.UUID.generate()
+
+    case FileSessionStore.create(%{
+           id: session_id,
+           workspace_id: workspace_id,
+           project_fingerprint: socket.assigns.project_fingerprint,
+           title: "New session",
+           selected_model_id: socket.assigns.selected_model && socket.assigns.selected_model.id,
+           selected_provider:
+             socket.assigns.selected_model && to_string(socket.assigns.selected_model.provider),
+           model: socket.assigns.selected_model && socket.assigns.selected_model.model_id
+         }) do
+      {:ok, session} ->
+        open_ids = [session_id | socket.assigns.open_session_ids]
+        sessions_by_id = Map.put(socket.assigns.sessions_by_id, session_id, session)
+        {socket, open_ids, sessions_by_id, session_id}
+
+      {:error, _reason} ->
+        {socket, socket.assigns.open_session_ids, socket.assigns.sessions_by_id,
+         socket.assigns.active_session_id}
+    end
+  end
+
+  defp resolve_selected_model(nil, model_catalog),
+    do: ChatModelCatalog.get(model_catalog, ChatModelCatalog.default_model_id(model_catalog))
+
+  defp resolve_selected_model(model_id, model_catalog) do
+    ChatModelCatalog.get(model_catalog, model_id) ||
+      ChatModelCatalog.get(model_catalog, ChatModelCatalog.default_model_id(model_catalog))
+  end
+
+  defp build_user_message(message, status) do
+    %{
+      "id" => Ecto.UUID.generate(),
+      "role" => "user",
+      "content" => message,
+      "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "delivery_status" => status
+    }
+  end
+
+  defp dispatch_queued_message(socket, queued_message) do
+    with {:ok, run_context} <- build_run_context(socket, queued_message["content"]) do
+      request_ref = make_ref()
+
+      activity_run =
+        DomainLogic.create_activity_run(
+          queued_message["content"],
+          request_ref,
+          run_context,
+          fn -> socket.assigns.selected_model.provider end,
+          fn extra -> llm_diagnostics(socket.assigns.selected_model, extra) end
+        )
+
+      persisted_messages =
+        socket.assigns.messages
+        |> messages_through(queued_message["id"])
+        |> Enum.map(fn
+          %{"role" => "user"} = message ->
+            if message["id"] == queued_message["id"] do
+              Map.put(message, "delivery_status", "sending")
+            else
+              message
+            end
+
+          message ->
+            message
+        end)
+
+      assistant_msg = %{
+        "role" => "assistant",
+        "content" => "",
+        "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+      }
+
+      messages =
+        socket.assigns.messages
+        |> update_message(queued_message["id"], &Map.put(&1, "delivery_status", "sending"))
+        |> insert_after_message(queued_message["id"], assistant_msg)
+
+      case DomainLogic.save_session_state(
+             socket.assigns.session_id,
+             persisted_messages,
+             run_context.session_digest,
+             socket.assigns.workspace_id,
+             socket.assigns.project_fingerprint,
+             socket.assigns.selected_model
+           ) do
+        :ok ->
+          task = start_llm_stream(request_ref, persisted_messages, self(), run_context)
+
+          socket
+          |> assign(:messages, messages)
+          |> assign(:session_digest, run_context.session_digest)
+          |> assign(:loading, true)
+          |> assign(:error, nil)
+          |> assign(:active_request_ref, request_ref)
+          |> assign(:active_request_task, task)
+          |> assign(
+            :llm_diagnostics,
+            llm_diagnostics(socket.assigns.selected_model, run_context.diagnostics)
+          )
+          |> assign(
+            :activity_runs,
+            [activity_run | socket.assigns.activity_runs] |> Enum.take(12)
+          )
+          |> assign(:selected_activity_run_id, activity_run.id)
+          |> push_event("chat:scroll_to_bottom", %{force: true})
+
+        {:error, reason} ->
+          assign(socket, :error, persistence_error("Failed to save chat session", reason))
+      end
+    else
+      {:error, reason} ->
+        assign(socket, :error, format_request_error(reason))
+    end
+  end
+
+  defp messages_through(messages, message_id) do
+    {items, _done?} =
+      Enum.reduce_while(messages, {[], false}, fn message, {acc, _done?} ->
+        next = acc ++ [message]
+
+        if message["id"] == message_id do
+          {:halt, {next, true}}
+        else
+          {:cont, {next, false}}
+        end
+      end)
+
+    Enum.filter(items, &(&1["role"] in ["user", "assistant"]))
+  end
+
+  defp update_message(messages, message_id, fun) do
+    Enum.map(messages, fn
+      %{"id" => ^message_id} = message -> fun.(message)
+      message -> message
+    end)
+  end
+
+  defp insert_after_message(messages, message_id, message_to_insert) do
+    {acc, inserted?} =
+      Enum.reduce(messages, {[], false}, fn message, {items, inserted?} ->
+        items = items ++ [message]
+
+        if not inserted? and message["id"] == message_id do
+          {items ++ [message_to_insert], true}
+        else
+          {items, inserted?}
+        end
+      end)
+
+    if inserted?, do: acc, else: acc ++ [message_to_insert]
+  end
+
+  defp latest_assistant_index(messages) do
+    messages
+    |> Enum.with_index()
+    |> Enum.reverse()
+    |> Enum.find_value(fn
+      {%{"role" => "assistant"}, index} -> index
+      _ -> nil
+    end)
+  end
+
+  defp latest_streaming_assistant_index(messages) do
+    messages
+    |> Enum.with_index()
+    |> Enum.reverse()
+    |> Enum.find_value(fn
+      {%{"role" => "assistant", "content" => ""}, index} -> index
+      _ -> nil
+    end)
+  end
+
+  defp mark_message_status(messages, message_id, status) do
+    update_message(messages, message_id, &Map.put(&1, "delivery_status", status))
+  end
+
+  defp mark_latest_user_message_complete(messages) do
+    case Enum.find_index(
+           Enum.reverse(messages),
+           &(&1["role"] == "user" and &1["delivery_status"] == "sending")
+         ) do
+      nil ->
+        messages
+
+      reverse_index ->
+        index = length(messages) - reverse_index - 1
+
+        List.update_at(messages, index, fn message ->
+          Map.put(message, "delivery_status", "sent")
+        end)
+    end
+  end
+
+  defp persist_session_selection(socket) do
+    Task.Supervisor.async_nolink(FoundryWeb.ChatTaskSupervisor, fn ->
+      DomainLogic.save_session_state(
+        socket.assigns.session_id,
+        socket.assigns.messages,
+        socket.assigns.session_digest,
+        socket.assigns.workspace_id,
+        socket.assigns.project_fingerprint,
+        socket.assigns.selected_model
+      )
+    end)
+
+    socket
   end
 end

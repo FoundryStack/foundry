@@ -11,6 +11,28 @@ defmodule Foundry.LMStudioProvider do
   @default_timeout_ms 120_000
 
   @doc """
+  Lists available LM Studio models from the OpenAI-compatible models endpoint.
+  """
+  def list_models(opts \\ []) do
+    base_url = Keyword.get(opts, :base_url, @default_base_url)
+    timeout_ms = Keyword.get(opts, :timeout_ms, 5_000)
+
+    case Req.get(url: models_url(base_url), receive_timeout: timeout_ms, retry: false) do
+      {:ok, %Req.Response{status: status, body: %{"data" => data}}} when status in 200..299 ->
+        {:ok,
+         data
+         |> Enum.map(& &1["id"])
+         |> Enum.filter(&is_binary/1)}
+
+      {:ok, %Req.Response{status: status}} ->
+        {:error, {:lm_studio_http_error, status}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Streams a conversation through LM Studio.
 
   Events:
@@ -60,6 +82,12 @@ defmodule Foundry.LMStudioProvider do
     base_url
     |> String.trim_trailing("/")
     |> Kernel.<>("/chat/completions")
+  end
+
+  defp models_url(base_url) do
+    base_url
+    |> String.trim_trailing("/")
+    |> Kernel.<>("/models")
   end
 
   defp ensure_success(%Req.Response{status: status}) when status in 200..299, do: :ok

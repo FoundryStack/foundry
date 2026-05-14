@@ -21,7 +21,7 @@ export const StudioChatHook = {
     // Restore workspace state from localStorage and hydrate server
     const projectRoot = this.el.dataset.projectRoot || ''
     const storageKey = `foundry_workspace:${projectRoot}`
-    let workspaceState = { open_session_ids: [], active_session_id: null }
+    let workspaceState = { workspace_id: null, open_session_ids: [], active_session_id: null }
 
     try {
       const stored = localStorage.getItem(storageKey)
@@ -41,7 +41,7 @@ export const StudioChatHook = {
     this.pushEvent('chat_workspace_hydrate', workspaceState)
 
     // Sync localStorage when server updates workspace state
-    this.handleEvent('chat_workspace_updated', (state) => {
+    this.handleEvent('workspace:state', (state) => {
       try {
         localStorage.setItem(storageKey, JSON.stringify(state))
       } catch (_e) {}
@@ -95,7 +95,7 @@ export const StudioChatHook = {
 
     this._submitHandler = () => {
       const message = this._input.value.trim()
-      if (!message || this._input.disabled) return
+      if (!message) return
 
       this._autoScrollEnabled = true
     }

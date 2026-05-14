@@ -235,6 +235,11 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
+  def handle_event("set_chat_model", params, socket) do
+    ChatSession.handle_event("set_chat_model", params, socket)
+  end
+
+  @impl true
   def handle_event("proposal_apply", params, socket) do
     ChatSession.handle_event("proposal_apply", params, socket)
   end

@@ -23,6 +23,7 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   alias Foundry.Chat.Retrieval, as: ChatRetrieval
   alias Foundry.ChatTrace
   alias Foundry.SpecKit.SessionMemory
+  alias FoundryWeb.ChatConfig
 
   # --- Proposal Management ---
 
@@ -176,6 +177,7 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
         case ChatRetrieval.prepare(project_root, message, socket.assigns.session_digest || %{}) do
           {:ok, retrieval} ->
             Logger.debug("ChatRetrieval.prepare succeeded for project_root: #{project_root}")
+
             proposal =
               if mode == :change do
                 case ChatRetrieval.create_proposal(
@@ -268,8 +270,17 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
     messages = socket.assigns.messages
     session_digest = socket.assigns.session_digest
     workspace_id = socket.assigns.workspace_id
+    project_fingerprint = socket.assigns.project_fingerprint
+    selected_model = socket.assigns.selected_model
 
-    case save_session_state(session_id, messages, session_digest, workspace_id) do
+    case save_session_state(
+           session_id,
+           messages,
+           session_digest,
+           workspace_id,
+           project_fingerprint,
+           selected_model
+         ) do
       :ok ->
         socket
 
@@ -308,7 +319,8 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
 
   def maybe_record_memory_trace(socket, _request_ref, %{artifact: nil, error: nil}), do: socket
 
-  def maybe_record_memory_trace(socket, request_ref, %{artifact: artifact}) when artifact != nil do
+  def maybe_record_memory_trace(socket, request_ref, %{artifact: artifact})
+      when artifact != nil do
     update_activity_run(socket, request_ref, fn run ->
       trace_event = %{
         "type" => "foundry.memory.recorded",
@@ -437,7 +449,15 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   # --- Session Persistence ---
 
   def load_session(session_id) do
-    case FileSessionStore.load(session_id) do
+    loader = ChatConfig.hook(:load_session)
+
+    result =
+      case loader do
+        fun when is_function(fun, 1) -> fun.(session_id)
+        _ -> FileSessionStore.load(session_id)
+      end
+
+    case result do
       {:ok, session} when is_map(session) ->
         {:ok, session}
 
@@ -449,30 +469,57 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
     end
   end
 
-  def save_session_state(session_id, messages, session_digest, workspace_id) do
-    case load_session(session_id) do
-      {:ok, existing} when is_map(existing) ->
-        FileSessionStore.update(session_id, %{messages: messages, session_digest: session_digest})
-        |> case do
-          {:ok, _} -> :ok
-          {:error, reason} -> {:error, reason}
-        end
+  def save_session_state(
+        session_id,
+        messages,
+        session_digest,
+        workspace_id,
+        project_fingerprint,
+        selected_model
+      ) do
+    save_hook = ChatConfig.hook(:save_messages)
 
-      {:ok, nil} ->
-        FileSessionStore.create(%{
-          id: session_id,
-          workspace_id: workspace_id,
-          project_fingerprint: "default",
-          messages: messages,
-          session_digest: session_digest
-        })
-        |> case do
-          {:ok, _} -> :ok
-          {:error, reason} -> {:error, reason}
-        end
+    if is_function(save_hook, 3) do
+      case save_hook.(session_id, messages, session_digest) do
+        {:ok, _result} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      case load_session(session_id) do
+        {:ok, existing} when is_map(existing) ->
+          FileSessionStore.update(session_id, %{
+            messages: messages,
+            session_digest: session_digest,
+            selected_model_id: selected_model && selected_model.id,
+            selected_provider: selected_model && to_string(selected_model.provider),
+            model: selected_model && selected_model.model_id,
+            project_fingerprint: project_fingerprint,
+            workspace_id: workspace_id
+          })
+          |> case do
+            {:ok, _} -> :ok
+            {:error, reason} -> {:error, reason}
+          end
 
-      {:error, reason} ->
-        {:error, reason}
+        {:ok, nil} ->
+          FileSessionStore.create(%{
+            id: session_id,
+            workspace_id: workspace_id,
+            project_fingerprint: project_fingerprint,
+            messages: messages,
+            session_digest: session_digest,
+            selected_model_id: selected_model && selected_model.id,
+            selected_provider: selected_model && to_string(selected_model.provider),
+            model: selected_model && selected_model.model_id
+          })
+          |> case do
+            {:ok, _} -> :ok
+            {:error, reason} -> {:error, reason}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
