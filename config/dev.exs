@@ -11,6 +11,18 @@ config :foundry_web, FoundryWeb.Endpoint,
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {127, 0, 0, 1}, port: 4000],
   url: [host: "127.0.0.1", port: 4000],
+  check_origin: [
+    "http://127.0.0.1:4000",
+    "http://localhost:4000",
+    "//127.0.0.1:4000",
+    "//localhost:4000",
+    "http://127.0.0.1",
+    "http://localhost",
+    "//127.0.0.1",
+    "//localhost",
+    "tauri://localhost",
+    "tauri://localhost:4000"
+  ],
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "NqdqX0xNYqxz05nRLichAa+N4WJR4ijlRgLMkcLismBif5aPk1Du4mIk4KfR8kBy",
