@@ -1,1 +1,0 @@
-- On start foundry project, start also its dev server of the target elexir repo (app/umbrella apps) and provide previews inside Studio UI. Use spec-kit first, then tests, then implementation. Our tests already starting igaming inside itself, we need a deployed dev version by Foundry in ui 
