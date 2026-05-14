@@ -164,7 +164,7 @@ defmodule FoundryWeb.SystemMapLive do
         active_id = socket.assigns.active_session_id
 
         if active_id,
-          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")},
+          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")},
           else: {:noreply, socket}
     end
   end
@@ -176,7 +176,7 @@ defmodule FoundryWeb.SystemMapLive do
         active_id = socket.assigns.active_session_id
 
         if active_id,
-          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")},
+          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")},
           else: {:noreply, socket}
     end
   end
@@ -188,7 +188,7 @@ defmodule FoundryWeb.SystemMapLive do
         active_id = socket.assigns.active_session_id
 
         if active_id,
-          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/studio?session=#{active_id}")},
+          do: {:noreply, Phoenix.LiveView.push_patch(socket, to: "/?session=#{active_id}")},
           else: {:noreply, socket}
     end
   end
