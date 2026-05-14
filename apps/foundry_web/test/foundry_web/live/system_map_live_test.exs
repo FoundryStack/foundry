@@ -25,23 +25,27 @@ defmodule FoundryWeb.SystemMapLiveTest do
   setup do
     llm_provider = Application.get_env(:foundry, :llm_provider)
     codex = Application.get_env(:foundry, :codex)
+    current_project_root = Application.get_env(:foundry_web, :current_project_root)
 
-    project_root =
-      Application.get_env(:foundry_web, :current_project_root) ||
-        Application.get_env(:foundry_web, :igaming_project_root)
+    igaming_project_root = Application.get_env(:foundry_web, :igaming_project_root)
 
     chat_live_hooks = Application.get_env(:foundry_web, :chat_live_hooks)
     system_map_live_hooks = Application.get_env(:foundry_web, :system_map_live_hooks)
+    tmp_project_root = Path.join(System.tmp_dir!(), "foundry-chat-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(tmp_project_root, ".foundry/local/chat_sessions"))
+    Application.put_env(:foundry_web, :current_project_root, tmp_project_root)
 
     on_exit(fn ->
       restore_env(:foundry, :llm_provider, llm_provider)
       restore_env(:foundry, :codex, codex)
-      restore_env(:foundry_web, :igaming_project_root, project_root)
+      restore_env(:foundry_web, :current_project_root, current_project_root)
+      restore_env(:foundry_web, :igaming_project_root, igaming_project_root)
       restore_env(:foundry_web, :chat_live_hooks, chat_live_hooks)
       restore_env(:foundry_web, :system_map_live_hooks, system_map_live_hooks)
+      File.rm_rf(tmp_project_root)
     end)
 
-    {:ok, conn: Phoenix.ConnTest.build_conn()}
+    {:ok, conn: Phoenix.ConnTest.build_conn(), tmp_project_root: tmp_project_root}
   end
 
   setup %{project_context: project_context, project_node: project_node} do
@@ -328,6 +332,103 @@ defmodule FoundryWeb.SystemMapLiveTest do
       html = render_submit(live, "send_message", %{"message" => "Map the wallet flow"})
 
       assert html =~ "Map the wallet flow"
+    end
+
+    test "workspace hydrate auto-creates the first session when none exist", %{conn: conn} do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      html =
+        render_hook(live, "chat_workspace_hydrate", %{
+          "workspace_id" => "workspace-a",
+          "open_session_ids" => [],
+          "active_session_id" => nil
+        })
+
+      assert html =~ "New session"
+      assert_push_event(live, "workspace:state", payload)
+      assert payload.workspace_id == "workspace-a"
+      assert length(payload.open_session_ids) == 1
+      assert payload.active_session_id in payload.open_session_ids
+    end
+
+    test "workspace hydrate restores persisted sessions when browser state is empty", %{conn: conn} do
+      workspace_id = "workspace-b"
+
+      {:ok, live, _html} = live(conn, "/studio")
+
+      render_hook(live, "chat_workspace_hydrate", %{
+        "workspace_id" => workspace_id,
+        "open_session_ids" => [],
+        "active_session_id" => nil
+      })
+
+      assert_push_event(live, "workspace:state", %{active_session_id: session_id})
+
+      render_submit(live, "send_message", %{"message" => "Persist this session"})
+      assert eventually(fn -> render(live) =~ "Persist this session" end)
+
+      {:ok, live2, _html} = live(conn, "/studio")
+
+      html =
+        render_hook(live2, "chat_workspace_hydrate", %{
+          "workspace_id" => workspace_id,
+          "open_session_ids" => [],
+          "active_session_id" => nil
+        })
+
+      assert html =~ "Persist this session"
+      assert_push_event(live2, "workspace:state", payload)
+      assert payload.active_session_id == session_id
+    end
+
+    test "keeps composer interactive, renders queued bubbles immediately, and dispatches them FIFO",
+         %{conn: conn} do
+      test_pid = self()
+
+      put_chat_hooks(
+        call_llm_stream: fn messages, on_event, _run_context ->
+          latest_user =
+            messages
+            |> Enum.reverse()
+            |> Enum.find(fn message -> message["role"] == "user" end)
+            |> Map.fetch!("content")
+
+          send(test_pid, {:llm_call, latest_user, self()})
+
+          receive do
+            {:release, ^latest_user} ->
+              on_event.({:delta, "done:#{latest_user}"})
+              {:ok, "done:#{latest_user}", %{}}
+          after
+            1_000 ->
+              {:error, :timeout}
+          end
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+
+      first_html = render_submit(live, "send_message", %{"message" => "First job"})
+      assert first_html =~ "First job"
+      refute first_html =~ ~s(id="chat-message-studio" name="message" rows="3" placeholder="Ask about the system, or request a change..." data-role="chat-input" phx-debounce="150" class="w-full resize-none border-0 bg-transparent px-0 py-0 text-sm leading-6 text-base-content outline-none placeholder:text-neutral-content/50" disabled)
+      refute first_html =~ ~s(type="submit" disabled)
+      assert_receive {:llm_call, "First job", first_task}
+
+      queued_html = render_submit(live, "send_message", %{"message" => "Second job"})
+      assert queued_html =~ "Second job"
+      assert queued_html =~ "Queued"
+      refute_received {:llm_call, "Second job", _}
+
+      send(first_task, {:release, "First job"})
+      assert eventually(fn -> render(live) =~ "done:First job" end)
+      assert_receive {:llm_call, "Second job", second_task}
+
+      send(second_task, {:release, "Second job"})
+
+      assert eventually(fn ->
+               rendered = render(live)
+               rendered =~ "done:First job" and rendered =~ "done:Second job"
+             end)
     end
 
     test "shows the system context from the studio panel", %{conn: conn} do

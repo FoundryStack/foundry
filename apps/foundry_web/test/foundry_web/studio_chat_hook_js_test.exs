@@ -163,6 +163,96 @@ defmodule FoundryWeb.StudioChatHookJsTest do
     assert hd(result["calls"])["top"] == 700
   end
 
+  test "workspace state hydration prefers stored workspace and syncs on workspace:state" do
+    result =
+      run_js("""
+      const hooks = await importBundledModule([#{js_string_literal(@hook_path)}])
+      const hook = hooks.StudioChatHook
+
+      class FakeElement {
+        constructor(tag = 'div') {
+          this.tagName = tag
+          this.children = []
+          this.listeners = new Map()
+          this.dataset = {}
+          this.style = {}
+        }
+
+        addEventListener(type, handler) {
+          if (!this.listeners.has(type)) this.listeners.set(type, [])
+          this.listeners.get(type).push(handler)
+        }
+
+        removeEventListener(type, handler) {
+          const handlers = this.listeners.get(type) || []
+          this.listeners.set(type, handlers.filter(existing => existing !== handler))
+        }
+
+        querySelector() {
+          return null
+        }
+      }
+
+      const root = new FakeElement()
+      root.dataset.projectRoot = '/tmp/project'
+
+      const pushed = []
+      const handled = new Map()
+      let saved = null
+
+      globalThis.window = { location: { search: '' } }
+      globalThis.URLSearchParams = URLSearchParams
+      globalThis.localStorage = {
+        getItem: () => JSON.stringify({
+          workspace_id: 'workspace-7',
+          open_session_ids: ['session-1'],
+          active_session_id: 'session-1',
+        }),
+        setItem: (_key, value) => {
+          saved = JSON.parse(value)
+        },
+      }
+
+      const state = {
+        ...hook,
+        el: root,
+        pushEvent: (event, payload) => pushed.push({ event, payload }),
+        handleEvent: (event, callback) => handled.set(event, callback),
+      }
+
+      hook.mounted.call(state)
+      const workspaceStateHandler = handled.get('workspace:state')
+      if (workspaceStateHandler) {
+        workspaceStateHandler({
+          workspace_id: 'workspace-7',
+          open_session_ids: ['session-1', 'session-2'],
+          active_session_id: 'session-2',
+        })
+      }
+
+      printJson({ pushed, saved, handledEvents: Array.from(handled.keys()) })
+      """)
+
+    assert result["pushed"] == [
+             %{
+               "event" => "chat_workspace_hydrate",
+               "payload" => %{
+                 "workspace_id" => "workspace-7",
+                 "open_session_ids" => ["session-1"],
+                 "active_session_id" => "session-1"
+               }
+             }
+           ]
+
+    assert result["saved"] == %{
+             "workspace_id" => "workspace-7",
+             "open_session_ids" => ["session-1", "session-2"],
+             "active_session_id" => "session-2"
+           }
+
+    assert "workspace:state" in result["handledEvents"]
+  end
+
   defp run_js(source) do
     bootstrap = """
     import { readFile } from 'node:fs/promises'
