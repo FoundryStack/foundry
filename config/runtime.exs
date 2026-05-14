@@ -20,6 +20,14 @@ runtime_port =
     port = System.get_env("PORT") ->
       String.to_integer(port)
 
+    server_enabled? and standalone_mode? ->
+      # Standalone mode: select an open port at config time so the endpoint
+      # starts on the correct port before Application.start runs.
+      case Foundry.Studio.find_open_port() do
+        {:ok, port} -> port
+        {:error, _} -> 4000
+      end
+
     server_enabled? and not standalone_mode? ->
       case Foundry.Studio.resolve_generic_server_port() do
         {:ok, port} ->
@@ -35,7 +43,8 @@ runtime_port =
   end
 
 config :foundry_web, FoundryWeb.Endpoint,
-  http: [port: runtime_port],
+  http: [ip: {127, 0, 0, 1}, port: runtime_port],
+  url: [host: "127.0.0.1", port: runtime_port],
   server: server_enabled?
 
 if config_env() == :prod do
