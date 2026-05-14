@@ -1,96 +1,88 @@
-import { mountFoundryGraph, covColor, domainCoverage, searchMatch } from '../foundry_graph'
-
-const SELECTORS = {
-  sidebarList: 'fm-sidebar-list',
-  search: 'fm-search',
-  drawer: 'fm-drawer',
-  drawerClose: 'fm-drawer-close',
-  hoverCard: 'fm-hover-card',
-  panelDetails: 'fm-panel-details',
-  panelFlow: 'fm-panel-flow',
-  panelActions: 'fm-panel-actions',
-  panelAuth: 'fm-panel-auth'
-}
-
-const CONFIG = {
-  drawerWidth: '380px',
-  nodeThreshold: 200,
-  searchDebounce: 150
-}
-
-const STORAGE_KEYS = {
-  sidebarWidth: 'foundry:sidebar-width',
-  drawerWidth: 'foundry:drawer-width'
-}
-
-const STORAGE_DEFAULTS = {
-  sidebarWidth: 240,
-  drawerWidth: 380
-}
+import { mountFoundryGraph, covColor, getActionTypeColor, getTypeColor } from '../foundry_graph'
+import {
+  formatNodeDisplayLabel,
+  getComplianceStatus,
+  getTypeDisplayLabel,
+  shouldShowComplianceIndicator,
+} from '../graph/semantics'
+import { UI_CONFIG } from '../graph/config'
+import { DrawerManager } from './system_map/drawer_manager'
+import { FeedManager } from './system_map/feed_manager'
+import { SidebarManager } from './system_map/sidebar_manager'
 
 export const SystemMapHook = {
   mounted() {
     try {
-      // Restore saved sizes before initializing
-      this._restoreSizes()
+      this.feed = new FeedManager()
 
-      // Ensure DOM is ready before accessing styles
       if (document.readyState !== 'complete' && document.readyState !== 'interactive') {
         setTimeout(() => this._initGraph(), 0)
         return
       }
       this._initGraph()
+
+      // Register keyboard shortcut for feed toggle (⌘\)
+      this._keyHandler = (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+          e.preventDefault()
+          this.pushEvent('toggle_feed', {})
+        }
+      }
+      document.addEventListener('keydown', this._keyHandler)
     } catch (error) {
       console.error('SystemMapHook mount error:', error)
-    }
-  },
-
-  _restoreSizes() {
-    // Restore sidebar width
-    const layout = document.querySelector('.foundry-map-layout')
-    if (layout) {
-      const sidebarWidth = parseInt(localStorage.getItem('foundry:sidebar-width')) || 240
-      layout.style.gridTemplateColumns = `${sidebarWidth}px 1fr`
-    }
-
-    // Restore drawer width if it was open
-    const drawer = document.getElementById('fm-drawer')
-    if (drawer && drawer.offsetWidth > 0) {
-      const drawerWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
-      drawer.style.width = `${drawerWidth}px`
     }
   },
 
   _initGraph() {
     try {
       const contextJson = JSON.parse(this.el.dataset.context)
+      this._previewBaseUrl = this.el.dataset.previewBaseUrl || 'http://localhost:4001'
       this.graph = mountFoundryGraph(this.el, contextJson)
 
-      // Cache for normalized nodes
-      this.normalizedNodes = this.graph.normalizedNodes
+      // Initialize managers
+      const pushEvent = (event, payload) => {
+        this.pushEvent(event, payload)
+      }
+      this.drawer = new DrawerManager(this.graph.normalizedNodes, pushEvent, {
+        onNodeSelect: nodeId => {
+          const nodeData = this.graph.normalizedNodes.get(nodeId)
+          this._selectNode(nodeId, nodeData, { pushSelection: true })
+        },
+        onStartPreview: (route) => {
+          this._startPreview(route)
+        },
+      })
+      this.sidebar = new SidebarManager(this.graph, this.graph.normalizedNodes)
 
-      // Initialize UI
-      this._initSidebar()
-      this._initDrawer()
-      this._initSearch()
-      this._initSidebarResize()
-      this._initDrawerResize()
+      // Wire sidebar node select callback
+      this.sidebar.onNodeSelect = (nodeId) => {
+        const nodeData = this.graph.normalizedNodes.get(nodeId)
+        this._selectNode(nodeId, nodeData, { pushSelection: true })
+      }
 
       // Wire node click handler
       this.graph.onNodeClick = (nodeId, nodeData) => {
-        // Below threshold: data already available
-        if (contextJson.nodes.length <= CONFIG.nodeThreshold) {
-          this.pushEvent('node_selected', { id: nodeId, data: nodeData })
-          this._handleNodeSelected(nodeId)
-        } else {
-          // Above threshold: fetch from server
+        const resolvedNodeData = nodeData || this.graph.normalizedNodes.get(nodeId)
+
+        this._selectNode(nodeId, resolvedNodeData, { pushSelection: true })
+
+        if (contextJson.nodes.length > UI_CONFIG.nodeThreshold) {
           this.pushEvent('fetch_node_detail', { id: nodeId })
         }
       }
 
+      this.graph.onBackgroundClick = () => {
+        if (this._isCoverageMode()) {
+          this.pushEvent('clear_node_filter', {})
+        }
+
+        this.pushEvent('clear_scenario', {})
+      }
+
       // Wire hover handler
-      this.graph.onNodeHover = (nodeId) => {
-        this._showHoverCard(nodeId)
+      this.graph.onNodeHover = (nodeId, nodeData, event) => {
+        this._showHoverCard(nodeId, nodeData, event)
       }
 
       this.graph.onNodeUnhover = () => {
@@ -110,547 +102,388 @@ export const SystemMapHook = {
         }
       })
 
-      this.handleEvent('graph:clear_overlay', () => {
+      this.handleEvent('graph:scenario_overlay', (payload) => {
         if (this.graph) {
-          this.graph.clearProposalOverlay()
+          try {
+            this.graph.applyScenarioOverlay(payload)
+          } catch (e) {
+            console.error('  ❌ applyScenarioOverlay error:', e)
+          }
+        }
+
+        if (this.drawer) {
+          this.drawer.renderForScenario(payload)
         }
       })
 
-      // Node detail from server (>200 modules)
+      this.handleEvent('graph:coverage_overlay', (payload) => {
+        if (this.graph) {
+          this.graph.applyCoverageOverlay(payload)
+        }
+      })
+
+      this.handleEvent('graph:scenario_status_overlay', (payload) => {
+        if (this.graph) {
+          this.graph.applyScenarioStatusOverlay(payload)
+        }
+      })
+
+      this.handleEvent('drawer:open_flow', () => {
+        this.drawer?.open()
+      })
+
+      this.handleEvent('graph:clear_overlay', () => {
+        if (this.graph) {
+          this.graph.clearScenarioOverlay()
+        }
+
+        if (this.sidebar) {
+          this.sidebar.clearHighlight()
+        }
+
+        if (this.drawer) {
+          this.drawer.clearScenario()
+        }
+      })
+
       this.handleEvent('node_detail', (payload) => {
         if (payload.node) {
-          this._handleNodeSelected(payload.node.id)
+          this._hydrateNodeDetail(payload.node)
         }
+      })
+
+      this.handleEvent('file_content', (payload) => {
+        this.drawer.open()
+        this.drawer.renderFileContent(payload)
+      })
+
+      this.handleEvent('proposal_file_preview', (payload) => {
+        this.drawer.open()
+        this.drawer.renderProposalFilePreview(payload)
+      })
+
+      this.handleEvent('file_error', (payload) => {
+        this.drawer.open()
+        this.drawer.renderFileError(payload)
       })
     } catch (error) {
       console.error('SystemMapHook init error:', error)
     }
+
+    this._syncCoverageOverlay()
+    this._syncUiState()
+    this._startUiObservers()
   },
 
-  _initSidebar() {
-    const list = document.getElementById(SELECTORS.sidebarList)
-    if (!list) return
+  _handleNodeSelected(nodeId, nodeData = null) {
+    this.sidebar.highlightNode(nodeId)
+    this.drawer.open()
+    this.drawer.renderForNode(nodeId, nodeData)
+    this.graph.focusNode(nodeId)
+  },
 
-    // Sidebar item click delegation
-    this._sidebarClickHandler = (evt) => {
-      const item = evt.target.closest('[data-node-id]')
-      if (item) {
-        const nodeId = item.dataset.nodeId
-        this.graph.selectNode(nodeId)
-        this.graph.centerOn(nodeId)
-        this._handleNodeSelected(nodeId)
+  _selectNode(nodeId, nodeData = null, { pushSelection = false } = {}) {
+    if (nodeData) {
+      this.graph.normalizedNodes.set(nodeId, nodeData)
+    }
+
+    this._selectedNodeId = nodeId
+    this._handleNodeSelected(nodeId, nodeData)
+
+    if (pushSelection) {
+      this.pushEvent(this._selectionEventName(), { id: nodeId, data: nodeData })
+    }
+  },
+
+  _hydrateNodeDetail(nodeData) {
+    if (!nodeData?.id) return
+
+    this.graph.normalizedNodes.set(nodeData.id, nodeData)
+
+    if (this._selectedNodeId === nodeData.id) {
+      this.sidebar.highlightNode(nodeData.id)
+      this.drawer.open()
+      this.drawer.renderForNode(nodeData.id, nodeData)
+    }
+  },
+
+  _startPreview(route = '/') {
+    const previewTargetUrl = this._buildPreviewTargetUrl(route)
+    const launchUrl = new URL('/preview-launch', window.location.origin)
+    launchUrl.searchParams.set('target', previewTargetUrl)
+    this._openPreviewLaunch(launchUrl.toString())
+  },
+
+  _buildPreviewTargetUrl(route = '/') {
+    const base = this._previewBaseUrl || 'http://localhost:4001'
+    const normalizedRoute = this._normalizePreviewRoute(route)
+    return new URL(normalizedRoute, base).toString()
+  },
+
+  _normalizePreviewRoute(route = '/') {
+    if (typeof route !== 'string' || route.trim() === '') return '/'
+    return route.startsWith('/') ? route : `/${route}`
+  },
+
+  async _openPreviewLaunch(launchUrl) {
+    if (this._isTauriRuntime()) {
+      try {
+        await this._openExternalUrl(launchUrl)
+        return
+      } catch (error) {
+        console.error('SystemMapHook preview opener error:', error)
       }
     }
-    list.addEventListener('click', this._sidebarClickHandler)
+
+    window.open(launchUrl, '_blank')
   },
 
-  _initSidebarResize() {
-    const layout = document.querySelector('.foundry-map-layout')
-    const sidebar = document.getElementById('foundry-sidebar')
-    const handle = document.getElementById('sidebar-resize-handle')
-
-    if (!sidebar || !handle || !layout) return
-
-    // Load saved width
-    const savedWidth = localStorage.getItem('foundry:sidebar-width')
-    const initialWidth = savedWidth ? parseInt(savedWidth, 10) : 240
-    layout.style.gridTemplateColumns = `${initialWidth}px 1fr`
-
-    let isResizing = false
-    let startX = 0
-    let startWidth = 0
-
-    const onMouseDown = (e) => {
-      isResizing = true
-      startX = e.clientX
-      startWidth = sidebar.offsetWidth
-      document.addEventListener('mousemove', onMouseMove)
-      document.addEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'col-resize'
-      e.preventDefault()
-    }
-
-    const onMouseMove = (e) => {
-      if (!isResizing) return
-      const delta = e.clientX - startX
-      const newWidth = Math.max(180, Math.min(600, startWidth + delta))
-      layout.style.gridTemplateColumns = `${newWidth}px 1fr`
-    }
-
-    const onMouseUp = () => {
-      isResizing = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-      // Save width
-      localStorage.setItem('foundry:sidebar-width', sidebar.offsetWidth)
-    }
-
-    handle.addEventListener('mousedown', onMouseDown)
-
-    // Store cleanup handlers
-    this._sidebarResizeHandlers = { onMouseDown, onMouseMove, onMouseUp, handle }
+  _isTauriRuntime() {
+    return !!(window.__TAURI_INTERNALS__ || window.__TAURI__)
   },
 
-  _initDrawerResize() {
-    const drawer = document.getElementById('fm-drawer')
-    const handle = document.getElementById('drawer-resize-handle')
-
-    if (!drawer || !handle) return
-
-    let isResizing = false
-    let startX = 0
-    let startWidth = 0
-
-    const onMouseDown = (e) => {
-      isResizing = true
-      startX = e.clientX
-      startWidth = drawer.offsetWidth
-      document.addEventListener('mousemove', onMouseMove)
-      document.addEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'col-resize'
-      e.preventDefault()
-    }
-
-    const onMouseMove = (e) => {
-      if (!isResizing) return
-      const delta = startX - e.clientX
-      const newWidth = Math.max(240, Math.min(800, startWidth + delta))
-      drawer.style.width = newWidth + 'px'
-    }
-
-    const onMouseUp = () => {
-      isResizing = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-      document.body.style.userSelect = ''
-      document.body.style.cursor = ''
-      // Save width
-      localStorage.setItem('foundry:drawer-width', drawer.offsetWidth)
-    }
-
-    handle.addEventListener('mousedown', onMouseDown)
-
-    // Store cleanup handlers
-    this._drawerResizeHandlers = { onMouseDown, onMouseMove, onMouseUp, handle }
-  },
-
-  _initSearch() {
-    const searchInput = document.getElementById(SELECTORS.search)
-    if (!searchInput) return
-
-    this._searchInputHandler = (evt) => {
-      clearTimeout(this._searchTimeout)
-      const query = evt.target.value.trim()
-
-      this._searchTimeout = setTimeout(() => {
-        const list = document.getElementById(SELECTORS.sidebarList)
-        if (!list) return
-
-        const items = list.querySelectorAll('[data-node-id]')
-        items.forEach(item => {
-          const nodeId = item.dataset.nodeId
-          const node = this.normalizedNodes.get(nodeId)
-
-          if (!node) {
-            item.style.display = 'none'
-            return
-          }
-
-          const match = searchMatch(node, query)
-          item.style.display = match ? '' : 'none'
-        })
-      }, CONFIG.searchDebounce)
-    }
-    searchInput.addEventListener('input', this._searchInputHandler)
-  },
-
-  _initDrawer() {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    const closeBtn = document.getElementById(SELECTORS.drawerClose)
-
-    if (!closeBtn) return
-
-    this._closeHandler = () => {
-      drawer.style.width = '0'
-    }
-    closeBtn.addEventListener('click', this._closeHandler)
-
-    // Tab click delegation
-    const tabs = drawer.querySelectorAll('[data-tab]')
-    tabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        this._switchTab(tab.dataset.tab)
-      })
-    })
-  },
-
-  _switchTab(tabName) {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    const tabs = drawer.querySelectorAll('[data-tab]')
-    const panels = {
-      details: document.getElementById(SELECTORS.panelDetails),
-      flow: document.getElementById(SELECTORS.panelFlow),
-      actions: document.getElementById(SELECTORS.panelActions),
-      auth: document.getElementById(SELECTORS.panelAuth)
-    }
-
-    // Deactivate all tabs
-    tabs.forEach(t => t.classList.remove('tab-active'))
-
-    // Activate clicked tab
-    drawer.querySelector(`[data-tab="${tabName}"]`).classList.add('tab-active')
-
-    // Hide all panels
-    Object.values(panels).forEach(p => {
-      if (p) p.classList.add('hidden')
-    })
-
-    // Show active panel
-    if (panels[tabName]) {
-      panels[tabName].classList.remove('hidden')
-    }
-  },
-
-  _handleNodeSelected(nodeId) {
-    // Check if this is a step node (format: "ReactorId:step:N")
-    const stepMatch = nodeId.match(/^(.+):step:(\d+)$/)
-    if (stepMatch) {
-      const [, parentId, stepIdx] = stepMatch
-      const parentNode = this.normalizedNodes.get(parentId)
-      if (!parentNode) return
-      const step = parentNode.steps?.[parseInt(stepIdx)]
-      if (!step) return
-      this._openDrawerWithStep(step, parentNode)
+  async _openExternalUrl(url) {
+    if (window.__TAURI_INTERNALS__?.invoke) {
+      await window.__TAURI_INTERNALS__.invoke('plugin:opener|open_url', { url })
       return
     }
 
-    const node = this.normalizedNodes.get(nodeId)
-    if (!node) return
-
-    // Highlight sidebar item
-    const list = document.getElementById(SELECTORS.sidebarList)
-    if (list) {
-      list.querySelectorAll('[data-node-id]').forEach(item => {
-        item.classList.toggle('active', item.dataset.nodeId === nodeId)
-      })
-    }
-
-    // Open drawer with saved width
-    const drawer = document.getElementById(SELECTORS.drawer)
-    if (drawer) {
-      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
-      // Use setTimeout to allow transition to apply properly
-      setTimeout(() => {
-        drawer.style.width = `${savedWidth}px`
-      }, 0)
-    }
-
-    // Render panels
-    this._renderDetailsPanel(node)
-    this._renderFlowPanel(node)
-    this._renderActionsPanel(node)
-    this._renderAuthPanel(node)
-
-    // Switch to Details tab
-    this._switchTab('details')
-  },
-
-  _openDrawerWithStep(step, parentNode) {
-    const drawer = document.getElementById(SELECTORS.drawer)
-    if (drawer) {
-      const savedWidth = parseInt(localStorage.getItem('foundry:drawer-width')) || 380
-      setTimeout(() => { drawer.style.width = `${savedWidth}px` }, 0)
-    }
-    this._renderStepDetailsPanel(step, parentNode)
-    this._switchTab('details')
-  },
-
-  _renderStepDetailsPanel(step, parentNode) {
-    const panel = document.getElementById(SELECTORS.panelDetails)
-    if (!panel) return
-
-    const kindColors = { read: 'var(--fg-bl)', write: 'var(--fg-gn)', map: 'var(--fg-pu)', custom: 'var(--fg-t2)' }
-    const kindColor = kindColors[step.step_kind] || 'var(--fg-t2)'
-
-    let html = `
-      <div class="space-y-3">
-        <div>
-          <p class="text-xs text-base-content/50">Step in</p>
-          <h4 class="font-mono text-xs text-base-content/70">${this._esc(parentNode.id)}</h4>
-        </div>
-        <div>
-          <h3 class="font-mono font-semibold text-sm">${this._esc(step.name || 'unnamed')}</h3>
-          <span style="color:${kindColor};font-size:10px">${this._esc(step.step_kind || step.type || 'custom')}</span>
-        </div>
-    `
-
-    if (step.description) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Description</div>
-          <p class="text-xs">${this._esc(step.description)}</p>
-        </div>
-      `
-    }
-
-    if (step.target_resource) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Resource</div>
-          <p class="text-xs font-mono">${this._esc(step.target_resource)}</p>
-        </div>
-      `
-    }
-
-    if (step.target_action) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Action</div>
-          <p class="text-xs font-mono">${this._esc(step.target_action)}</p>
-        </div>
-      `
-    }
-
-    if (step.wait_for?.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Wait for</div>
-          <div class="flex flex-wrap gap-1">
-            ${step.wait_for.map(w => `<span class="text-xs font-mono bg-base-200 px-1 rounded">${this._esc(w)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    if (step.source_snippet) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Source</div>
-          <pre style="font-size:10px;overflow-x:auto;background:var(--b2);padding:8px;border-radius:4px;white-space:pre-wrap;word-break:break-word">${this._esc(step.source_snippet)}</pre>
-        </div>
-      `
-    }
-
-    if (step.side_effects && step.side_effects.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Side Effects (${step.side_effects.length})</div>
-          <div class="space-y-1">
-            ${step.side_effects.map(se => {
-              const badge = se.declared
-                ? `<span class="badge badge-xs badge-success">${this._esc(se.type)}</span>`
-                : `<span class="badge badge-xs badge-error">⚠ ${this._esc(se.type)}</span>`
-              const detail = se.name ? `: ${this._esc(se.name)}` : ''
-              const idempotent = se.idempotent != null ? ` · ${se.idempotent ? 'idempotent' : 'non-idempotent'}` : ''
-              return `<div class="flex items-center gap-1">${badge}<span class="text-xs text-base-content/70">${detail}${idempotent}</span></div>`
-            }).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    html += `</div>`
-    panel.innerHTML = html
-  },
-
-  _renderDetailsPanel(n) {
-    const panel = document.getElementById(SELECTORS.panelDetails)
-    if (!panel) return
-
-    const coverage = domainCoverage([n])
-    const cov = coverage.length > 0 ? coverage[0].avg : n.cov
-
-    let html = `
-      <div class="space-y-3">
-        <div>
-          <h3 class="font-mono font-semibold text-sm">${this._esc(n.id)}</h3>
-          <p class="text-xs text-base-content/60">${this._esc(n.type || 'unknown')}</p>
-        </div>
-
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Coverage</div>
-          <div class="flex items-center gap-2">
-            <div class="flex-1 bg-base-300 rounded h-2 overflow-hidden">
-              <div style="width: ${cov}%; height: 100%; background: ${covColor(cov)}"></div>
-            </div>
-            <span class="text-xs font-semibold">${cov}%</span>
-          </div>
-        </div>
-
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Domain</div>
-          <p class="text-sm">${this._esc(n.domain || 'N/A')}</p>
-        </div>
-
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Description</div>
-          <p class="text-xs">${this._esc(n.description || 'No description')}</p>
-        </div>
-    `
-
-    // Compliance requirements
-    if (n.reqs && n.reqs.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Compliance (${n.reqs.length})</div>
-          <div class="space-y-1">
-            ${n.reqs.map(r => `<span class="text-xs">${this._esc(r)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    // FSM states
-    if (n.sm && n.sm.states && n.sm.states.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">States (${n.sm.states.length})</div>
-          <div class="space-y-1">
-            ${n.sm.states.map(s => `<span class="text-xs font-mono">${this._esc(s.name)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    // Steps
-    if (n.steps && n.steps.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Steps (${n.steps.length})</div>
-          <div class="space-y-1">
-            ${n.steps.map(s => `<span class="text-xs font-mono">${this._esc(s.name || 'unnamed')}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    // Routes
-    if (n.routes && n.routes.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Routes (${n.routes.length})</div>
-        </div>
-      `
-    }
-
-    // Flags
-    if (n.flags && n.flags.length > 0) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Feature Flags (${n.flags.length})</div>
-          <div class="space-y-1">
-            ${n.flags.map(f => `<span class="text-xs font-mono">${this._esc(f)}</span>`).join('')}
-          </div>
-        </div>
-      `
-    }
-
-    // Runbook
-    if (n.runbook) {
-      html += `
-        <div>
-          <div class="text-xs text-base-content/50 mb-1">Runbook</div>
-          <p class="text-xs truncate">${this._esc(n.runbook)}</p>
-        </div>
-      `
-    }
-
-    html += `</div>`
-    panel.innerHTML = html
-  },
-
-  _renderFlowPanel(n) {
-    const panel = document.getElementById(SELECTORS.panelFlow)
-    if (!panel) return
-
-    // Scenarios not yet tracked
-    panel.innerHTML = `
-      <div class="text-center py-6">
-        <p class="text-xs text-base-content/50">No scenarios defined yet</p>
-      </div>
-    `
-  },
-
-  _renderActionsPanel(n) {
-    const panel = document.getElementById(SELECTORS.panelActions)
-    if (!panel) return
-
-    const shortcuts = {
-      resource: ['Edit schema', 'View migrations', 'Test coverage'],
-      transfer: ['View pipeline', 'Trace execution', 'Replay'],
-      reactor: ['Run simulation', 'Debug', 'Test coverage'],
-      rule: ['View conditions', 'Test rule', 'Audit log'],
-      liveview: ['Open in browser', 'View live metrics', 'Test coverage']
-    }
-
-    const actions = shortcuts[n.type] || ['Open details', 'View in codebase']
-
-    const html = `
-      <div class="space-y-2">
-        ${actions.map(a => `
-          <button class="btn btn-sm btn-ghost w-full justify-start text-xs">
-            ${this._esc(a)}
-          </button>
-        `).join('')}
-      </div>
-    `
-    panel.innerHTML = html
-  },
-
-  _renderAuthPanel(node) {
-    const panel = document.getElementById(SELECTORS.panelAuth)
-    if (!panel) return
-
-    // Only show for resource nodes
-    if (node.type !== 'resource') {
-      panel.innerHTML = '<p class="text-xs text-base-content/50">N/A for this node type</p>'
+    if (window.__TAURI__?.core?.invoke) {
+      await window.__TAURI__.core.invoke('plugin:opener|open_url', { url })
       return
     }
 
-    panel.innerHTML = `
-      <div class="text-xs text-base-content/50">
-        <p>Authorization data not yet available</p>
-      </div>
-    `
+    throw new Error('Tauri opener API unavailable')
   },
 
-  _showHoverCard(nodeId) {
-    const node = this.normalizedNodes.get(nodeId)
+  _showHoverCard(nodeId, nodeData = null, event = null) {
+    const node = this._resolveHoverNode(nodeId, nodeData)
     if (!node) return
 
-    const card = document.getElementById(SELECTORS.hoverCard)
+    const card = document.getElementById('fm-hover-card')
     if (!card) return
 
-    const coverage = domainCoverage([node])
-    const cov = coverage.length > 0 ? coverage[0].avg : node.cov
+    const cov = typeof node.cov === 'number' ? node.cov : 0
+    const reqs = node.reqs || []
+    const complianceStatus = getComplianceStatus(reqs, node.test_coverage || {})
+    const gap = !!(node.compliance_gap ?? node.gap)
+    const coverageLabel = 'test coverage'
+    const typeColor = node.typeColor || getTypeColor(node.type)
+    const typeLabel = getTypeDisplayLabel(node)
+    const showCompliance = shouldShowComplianceIndicator(node)
 
     card.innerHTML = `
-      <div class="font-semibold text-xs mb-1">${this._esc(node.id)}</div>
-      <div class="text-xs text-base-content/60">${this._esc(node.domain || 'N/A')}</div>
-      <div class="flex items-center gap-2 mt-1">
-        <div class="w-8 bg-base-300 rounded h-1">
-          <div style="width: ${cov}%; height: 100%; background: ${covColor(cov)}"></div>
-        </div>
-        <span class="text-xs">${cov}%</span>
+      <div class="mb-1 flex items-center justify-between gap-1.5">
+        <span class="rounded-full border px-1.5 py-0.5 text-[11px] leading-[1.4]" style="color:${this._esc(typeColor)};border-color:${this._esc(typeColor)};background:var(--fg-s3)">${this._esc(typeLabel || 'node')}</span>
+        ${node.sensitive ? '<span class="rounded-full border border-[var(--fg-rd)] bg-[var(--fg-s3)] px-1.5 py-0.5 text-[11px] leading-[1.4] text-[var(--fg-rd)]">sensitive</span>' : ''}
       </div>
-      ${node.reqs && node.reqs.length > 0 ? `
-        <div class="text-xs text-warning mt-1">⚠ ${node.reqs.length} compliance req${node.reqs.length > 1 ? 's' : ''}</div>
+      <div class="mb-1.5 break-words font-mono text-[13px] font-semibold">
+        ${this._esc(node.name || node.id || nodeId)}
+      </div>
+      <div class="mt-0.5 flex items-center justify-between gap-2">
+        <span class="uppercase tracking-[0.04em] text-[color:color-mix(in_oklch,var(--color-base-content)_55%,transparent)]">domain</span>
+        <span class="break-words text-right text-[var(--color-base-content)]">${this._esc(node.domain || 'N/A')}</span>
+      </div>
+      ${node.parentName ? `
+        <div class="mt-0.5 flex items-center justify-between gap-2">
+          <span class="uppercase tracking-[0.04em] text-[color:color-mix(in_oklch,var(--color-base-content)_55%,transparent)]">parent</span>
+          <span class="break-words text-right text-[var(--color-base-content)]">${this._esc(node.parentName)}</span>
+        </div>
+      ` : ''}
+      ${node.showCoverage !== false ? `
+        <div class="my-1.5 flex items-center gap-1.5 text-[var(--fg-t2)]">
+          <div class="h-1 min-w-12 flex-1 overflow-hidden rounded-full bg-[var(--fg-s3)]">
+            <div class="h-full rounded-[inherit]" style="width:${cov}%;background:${covColor(cov)}"></div>
+          </div>
+          <span>${cov}% ${coverageLabel}</span>
+        </div>
+        ${showCompliance ? `
+          <div class="mt-0.5 flex items-center justify-between gap-2">
+            <span class="uppercase tracking-[0.04em] text-[color:color-mix(in_oklch,var(--color-base-content)_55%,transparent)]">compliance</span>
+            <span class="break-words text-right ${gap ? 'text-[var(--fg-yw)]' : 'text-[var(--fg-gn)]'}">${this._esc(complianceStatus.label)}</span>
+          </div>
+        ` : ''}
+      ` : ''}
+      ${node.rows.length > 0 ? `
+        <div class="my-1.5 h-px bg-[var(--fg-b2)]"></div>
+        ${node.rows.map(row => `
+          <div class="mt-0.5 flex items-center justify-between gap-2">
+            <span class="uppercase tracking-[0.04em] text-[color:color-mix(in_oklch,var(--color-base-content)_55%,transparent)]">${this._esc(row.label)}</span>
+            <span class="break-words text-right text-[var(--color-base-content)]">${this._esc(row.value)}</span>
+          </div>
+        `).join('')}
+      ` : ''}
+      ${reqs.length > 0 ? `
+        <div class="my-1.5 h-px bg-[var(--fg-b2)]"></div>
+        <div class="flex flex-wrap items-center gap-1.5">
+          ${reqs.slice(0, 4).map(req => `<span class="rounded-full border border-[var(--fg-b2)] bg-[var(--fg-s3)] px-1.5 py-0.5 font-mono text-[11px] leading-[1.4] text-[var(--fg-ac)]">${this._esc(req)}</span>`).join('')}
+          ${reqs.length > 4 ? `<span class="rounded-full border border-[var(--fg-b2)] bg-[var(--fg-s3)] px-1.5 py-0.5 font-mono text-[11px] leading-[1.4] text-[var(--fg-ac)]">+${reqs.length - 4}</span>` : ''}
+        </div>
       ` : ''}
     `
 
     card.classList.remove('hidden')
+    this._positionHoverCard(card, event)
+  },
 
-    // Position near cursor (done by CSS in real implementation)
-    card.style.left = '8px'
-    card.style.top = '8px'
+  _resolveHoverNode(nodeId, nodeData = null) {
+    const normalized = this.graph.normalizedNodes
+
+    const stepMatch = nodeId.match(/^(.+):step:(\d+)$/)
+    if (stepMatch) {
+      const [, parentId, stepIdx] = stepMatch
+      const parent = normalized.get(parentId)
+      const step = parent?.steps?.[parseInt(stepIdx)]
+      if (!parent || !step) return this._baseHoverNode(nodeId, nodeData)
+
+      const stepKind = this._normalizeActionName(step.step_kind || step.type || 'step')
+      const isAgent = stepKind === 'agent' || !!step.agent
+      const sideEffects = step.side_effects || []
+      const rows = [
+        { label: 'kind', value: stepKind || 'step' },
+        step.target_resource ? { label: 'resource', value: step.target_resource } : null,
+        step.target_action ? { label: 'action', value: step.target_action } : null,
+        step.wait_for?.length > 0 ? { label: 'wait for', value: step.wait_for.join(', ') } : null,
+        sideEffects.length > 0 ? { label: 'side effects', value: this._sideEffectSummary(sideEffects) } : null,
+      ].filter(Boolean)
+
+      return {
+        ...this._parentHoverContext(parent),
+        id: nodeId,
+        name: step.name || `Step ${stepIdx}`,
+        type: isAgent ? 'agent' : 'step',
+        typeColor: getTypeColor(isAgent ? 'agent' : 'step'),
+        parentName: parent.id,
+        showCoverage: false,
+        rows,
+      }
+    }
+
+    const actionMatch = nodeId.match(/^(.+):action:(.+)$/)
+    if (actionMatch) {
+      const [, parentId, rawActionName] = actionMatch
+      const parent = normalized.get(parentId)
+      const actionName = this._normalizeActionName(rawActionName)
+      const action =
+        (parent?.actions || []).find(a => this._normalizeActionName(a.name) === actionName) ||
+        { name: actionName, type: nodeData?.action_type, description: nodeData?.description }
+
+      if (!parent) return this._baseHoverNode(nodeId, nodeData)
+
+      const transitions = (parent.sm?.transitions || []).filter(t => this._normalizeActionName(t.action) === actionName)
+      const actionType = this._normalizeActionName(action.type || nodeData?.action_type || 'action')
+      const rows = [
+        { label: 'action type', value: actionType },
+        transitions.length > 0 ? { label: 'transitions', value: transitions.map(t => `${t.from} -> ${t.to}`).join(', ') } : { label: 'transitions', value: 'none' },
+      ]
+
+      return {
+        ...this._parentHoverContext(parent),
+        id: nodeId,
+        name: action.name || actionName,
+        type: 'action',
+        typeColor: getActionTypeColor(actionType),
+        parentName: parent.id,
+        showCoverage: false,
+        rows,
+      }
+    }
+
+    const stateMatch = nodeId.match(/^(.+):state:(.+)$/)
+    if (stateMatch) {
+      const [, parentId, rawStateName] = stateMatch
+      const parent = normalized.get(parentId)
+      if (!parent) return this._baseHoverNode(nodeId, nodeData)
+
+      const stateName = rawStateName
+      const outgoing = (parent.sm?.transitions || []).filter(t => t.from === stateName)
+      const incoming = (parent.sm?.transitions || []).filter(t => t.to === stateName)
+
+      return {
+        ...this._parentHoverContext(parent),
+        id: nodeId,
+        name: stateName,
+        type: 'state',
+        typeColor: getTypeColor('state'),
+        parentName: parent.id,
+        showCoverage: false,
+        rows: [
+          { label: 'incoming', value: `${incoming.length}` },
+          { label: 'outgoing', value: `${outgoing.length}` },
+        ],
+      }
+    }
+
+    const node = normalized.get(nodeId) || nodeData
+    return this._baseHoverNode(nodeId, node)
+  },
+
+  _baseHoverNode(nodeId, node = null) {
+    if (!node) return null
+    return {
+      id: node.id || nodeId,
+      name: node.name || node.label || node.display_label || formatNodeDisplayLabel(node.id || nodeId),
+      type: node.type || node.nodeKind || 'node',
+      typeColor: node.typeColor || getTypeColor(node.type),
+      domain: node.domain,
+      cov: typeof node.cov === 'number' ? node.cov : 0,
+      gap: !!(node.compliance_gap ?? node.gap),
+      compliance_gap: !!(node.compliance_gap ?? node.gap),
+      has_compliance_links: !!(node.has_compliance_links ?? ((node.reqs || []).length > 0)),
+      sensitive: !!node.sensitive,
+      reqs: node.reqs || [],
+      showCoverage: true,
+      rows: [
+        node.runbook ? { label: 'runbook', value: node.runbook } : null,
+        node.sm?.states?.length > 0 ? { label: 'states', value: `${node.sm.states.length}` } : null,
+        node.actions?.length > 0 ? { label: 'actions', value: `${node.actions.length}` } : null,
+      ].filter(Boolean),
+    }
+  },
+
+  _parentHoverContext(parent) {
+    return {
+      domain: parent.domain,
+      showCoverage: false,
+    }
+  },
+
+  _sideEffectSummary(sideEffects) {
+    const declared = sideEffects.filter(se => se.declared).length
+    const inferred = sideEffects.length - declared
+    if (declared > 0 && inferred > 0) return `${declared} declared, ${inferred} inferred`
+    if (declared > 0) return `${declared} declared`
+    return `${inferred} inferred`
+  },
+
+  _positionHoverCard(card, event = null) {
+    const original = event?.originalEvent
+    const boundsEl = card.parentElement || this.el
+    const rect = boundsEl.getBoundingClientRect()
+
+    if (!original) {
+      card.style.left = '10px'
+      card.style.top = '10px'
+      return
+    }
+
+    let left = original.clientX - rect.left + 14
+    let top = original.clientY - rect.top - 10
+
+    if (left + 280 > rect.width) {
+      left = original.clientX - rect.left - 290
+    }
+
+    if (top + 300 > rect.height) {
+      top = rect.height - 310
+    }
+
+    card.style.left = `${Math.max(10, left)}px`
+    card.style.top = `${Math.max(10, top)}px`
   },
 
   _hideHoverCard() {
-    const card = document.getElementById(SELECTORS.hoverCard)
+    const card = document.getElementById('fm-hover-card')
     if (card) {
       card.classList.add('hidden')
     }
@@ -662,47 +495,139 @@ export const SystemMapHook = {
     return div.innerHTML
   },
 
-  updated() {
-    // Restore sizes after LiveView updates the DOM
+  _normalizeActionName(name) {
+    if (name == null) return null
+    return String(name).replace(/^:/, '')
+  },
+
+  _syncCoverageOverlay() {
+    if (!this.graph) return
+
+    const metadata = document.getElementById('system-map-metadata')
+    if (!metadata) return
+
     try {
-      this._restoreSizes()
+      const uncoveredNodeIds = JSON.parse(metadata.dataset.uncoveredNodeIds || '[]')
+      this.graph.applyCoverageOverlay({ uncovered_node_ids: uncoveredNodeIds })
+    } catch (error) {
+      console.error('SystemMapHook coverage sync error:', error)
+    }
+  },
+
+  _metadata() {
+    return document.getElementById('system-map-metadata')
+  },
+
+  _currentSidebarTab() {
+    return this._metadata()?.dataset.sidebarTab || 'system_map'
+  },
+
+  _isCoverageMode() {
+    return this._currentSidebarTab() === 'test_coverage'
+  },
+
+  _selectionEventName() {
+    return this._isCoverageMode() ? 'show_node_coverage' : 'node_selected'
+  },
+
+  _startUiObservers() {
+    if (this._uiMutationObserver) {
+      this._uiMutationObserver.disconnect()
+    }
+
+    if (typeof MutationObserver !== 'function') return
+
+    const observer = new MutationObserver(() => {
+      this.sidebar?.sync()
+      this._syncCoverageOverlay()
+      this._syncUiState()
+    })
+
+    const sidebar = document.getElementById('fm-sidebar')
+    if (sidebar) {
+      observer.observe(sidebar, { childList: true, subtree: true })
+    }
+
+    const metadata = this._metadata()
+    if (metadata) {
+      observer.observe(metadata, {
+        attributes: true,
+        attributeFilter: ['data-sidebar-tab', 'data-selected-node-id', 'data-uncovered-node-ids'],
+      })
+    }
+
+    this._uiMutationObserver = observer
+  },
+
+  _syncUiState() {
+    const metadata = this._metadata()
+    const selectedNodeId = metadata?.dataset.selectedNodeId
+    const currentSidebarTab = this._currentSidebarTab()
+    const tabChanged = this._lastSyncedSidebarTab !== currentSidebarTab
+    const selectionChanged = this._lastSyncedSelectedNodeId !== selectedNodeId
+
+    if (this.sidebar && !this.sidebar.hasBoundList()) {
+      this.sidebar.sync()
+    }
+
+    if (selectedNodeId) {
+      this._selectedNodeId = selectedNodeId
+      this.sidebar?.highlightNode(selectedNodeId)
+
+      if (currentSidebarTab === 'system_map' && (tabChanged || selectionChanged)) {
+        this.graph?.focusNode(selectedNodeId)
+      }
+
+      this._lastSyncedSidebarTab = currentSidebarTab
+      this._lastSyncedSelectedNodeId = selectedNodeId
+      return
+    }
+
+    if (currentSidebarTab === 'system_map') {
+      this.graph?.clearSelection()
+      this.sidebar?.clearHighlight()
+    }
+
+    this._lastSyncedSidebarTab = currentSidebarTab
+    this._lastSyncedSelectedNodeId = null
+  },
+
+  updated() {
+    try {
+      this.feed?.sync()
+      this.drawer?.sync()
+      this.sidebar?.sync()
+      this._syncCoverageOverlay()
+      this._syncUiState()
     } catch (error) {
       console.error('SystemMapHook update error:', error)
     }
   },
 
   destroyed() {
-    // Remove event listeners
-    const list = document.getElementById(SELECTORS.sidebarList)
-    if (list && this._sidebarClickHandler) {
-      list.removeEventListener('click', this._sidebarClickHandler)
+    if (this._uiMutationObserver) {
+      this._uiMutationObserver.disconnect()
+      this._uiMutationObserver = null
     }
 
-    const searchInput = document.getElementById(SELECTORS.search)
-    if (searchInput && this._searchInputHandler) {
-      searchInput.removeEventListener('input', this._searchInputHandler)
-      clearTimeout(this._searchTimeout)
+    if (this._keyHandler) {
+      document.removeEventListener('keydown', this._keyHandler)
+      this._keyHandler = null
     }
 
-    const closeBtn = document.getElementById(SELECTORS.drawerClose)
-    if (closeBtn && this._closeHandler) {
-      closeBtn.removeEventListener('click', this._closeHandler)
+    if (this.drawer) {
+      this.drawer.destroy()
+      this.drawer = null
     }
 
-    // Remove sidebar resize handlers
-    if (this._sidebarResizeHandlers) {
-      const { onMouseDown, handle } = this._sidebarResizeHandlers
-      if (handle && onMouseDown) {
-        handle.removeEventListener('mousedown', onMouseDown)
-      }
+    if (this.sidebar) {
+      this.sidebar.destroy()
+      this.sidebar = null
     }
 
-    // Remove drawer resize handlers
-    if (this._drawerResizeHandlers) {
-      const { onMouseDown, handle } = this._drawerResizeHandlers
-      if (handle && onMouseDown) {
-        handle.removeEventListener('mousedown', onMouseDown)
-      }
+    if (this.feed) {
+      this.feed.destroy()
+      this.feed = null
     }
 
     if (this.graph) {

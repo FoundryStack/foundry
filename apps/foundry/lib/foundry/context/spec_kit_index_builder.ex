@@ -1,6 +1,6 @@
 defmodule Foundry.Context.SpecKitIndexBuilder do
   @moduledoc """
-  Builds the spec-kit index by scanning ADRs, runbooks, regulations, and other
+  Builds the spec-kit index by scanning ADRs, runbooks, findings, regulations, and other
   documentation files. Extracts summaries, tags, and token counts.
 
   Token estimation uses a conservative approximation: byte_size / 3.
@@ -23,11 +23,12 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
   def build(project_root) do
     adrs = scan_dir(project_root, "docs/adrs/", "adr")
     runbooks = scan_dir(project_root, "docs/runbooks/", "runbook")
+    findings = scan_dir(project_root, "docs/findings/", "finding")
     regs = scan_dir(project_root, "docs/regulations/", "regulation")
     agents = scan_exact(project_root, "AGENTS.md", "agents", "AGENTS")
     rules = scan_dir(project_root, ".foundry/usage_rules/", "usage_rules")
 
-    all_entries = adrs ++ runbooks ++ regs ++ List.wrap(agents) ++ rules
+    all_entries = adrs ++ runbooks ++ findings ++ regs ++ List.wrap(agents) ++ rules
     token_count = estimate_tokens(all_entries)
 
     %{
@@ -36,6 +37,7 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
       "index_token_limit" => 50000,
       "adrs" => adrs,
       "runbooks" => runbooks,
+      "findings" => findings,
       "regulations" => regs,
       "agents" => agents,
       "usage_rules" => rules
@@ -98,16 +100,67 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
   end
 
   defp extract_document_from_content(path, content, doc_type, title) do
+    id = extract_doc_id(path, content)
+    title = extract_heading_title(content) || title
     summary = extract_summary(content)
     tags = extract_tags(content)
+    status = extract_metadata_field(content, "Status")
+    date = extract_metadata_field(content, "Date")
 
     %{
+      id: id,
       path: path,
-      title: title,
+      title: normalize_title(title, id),
       type: doc_type,
+      status: status,
+      date: date,
       summary: summary,
       tags: tags
     }
+  end
+
+  defp extract_doc_id(path, content) do
+    with nil <- extract_adr_id(content),
+         nil <- extract_adr_id(path) do
+      path
+      |> Path.basename(".md")
+    else
+      id -> id
+    end
+  end
+
+  defp extract_adr_id(text) do
+    case Regex.run(~r/\bADR-\d{3}\b/i, text || "") do
+      [id] -> String.upcase(id)
+      _ -> nil
+    end
+  end
+
+  defp extract_heading_title(content) do
+    case Regex.run(~r/^#\s+(.+)$/m, content) do
+      [_, heading] -> String.trim(heading)
+      _ -> nil
+    end
+  end
+
+  defp normalize_title(nil, _id), do: nil
+
+  defp normalize_title(title, nil), do: String.trim(title)
+
+  defp normalize_title(title, id) do
+    title
+    |> String.trim()
+    |> String.replace(~r/^#{Regex.escape(id)}\s*[:\-]\s*/i, "")
+    |> String.trim()
+  end
+
+  defp extract_metadata_field(content, field) do
+    pattern = ~r/^\*\*#{Regex.escape(field)}:\*\*\s*(.+?)\s*$/mi
+
+    case Regex.run(pattern, content) do
+      [_, value] -> String.trim(value)
+      _ -> nil
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -124,6 +177,7 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
 
   defp skip_paragraph?(text) do
     trimmed = String.trim(text)
+
     trimmed == "" or
       String.starts_with?(trimmed, "#") or
       String.starts_with?(trimmed, "```") or
@@ -149,15 +203,31 @@ defmodule Foundry.Context.SpecKitIndexBuilder do
   end
 
   defp extract_tags(text) do
-    text
-    |> String.downcase()
-    |> String.replace(~r/[^a-z0-9\s]/, " ")
-    |> String.split(~r/\s+/, trim: true)
-    |> Enum.reject(&(&1 in @stop_words))
-    |> Enum.reject(&(String.length(&1) < 3))
-    |> Enum.uniq()
-    |> Enum.sort()
-    |> Enum.take(12)
+    explicit_tags =
+      case Regex.run(~r/^\*\*Tags:\*\*\s*(.+?)\s*$/mi, text) do
+        [_, tags] ->
+          tags
+          |> String.split(~r/[,\|]/, trim: true)
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
+
+        _ ->
+          []
+      end
+
+    if explicit_tags != [] do
+      explicit_tags
+    else
+      text
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9\s]/, " ")
+      |> String.split(~r/\s+/, trim: true)
+      |> Enum.reject(&(&1 in @stop_words))
+      |> Enum.reject(&(String.length(&1) < 3))
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.take(12)
+    end
   end
 
   # ---------------------------------------------------------------------------

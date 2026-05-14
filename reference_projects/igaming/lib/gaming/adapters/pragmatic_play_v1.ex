@@ -14,7 +14,7 @@ defmodule IgamingRef.Gaming.Adapters.PragmaticPlayV1 do
   @behaviour IgamingRef.Gaming.ProviderAdapter
 
   @compliance [:RG_MGA_006]
-  @provider_name "pragmatic_play_v1"
+  @adapter_name "pragmatic_play_v1"
 
   @doc """
   Submit a withdrawal request to Pragmatic Play for processing.

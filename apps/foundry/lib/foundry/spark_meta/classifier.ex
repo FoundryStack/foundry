@@ -14,8 +14,8 @@ defmodule Foundry.SparkMeta.Classifier do
         oban_worker?(context.module) -> :job
         trigger_module?(context.module) -> :trigger
         blueprint_module?(context.module) -> :blueprint
-        provider_module?(context.module) -> :provider
-        liveview_module?(context.module) -> :liveview
+        provider_module?(context.module) -> :adapter
+        liveview_module?(context.module) -> :page
         liveresource_module?(context.module) -> :liveresource
         agent_module?(context.module) -> :agent
         rule_module?(context.module) -> :rule
@@ -68,7 +68,9 @@ defmodule Foundry.SparkMeta.Classifier do
 
   defp trigger_module?(module) do
     module_str = Foundry.SparkMeta.Helpers.format_module_fqn(module)
-    String.ends_with?(module_str || "", "Webhook") or function_exported?(module, :handle_webhook, 3)
+
+    String.ends_with?(module_str || "", "Webhook") or
+      function_exported?(module, :handle_webhook, 3)
   rescue
     _ -> false
   end

@@ -280,6 +280,8 @@ defmodule Foundry.SparkMeta.ReactorFacts do
   defp extract_argument_provenance(nil), do: %{}
 
   defp extract_argument_provenance(snippet) do
+    snippet = sanitize_analysis_source(snippet)
+
     [
       ~r/argument\s+:(\w+),\s*result\(:([\w_]+)(?:,\s*\[:(\w+)\])?\)/m,
       ~r/argument\(\s*:(\w+),\s*result\(\s*:(\w+)(?:,\s*\[:(\w+)\])?\)\s*\)/m
@@ -294,6 +296,8 @@ defmodule Foundry.SparkMeta.ReactorFacts do
   defp build_variable_resource_map(nil, _alias_map, _step_outputs, _arg_provenance, _helper_results), do: %{}
 
   defp build_variable_resource_map(snippet, alias_map, step_outputs, arg_provenance, helper_results) do
+    snippet = sanitize_analysis_source(snippet)
+
     arg_shapes =
       arg_provenance
       |> Enum.into(%{}, fn {arg_name, %{step: step_name, key: key}} ->
@@ -356,25 +360,92 @@ defmodule Foundry.SparkMeta.ReactorFacts do
   defp extract_resource_facts(nil, _alias_map, _variable_resources), do: %StepFacts{}
 
   defp extract_resource_facts(snippet, alias_map, variable_resources) do
+    snippet = sanitize_analysis_source(snippet)
+
     read_targets = extract_resource_refs(snippet, ~r/Ash\.(?:get|read)\(\s*([^,\s)]+)/, alias_map)
 
     explicit_write_targets =
       extract_resource_refs(snippet, ~r/Ash\.(?:create|update|destroy)\(\s*([^,\s)]+)/, alias_map)
 
+    piped_module_write_targets =
+      extract_resource_refs(
+        snippet,
+        ~r/([A-Z][A-Za-z0-9_.]*)\s*\|>\s*Ash\.Changeset\.for_(?:create|update|destroy)\(/,
+        alias_map
+      ) ++
+        extract_resource_refs(
+          snippet,
+          ~r/([A-Z][A-Za-z0-9_.]*)\s*\|>\s*Ash\.(?:create|update|destroy)\(/,
+          alias_map
+        )
+
     variable_write_targets =
-      ~r/Ash\.(?:update|destroy)\(\s*(\w+),/
-      |> Regex.scan(snippet)
-      |> Enum.flat_map(fn [_, variable] -> Map.get(variable_resources, variable, []) end)
+      infer_variable_write_targets(
+        snippet,
+        ~r/Ash\.(?:update|destroy)\(\s*(\w+),/,
+        variable_resources,
+        read_targets
+      )
+
+    piped_variable_write_targets =
+      infer_variable_write_targets(
+        snippet,
+        ~r/(\w+)\s*\|>\s*Ash\.Changeset\.for_(?:update|destroy)\(/,
+        variable_resources,
+        read_targets
+      )
 
     %StepFacts{
       read_targets: Enum.uniq(read_targets),
-      write_targets: Enum.uniq(explicit_write_targets ++ variable_write_targets)
+      write_targets:
+        Enum.uniq(
+          explicit_write_targets ++
+            piped_module_write_targets ++ variable_write_targets ++ piped_variable_write_targets
+        )
     }
+  end
+
+  defp infer_variable_write_targets(snippet, pattern, variable_resources, read_targets) do
+    pattern
+    |> Regex.scan(snippet)
+    |> Enum.flat_map(fn [_, variable] ->
+      infer_variable_resource_targets(variable, variable_resources, read_targets)
+    end)
+  end
+
+  defp infer_variable_resource_targets(variable, variable_resources, read_targets) do
+    case Map.get(variable_resources, variable, []) do
+      [] ->
+        inferred_from_name =
+          Enum.filter(read_targets, fn resource ->
+            resource
+            |> String.split(".")
+            |> List.last()
+            |> Macro.underscore()
+            |> Kernel.==(variable)
+          end)
+
+        cond do
+          inferred_from_name != [] ->
+            inferred_from_name
+
+          length(Enum.uniq(read_targets)) == 1 ->
+            read_targets
+
+          true ->
+            []
+        end
+
+      resources ->
+        resources
+    end
   end
 
   defp extract_rules_from_step_source(nil, _alias_map), do: []
 
   defp extract_rules_from_step_source(snippet, alias_map) do
+    snippet = sanitize_analysis_source(snippet)
+
     explicit =
       ~r/([A-Z][A-Za-z0-9._]*\.Rules\.[A-Z][A-Za-z0-9._]*)/
       |> Regex.scan(snippet)
@@ -396,6 +467,8 @@ defmodule Foundry.SparkMeta.ReactorFacts do
   defp infer_step_output_resources(nil, _variable_resources), do: %{}
 
   defp infer_step_output_resources(snippet, variable_resources) do
+    snippet = sanitize_analysis_source(snippet)
+
     snippet
     |> extract_ok_result_maps()
     |> Enum.reduce(%{}, fn result_map, acc ->
@@ -406,6 +479,8 @@ defmodule Foundry.SparkMeta.ReactorFacts do
   defp infer_direct_result_resources(nil, _variable_resources, _read_targets, _write_targets), do: []
 
   defp infer_direct_result_resources(snippet, variable_resources, read_targets, write_targets) do
+    snippet = sanitize_analysis_source(snippet)
+
     direct =
       snippet
       |> extract_ok_result_variables()
@@ -456,6 +531,8 @@ defmodule Foundry.SparkMeta.ReactorFacts do
   end
 
   defp extract_local_function_calls(snippet, helper_names) do
+    snippet = sanitize_analysis_source(snippet)
+
     ~r/\b([a-z_][a-zA-Z0-9_]*)\(/m
     |> Regex.scan(snippet)
     |> Enum.map(fn [_, helper_name] -> helper_name end)
@@ -466,6 +543,7 @@ defmodule Foundry.SparkMeta.ReactorFacts do
   defp extract_helper_result_bindings(nil, _source_context), do: %{}
 
   defp extract_helper_result_bindings(snippet, %SourceContext{} = source_context) do
+    snippet = sanitize_analysis_source(snippet)
     helper_names = Map.keys(source_context.helper_sources)
 
     ~r/\{:ok,\s*(\w+)\}\s*<-\s*(\w+)\(/m
@@ -504,6 +582,8 @@ defmodule Foundry.SparkMeta.ReactorFacts do
   defp infer_output_key_write_targets(nil, _arg_provenance, _step_outputs), do: []
 
   defp infer_output_key_write_targets(snippet, arg_provenance, step_outputs) do
+    snippet = sanitize_analysis_source(snippet)
+
     updated_variables =
       ~r/Ash\.(?:update|destroy)\(\s*(\w+),/
       |> Regex.scan(snippet)
@@ -596,6 +676,17 @@ defmodule Foundry.SparkMeta.ReactorFacts do
       Regex.match?(~r/^[A-Z][A-Za-z0-9_.]*$/, resource_ref) -> resource_ref
       true -> nil
     end
+  end
+
+  defp sanitize_analysis_source(nil), do: nil
+
+  defp sanitize_analysis_source(snippet) do
+    snippet
+    |> String.replace(~r/#.*$/m, "")
+    |> String.replace(~r/"""[\s\S]*?"""/, "\"\"")
+    |> String.replace(~r/'''[\s\S]*?'''/, "''")
+    |> String.replace(~r/"(?:\\.|[^"\\])*"/, "\"\"")
+    |> String.replace(~r/'(?:\\.|[^'\\])*'/, "''")
   end
 
   defp normalize_block({:__block__, _, forms}), do: forms

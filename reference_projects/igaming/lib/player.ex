@@ -30,7 +30,12 @@ defmodule IgamingRef.Players.Player do
     repo(IgamingRef.Repo)
   end
 
+  paper_trail do
+    change_tracking_mode(:snapshot)
+  end
+
   state_machine do
+    state_attribute(:status)
     initial_states([:active])
     default_initial_state(:active)
 
@@ -175,6 +180,11 @@ defmodule IgamingRef.Players.Player do
       authorize_if(IgamingRef.Policies.OwnerOrOperator)
     end
 
+    policy action_type(:read) do
+      description("Internal system actors may read player records for governed financial flows.")
+      authorize_if(IgamingRef.Policies.InternalSystemActor)
+    end
+
     policy action(:update_kyc_status) do
       description("Only the internal KYC system actor may update KYC status.")
       authorize_if(IgamingRef.Policies.InternalSystemActor)
@@ -223,6 +233,10 @@ defmodule IgamingRef.Players.SelfExclusionRecord do
   postgres do
     table("self_exclusion_records")
     repo(IgamingRef.Repo)
+  end
+
+  paper_trail do
+    change_tracking_mode(:snapshot)
   end
 
   attributes do

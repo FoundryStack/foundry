@@ -33,9 +33,10 @@ defmodule IgamingRef.MixProject do
       {:postgrex, ">= 0.0.0"},
 
       # Phoenix
-      {:phoenix, "~> 1.7"},
+      {:phoenix, "~> 1.8"},
       {:phoenix_live_view, "~> 1.0"},
       {:bandit, "~> 1.2"},
+      {:plug_cowboy, "~> 2.6"},
 
       # Ash extensions
       {:ash_authentication, "~> 4.0"},
@@ -75,6 +76,9 @@ defmodule IgamingRef.MixProject do
       # Foundry — meta-framework for governance
       {:foundry, path: "../../apps/foundry"},
 
+      # Server-Driven UI
+      {:ash_sdui, path: "../../packages/ash_sdui"},
+
       # Serialisation
       {:jason, "~> 1.4"},
 
@@ -83,6 +87,7 @@ defmodule IgamingRef.MixProject do
       {:bypass, "~> 2.1", only: :test},
       {:mox, "~> 1.1", only: :test},
       {:ex_machina, "~> 2.7", only: :test},
+      {:lazy_html, ">= 0.1.0", only: :test},
 
       # Dependency conflict resolution
       {:plug, "~> 1.7", override: true},

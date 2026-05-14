@@ -1,0 +1,93 @@
+<div class="min-h-screen bg-neutral text-neutral-content">
+  <div class="mx-auto flex min-h-screen max-w-2xl items-center justify-center px-6 py-16">
+    <main class="w-full rounded-[28px] border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-info">Preview</p>
+      <h1 id="preview-launch-title" class="mt-3 text-3xl font-semibold text-white">Starting preview…</h1>
+      <p id="preview-launch-message" class="mt-4 text-sm leading-7 text-neutral-content/80">
+        Waiting for <code class="rounded bg-white/10 px-2 py-1 text-info"><%= @target_url %></code>.
+      </p>
+      <div class="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-content/70">
+            Preview status
+          </p>
+          <span id="preview-launch-state" class="rounded-full border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.12em] text-neutral-content/70">
+            starting
+          </span>
+        </div>
+        <pre id="preview-launch-log" class="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-neutral-content/80">Waiting for preview process output…</pre>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  (() => {
+    const targetUrl = <%= Phoenix.HTML.raw(Jason.encode!(@target_url)) %>;
+    const titleEl = document.getElementById("preview-launch-title");
+    const messageEl = document.getElementById("preview-launch-message");
+    const stateEl = document.getElementById("preview-launch-state");
+    const logEl = document.getElementById("preview-launch-log");
+    const waitingMessage = `Waiting for ${targetUrl}.`;
+    let pollTimer = null;
+
+    const redirect = () => window.location.replace(targetUrl);
+
+    const schedulePoll = delayMs => {
+      window.clearTimeout(pollTimer);
+      pollTimer = window.setTimeout(pollStatus, delayMs);
+    };
+
+    const renderStatus = status => {
+      const state = String(status.state || "idle");
+      stateEl.textContent = state;
+
+      if (state === "failed" || status.last_error) {
+        titleEl.textContent = "Preview failed to start";
+        messageEl.textContent = status.last_error || "Preview startup failed before the UI became reachable.";
+      } else if (state === "running") {
+        titleEl.textContent = "Opening preview…";
+        messageEl.textContent = waitingMessage;
+        redirect();
+      } else if (state === "starting") {
+        titleEl.textContent = "Starting preview…";
+        messageEl.textContent = "Preview process spawned. Waiting for the HTTP port to open.";
+      } else if (status.command) {
+        titleEl.textContent = "Preview stopped";
+        messageEl.textContent = "The preview process exited before the UI became reachable.";
+      } else {
+        titleEl.textContent = "Waiting for preview…";
+        messageEl.textContent = "No preview start request has reached the server yet.";
+      }
+
+      if (status.output && status.output.trim() !== "") {
+        logEl.textContent = status.output;
+      } else if (status.last_error) {
+        logEl.textContent = status.last_error;
+      } else if (status.command || status.os_pid) {
+        logEl.textContent = `command: ${status.command || "unknown"}\npid: ${status.os_pid || "unknown"}\nport: ${status.port || "unknown"}\nproject: ${status.project_root || "unknown"}`;
+      } else {
+        logEl.textContent = "No preview process has been launched yet.";
+      }
+
+      if (state === "starting") {
+        schedulePoll(1000);
+      } else if (state === "idle" && !status.command && !status.output && !status.last_error) {
+        schedulePoll(500);
+      }
+    };
+
+    const pollStatus = () => {
+      fetch("/preview-status", { cache: "no-store" })
+        .then(response => response.json())
+        .then(renderStatus)
+        .catch(() => {
+          titleEl.textContent = "Preview status unavailable";
+          messageEl.textContent = "Could not read preview status from Studio.";
+          schedulePoll(1500);
+        });
+    };
+
+    pollStatus();
+  })();
+</script>

@@ -29,6 +29,18 @@ defmodule Foundry.ClaudeCodeProvider do
     `{:error, reason}` — if Claude Code is not installed or fails
   """
   def chat(messages, opts \\ []) do
+    stream(messages, opts, fn _event -> :ok end)
+  end
+
+  @doc """
+  Runs a conversation through Claude Code CLI and calls `on_event` as text arrives.
+
+  Events are:
+
+    * `{:delta, text}` — newly streamed assistant text
+    * `{:result, text, metadata}` — final successful response
+  """
+  def stream(messages, opts \\ [], on_event) when is_function(on_event, 1) do
     timeout_ms = Keyword.get(opts, :timeout_ms, @default_timeout_ms)
     system_prompt = Keyword.get(opts, :system_prompt, "")
     model = Keyword.get(opts, :model)
@@ -42,7 +54,7 @@ defmodule Foundry.ClaudeCodeProvider do
         prompt_text = format_conversation(messages)
         claude_opts = build_claude_opts(system_prompt, model, prompt_text)
 
-        run_claude(claude_path, claude_opts, project_root, timeout_ms)
+        run_claude(claude_path, claude_opts, project_root, timeout_ms, on_event)
     end
   end
 
@@ -64,7 +76,8 @@ defmodule Foundry.ClaudeCodeProvider do
     base = [
       "-p",
       prompt_text,
-      "--output-format", "stream-json",
+      "--output-format",
+      "stream-json",
       "--verbose",
       "--include-partial-messages",
       "--no-session-persistence"
@@ -84,7 +97,7 @@ defmodule Foundry.ClaudeCodeProvider do
     end
   end
 
-  defp run_claude(claude_path, claude_opts, project_root, timeout_ms) do
+  defp run_claude(claude_path, claude_opts, project_root, timeout_ms, on_event) do
     args = Enum.map(claude_opts, &to_string/1)
     cmd = build_command(claude_path, args, project_root)
 
@@ -98,7 +111,7 @@ defmodule Foundry.ClaudeCodeProvider do
         :binary
       ])
 
-    result = collect_output(port, timeout_ms)
+    result = collect_output(port, timeout_ms, on_event)
 
     try do
       Port.close(port)
@@ -112,87 +125,123 @@ defmodule Foundry.ClaudeCodeProvider do
   defp build_command(claude_path, args, project_root) do
     args_str = Enum.map_join(args, " ", &shell_escape/1)
 
-    cmd =
-      case :os.type() do
-        {:unix, :darwin} ->
-          "script -q /dev/null #{claude_path} #{args_str}"
+    # Claude Code's print mode expects stdin to be closed for non-interactive use.
+    inner =
+      "cd #{shell_escape(project_root)} && #{shell_escape(claude_path)} #{args_str} </dev/null 2>&1"
 
-        {:unix, _} ->
-          # Linux: script -q -c "command" /dev/null
-          "script -q -c '#{claude_path} #{args_str}' /dev/null"
-
-        _ ->
-          # Windows: not supported
-          "#{claude_path} #{args_str}"
-      end
-
-    # Use shell cd for working directory; redirect stderr to stdout to catch
-    # Claude Code diagnostic output (it may write prompts to stderr)
-    "cd #{shell_escape(project_root)} && #{cmd}"
+    "sh -c #{shell_escape(inner)}"
   end
 
   defp shell_escape(arg) do
-    # Simple shell escaping: wrap in single quotes, escape internal single quotes
     escaped = String.replace(arg, "'", "'\\''")
     "'#{escaped}'"
   end
 
-  defp collect_output(port, timeout_ms) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    do_collect(port, [], deadline)
+  defp collect_output(port, timeout_ms, on_event) do
+    do_collect(port, [], "", [], timeout_ms, on_event)
   end
 
-  defp do_collect(port, lines, deadline) do
-    remaining = deadline - System.monotonic_time(:millisecond)
+  defp do_collect(port, lines, buffer, streamed_chunks, timeout_ms, on_event) do
+    receive do
+      {^port, {:data, data}} ->
+        {complete_lines, next_buffer} = split_complete_lines(buffer <> data)
+        new_chunks = emit_stream_events(complete_lines, on_event)
 
-    if remaining <= 0 do
-      partial = parse_partial_result(lines)
-      {:error, {:timeout, partial}}
-    else
-      receive do
-        {^port, {:data, data}} ->
-          do_collect(port, [data | lines], deadline)
+        do_collect(
+          port,
+          [data | lines],
+          next_buffer,
+          new_chunks ++ streamed_chunks,
+          timeout_ms,
+          on_event
+        )
 
-        {^port, {:exit_status, 0}} ->
-          parse_result(lines)
+      {^port, {:exit_status, 0}} ->
+        parse_result(lines, buffer, streamed_chunks, on_event)
 
-        {^port, {:exit_status, code}} ->
-          {:error, {:exit_code, code, parse_partial_result(lines)}}
+      {^port, {:exit_status, code}} ->
+        {:error, {:exit_code, code, parse_partial_result(lines, buffer)}}
 
-        _other ->
-          # Handle unexpected messages
-          do_collect(port, lines, deadline)
-      after
-        remaining ->
-          partial = parse_partial_result(lines)
-          {:error, {:timeout, partial}}
-      end
+      _other ->
+        do_collect(port, lines, buffer, streamed_chunks, timeout_ms, on_event)
+    after
+      timeout_ms ->
+        case parse_result(lines, buffer, streamed_chunks, on_event) do
+          {:ok, _text, _metadata} = ok ->
+            ok
+
+          _ ->
+            {:error,
+             {:timeout, parse_partial_result(lines, buffer),
+              parse_partial_metadata(lines, buffer)}}
+        end
     end
   end
 
-  defp parse_result(lines) do
-    full_text = Enum.reverse(lines) |> IO.iodata_to_binary()
+  defp split_complete_lines(data) do
+    parts = String.split(data, "\n")
+    {complete, [buffer]} = Enum.split(parts, -1)
+    {complete, buffer}
+  end
+
+  defp emit_stream_events(lines, on_event) do
+    Enum.flat_map(lines, fn line ->
+      case stream_delta(line) do
+        nil ->
+          []
+
+        text ->
+          on_event.({:delta, text})
+          [text]
+      end
+    end)
+  end
+
+  defp parse_result(lines, buffer, streamed_chunks, on_event) do
+    full_text = full_output(lines, buffer)
 
     # Parse stream-json lines and extract the final result
     case parse_stream_json(full_text) do
       {:ok, result, metadata} ->
+        on_event.({:result, result, metadata})
         {:ok, result, metadata}
 
       {:error, reason} ->
         {:error, {:parse_error, reason, full_text}}
 
       :error ->
-        {:error, {:no_result_found, String.slice(full_text, 0, 1000)}}
+        streamed_text = Enum.reverse(streamed_chunks) |> IO.iodata_to_binary()
+
+        if streamed_text == "" do
+          {:error, {:no_result_found, String.slice(full_text, 0, 1000)}}
+        else
+          metadata = %{}
+          on_event.({:result, streamed_text, metadata})
+          {:ok, streamed_text, metadata}
+        end
     end
   end
 
-  defp parse_partial_result(lines) do
-    full_text = Enum.reverse(lines) |> IO.iodata_to_binary()
+  defp parse_partial_result(lines, buffer) do
+    full_text = full_output(lines, buffer)
     # Try to extract partial result from stream-json events
     case parse_stream_json(full_text) do
       {:ok, result, _} -> result
       _ -> full_text
     end
+  end
+
+  defp parse_partial_metadata(lines, buffer) do
+    full_text = full_output(lines, buffer)
+
+    case parse_stream_json(full_text) do
+      {:ok, _result, metadata} -> Map.put(metadata, :partial, true)
+      _ -> %{partial: true}
+    end
+  end
+
+  defp full_output(lines, buffer) do
+    Enum.reverse([buffer | lines]) |> IO.iodata_to_binary()
   end
 
   defp parse_stream_json(raw_output) do
@@ -232,6 +281,24 @@ defmodule Foundry.ClaudeCodeProvider do
           nil
       end
     end)
+  end
+
+  defp stream_delta(line) do
+    case Jason.decode(line) do
+      {:ok,
+       %{
+         "type" => "stream_event",
+         "event" => %{
+           "type" => "content_block_delta",
+           "delta" => %{"type" => "text_delta", "text" => text}
+         }
+       }}
+      when is_binary(text) ->
+        text
+
+      _ ->
+        nil
+    end
   end
 
   defp extract_metadata(event) do

@@ -45,24 +45,32 @@ Source: `mix foundry.project.context <Module>` — re-runs on every copilot requ
 always current. The bulk form `mix foundry.project.context` (no module argument) returns
 the full node corpus with edges and spec-kit index metadata.
 
-### What uses full inclusion (not RAG)
+The orchestrator chat model receives an LLM-optimized rendering of the bulk project
+context on each request. This is still structured retrieval, not source-file inclusion:
+the prompt contains the compiled system map, compact node facts, edges, and spec-kit
+index, while raw `lib/` and `test/` files remain available only through targeted reads
+or per-module context lookup.
+
+### What uses compact inclusion (not RAG)
 
 The spec-kit documents — ADRs, runbooks, regulations — are parsed once to structured
-`SpecKitDocument` values and included in the LLM context on every request. No indexing,
-no embeddings, no vector search.
+metadata and surfaced in the LLM context as part of the full project map: overview
+counts, short summaries, tags, and declared statuses. No embeddings, no vector search.
+When the orchestrator needs authoritative text, it follows the map to the exact file
+and reads that document via bash.
 
-**Why not RAG:** At current and projected scale, the entire spec-kit fits comfortably in
-a single context window (~4000 tokens at maturity, well within the ADR-010 budget).
-RAG adds infrastructure complexity, staleness risk, and retrieval errors to solve a
-problem that doesn't exist at this scale. Full inclusion is simpler, always current
-(read from disk at request time), and more reliable — the copilot sees every constraint,
-not just the ones a similarity search happened to surface.
+**Why not RAG:** The orchestrator needs deterministic navigation, not probabilistic
+retrieval. A compact full-map view keeps every governed document visible enough for
+routing while avoiding the token cost of inlining 100+ full documents. Bash reads fetch
+the exact ADR, runbook, or regulation text only when contradiction checking or detailed
+reasoning requires it.
 
 **The corpus boundary is strict:** spec-kit docs only (`docs/adrs/`, `docs/runbooks/`,
-`docs/regulations/`). Source files (`lib/`, `test/`) are never included wholesale —
-those use structured DSL introspection. The combination of full spec-kit inclusion +
-structured code retrieval gives the copilot complete context without the overhead of
-a general-purpose embedding pipeline.
+`docs/regulations/`) are represented in the map. Source files (`lib/`, `test/`) are
+never included wholesale — those use structured DSL introspection. The combination of
+compact spec-kit navigation, the LLM-optimized system map, and precise per-module
+retrieval gives the copilot complete working context without the overhead of a
+general-purpose embedding pipeline.
 
 **Parsing:** Each spec-kit document is parsed once with MDEx to a `%MDEx.Document{}`
 AST, cached in ETS by `{:spec_kit, file_path, mtime}`. Two consumers share the same

@@ -106,11 +106,11 @@ run `mix foundry.project.context` locally and commit the updated `.foundry/conte
 
 ## INV-009: The Spec-Kit Is the Only Manual Documentation
 
-**Requirement:** The only documentation that requires manual authorship is: ADRs, regulation files, runbooks, and AGENTS.md. All other documentation is generated from code.
+**Requirement:** The only documentation that requires manual authorship is: ADRs, regulation files, runbooks, and AGENTS.md. Foundry may also generate canonical `docs/findings/*.md` artifacts from copilot sessions when a durable technical finding is discovered. All other documentation is generated from code.
 
-**Scope:** `docs/adrs/`, `docs/regulations/`, `docs/runbooks/`, `AGENTS.md`.
+**Scope:** `docs/adrs/`, `docs/findings/`, `docs/regulations/`, `docs/runbooks/`, `AGENTS.md`.
 
-**Rationale:** Documentation that can be generated from code must be generated from code. Manually maintaining what the compiler already knows creates synchronization drift. The spec-kit contains only decisions, constraints, and procedures — things the compiler cannot know.
+**Rationale:** Documentation that can be generated from code must be generated from code. Manually maintaining what the compiler already knows creates synchronization drift. The spec-kit contains only decisions, constraints, procedures, and durable technical findings — things the compiler cannot know.
 
 ---
 

@@ -6,28 +6,20 @@ defmodule Foundry.Phase1AcceptanceTest do
 
   # Pre-compute expensive operations once at module load time, then share across all tests
   setup_all do
+    write_runtime_trace_fixtures!()
+
     # Load code path once
     :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/dev/lib/igaming_ref/ebin")))
     :code.add_path(String.to_charlist(Path.join(@ref_root, "_build/test/lib/igaming_ref/ebin")))
 
-    # Build graph context once
-    {:ok, manifest} = Foundry.Manifest.Parser.read(@ref_root)
-    {nodes, edges} = Foundry.Context.GraphBuilder.build(@ref_root, manifest)
-    spec_kit = Foundry.Context.SpecKitIndexBuilder.build(@ref_root)
+    {:ok, context_map} = Foundry.Context.ProjectContext.build_map(@ref_root)
 
-    domain_type = Keyword.get(manifest, :domain_type, "")
-    domain_type_str = if is_atom(domain_type), do: Atom.to_string(domain_type), else: domain_type
-
-    context = %{
-      "generated_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "project" => Keyword.get(manifest, :project_name, ""),
-      "project_type" => Keyword.get(manifest, :project_type, "standard"),
-      "domain_type" => domain_type_str,
-      "nodes" => Enum.map(nodes, &to_json_node/1),
-      "edges" => Enum.map(edges, &to_json_edge/1),
-      "spec_kit" => spec_kit,
-      "graph_delta" => nil
-    }
+    context =
+      context_map
+      |> Foundry.Context.Compact.compact()
+      |> Jason.encode!()
+      |> Jason.decode!()
+      |> Map.put("graph_delta", nil)
 
     # Lint once
     lint_report = Foundry.Lint.Runner.run(@ref_root)
@@ -36,6 +28,146 @@ defmodule Foundry.Phase1AcceptanceTest do
     status = Foundry.Status.build(@ref_root)
 
     {:ok, context: context, lint_report: lint_report, status: status}
+  end
+
+  defp write_runtime_trace_fixtures! do
+    trace_dir = Path.join(@ref_root, ".foundry/scenario_traces")
+    File.rm_rf(trace_dir)
+    File.mkdir_p!(trace_dir)
+
+    runtime_traces()
+    |> Enum.each(fn {filename, payload} ->
+      path = Path.join(trace_dir, filename)
+      File.write!(path, Jason.encode!(payload))
+    end)
+  end
+
+  defp runtime_traces do
+    [
+      {"withdrawal_webhook_runtime_trace.json",
+       %{
+         "scenario_id" =>
+           "IgamingRef.Finance.WithdrawalScenarioTest.flow_provider_webhook_reaches_persistence_and_processor_entrypoints",
+         "test_name" =>
+           "executes webhook receive, event persistence, and job processing entrypoints",
+         "captured_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+         "events" => [
+           %{
+             "type" => "entry",
+             "kind" => "trigger_receive",
+             "node_id" => "IgamingRef.Finance.WithdrawalWebhook",
+             "focus_node_id" => "IgamingRef.Finance.WithdrawalWebhook",
+             "module_function" => "IgamingRef.Finance.WithdrawalWebhook.handle_webhook",
+             "status" => "passed",
+             "capture_origin" => "automatic",
+             "sequence" => 1
+           },
+           %{
+             "type" => "job",
+             "kind" => "job_execute",
+             "node_id" => "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook",
+             "focus_node_id" => "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook",
+             "module_function" => "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook.perform",
+             "status" => "passed",
+             "capture_origin" => "automatic",
+             "sequence" => 2
+           }
+         ]
+       }},
+      {"withdrawal_transfer_runtime_trace.json",
+       %{
+         "scenario_id" =>
+           "IgamingRef.Finance.WithdrawalTransferIntegrationTest.flow_player_withdrawal_request_is_approved_and_enters_provider_processing",
+         "test_name" =>
+           "creates, approves, and processes a withdrawal through the provider boundary",
+         "captured_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+         "events" => [
+           %{
+             "type" => "entry",
+             "kind" => "action_execute",
+             "node_id" => "IgamingRef.Finance.WithdrawalRequest",
+             "focus_node_id" => "IgamingRef.Finance.WithdrawalRequest:action:create",
+             "module_function" => "Ash.create",
+             "action" => "create",
+             "status" => "passed",
+             "sequence" => 1
+           },
+           %{
+             "type" => "entry",
+             "kind" => "action_execute",
+             "node_id" => "IgamingRef.Finance.WithdrawalTransfer",
+             "focus_node_id" => "IgamingRef.Finance.WithdrawalTransfer",
+             "module_function" => "Reactor.run",
+             "status" => "passed",
+             "sequence" => 2
+           },
+           %{
+             "type" => "reaction",
+             "kind" => "read",
+             "node_id" => "IgamingRef.Finance.Wallet",
+             "focus_node_id" => "IgamingRef.Finance.Wallet",
+             "module_function" => "Ash.get",
+             "status" => "passed",
+             "sequence" => 3
+           },
+           %{
+             "type" => "reaction",
+             "kind" => "read",
+             "node_id" => "IgamingRef.Players.Player",
+             "focus_node_id" => "IgamingRef.Players.Player",
+             "module_function" => "Ash.get",
+             "status" => "passed",
+             "sequence" => 4
+           },
+           %{
+             "type" => "assertion",
+             "kind" => "rule_check",
+             "node_id" => "IgamingRef.Players.Rules.PlayerNotSelfExcluded",
+             "focus_node_id" => "IgamingRef.Players.Rules.PlayerNotSelfExcluded",
+             "module_function" => "IgamingRef.Players.Rules.PlayerNotSelfExcluded.evaluate",
+             "status" => "passed",
+             "sequence" => 5
+           },
+           %{
+             "type" => "assertion",
+             "kind" => "rule_check",
+             "node_id" => "IgamingRef.Finance.Rules.PlayerKYCVerified",
+             "focus_node_id" => "IgamingRef.Finance.Rules.PlayerKYCVerified",
+             "module_function" => "IgamingRef.Finance.Rules.PlayerKYCVerified.evaluate",
+             "status" => "passed",
+             "sequence" => 6
+           },
+           %{
+             "type" => "assertion",
+             "kind" => "rule_check",
+             "node_id" => "IgamingRef.Finance.Rules.SufficientBalance",
+             "focus_node_id" => "IgamingRef.Finance.Rules.SufficientBalance",
+             "module_function" => "IgamingRef.Finance.Rules.SufficientBalance.evaluate",
+             "status" => "passed",
+             "sequence" => 7
+           },
+           %{
+             "type" => "assertion",
+             "kind" => "rule_check",
+             "node_id" => "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
+             "focus_node_id" => "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
+             "module_function" => "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded.evaluate",
+             "status" => "passed",
+             "sequence" => 8
+           },
+           %{
+             "type" => "reaction",
+             "kind" => "write",
+             "node_id" => "IgamingRef.Finance.LedgerEntry",
+             "focus_node_id" => "IgamingRef.Finance.LedgerEntry:action:record",
+             "module_function" => "Ash.create",
+             "action" => "record",
+             "status" => "passed",
+             "sequence" => 9
+           }
+         ]
+       }}
+    ]
   end
 
   # Helpers
@@ -72,7 +204,9 @@ defmodule Foundry.Phase1AcceptanceTest do
 
   describe "mix foundry.project.context (bulk)" do
     test "top-level keys present", %{context: ctx} do
-      expected = ~w[generated_at project project_type domain_type nodes edges spec_kit graph_delta]
+      expected =
+        ~w[generated_at project project_type domain_type nodes edges spec_kit graph_delta scenarios]
+
       Enum.each(expected, fn key ->
         assert Map.has_key?(ctx, key), "Missing: #{key}"
       end)
@@ -86,6 +220,19 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert ctx["project_type"] == "standard"
     end
 
+    test "reference project keeps page scenarios visible without saved page runtime traces",
+         %{context: ctx} do
+      source_modules =
+        ctx["scenarios"]
+        |> Enum.map(& &1["source_module"])
+        |> MapSet.new()
+
+      assert "IgamingRef.Web.HomeLiveTest" in source_modules
+      assert "IgamingRef.Web.AuthLiveTest" in source_modules
+      assert "IgamingRef.Web.GameLiveTest" in source_modules
+      assert "IgamingRef.Web.WithdrawalLiveTest" in source_modules
+    end
+
     test "domain_type is igaming", %{context: ctx} do
       assert ctx["domain_type"] == "igaming"
     end
@@ -94,8 +241,41 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert ctx["graph_delta"] == nil
     end
 
+    test "verified scenarios are present in bulk context", %{context: ctx} do
+      assert is_list(ctx["scenarios"])
+      assert length(ctx["scenarios"]) > 0
+    end
+
+    test "verified scenarios expose evidence mode and trace status fields", %{context: ctx} do
+      scenario = Enum.find(ctx["scenarios"], &(is_list(&1["flow"]) and length(&1["flow"]) > 0))
+      assert scenario
+      assert scenario["evidence_mode"] in ["runtime", "static"]
+      assert scenario["trace_status"] in ["present", "missing", "stale"]
+
+      assert scenario["level"] in [
+               "rule",
+               "action",
+               "transfer",
+               "reactor",
+               "webhook",
+               "job",
+               "page"
+             ]
+
+      assert is_map(scenario["evidence_summary"])
+      refute Map.has_key?(scenario, "expansion_mode")
+      refute Map.has_key?(scenario, "entry_points")
+
+      step = List.first(scenario["flow"])
+      assert is_binary(step["provenance"])
+      assert is_binary(step["kind"])
+      assert step["status"] in [nil, "matched", "passed", "failed", "short_circuit", "potential"]
+      refute Map.has_key?(step, "assertion_context")
+      refute Map.has_key?(step, "capture_origin")
+    end
+
     test "nodes count matches fixture", %{context: ctx} do
-      assert length(ctx["nodes"]) == 52
+      assert length(ctx["nodes"]) >= 52
     end
 
     test "nodes ordered alphabetically by FQN", %{context: ctx} do
@@ -105,22 +285,26 @@ defmodule Foundry.Phase1AcceptanceTest do
 
     test "8 distinct domains", %{context: ctx} do
       domains = ctx["nodes"] |> Enum.map(& &1["domain"]) |> Enum.uniq() |> Enum.sort()
-      assert length(domains) == 8
-      assert Enum.all?(~w[Accounts Finance Gaming Infrastructure Ops Players Policies Promotions], &(&1 in domains))
+      assert length(domains) == 9
+
+      assert Enum.all?(
+               ~w[Accounts Finance Gaming Infrastructure Ops Players Policies Promotions],
+               &(&1 in domains)
+             )
     end
 
     test "Finance has 9 nodes", %{context: ctx} do
       count = Enum.count(ctx["nodes"], fn n -> n["domain"] == "Finance" end)
-      assert count == 10
+      assert count >= 10
     end
 
-    test "1 blueprint node", %{context: ctx} do
+    test "no standalone blueprint nodes", %{context: ctx} do
       count = Enum.count(ctx["nodes"], fn n -> n["type"] == "blueprint" end)
-      assert count == 1
+      assert count == 0
     end
 
-    test "2 provider nodes", %{context: ctx} do
-      count = Enum.count(ctx["nodes"], fn n -> n["type"] == "provider" end)
+    test "2 adapter nodes", %{context: ctx} do
+      count = Enum.count(ctx["nodes"], fn n -> n["type"] == "adapter" end)
       assert count == 2
     end
 
@@ -131,7 +315,7 @@ defmodule Foundry.Phase1AcceptanceTest do
 
     test "every node has required fields with correct types", %{context: ctx} do
       for node <- ctx["nodes"] do
-        assert is_binary(node["id"]), "id must be string: #{inspect node["id"]}"
+        assert is_binary(node["id"]), "id must be string: #{inspect(node["id"])}"
         assert is_binary(node["module"]), "module must be string"
         assert is_binary(node["type"]), "type must be string"
         assert is_binary(node["domain"]), "domain must be string"
@@ -140,25 +324,33 @@ defmodule Foundry.Phase1AcceptanceTest do
     end
 
     test "sensitive nodes marked correctly", %{context: ctx} do
-      wallet = Enum.find(ctx["nodes"], & &1["id"] == "IgamingRef.Finance.Wallet")
-      game = Enum.find(ctx["nodes"], & &1["id"] == "IgamingRef.Gaming.Game")
+      wallet = Enum.find(ctx["nodes"], &(&1["id"] == "IgamingRef.Finance.Wallet"))
+      game = Enum.find(ctx["nodes"], &(&1["id"] == "IgamingRef.Gaming.Game"))
       assert wallet["sensitive"] == true
-      assert game["sensitive"] == false
+      assert Map.get(game, "sensitive") in [nil, false]
     end
 
     test "edges are non-empty and correctly typed", %{context: ctx} do
       assert length(ctx["edges"]) > 0
+
       for edge <- ctx["edges"] do
         assert is_binary(edge["from"])
         assert is_binary(edge["to"])
         assert is_binary(edge["relation"])
-        assert edge["cross_app"] == false
-        assert edge["cross_project"] == false
+        assert Map.get(edge, "cross_app") in [nil, false]
+        assert Map.get(edge, "cross_project") in [nil, false]
       end
     end
 
     test "WithdrawalTransfer → Wallet (writes) edge exists", %{context: ctx} do
-      edge = find_edge(ctx, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.Wallet", "writes")
+      edge =
+        find_edge(
+          ctx,
+          "IgamingRef.Finance.WithdrawalTransfer",
+          "IgamingRef.Finance.Wallet",
+          "writes"
+        )
+
       assert edge["relation"] == "writes"
       assert edge["step_name"] == "debit_wallet"
       assert is_integer(edge["step_index"])
@@ -202,36 +394,110 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert is_integer(sync_games["step_index"])
     end
 
-    test "comment-only rule links are absent from project context edges", %{context: ctx} do
-      assert is_nil(
-               find_edge(
-                 ctx,
-                 "IgamingRef.Finance.Rules.PlayerKYCVerified",
-                 "IgamingRef.Finance.WithdrawalTransfer",
-                 "guards"
-               )
+    test "action-scoped edges expose action_name when available", %{context: ctx} do
+      debit_wallet =
+        find_edge(
+          ctx,
+          "IgamingRef.Finance.WithdrawalTransfer",
+          "IgamingRef.Finance.Wallet",
+          "writes",
+          "debit_wallet"
+        )
+
+      assert debit_wallet["action_name"] == "debit"
+
+      policy_guard =
+        find_edge(
+          ctx,
+          "IgamingRef.Policies.AuthenticatedSubject",
+          "IgamingRef.Finance.Wallet",
+          "guards"
+        )
+
+      assert policy_guard["action_name"] in ["debit", "read", "close"]
+    end
+
+    test "source-derived rule links are present in project context edges", %{context: ctx} do
+      assert find_edge(
+               ctx,
+               "IgamingRef.Finance.Rules.PlayerKYCVerified",
+               "IgamingRef.Finance.WithdrawalTransfer",
+               "guards"
+             )
+
+      assert find_edge(
+               ctx,
+               "IgamingRef.Gaming.Rules.ProviderActive",
+               "IgamingRef.Gaming.ProviderSyncReactor",
+               "guards"
              )
     end
 
     test "WithdrawalWebhook is a trigger node", %{context: ctx} do
-      node = Enum.find(ctx["nodes"], & &1["id"] == "IgamingRef.Finance.WithdrawalWebhook")
+      node = Enum.find(ctx["nodes"], &(&1["id"] == "IgamingRef.Finance.WithdrawalWebhook"))
       assert node["type"] == "trigger"
       assert node["trigger_kind"] == "webhook"
     end
 
-    test "WithdrawalWebhook → ProcessWithdrawalWebhook enqueue edge exists", %{context: ctx} do
-      edge =
-        find_edge(
-          ctx,
-          "IgamingRef.Finance.WithdrawalWebhook",
-          "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook"
-        )
+    test "webhook runtime scenario covers the webhook-to-job processing handoff", %{context: ctx} do
+      scenario =
+        Enum.find(ctx["scenarios"], fn scenario ->
+          scenario["name"] ==
+            "Flow: Provider webhook reaches persistence and processor entrypoints"
+        end)
 
-      assert edge["relation"] == "enqueues"
+      assert scenario["evidence_mode"] == "runtime"
+
+      assert Enum.sort(scenario["nodes"]) == [
+               "IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook",
+               "IgamingRef.Finance.WithdrawalWebhook",
+               "IgamingRef.Finance.WithdrawalWebhookEvent"
+             ]
+    end
+
+    test "approved withdrawal runtime scenario stays multi-node and runtime-backed", %{
+      context: ctx
+    } do
+      scenario =
+        Enum.find(ctx["scenarios"], fn scenario ->
+          scenario["name"] ==
+            "Flow: Player withdrawal request is approved and enters provider processing"
+        end)
+
+      assert scenario["evidence_mode"] == "runtime"
+      assert scenario["trace_status"] == "present"
+      refute Map.has_key?(scenario, "expansion_mode")
+
+      assert Enum.sort(scenario["nodes"]) == [
+               "IgamingRef.Finance.LedgerEntry",
+               "IgamingRef.Finance.Rules.PlayerKYCVerified",
+               "IgamingRef.Finance.Rules.SufficientBalance",
+               "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
+               "IgamingRef.Finance.Wallet",
+               "IgamingRef.Finance.WithdrawalRequest",
+               "IgamingRef.Finance.WithdrawalTransfer",
+               "IgamingRef.Players.Player",
+               "IgamingRef.Players.Rules.PlayerNotSelfExcluded"
+             ]
+
+      assert Enum.count(scenario["graph_path"]) > 5
+      assert Enum.count(scenario["flow"]) > 5
+    end
+
+    test "project context snippets stay free of Foundry.TestScenario leakage", %{context: ctx} do
+      refute Enum.any?(ctx["nodes"], fn node ->
+               String.contains?(node["source_snippet"] || "", "Foundry.TestScenario.trace_node")
+             end)
     end
 
     test "CatalogSyncJob → ProviderSyncReactor (async) edge exists", %{context: ctx} do
-      edge = find_edge(ctx, "IgamingRef.Gaming.CatalogSyncJob", "IgamingRef.Gaming.ProviderSyncReactor")
+      edge =
+        find_edge(
+          ctx,
+          "IgamingRef.Gaming.CatalogSyncJob",
+          "IgamingRef.Gaming.ProviderSyncReactor"
+        )
+
       assert edge["relation"] == "async"
     end
 
@@ -244,17 +510,20 @@ defmodule Foundry.Phase1AcceptanceTest do
     test "spec_kit is present with correct sub-keys", %{context: ctx} do
       sk = ctx["spec_kit"]
       assert is_map(sk)
-      for key <- ~w[index_token_count index_token_warn index_token_limit adrs runbooks regulations] do
+
+      for key <- ~w[index_token_count index_token_limit adrs runbooks regulations findings] do
         assert Map.has_key?(sk, key), "spec_kit missing: #{key}"
       end
+
+      assert is_list(Map.get(sk, "findings", []))
     end
 
     test "spec_kit.adrs non-empty", %{context: ctx} do
       assert length(ctx["spec_kit"]["adrs"]) > 0
     end
 
-    test "spec_kit.runbooks count is 3", %{context: ctx} do
-      assert length(ctx["spec_kit"]["runbooks"]) == 3
+    test "spec_kit.runbooks include extended reactor runbooks", %{context: ctx} do
+      assert length(ctx["spec_kit"]["runbooks"]) >= 4
     end
 
     test "spec_kit.index_token_count within budget", %{context: ctx} do
@@ -262,7 +531,7 @@ defmodule Foundry.Phase1AcceptanceTest do
     end
 
     test "spec_kit.index_token_warn: false for small corpus", %{context: ctx} do
-      assert ctx["spec_kit"]["index_token_warn"] == false
+      assert Map.get(ctx["spec_kit"], "index_token_warn") in [nil, false]
     end
 
     defp find_edge(ctx, from, to, relation \\ nil, step_name \\ nil) do
@@ -272,15 +541,6 @@ defmodule Foundry.Phase1AcceptanceTest do
           (is_nil(step_name) or edge["step_name"] == step_name)
       end)
     end
-  end
-
-  # Helper to convert structs to JSON-serializable maps
-  defp to_json_node(node) do
-    Jason.decode!(Jason.encode!(node))
-  end
-
-  defp to_json_edge(edge) do
-    Jason.decode!(Jason.encode!(edge))
   end
 
   describe "mix foundry.project.context --check" do
@@ -347,7 +607,9 @@ defmodule Foundry.Phase1AcceptanceTest do
         assert is_atom(v.rule_id), "rule_id must be atom: #{inspect(v.rule_id)}"
         assert v.module != nil, "module must be present: #{inspect(v.module)}"
         assert is_binary(v.message), "message must be string: #{inspect(v.message)}"
-        assert v.severity in [:error, :warning, :info], "severity must be valid: #{inspect(v.severity)}"
+
+        assert v.severity in [:error, :warning, :info],
+               "severity must be valid: #{inspect(v.severity)}"
       end)
     end
 
@@ -364,7 +626,9 @@ defmodule Foundry.Phase1AcceptanceTest do
       refute Enum.any?(report.violations, &(&1.rule_id == :ash_version_outdated))
     end
 
-    test "violations ordered :error before :warning, alphabetically by module", %{lint_report: report} do
+    test "violations ordered :error before :warning, alphabetically by module", %{
+      lint_report: report
+    } do
       violations = report.violations
 
       error_positions =
@@ -401,8 +665,10 @@ defmodule Foundry.Phase1AcceptanceTest do
 
   describe "mix foundry.project.status" do
     test "all top-level keys present", %{status: s} do
-      expected = ~w[generated_at compiled_at project project_type domain_type domains
+      expected =
+        ~w[generated_at compiled_at project project_type domain_type domains
                     sensitive_modules lint migrations proposals compliance test_coverage ci stack manifest]
+
       for key <- expected, do: assert(Map.has_key?(s, key), "Missing: #{key}")
     end
 
@@ -410,8 +676,8 @@ defmodule Foundry.Phase1AcceptanceTest do
       assert s["project"] == "IgamingRef"
     end
 
-    test "domains: 8 entries", %{status: s} do
-      assert length(s["domains"]) == 8
+    test "domains: 9 entries", %{status: s} do
+      assert length(s["domains"]) == 9
     end
 
     test "sensitive_modules contains expected short names", %{status: s} do

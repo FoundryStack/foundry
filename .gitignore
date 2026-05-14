@@ -16,9 +16,13 @@ erl_crash.dump
 # Temporary files, for example, from tests.
 /tmp/
 
-.specstory
-.elixir_ls
-.specify
 .DS_Store
+.elixir_ls
+.foundry/tools/
 .hex-docs
 .hex-packages
+.specify
+.specstory
+.vscode
+.zig-global-cache
+package-lock.json

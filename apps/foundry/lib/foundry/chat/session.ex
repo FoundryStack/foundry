@@ -17,7 +17,7 @@ defmodule Foundry.Chat.Session do
     data_layer: Ash.DataLayer.Mnesia
 
   mnesia do
-    table :foundry_chat_sessions
+    table(:foundry_chat_sessions)
   end
 
   attributes do
@@ -38,6 +38,15 @@ defmodule Foundry.Chat.Session do
       public?(true)
     end
 
+    attribute :session_digest, :map do
+      description(
+        "Compact session memory for Studio copilot runs: selected nodes, recent files, proposal ids, and condensed conclusions."
+      )
+
+      default(%{})
+      public?(true)
+    end
+
     attribute :title, :string do
       description("Human-readable session title, auto-generated from first message.")
       allow_nil?(true)
@@ -50,7 +59,8 @@ defmodule Foundry.Chat.Session do
       public?(true)
     end
 
-    timestamps()
+    create_timestamp(:created_at)
+    update_timestamp(:updated_at)
   end
 
   actions do
@@ -58,7 +68,12 @@ defmodule Foundry.Chat.Session do
 
     create :create do
       primary?(true)
-      accept([:session_id, :messages, :title, :model])
+      accept([:session_id, :messages, :session_digest, :title, :model])
+    end
+
+    update :persist_messages do
+      description("Replace the stored message history for the session.")
+      accept([:messages, :session_digest])
     end
 
     update :add_message do

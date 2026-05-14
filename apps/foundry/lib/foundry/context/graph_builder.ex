@@ -11,13 +11,23 @@ defmodule Foundry.Context.GraphBuilder do
   - Resource `has_many`/`has_one` relationship: `referenced_by` edge
   """
 
-  alias Foundry.Context.{ModuleDiscovery, NodeBuilder, PendingMigrations, EdgeEntry, NodeEntry}
+  alias Foundry.Context.{ModuleDiscovery, NodeBuilder, PendingMigrations, EdgeEntry, NodeEntry, RouterIntrospector}
   alias Foundry.SparkMeta, as: FoundrySparkMeta
 
   @spec build(String.t(), list()) :: {list(NodeEntry.t()), list(EdgeEntry.t())}
   def build(project_root, manifest) do
     root_name = Keyword.get(manifest, :project_name, "")
+    app_name = Macro.underscore(root_name) |> String.to_atom()
     {:ok, pending_set} = PendingMigrations.check(project_root)
+
+    # Build router routes map keyed by module string for page route enrichment
+    router_routes =
+      case RouterIntrospector.find_router(app_name, project_root) do
+        nil -> %{}
+        router ->
+          RouterIntrospector.liveview_routes(router)
+          |> Map.new(fn r -> {format_module(r.module), r} end)
+      end
 
     nodes =
       ModuleDiscovery.all_project_modules(project_root, root_name)
@@ -25,7 +35,8 @@ defmodule Foundry.Context.GraphBuilder do
         fn mod ->
           info = FoundrySparkMeta.walk(mod)
           pending = PendingMigrations.pending?(mod, pending_set)
-          NodeBuilder.build(info, manifest, pending)
+          node = NodeBuilder.build(info, manifest, pending)
+          enrich_page_route(node, router_routes)
         end,
         max_concurrency: System.schedulers_online(),
         timeout: 30_000
@@ -41,10 +52,23 @@ defmodule Foundry.Context.GraphBuilder do
     # Add external infrastructure nodes and their edges (Phase C)
     {external_nodes, external_edges} = derive_external_nodes_and_edges(nodes)
     all_nodes = Enum.sort_by(nodes ++ external_nodes, & &1.id)
-    all_edges = Enum.sort_by(edges ++ external_edges, &{&1.from, &1.to})
+    all_edges =
+      edges
+      |> Kernel.++(external_edges)
+      |> filter_resolvable_edges(all_nodes)
+      |> Enum.sort_by(&{&1.from, &1.to})
 
     {all_nodes, all_edges}
   end
+
+  defp enrich_page_route(%NodeEntry{type: "page"} = node, router_routes) do
+    case Map.get(router_routes, node.module) do
+      nil -> node
+      route -> %{node | page_route: route.path, page_dynamic: route.dynamic}
+    end
+  end
+
+  defp enrich_page_route(node, _router_routes), do: node
 
   # ---------------------------------------------------------------------------
   # Edge derivation
@@ -63,9 +87,9 @@ defmodule Foundry.Context.GraphBuilder do
     edge_list = edge_list ++ derive_auth_edges(nodes, node_map)
     edge_list = edge_list ++ derive_rule_edges(nodes, node_map)
     edge_list = edge_list ++ derive_policy_edges(nodes, node_map)
-    edge_list = edge_list ++ derive_provider_edges(nodes, node_map)
-    edge_list = edge_list ++ derive_blueprint_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_adapter_edges(nodes, node_map)
     edge_list = edge_list ++ derive_trigger_edges(nodes, node_map)
+    edge_list = edge_list ++ derive_page_edges(nodes, node_map)
 
     Enum.uniq(edge_list)
   end
@@ -77,21 +101,20 @@ defmodule Foundry.Context.GraphBuilder do
     |> Enum.flat_map(fn reactor ->
       reactor.steps
       |> Enum.flat_map(fn step ->
-        read_targets =
-          Map.get(step, :read_targets) || Map.get(step, "read_targets") ||
-            fallback_targets(step, :read)
-
-        write_targets =
-          Map.get(step, :write_targets) || Map.get(step, "write_targets") ||
-            fallback_targets(step, :write)
+        read_targets = step_targets(step, :read_targets, :read)
+        write_targets = step_targets(step, :write_targets, :write)
 
         step_name = Map.get(step, :name) || Map.get(step, "name")
         step_index = Map.get(step, :step_index) || Map.get(step, "step_index")
+        target_action = infer_step_action_name(step)
 
-        Enum.map(read_targets, &new_step_edge(reactor.module, &1, :reads, step_name, step_index)) ++
+        Enum.map(
+          read_targets,
+          &new_step_edge(reactor.module, &1, :reads, step_name, step_index, target_action)
+        ) ++
           Enum.map(
             write_targets,
-            &new_step_edge(reactor.module, &1, :writes, step_name, step_index)
+            &new_step_edge(reactor.module, &1, :writes, step_name, step_index, target_action)
           )
       end)
     end)
@@ -105,6 +128,7 @@ defmodule Foundry.Context.GraphBuilder do
       cond do
         job.performs ->
           [EdgeEntry.new(job.module, job.performs, :async)]
+
         true ->
           reactor = find_reactor_in_domain(node_map, job.domain)
           if reactor, do: [EdgeEntry.new(job.module, reactor.module, :async)], else: []
@@ -154,19 +178,42 @@ defmodule Foundry.Context.GraphBuilder do
     end)
   end
 
-  # Provider edges: connect provider adapter modules to external provider systems
-  defp derive_provider_edges(nodes, _node_map) do
+  # Adapter edges: connect integration adapter modules to external systems
+  defp derive_adapter_edges(nodes, _node_map) do
     nodes
-    |> Enum.filter(&(&1.type == "provider"))
-    |> Enum.flat_map(fn provider ->
-      provider_name = extract_provider_name(provider)
-      [EdgeEntry.new(provider.module, "external:#{provider_name}", :calls_provider)]
+    |> Enum.filter(&(&1.type == "adapter"))
+    |> Enum.flat_map(fn adapter ->
+      adapter_name = extract_adapter_name(adapter)
+      [EdgeEntry.new(adapter.module, "external:#{adapter_name}", :calls_adapter)]
     end)
   end
 
-  # Reactor/Transfer rule usage is rendered from step.rules_applied in the frontend.
-  # The backend deliberately avoids emitting duplicate reactor-level guard edges.
-  defp derive_rule_edges(_nodes, _node_map), do: []
+  # Rule usage edges are derived from normalized step.rules_applied facts.
+  # This keeps graph links source-truthful (rule evaluate/check calls), not prose-driven.
+  defp derive_rule_edges(nodes, node_map) do
+    nodes
+    |> Enum.filter(&(&1.type in ["reactor", "transfer"]))
+    |> Enum.flat_map(fn reactor ->
+      reactor.steps
+      |> Enum.flat_map(fn step ->
+        rule_refs = Map.get(step, :rules_applied) || Map.get(step, "rules_applied") || []
+        step_name = Map.get(step, :name) || Map.get(step, "name")
+        step_index = Map.get(step, :step_index) || Map.get(step, "step_index")
+
+        rule_refs
+        |> Enum.filter(&(Map.has_key?(node_map, &1) and node_map[&1].type == "rule"))
+        |> Enum.map(fn rule_module ->
+          %EdgeEntry{
+            from: rule_module,
+            to: reactor.module,
+            relation: :guards,
+            step_name: step_name && to_string(step_name),
+            step_index: step_index
+          }
+        end)
+      end)
+    end)
+  end
 
   defp derive_policy_edges(nodes, node_map) do
     nodes
@@ -183,32 +230,29 @@ defmodule Foundry.Context.GraphBuilder do
             module
             |> Ash.Policy.Info.policies()
             |> Enum.flat_map(fn policy ->
-              policy.policies
-              |> Enum.map(&Map.get(&1, :check_module))
-              |> Enum.reject(&is_nil/1)
+              check_modules = policy_check_modules(policy, node_map)
+              scoped_actions = policy_action_names(policy, resource.actions)
+
+              case scoped_actions do
+                [] ->
+                  Enum.map(check_modules, &EdgeEntry.new(&1, resource.module, :guards))
+
+                action_names ->
+                  for check_module <- check_modules,
+                      action_name <- action_names do
+                    %EdgeEntry{
+                      from: check_module,
+                      to: resource.module,
+                      relation: :guards,
+                      action_name: action_name
+                    }
+                  end
+              end
             end)
-            |> Enum.map(&format_module/1)
-            |> Enum.filter(&Map.has_key?(node_map, &1))
-            |> Enum.uniq()
-            |> Enum.map(&EdgeEntry.new(&1, resource.module, :guards))
           else
             []
           end
       end
-    end)
-  end
-
-  # Blueprint edges: detect which reactors/transfers a blueprint configures
-  # Parse "Used by:" entries from blueprint description
-  defp derive_blueprint_edges(nodes, node_map) do
-    nodes
-    |> Enum.filter(&(&1.type == "blueprint"))
-    |> Enum.flat_map(fn blueprint ->
-      used_by_targets = parse_used_by_from_description(blueprint.description)
-
-      used_by_targets
-      |> Enum.filter(&Map.has_key?(node_map, &1))
-      |> Enum.map(&EdgeEntry.new(blueprint.module, &1, :configures))
     end)
   end
 
@@ -220,7 +264,7 @@ defmodule Foundry.Context.GraphBuilder do
       |> Enum.flat_map(fn side_effect ->
         case side_effect.type do
           :oban_emit ->
-            target = normalize_emitted_target(side_effect.name)
+            target = resolve_emitted_target(side_effect.name, node_map)
 
             if Map.has_key?(node_map, target) do
               [EdgeEntry.new(trigger.module, target, :enqueues)]
@@ -235,24 +279,19 @@ defmodule Foundry.Context.GraphBuilder do
     end)
   end
 
-  # Parse "Used by: Module.A, Module.B" from blueprint description
-  # Matches pattern: "Used by: " followed by comma/newline-separated modules
-  defp parse_used_by_from_description(text) when is_nil(text), do: []
-  defp parse_used_by_from_description(text) do
-    case Regex.run(~r/Used by:\s*(.*?)(?:\n\n|\z)/s, text) do
-      [_, list] ->
-        list
-        |> String.split(~r/[,\n]/)
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == ""))
-      _ ->
-        []
+  defp step_targets(step, key, expected_kind) do
+    case Map.get(step, key) || Map.get(step, to_string(key)) do
+      targets when is_list(targets) and targets != [] -> targets
+      target when is_binary(target) -> [target]
+      _ -> fallback_targets(step, expected_kind)
     end
   end
 
   defp fallback_targets(step, expected_kind) do
     target_resource = Map.get(step, :target_resource) || Map.get(step, "target_resource")
     step_kind = Map.get(step, :step_kind) || Map.get(step, "step_kind")
+    read_targets = Map.get(step, :read_targets) || Map.get(step, "read_targets") || []
+    source_snippet = Map.get(step, :source_snippet) || Map.get(step, "source_snippet")
 
     cond do
       expected_kind == :read and step_kind in [:read, "read"] and is_binary(target_resource) ->
@@ -260,6 +299,53 @@ defmodule Foundry.Context.GraphBuilder do
 
       expected_kind == :write and step_kind in [:write, "write"] and is_binary(target_resource) ->
         [target_resource]
+
+      expected_kind == :write ->
+        infer_write_targets_from_source(source_snippet, read_targets)
+
+      true ->
+        []
+    end
+  end
+
+  defp infer_write_targets_from_source(nil, _read_targets), do: []
+
+  defp infer_write_targets_from_source(source_snippet, read_targets) when is_binary(source_snippet) do
+    explicit_targets =
+      Regex.scan(
+        ~r/([A-Z][A-Za-z0-9_.]*)\s*\|>\s*Ash\.Changeset\.for_(?:create|update|destroy)\(/,
+        source_snippet
+      )
+      |> Enum.map(fn [_, target] -> target end)
+
+    inferred_variable_targets =
+      Regex.scan(
+        ~r/(\w+)\s*\|>\s*Ash\.Changeset\.for_(?:update|destroy)\(/,
+        source_snippet
+      )
+      |> Enum.flat_map(fn [_, variable] -> infer_variable_write_targets(variable, read_targets) end)
+
+    Enum.uniq(explicit_targets ++ inferred_variable_targets)
+  end
+
+  defp infer_write_targets_from_source(_source_snippet, _read_targets), do: []
+
+  defp infer_variable_write_targets(variable, read_targets) do
+    inferred =
+      Enum.filter(read_targets, fn resource ->
+        resource
+        |> String.split(".")
+        |> List.last()
+        |> Macro.underscore()
+        |> Kernel.==(variable)
+      end)
+
+    cond do
+      inferred != [] ->
+        inferred
+
+      length(Enum.uniq(read_targets)) == 1 ->
+        read_targets
 
       true ->
         []
@@ -357,7 +443,9 @@ defmodule Foundry.Context.GraphBuilder do
     _ -> []
   end
 
-  defp implicit_auth_targets(user_node, []), do: ["#{user_app_prefix(user_node)}.#{user_node.domain}.Token"]
+  defp implicit_auth_targets(user_node, []),
+    do: ["#{user_app_prefix(user_node)}.#{user_node.domain}.Token"]
+
   defp implicit_auth_targets(_user_node, _explicit_tokens), do: []
 
   defp user_app_prefix(user_node) do
@@ -373,15 +461,149 @@ defmodule Foundry.Context.GraphBuilder do
     end
   end
 
-  defp new_step_edge(from, to, relation, step_name, step_index) do
+  defp resolve_emitted_target(target, node_map) when is_binary(target) do
+    normalized = normalize_emitted_target(target)
+
+    cond do
+      Map.has_key?(node_map, normalized) ->
+        normalized
+
+      true ->
+        case Enum.filter(Map.keys(node_map), &String.ends_with?(&1, "." <> normalized)) do
+          [resolved] -> resolved
+          _ -> normalized
+        end
+    end
+  end
+
+  defp new_step_edge(from, to, relation, step_name, step_index, action_name) do
     %EdgeEntry{
       from: from,
       to: to,
       relation: relation,
       step_name: step_name && to_string(step_name),
-      step_index: step_index
+      step_index: step_index,
+      action_name: action_name
     }
   end
+
+  defp infer_step_action_name(step) do
+    explicit_action =
+      step
+      |> Map.get(:target_action)
+      |> Kernel.||(Map.get(step, "target_action"))
+      |> normalize_action_name()
+
+    explicit_action ||
+      step
+      |> Map.get(:source_snippet)
+      |> Kernel.||(Map.get(step, "source_snippet"))
+      |> infer_action_name_from_source()
+  end
+
+  defp infer_action_name_from_source(nil), do: nil
+
+  defp infer_action_name_from_source(source_snippet) when is_binary(source_snippet) do
+    with [_, action_name] <-
+           Regex.run(
+             ~r/Ash\.(?:create|update|destroy|get|read|read_one)\(\s*[^,\n]+,\s*:(\w+)/m,
+             source_snippet
+           ) do
+      action_name
+    else
+      _ ->
+        with [_, action_name] <-
+               Regex.run(
+                 ~r/Ash\.(?:create|update|destroy|get|read|read_one)\([^)]*action:\s*:(\w+)/m,
+                 source_snippet
+               ) do
+          action_name
+        else
+          _ ->
+            with [_, action_name] <-
+                   Regex.run(
+                     ~r/Ash\.Changeset\.for_(?:create|update|destroy)\(\s*:(\w+)/m,
+                     source_snippet
+                   ) do
+              action_name
+            else
+              _ -> nil
+            end
+        end
+    end
+  end
+
+  defp infer_action_name_from_source(_source_snippet), do: nil
+
+  defp policy_check_modules(policy, node_map) do
+    policy
+    |> Map.get(:policies, [])
+    |> Enum.map(&Map.get(&1, :check_module))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&format_module/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.filter(&Map.has_key?(node_map, &1))
+    |> Enum.uniq()
+  end
+
+  defp policy_action_names(policy, resource_actions) do
+    policy
+    |> Map.get(:condition, [])
+    |> Enum.flat_map(&policy_condition_action_names(&1, resource_actions))
+    |> Enum.uniq()
+  end
+
+  defp policy_condition_action_names({Ash.Policy.Check.Action, opts}, _resource_actions) do
+    opts
+    |> Keyword.get(:action, [])
+    |> List.wrap()
+    |> Enum.map(&normalize_action_name/1)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp policy_condition_action_names({Ash.Policy.Check.ActionType, opts}, resource_actions) do
+    action_types =
+      opts
+      |> Keyword.get(:type, [])
+      |> List.wrap()
+      |> Enum.map(&normalize_action_type/1)
+      |> Enum.reject(&is_nil/1)
+
+    resource_actions
+    |> List.wrap()
+    |> Enum.filter(fn action ->
+      action_type =
+        action
+        |> Map.get(:type)
+        |> normalize_action_type()
+
+      action_type in action_types
+    end)
+    |> Enum.map(fn action ->
+      action
+      |> Map.get(:name)
+      |> normalize_action_name()
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp policy_condition_action_names(_condition, _resource_actions), do: []
+
+  defp normalize_action_name(nil), do: nil
+
+  defp normalize_action_name(action_name) when is_atom(action_name),
+    do: Atom.to_string(action_name)
+
+  defp normalize_action_name(action_name) when is_binary(action_name), do: action_name
+  defp normalize_action_name(_action_name), do: nil
+
+  defp normalize_action_type(nil), do: nil
+
+  defp normalize_action_type(action_type) when is_atom(action_type),
+    do: Atom.to_string(action_type)
+
+  defp normalize_action_type(action_type) when is_binary(action_type), do: action_type
+  defp normalize_action_type(_action_type), do: nil
 
   defp ash_resource_module?(module) do
     Ash.Resource.Info.resource?(module)
@@ -394,19 +616,12 @@ defmodule Foundry.Context.GraphBuilder do
   # ---------------------------------------------------------------------------
 
   defp derive_external_nodes_and_edges(nodes) do
-    # Collect edges to external systems, grouped by domain for postgres
-    postgres_by_domain =
+    # Collect edges to external postgres (single canonical node)
+    postgres_edges =
       for n <- nodes,
           n.type == "resource",
           n.data_layer && String.contains?(to_string(n.data_layer), "AshPostgres"),
-          reduce: %{} do
-        acc ->
-          domain = n.domain
-          edge = EdgeEntry.new(n.module, "external:postgres:#{domain}", :persists_to)
-          Map.update(acc, domain, [edge], fn edges -> edges ++ [edge] end)
-      end
-
-    postgres_edges = postgres_by_domain |> Map.values() |> Enum.concat()
+          do: EdgeEntry.new(n.module, "external:postgres", :persists_to)
 
     oban_edges =
       for n <- nodes,
@@ -414,112 +629,118 @@ defmodule Foundry.Context.GraphBuilder do
           n.oban_queues && length(n.oban_queues) > 0,
           do: EdgeEntry.new(n.module, "external:oban_queue", :queues_via)
 
-    # Collect provider edges and extract unique provider names
-    provider_edges =
+    # Collect adapter edges and extract unique adapter names
+    adapter_edges =
       for n <- nodes,
-          n.type == "provider",
-          do: EdgeEntry.new(n.module, "external:#{extract_provider_name(n)}", :calls_provider)
+          n.type == "adapter",
+          do: EdgeEntry.new(n.module, "external:#{extract_adapter_name(n)}", :calls_adapter)
 
-    provider_names =
-      provider_edges
+    adapter_names =
+      adapter_edges
       |> Enum.map(& &1.to)
       |> Enum.uniq()
 
-    external_edges = postgres_edges ++ oban_edges ++ provider_edges
+    external_edges = postgres_edges ++ oban_edges ++ adapter_edges
 
-    # Create external postgres nodes for each domain that has AshPostgres resources
+    # Create external postgres node (single canonical node if there are postgres resources)
     postgres_nodes =
-      postgres_by_domain
-      |> Enum.map(fn {domain, _edges} ->
-        %NodeEntry{
-          module: "external:postgres:#{domain}",
-          id: "external:postgres:#{domain}",
-          type: "external",
-          domain: "Infrastructure",
-          description: "PostgreSQL - #{domain} domain tables (AshPostgres)",
-          app: nil,
-          sensitive: false,
-          attributes: [],
-          actions: [],
-          rules: [],
-          compliance: [],
-          adrs: [],
-          runbook: nil,
-          test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
-          data_layer: nil,
-          pending_migrations: false,
-          paper_trail: false,
-          archival: false,
-          state_machine: nil,
-          api_routes: [],
-          telemetry_prefix: nil,
-          money_attributes: [],
-          authentication_subject: false,
-          oban_queues: [],
-          rate_limited: false,
-          feature_flags: [],
-          steps: [],
-          performs: nil,
-          outputs: [],
-          agent_steps: [],
-          relationships: [],
-          auth_strategies: [],
-          last_modified: nil
-        }
-      end)
-
-    # Oban external node (singleton)
-    oban_node =
-      if length(oban_edges) > 0 do
-        [%NodeEntry{
-          module: "external:oban_queue",
-          id: "external:oban_queue",
-          type: "external",
-          domain: "Infrastructure",
-          description: "Oban background job queue",
-          app: nil,
-          sensitive: false,
-          attributes: [],
-          actions: [],
-          rules: [],
-          compliance: [],
-          adrs: [],
-          runbook: nil,
-          test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
-          data_layer: nil,
-          pending_migrations: false,
-          paper_trail: false,
-          archival: false,
-          state_machine: nil,
-          api_routes: [],
-          telemetry_prefix: nil,
-          money_attributes: [],
-          authentication_subject: false,
-          oban_queues: [],
-          rate_limited: false,
-          feature_flags: [],
-          steps: [],
-          performs: nil,
-          outputs: [],
-          agent_steps: [],
-          relationships: [],
-          auth_strategies: [],
-          last_modified: nil
-        }]
+      if length(postgres_edges) > 0 do
+        [
+          %NodeEntry{
+            module: "external:postgres",
+            id: "external:postgres",
+            type: "external",
+            domain: "Infrastructure",
+            description: "PostgreSQL database",
+            app: nil,
+            sensitive: false,
+            attributes: [],
+            actions: [],
+            rules: [],
+            compliance: [],
+            adrs: [],
+            runbook: nil,
+            test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
+            data_layer: nil,
+            pending_migrations: false,
+            paper_trail: false,
+            archival: false,
+            state_machine: nil,
+            api_routes: [],
+            telemetry_prefix: nil,
+            money_attributes: [],
+            authentication_subject: false,
+            oban_queues: [],
+            rate_limited: false,
+            feature_flags: [],
+            steps: [],
+            performs: nil,
+            outputs: [],
+            agent_steps: [],
+            relationships: [],
+            auth_strategies: [],
+            last_modified: nil
+          }
+        ]
       else
         []
       end
 
-    # Provider external nodes
-    provider_nodes =
-      provider_names
-      |> Enum.map(fn provider_id ->
-        # Extract provider name from "external:provider_name"
-        provider_name = String.replace(provider_id, "external:", "")
-        human_name = humanize_provider_name(provider_name)
+    # Oban external node (singleton)
+    oban_node =
+      if length(oban_edges) > 0 do
+        [
+          %NodeEntry{
+            module: "external:oban_queue",
+            id: "external:oban_queue",
+            type: "external",
+            domain: "Infrastructure",
+            description: "Oban background job queue",
+            app: nil,
+            sensitive: false,
+            attributes: [],
+            actions: [],
+            rules: [],
+            compliance: [],
+            adrs: [],
+            runbook: nil,
+            test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
+            data_layer: nil,
+            pending_migrations: false,
+            paper_trail: false,
+            archival: false,
+            state_machine: nil,
+            api_routes: [],
+            telemetry_prefix: nil,
+            money_attributes: [],
+            authentication_subject: false,
+            oban_queues: [],
+            rate_limited: false,
+            feature_flags: [],
+            steps: [],
+            performs: nil,
+            outputs: [],
+            agent_steps: [],
+            relationships: [],
+            auth_strategies: [],
+            last_modified: nil
+          }
+        ]
+      else
+        []
+      end
+
+    # Adapter external nodes
+    adapter_nodes =
+      adapter_names
+      |> Enum.map(fn adapter_id ->
+        # Extract adapter name from "external:adapter_name"
+        adapter_name = String.replace(adapter_id, "external:", "")
+        human_name = humanize_adapter_name(adapter_name)
+
         %NodeEntry{
-          module: provider_id,
-          id: provider_id,
+          module: adapter_id,
+          id: adapter_id,
           type: "external",
           domain: "Infrastructure",
           description: "External API: #{human_name}",
@@ -554,31 +775,148 @@ defmodule Foundry.Context.GraphBuilder do
         }
       end)
 
-    external_nodes = postgres_nodes ++ oban_node ++ provider_nodes
+    # Feature flag external nodes (one per unique flag name across all page nodes)
+    feature_flag_names =
+      nodes
+      |> Enum.filter(&(&1.type in ["page", "liveview"]))
+      |> Enum.flat_map(fn n ->
+        flags = n.feature_flags || []
+        if is_list(flags), do: flags, else: [flags]
+      end)
+      |> Enum.uniq()
+
+    feature_flag_nodes =
+      Enum.map(feature_flag_names, fn flag_name ->
+        flag_id = "external:feature_flag:#{flag_name}"
+
+        %NodeEntry{
+          module: flag_id,
+          id: flag_id,
+          type: "external",
+          domain: "Infrastructure",
+          description: "Feature flag: #{flag_name}",
+          app: nil,
+          sensitive: false,
+          attributes: [],
+          actions: [],
+          rules: [],
+          compliance: [],
+          adrs: [],
+          runbook: nil,
+          test_coverage: %{property_tests: false, scenario_tests: false, e2e_tests: false},
+          data_layer: nil,
+          pending_migrations: false,
+          paper_trail: false,
+          archival: false,
+          state_machine: nil,
+          api_routes: [],
+          telemetry_prefix: nil,
+          money_attributes: [],
+          authentication_subject: false,
+          oban_queues: [],
+          rate_limited: false,
+          feature_flags: [],
+          steps: [],
+          performs: nil,
+          outputs: [],
+          agent_steps: [],
+          relationships: [],
+          auth_strategies: [],
+          last_modified: nil
+        }
+      end)
+
+    external_nodes = postgres_nodes ++ oban_node ++ adapter_nodes ++ feature_flag_nodes
 
     {external_nodes, external_edges}
   end
 
-  # Extract provider name from a provider node
-  defp extract_provider_name(provider) do
-    case Regex.run(~r/@provider_name\s+"([^"]+)"/, provider.description || "") do
-      [_, name] -> String.downcase(name)
+  defp filter_resolvable_edges(edges, nodes) do
+    valid_ids =
+      nodes
+      |> Enum.map(& &1.id)
+      |> MapSet.new()
+
+    Enum.filter(edges, fn edge ->
+      MapSet.member?(valid_ids, edge.from) and MapSet.member?(valid_ids, edge.to)
+    end)
+  end
+
+  # Extract adapter name from an adapter node
+  defp extract_adapter_name(adapter) do
+    case Regex.run(~r/@adapter_name\s+"([^"]+)"/, adapter.description || "") do
+      [_, name] ->
+        String.downcase(name)
+
       _ ->
         # Fallback: use last segment of module name in snake_case
-        provider.module
+        adapter.module
         |> String.split(".")
         |> List.last()
         |> String.downcase()
     end
   end
 
-  # Humanize provider name for display in external node descriptions
+  # Humanize adapter name for display in external node descriptions
   # e.g. "pragmaticplayv1" -> "Pragmatic Play V1"
-  defp humanize_provider_name(provider_name) do
-    provider_name
+  defp humanize_adapter_name(adapter_name) do
+    adapter_name
     |> String.split(~r/(?=[A-Z])|_/)
     |> Enum.reject(&(&1 == ""))
     |> Enum.map(&String.capitalize/1)
     |> Enum.join(" ")
+  end
+
+  # Page edges: page → action (calls_action) and page → feature flag (feature_flagged_by)
+  defp derive_page_edges(nodes, node_map) do
+    edge_list = []
+
+    # calls_action edges: page → resource from calls_actions list
+    edge_list =
+      edge_list ++
+        (nodes
+         |> Enum.filter(&(&1.type in ["page", "liveview"]))
+         |> Enum.flat_map(fn page ->
+           (page.calls_actions || [])
+           |> then(fn calls -> if is_list(calls), do: calls, else: [calls] end)
+           |> Enum.map(fn call_action ->
+             resource_str =
+               case call_action do
+                 %{"resource" => res} -> res
+                 {resource_module, _action_type} -> format_module(resource_module)
+                 _ -> nil
+               end
+
+             if resource_str && Map.has_key?(node_map, resource_str) do
+               action_name = Map.get(call_action, "action_name")
+
+               %EdgeEntry{
+                 from: page.module,
+                 to: resource_str,
+                 relation: :calls_action,
+                 action_name: action_name
+               }
+             else
+               nil
+             end
+           end)
+           |> Enum.reject(&is_nil/1)
+         end))
+
+    # feature_flagged_by edges: page → feature flag
+    edge_list =
+      edge_list ++
+        (nodes
+         |> Enum.filter(&(&1.type in ["page", "liveview"]))
+         |> Enum.flat_map(fn page ->
+           (page.feature_flags || [])
+           |> then(fn flags -> if is_list(flags), do: flags, else: [flags] end)
+           |> Enum.map(fn flag_name ->
+             flag_node_id = "external:feature_flag:#{flag_name}"
+             EdgeEntry.new(page.module, flag_node_id, :feature_flagged_by)
+           end)
+         end))
+
+    edge_list
   end
 end

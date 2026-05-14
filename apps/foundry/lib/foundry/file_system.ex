@@ -16,6 +16,7 @@ defmodule Foundry.FileSystem do
     "config/",
     "priv/repo/migrations/",
     "docs/adrs/",
+    "docs/findings/",
     "docs/runbooks/",
     "docs/regulations/",
     ".foundry/usage_rules/"

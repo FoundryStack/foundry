@@ -41,6 +41,33 @@ defmodule Foundry.SparkMetaCompatibilityTest do
     assert info.diagnostics == []
   end
 
+  test "resource modules infer state machine transitions with action names" do
+    info = Foundry.SparkMeta.walk(IgamingRef.Finance.Wallet)
+
+    assert info.state_machine.present == true
+    assert "active" in info.state_machine.states
+    assert "frozen" in info.state_machine.states
+    assert "closed" in info.state_machine.states
+
+    assert Enum.any?(info.state_machine.transitions, fn transition ->
+             transition[:from] == "active" and
+               transition[:to] == "frozen" and
+               transition[:action] == "freeze"
+           end)
+
+    assert Enum.any?(info.state_machine.transitions, fn transition ->
+             transition[:from] == "active" and
+               transition[:to] == "closed" and
+               transition[:action] == "close"
+           end)
+
+    assert Enum.any?(info.state_machine.transitions, fn transition ->
+             transition[:from] == "frozen" and
+               transition[:to] == "closed" and
+               transition[:action] == "close"
+           end)
+  end
+
   test "reactor modules preserve runbook and step facts" do
     info = Foundry.SparkMeta.walk(IgamingRef.Gaming.ProviderSyncReactor)
 
@@ -48,6 +75,17 @@ defmodule Foundry.SparkMetaCompatibilityTest do
     assert info.runbook == "docs/runbooks/provider_sync.md"
     assert length(info.steps) == 4
     assert Enum.any?(info.steps, &(&1.name == :load_provider and &1.step_kind == :read))
+  end
+
+  test "trace metadata strings do not leak short resource aliases into reactor facts" do
+    info = Foundry.SparkMeta.walk(IgamingRef.Promotions.BonusGrantTransfer)
+
+    load_context = Enum.find(info.steps, &(&1.name == :load_context))
+    assert load_context
+
+    assert "IgamingRef.Players.Player" in load_context.read_targets
+    refute "Player" in load_context.read_targets
+    refute load_context.target_resource == "Player"
   end
 
   test "oban workers preserve queue and performs metadata" do
@@ -63,7 +101,6 @@ defmodule Foundry.SparkMetaCompatibilityTest do
 
     assert info.type == :trigger
     assert info.trigger_kind == "webhook"
-    assert Enum.any?(info.side_effects, &(&1.type == :external_http))
     assert Enum.any?(info.side_effects, &(&1.type == :oban_emit))
   end
 

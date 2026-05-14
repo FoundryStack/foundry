@@ -45,6 +45,7 @@ defmodule IgamingRef.Policies.OwnerOrOperator do
   use Ash.Policy.SimpleCheck
 
   def match?(%{role: :operator}, _, _), do: true
+  def match?(%{is_system: true}, _, _), do: true
 
   def match?(actor, %{subject: %Ash.Changeset{data: data}}, _) do
     case {data, actor} do

@@ -24,7 +24,7 @@ and fetches what it needs rather than receiving a pre-assembled fixed window.
 
 **Primary model: Claude Sonnet (latest stable) for all task types.**
 **The agent operates in a single agentic loop with a bash tool.**
-**Context is assembled in three tiers: system prompt, session status, retrieved via shell.**
+**Context is assembled in three tiers: system prompt, session context, retrieved via shell.**
 
 ---
 
@@ -81,15 +81,10 @@ Studio restart or project context cache invalidation.
 |---|---|---|---|
 | AGENTS.md | ~800 | File read | `{:spec_kit, path, mtime}` |
 | Stack versions | ~200 | `stack` field from `project.status` (sourced from `mix.lock`) | `{:project_status, hash}` |
-| Spec-kit index | ~400 | `spec_kit` field from project context ETS cache | `{:project_context, project_root, max_mtime}` |
-| **Tier 1 total** | **~1400** | | |
+| **Tier 1 total** | **~1000** | | |
 
 AGENTS.md is the agent's constitution — invariants, orientation, spec-kit task postures,
 shell constraints, key Mix task reference. It is never dropped or summarised.
-
-The spec-kit index gives the agent a map of all spec-kit documents (ADRs, runbooks,
-regulations, usage rules) with summaries and tags. The agent reads this directly from
-context to decide which documents to read via bash. No search tool needed.
 
 Stack versions come from the `stack` field of `mix foundry.project.status`, which
 sources them from `mix.lock` resolved values. This is not a separate task call —
@@ -100,9 +95,9 @@ the agent loop without stack versions in the system prompt.
 
 ---
 
-### Tier 2 — Session Status (refreshed per copilot request)
+### Tier 2 — Session Context (refreshed per copilot request)
 
-A truncated view of `mix foundry.project.status`, assembled by
+A compact status view plus the full LLM-optimized project map, assembled by
 `Foundry.Copilot.ContextBuilder` at the start of each request. 60-second TTL.
 
 **Source:** `mix foundry.project.status` — full runtime health, no cap at data layer
@@ -114,6 +109,18 @@ Contains: domain list, sensitive module names, health signals (lint errors, open
 proposals, compliance gaps, pending migrations), CI state, stack versions, manifest
 summary. The token truncation lives in `ContextBuilder`, not in the task itself — the
 task always returns the complete current state.
+
+**Source:** `mix foundry.project.context` — full node corpus, edge list, and spec-kit
+index from live compiled modules
+**ContextBuilder view:** LLM-optimized system map rendered by
+`Foundry.Context.LLMFormatter`
+**Schema:** `docs/project_context_schema.md`
+
+Contains: all nodes, edges, module aliases, compact attributes/actions/relationships,
+sensitive markers, compliance links, ADR links, and a compact spec-kit navigation view
+(overview counts, short document summaries, tags, statuses where declared). This is
+included for the orchestrator chat model so it can classify intent, estimate blast
+radius, and select precise follow-up reads without embedding raw source files in the prompt.
 
 **Why separate observation from truncation:** Earlier drafts applied a 400-token hard
 cap inside the status task itself. This conflated the data model (complete current state)
@@ -183,13 +190,14 @@ truncated.
 | Tier | Bound |
 |---|---|
 | Tier 1 (system prompt) | ~1400 tokens |
-| Tier 2 (status view, truncated by ContextBuilder) | ~400 tokens |
+| Tier 2 (status view + optimized project map) | Project-size dependent; optimized formatter, not raw JSON |
 | Tier 3 (shell / tools, accumulated) | Grows during loop; circuit breaker at 20 calls |
 | User message + 3-turn history | ~300 tokens |
-| **Static total (Tier 1 + 2)** | **~1800 tokens** |
+| **Static total (Tier 1 + 2)** | Target project dependent; monitor against current model window |
 
-Well within any current model's context window. When static total approaches 3000
-tokens, revisit this ADR.
+Well within current target project sizes. If a project's optimized map approaches a
+material share of the selected model's context window, split by domain or introduce
+a map-summary policy through a new ADR rather than silently dropping topology.
 
 ---
 

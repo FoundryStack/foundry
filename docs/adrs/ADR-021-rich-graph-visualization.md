@@ -15,7 +15,7 @@ This ADR defines schema extensions to NodeEntry, EdgeEntry, and SparkMeta to cap
 - State machine sub-graphs with initial/terminal states
 - Authentication flows (User → Token)
 - Rule guards and policy applications
-- External system integrations (databases, queues, payment providers)
+- External system integrations (databases, queues, payment systems)
 
 ## Decision
 
@@ -33,7 +33,6 @@ All additions are non-breaking (nil/empty defaults).
 **New fields:**
 - `relationships`: List of RelationshipEntry structs (replaces fragile attribute-embedded relationship data)
 - `auth_strategies`: List of AuthStrategyEntry structs for AshAuthentication strategies
-- `provider_behaviour` / `provider_name`: Provider adapter metadata
 - `rule_compliance_links`: Links from rules to compliance requirements
 
 **Extended StepEntry** (in steps list):
@@ -56,11 +55,11 @@ All additions are non-breaking (nil/empty defaults).
 - `guards`: Rule guards a step or resource policy
 - `sequence`: Step-to-step ordering within Reactor/Transfer
 - `compensation`: Compensation path in saga
-- `configures`: Blueprint configures a Reactor
+- `configures`: Declarative configuration relationship (source-derived first)
 - `authenticates`: AshAuthentication User → Token
 - `persists_to`: Resource → external:postgres
 - `queues_via`: Job/Reactor → external:oban_queue
-- `calls_provider`: Transfer step → Provider → external system
+- `calls_adapter`: Transfer step → Adapter → external system
 
 **New metadata fields:**
 - `step_name`: Step name for sequence edges
@@ -131,16 +130,29 @@ resource-action-level side effects for the module.
 - **Reactor edges**: Use `step.step_kind` + `step.target_resource` instead of name heuristics
 - **Resource edges**: Use `relationships` list instead of attribute scanning
 - **Auth edges**: User resource with `auth_strategies` → token resources
-- **External edges**: From `persists_to`, `queues_via`, `calls_provider` patterns
-- **Side-effect edges (new)**: From step nodes to Provider nodes where `side_effects[].type == "external_http"` and a matching Provider node exists. Edge type: `calls_provider`. Undeclared external_http entries also emit a `⚠ undeclared` edge annotation visible at Code zoom level.
+- **External edges**: From `persists_to`, `queues_via`, `calls_adapter` patterns
+- **Side-effect edges (new)**: From step nodes to Adapter nodes where `side_effects[].type == "external_http"` and a matching Adapter node exists. Edge type: `calls_adapter`. Undeclared external_http entries also emit a `⚠ undeclared` edge annotation visible at Code zoom level.
 - **Oban emit edges (new)**: From step nodes to Job nodes where `side_effects[].type == "oban_emit"` and a corresponding `Oban.Worker` NodeEntry exists. Edge type: async/message (`- - -▶`).
 
 ### 5. Frontend Compound Node Rendering
 
-**Not yet implemented** (Phase D):
-- Reactor step sub-graphs with lazy expand/collapse
-- FSM transition edges with initial/terminal state styling
-- External node styling (dashed border, lower opacity)
+The current frontend renderer keeps the direct Foundry-specific Cytoscape model from
+ADR-016 and applies these rules:
+
+- Domain groups are top-level compounds. Their color is domain-specific and reserved for
+  domain grouping only.
+- Resource / Reactor / Transfer / FSM compounds use kind-colored borders and light
+  translucent fills so nested structure stays readable without flattening all nodes to
+  domain color.
+- Adapter nodes represent internal integration modules. External systems remain separate
+  `external:*` nodes connected by `calls_adapter` edges.
+- Status indicators and tooltip labels are driven from shared frontend semantics so the
+  legend, hover card, and node chrome use the same vocabulary.
+
+Still not implemented (future work):
+- Reactor step sub-graphs with interactive expand/collapse
+- FSM transition edges with initial/terminal state styling beyond current child-node rendering
+- Full scenario-perspective renderer
 
 ---
 
@@ -151,7 +163,7 @@ perspective (ADR-016). Each is represented as a `ScenarioEntry` stored in NodeEn
 
 ```elixir
 defstruct [
-  :trigger_type,      # :cron | :condition | :json_api_route | :graphql_mutation | :auth_event
+  :trigger_type,      # :cron | :oban_condition | :json_api_route | :graphql_mutation | :auth_event | :webhook
   :schedule,          # cron string, e.g. "0 0 * * *"
   :condition_expr,    # AshOban `where` expression as string, e.g. "status == :pending"
   :route_method,      # :get | :post | :patch | :delete (JSON:API routes)
@@ -167,11 +179,12 @@ non-breaking). The Scenario perspective filter selects all nodes with non-empty
 `scenario_origins` and places them at the canvas periphery.
 
 **Data sources:**
-- `AshOban.Info.oban_triggers(resource)` → `:cron` and `:condition` entries
+- `AshOban.Info.oban_triggers(resource)` → `:cron` and `:oban_condition` entries
 - `AshOban.Info.oban_scheduled_actions(resource)` → additional `:cron` entries
 - `AshJsonApi.Resource.Info.routes(resource)` → `:json_api_route` entries for POST/PATCH
 - `AshGraphql.Resource.Info.mutations(resource)` → `:graphql_mutation` entries
 - `AshAuthentication` strategy declarations → `:auth_event` entries (login, magic link, OAuth callback)
+- Explicit webhook boundary actions/modules → `:webhook` entries
 
 ---
 

@@ -14,7 +14,9 @@ defmodule IgamingRef.Finance.Jobs.ProcessWithdrawalWebhook do
   @performs IgamingRef.Finance.WithdrawalRequest
 
   @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"provider_reference" => _provider_reference, "status" => _status}}) do
+  def perform(%Oban.Job{
+        args: %{"provider_reference" => _provider_reference, "status" => _status}
+      }) do
     # In production this would load the matching request and update its status.
     :ok
   end

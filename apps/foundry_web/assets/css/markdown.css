@@ -1,0 +1,103 @@
+[data-role="chat-markdown"] {
+  --chat-link-color: var(--color-secondary);
+  --chat-link-decoration: color-mix(in oklch, var(--color-secondary) 70%, transparent);
+}
+
+[data-role="chat-markdown"][data-variant="user"] {
+  --chat-link-color: color-mix(in oklch, var(--color-base-content) 92%, white);
+  --chat-link-decoration: color-mix(in oklch, var(--color-base-content) 55%, transparent);
+}
+
+[data-role="chat-markdown"] .chat-markdown-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+[data-role="chat-markdown"] .chat-markdown-block {
+  min-width: 0;
+}
+
+[data-role="chat-markdown"] h1,
+[data-role="chat-markdown"] h2,
+[data-role="chat-markdown"] h3,
+[data-role="chat-markdown"] h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: inherit;
+}
+
+[data-role="chat-markdown"] h1 { font-size: 1.05rem; }
+[data-role="chat-markdown"] h2 { font-size: 1rem; }
+[data-role="chat-markdown"] h3,
+[data-role="chat-markdown"] h4 { font-size: 0.95rem; }
+
+[data-role="chat-markdown"] p,
+[data-role="chat-markdown"] blockquote,
+[data-role="chat-markdown"] ul,
+[data-role="chat-markdown"] ol {
+  margin: 0;
+}
+
+[data-role="chat-markdown"] ul,
+[data-role="chat-markdown"] ol {
+  padding-left: 1.25rem;
+}
+
+[data-role="chat-markdown"] li + li {
+  margin-top: 0.2rem;
+}
+
+[data-role="chat-markdown"] a {
+  color: var(--chat-link-color);
+  text-decoration: underline;
+  text-decoration-color: var(--chat-link-decoration);
+  text-underline-offset: 0.22em;
+}
+
+[data-role="chat-markdown"] blockquote {
+  border-left: 2px solid color-mix(in oklch, var(--color-base-content) 18%, transparent);
+  padding-left: 0.85rem;
+  color: color-mix(in oklch, currentColor 78%, var(--color-neutral-content));
+}
+
+[data-role="chat-markdown"] pre {
+  margin: 0;
+  overflow-x: auto;
+  border: 1px solid color-mix(in oklch, var(--color-base-300) 88%, transparent);
+  border-radius: 0.5rem;
+}
+
+[data-role="chat-markdown"] pre code {
+  display: block;
+  padding: 0.85rem 1rem;
+  background: transparent;
+  color: inherit;
+}
+
+[data-role="chat-markdown"] :not(pre) > code {
+  background: color-mix(in oklch, var(--color-base-300) 78%, transparent);
+  color: inherit;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.28rem;
+}
+
+[data-role="chat-markdown"] table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+[data-role="chat-markdown"] th,
+[data-role="chat-markdown"] td {
+  border: 1px solid color-mix(in oklch, var(--color-base-300) 90%, transparent);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+[data-role="chat-markdown"] th {
+  background: color-mix(in oklch, var(--color-base-300) 70%, transparent);
+  font-weight: 600;
+}

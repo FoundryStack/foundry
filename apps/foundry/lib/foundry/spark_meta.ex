@@ -17,6 +17,7 @@ defmodule Foundry.SparkMeta do
         Foundry.SparkMeta.Governance,
         Foundry.SparkMeta.ReactorFacts,
         Foundry.SparkMeta.SideEffects,
+        Foundry.SparkMeta.Analyzers.PageMetadata,
         Foundry.SparkMeta.Projector
       ]
 

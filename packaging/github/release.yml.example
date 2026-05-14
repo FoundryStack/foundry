@@ -1,0 +1,34 @@
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-13
+            target: macos
+          - runner: macos-14
+            target: macos_silicon
+          - runner: ubuntu-latest
+            target: linux
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.19.5"
+          otp-version: "28.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "25"
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: "0.15.2"
+      - run: ./scripts/release/build_burrito.sh ${{ matrix.target }}
+      - run: ./scripts/release/package_burrito_artifacts.sh ${GITHUB_REF_NAME#v}

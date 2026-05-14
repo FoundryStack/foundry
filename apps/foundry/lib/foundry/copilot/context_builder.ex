@@ -27,10 +27,13 @@ defmodule Foundry.Copilot.ContextBuilder do
   defp tier_1_project(data) do
     agents_md = read_file(Path.join(data.project_root, "AGENTS.md"))
     mix_versions = extract_mix_versions(data.project_root)
-    [agents_md, mix_versions] |> Enum.reject(&(&1 == "")) |> Enum.join("\n\n")
+
+    [agents_md, mix_versions]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n\n")
   end
 
-  # Tier 2: Dynamic status + system architecture
+  # Tier 2: Dynamic status + LLM-optimized full project map for the orchestrator.
   defp tier_2_status(data) do
     status = get_project_status(data)
     context_map = get_system_context(data)
@@ -39,7 +42,7 @@ defmodule Foundry.Copilot.ContextBuilder do
 
   defp get_project_status(data) do
     status = Foundry.Status.build_from_nodes(data.project_root, data.manifest, data.nodes)
-    "## Project Status\n\n```json\n#{Jason.encode!(status)}\n```"
+    "## Project Status\n\n```json\n#{Jason.encode!(status_prompt_view(status))}\n```"
   end
 
   defp get_system_context(data) do
@@ -68,6 +71,34 @@ defmodule Foundry.Copilot.ContextBuilder do
       _ ->
         ""
     end
+  end
+
+  defp status_prompt_view(status) do
+    compliance = status["compliance"] || %{}
+    requirements = compliance["requirements"] || []
+
+    %{
+      "generated_at" => status["generated_at"],
+      "compiled_at" => status["compiled_at"],
+      "project" => status["project"],
+      "project_type" => status["project_type"],
+      "domain_type" => status["domain_type"],
+      "domains" => status["domains"],
+      "sensitive_modules" => status["sensitive_modules"],
+      "lint" => status["lint"],
+      "migrations" => status["migrations"],
+      "proposals" => status["proposals"],
+      "compliance" => %{
+        "total_requirements" => compliance["total_requirements"],
+        "covered_count" => compliance["covered_count"],
+        "planned_count" => compliance["planned_count"],
+        "sample_requirements" => Enum.take(requirements, 5),
+        "truncated_count" => max(length(requirements) - 5, 0)
+      },
+      "ci" => status["ci"],
+      "stack" => status["stack"],
+      "manifest" => status["manifest"]
+    }
   end
 
   defp read_file(path) do

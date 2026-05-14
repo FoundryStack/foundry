@@ -28,7 +28,12 @@ defmodule IgamingRef.Finance.WithdrawalRequest do
     repo(IgamingRef.Repo)
   end
 
+  paper_trail do
+    change_tracking_mode(:snapshot)
+  end
+
   state_machine do
+    state_attribute(:status)
     initial_states([:pending])
     default_initial_state(:pending)
 
@@ -162,6 +167,11 @@ defmodule IgamingRef.Finance.WithdrawalRequest do
       authorize_if(IgamingRef.Policies.OwnerOrOperator)
     end
 
+    policy action_type(:read) do
+      description("Internal system actors may read withdrawal requests during transfer execution.")
+      authorize_if(IgamingRef.Policies.InternalSystemActor)
+    end
+
     policy action(:approve) do
       description("Only operators may approve withdrawal requests.")
       authorize_if(IgamingRef.Policies.OperatorOnly)
@@ -170,6 +180,16 @@ defmodule IgamingRef.Finance.WithdrawalRequest do
     policy action(:reject) do
       description("Only operators may reject withdrawal requests.")
       authorize_if(IgamingRef.Policies.OperatorOnly)
+    end
+
+    policy action(:mark_processing) do
+      description("Internal system actors advance approved withdrawals to :processing.")
+      authorize_if(IgamingRef.Policies.InternalSystemActor)
+    end
+
+    policy action(:mark_completed) do
+      description("Internal system actors complete withdrawals after provider confirmation.")
+      authorize_if(IgamingRef.Policies.InternalSystemActor)
     end
   end
 end

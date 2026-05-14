@@ -84,7 +84,8 @@ defmodule Foundry.Context.NodeEntry do
     test_coverage: %{
       property_tests: false,
       scenario_tests: false,
-      e2e_tests: false
+      e2e_tests: false,
+      scenario_count: 0
     },
     data_layer: nil,
     pending_migrations: false,
@@ -113,15 +114,19 @@ defmodule Foundry.Context.NodeEntry do
     relationships: [],
     auth_strategies: [],
     side_effects: [],
-    provider_behaviour: nil,
-    provider_name: nil,
     trigger_kind: nil,
     rule_compliance_links: [],
     # Phase B extensions
+    scenario_refs: [],
     scenario_origins: [],
     graphql_mutations: [],
     json_api_routes: [],
-    vectorized: false
+    vectorized: false,
+    # Phase D: Page nodes
+    page_route: nil,
+    page_group: nil,
+    page_dynamic: false,
+    page_subtype: nil,
+    calls_actions: []
   ]
-
 end

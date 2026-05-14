@@ -1,0 +1,8 @@
+{
+  "name": "foundry-workspace",
+  "private": true,
+  "scripts": {
+    "tauri:build": "npm --prefix desktop/foundry-desktop run tauri:build --",
+    "tauri:dev": "npm --prefix desktop/foundry-desktop run tauri:dev --"
+  }
+}

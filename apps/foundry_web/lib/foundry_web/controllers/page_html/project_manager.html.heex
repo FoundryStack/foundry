@@ -1,0 +1,435 @@
+<style>
+  #project-manager-panel {
+    max-width: 58rem;
+  }
+
+  #project-manager-grid {
+    display: grid;
+    gap: 1rem;
+    margin-top: 2.25rem;
+    text-align: left;
+  }
+
+  .project-manager-card {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1.75rem;
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.22);
+  }
+
+  .project-manager-section {
+    padding: 1.4rem;
+  }
+
+  .project-manager-section + .project-manager-section {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .project-manager-label {
+    color: rgba(255, 255, 255, 0.44);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  .project-manager-actions {
+    display: grid;
+    gap: 0.85rem;
+    margin-top: 1.1rem;
+  }
+
+  .project-manager-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1.35rem;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 1rem 1.1rem;
+    color: white;
+    text-align: left;
+    transition:
+      transform 0.2s ease,
+      border-color 0.2s ease,
+      background 0.2s ease;
+  }
+
+  .project-manager-button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(253, 79, 0, 0.32);
+    background: rgba(253, 79, 0, 0.1);
+  }
+
+  .project-manager-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    transform: none;
+  }
+
+  .project-manager-button-title {
+    display: block;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  .project-manager-button-copy {
+    display: block;
+    margin-top: 0.28rem;
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 0.86rem;
+    line-height: 1.55;
+  }
+
+  .project-manager-button-tag {
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .project-manager-recent-list {
+    display: grid;
+    gap: 0.85rem;
+    margin-top: 1.1rem;
+  }
+
+  .project-manager-recent-link {
+    display: block;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1.35rem;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 1rem 1.1rem;
+    color: inherit;
+    text-decoration: none;
+    transition:
+      transform 0.2s ease,
+      border-color 0.2s ease,
+      background 0.2s ease;
+  }
+
+  .project-manager-recent-link:hover {
+    transform: translateY(-1px);
+    border-color: rgba(253, 79, 0, 0.28);
+    background: rgba(253, 79, 0, 0.08);
+  }
+
+  .project-manager-recent-title {
+    color: white;
+    font-size: 0.96rem;
+    font-weight: 600;
+  }
+
+  .project-manager-recent-path {
+    margin-top: 0.35rem;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 0.8rem;
+    line-height: 1.65;
+    word-break: break-word;
+  }
+
+  .project-manager-empty {
+    margin-top: 1.1rem;
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 1.35rem;
+    padding: 1rem 1.1rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.86rem;
+    line-height: 1.6;
+  }
+
+  .project-manager-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(92vw, 40rem);
+    max-height: calc(100vh - 2.5rem);
+    margin: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1.75rem;
+    background:
+      radial-gradient(circle at top, rgba(253, 79, 0, 0.12), transparent 55%),
+      #0d0b10;
+    color: white;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: 0 35px 100px rgba(0, 0, 0, 0.42);
+  }
+
+  .project-manager-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.74);
+  }
+
+  .project-manager-dialog-body {
+    max-height: calc(100vh - 2.5rem);
+    overflow-y: auto;
+    padding: 1.5rem;
+  }
+
+  .project-manager-dialog-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .project-manager-dialog-kicker {
+    color: rgba(255, 255, 255, 0.44);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+
+  .project-manager-dialog-title {
+    margin-top: 0.7rem;
+    color: white;
+    font-size: 1.7rem;
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  .project-manager-dialog-close {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+    background: transparent;
+    padding: 0.5rem 0.9rem;
+    color: rgba(255, 255, 255, 0.68);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .project-manager-form {
+    margin-top: 1.5rem;
+  }
+
+  .project-manager-field + .project-manager-field {
+    margin-top: 1rem;
+  }
+
+  .project-manager-field-label {
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .project-manager-field-input {
+    width: 100%;
+    margin-top: 0.55rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 1.15rem;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.95rem 1rem;
+    color: white;
+    font-size: 0.92rem;
+    outline: none;
+  }
+
+  .project-manager-field-input::placeholder {
+    color: rgba(255, 255, 255, 0.28);
+  }
+
+  .project-manager-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1.2rem;
+  }
+
+  .project-manager-secondary-action,
+  .project-manager-primary-action {
+    border-radius: 999px;
+    padding: 0.7rem 1.15rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .project-manager-secondary-action {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: transparent;
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .project-manager-primary-action {
+    border: 1px solid transparent;
+    background: var(--launch-orange);
+    color: white;
+  }
+
+  @media (min-width: 860px) {
+    #project-manager-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
+      align-items: start;
+    }
+  }
+</style>
+
+<.project_shell
+  root_id="project-manager-root"
+  panel_id="project-manager-panel"
+  kicker="Editing evolved"
+  state=""
+  title="Choose a workspace"
+  message="Open a local project, clone a repository into a workspace, or jump back into a recent environment."
+>
+  <div id="project-manager-grid">
+    <section class="project-manager-card">
+      <div class="project-manager-section">
+        <p class="project-manager-label">Workspace actions</p>
+
+        <div class="project-manager-actions">
+          <button
+            type="button"
+            class="project-manager-button"
+            onclick="document.getElementById('open-project-dialog').showModal()"
+            disabled={!@can_open_local_dir}
+          >
+            <span>
+              <span class="project-manager-button-title">Open local project</span>
+              <span class="project-manager-button-copy">
+                Point Foundry at an existing project root on this machine.
+              </span>
+            </span>
+            <span class="project-manager-button-tag">Local</span>
+          </button>
+
+          <button
+            type="button"
+            class="project-manager-button"
+            onclick="document.getElementById('clone-project-dialog').showModal()"
+          >
+            <span>
+              <span class="project-manager-button-title">Clone Git repository</span>
+              <span class="project-manager-button-copy">
+                Pull a remote repository into a local parent folder and launch it.
+              </span>
+            </span>
+            <span class="project-manager-button-tag">Git</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="project-manager-card">
+      <div class="project-manager-section">
+        <p class="project-manager-label">Recent workspaces</p>
+
+        <%= if @recent_projects == [] do %>
+          <p class="project-manager-empty">No recent projects yet.</p>
+        <% else %>
+          <div class="project-manager-recent-list">
+            <%= for project <- @recent_projects do %>
+              <a
+                href={~p"/project-launch?path=#{project["root"]}"}
+                class="project-manager-recent-link"
+              >
+                <p class="project-manager-recent-title">{project["label"]}</p>
+                <p class="project-manager-recent-path">{project["root"]}</p>
+              </a>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </aside>
+  </div>
+</.project_shell>
+
+<dialog id="open-project-dialog" class="project-manager-dialog">
+  <div class="project-manager-dialog-body">
+    <div class="project-manager-dialog-header">
+      <div>
+        <p class="project-manager-dialog-kicker">Open Project</p>
+        <h2 class="project-manager-dialog-title">Choose a local project root</h2>
+      </div>
+      <button
+        type="button"
+        class="project-manager-dialog-close"
+        onclick="document.getElementById('open-project-dialog').close()"
+      >
+        Close
+      </button>
+    </div>
+
+    <form action={~p"/project-launch"} method="get" class="project-manager-form">
+      <div class="project-manager-field">
+        <label class="project-manager-field-label">Project path</label>
+        <input
+          type="text"
+          name="path"
+          placeholder="~/Documents/my_app"
+          class="project-manager-field-input"
+        />
+      </div>
+      <div class="project-manager-form-actions">
+        <button
+          type="button"
+          onclick="document.getElementById('open-project-dialog').close()"
+          class="project-manager-secondary-action"
+        >
+          Cancel
+        </button>
+        <button type="submit" class="project-manager-primary-action">Open</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="clone-project-dialog" class="project-manager-dialog">
+  <div class="project-manager-dialog-body">
+    <div class="project-manager-dialog-header">
+      <div>
+        <p class="project-manager-dialog-kicker">Clone</p>
+        <h2 class="project-manager-dialog-title">Clone a Git repository</h2>
+      </div>
+      <button
+        type="button"
+        class="project-manager-dialog-close"
+        onclick="document.getElementById('clone-project-dialog').close()"
+      >
+        Close
+      </button>
+    </div>
+
+    <form action={~p"/project-launch"} method="get" class="project-manager-form">
+      <div class="project-manager-field">
+        <label class="project-manager-field-label">Repository URL</label>
+        <input
+          type="text"
+          name="repo_url"
+          placeholder="https://github.com/org/repo.git"
+          class="project-manager-field-input"
+        />
+      </div>
+      <div class="project-manager-field">
+        <label class="project-manager-field-label">Destination parent folder</label>
+        <input
+          type="text"
+          name="parent_dir"
+          placeholder="~/Documents"
+          class="project-manager-field-input"
+        />
+      </div>
+      <div class="project-manager-form-actions">
+        <button
+          type="button"
+          onclick="document.getElementById('clone-project-dialog').close()"
+          class="project-manager-secondary-action"
+        >
+          Cancel
+        </button>
+        <button type="submit" class="project-manager-primary-action">Clone</button>
+      </div>
+    </form>
+  </div>
+</dialog>

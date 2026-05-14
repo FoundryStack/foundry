@@ -1,0 +1,29 @@
+class Foundry < Formula
+  desc "Governed build environment for Elixir/Ash/Phoenix platforms"
+  homepage "https://github.com/OWNER/foundry"
+  version "<%= @version %>"
+  license "Apache-2.0"
+
+  on_macos do
+    if Hardware::CPU.intel?
+      url "<%= @macos_url %>"
+      sha256 "<%= @macos_sha %>"
+    else
+      url "<%= @macos_silicon_url %>"
+      sha256 "<%= @macos_silicon_sha %>"
+    end
+  end
+
+  on_linux do
+    url "<%= @linux_url %>"
+    sha256 "<%= @linux_sha %>"
+  end
+
+  def install
+    bin.install Dir["*"].find { |path| File.file?(path) && File.executable?(path) }
+  end
+
+  test do
+    system "#{bin}/foundry", "--help"
+  end
+end

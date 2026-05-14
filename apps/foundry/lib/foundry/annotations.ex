@@ -10,7 +10,7 @@ defmodule Foundry.Annotations do
   Registered attributes:
     - @compliance         - List of regulatory requirement IDs (e.g. [:RG_MGA_005])
     - @telemetry_prefix   - Structured telemetry prefix list
-    - @provider_name      - String identifier for provider adapters
+    - @adapter_name       - String identifier for adapter modules
     - @foundry            - Map of Foundry metadata for Oban workers and others
     - @runbook            - Path to operational runbook document
     - @adrs               - List of ADR references
@@ -31,7 +31,7 @@ defmodule Foundry.Annotations do
     quote do
       Module.register_attribute(__MODULE__, :compliance, persist: true)
       Module.register_attribute(__MODULE__, :telemetry_prefix, persist: true)
-      Module.register_attribute(__MODULE__, :provider_name, persist: true)
+      Module.register_attribute(__MODULE__, :adapter_name, persist: true)
       Module.register_attribute(__MODULE__, :foundry, persist: true)
       Module.register_attribute(__MODULE__, :performs, persist: true)
       Module.register_attribute(__MODULE__, :runbook, persist: true)

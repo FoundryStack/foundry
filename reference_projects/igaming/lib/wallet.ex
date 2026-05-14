@@ -30,7 +30,12 @@ defmodule IgamingRef.Finance.Wallet do
     repo(IgamingRef.Repo)
   end
 
+  paper_trail do
+    change_tracking_mode(:snapshot)
+  end
+
   state_machine do
+    state_attribute(:status)
     initial_states([:active])
     default_initial_state(:active)
 
@@ -166,7 +171,7 @@ defmodule IgamingRef.Finance.Wallet do
       change(fn changeset, _ ->
         amount = Ash.Changeset.get_argument(changeset, :amount)
         current = Ash.Changeset.get_attribute(changeset, :balance)
-        Ash.Changeset.change_attribute(changeset, :balance, Money.subtract!(current, amount))
+        Ash.Changeset.change_attribute(changeset, :balance, Money.sub!(current, amount))
       end)
     end
 
@@ -196,9 +201,19 @@ defmodule IgamingRef.Finance.Wallet do
   end
 
   policies do
+    policy action(:create) do
+      description("Wallet provisioning is performed by internal system actors.")
+      authorize_if(IgamingRef.Policies.InternalSystemActor)
+    end
+
     policy action_type(:read) do
       description("Players may read their own wallets. Operators may read any wallet.")
       authorize_if(IgamingRef.Policies.OwnerOrOperator)
+    end
+
+    policy action_type(:read) do
+      description("Internal system actors may read wallets during governed transfer execution.")
+      authorize_if(IgamingRef.Policies.InternalSystemActor)
     end
 
     policy action(:debit) do
@@ -207,6 +222,11 @@ defmodule IgamingRef.Finance.Wallet do
       )
 
       authorize_if(IgamingRef.Policies.AuthenticatedSubject)
+    end
+
+    policy action(:credit) do
+      description("Wallet credits are performed by internal system actors in the reference project.")
+      authorize_if(IgamingRef.Policies.InternalSystemActor)
     end
 
     policy action(:close) do

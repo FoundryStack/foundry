@@ -39,7 +39,7 @@ defmodule Foundry.Context.NodeBuilder do
       authentication_subject: info.authentication_subject,
       oban_queues: info.oban_queues,
       rate_limited: info.rate_limited,
-      feature_flags: info.feature_flags,
+      feature_flags: ensure_list(info.feature_flags),
       steps: info.steps,
       performs: info.performs,
       outputs: info.outputs,
@@ -48,7 +48,12 @@ defmodule Foundry.Context.NodeBuilder do
       auth_strategies: info.auth_strategies,
       side_effects: info.side_effects,
       trigger_kind: Map.get(info, :trigger_kind),
-      last_modified: format_mtime(info.last_modified)
+      last_modified: format_mtime(info.last_modified),
+      page_route: info.page_route,
+      page_group: info.page_group,
+      page_dynamic: info.page_dynamic,
+      page_subtype: info.page_subtype,
+      calls_actions: info.calls_actions
     }
   end
 
@@ -65,6 +70,10 @@ defmodule Foundry.Context.NodeBuilder do
   end
 
   defp format_mtime(other), do: other
+
+  defp ensure_list(nil), do: []
+  defp ensure_list(list) when is_list(list), do: list
+  defp ensure_list(value), do: [value]
 
   defp derive_domain(module) do
     # "IgamingRef.Finance.Wallet" → "Finance"

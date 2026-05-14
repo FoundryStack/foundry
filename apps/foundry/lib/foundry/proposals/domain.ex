@@ -4,5 +4,6 @@ defmodule Foundry.Proposals do
 
   resources do
     resource(Foundry.Proposals.Proposal)
+    resource(Foundry.Proposals.Proposal.Version)
   end
 end

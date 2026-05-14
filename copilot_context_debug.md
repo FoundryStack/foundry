@@ -28,11 +28,11 @@ presentation. Sub-agents own scoped, tool-constrained retrieval and generation t
 a compact constraint summary.
 **Spawned:** Always for `change` intent. For `question` when ADR citation is needed.
 **Inputs:** NodeEntry (from CodeContextGatherer) + Tier 1 spec-kit index tag match.
-**Tools:** `bash` (cat, grep) - read-only.
+**Tools:** `bash` (cat, grep) — read-only.
 **Execution:**
 1. Read each ADR identified by Tier 1 tag match + NodeEntry `adrs` field
-2. Follow `Extends:` headers - read those ADRs too
-3. Read regulation files from NodeEntry `compliance` field; follow requirement -> ADR links
+2. Follow `Extends:` headers — read those ADRs too
+3. Read regulation files from NodeEntry `compliance` field; follow requirement → ADR links
 4. Read runbook from NodeEntry `runbook` field if a Reactor is in scope
 5. Check all INV-001..INV-018 against the proposed change
 **Returns:** Applicable constraints, contradiction result (`blocked: bool, rule: string`),
@@ -47,9 +47,9 @@ spec-kit gap list.
 **Inputs:** Target module names (inferred from message), inferred construct type.
 **Tools:** `bash` (mix foundry.project.context, mix foundry.pattern.find, mix foundry.exdoc).
 **Execution:**
-1. `mix foundry.project.context <Module>` - live NodeEntry (source of truth)
-2. `mix foundry.pattern.find <type> --domain <D>` - closest existing example
-3. `mix foundry.exdoc <Module> --function <fn>` - only when a specific DSL option
+1. `mix foundry.project.context <Module>` — live NodeEntry (source of truth)
+2. `mix foundry.pattern.find <type> --domain <D>` — closest existing example
+3. `mix foundry.exdoc <Module> --function <fn>` — only when a specific DSL option
    is unresolved after reading the pattern
 **Returns:** NodeEntry struct, pattern example source, current `@description` field values,
 `pending_migrations` status.
@@ -62,8 +62,8 @@ spec-kit gap list.
 **Spawned:** After SpecKitNavigator and CodeContextGatherer both complete, contradiction
 check passes.
 **Inputs:** Change class, constraint summary, code context, spec-kit gap list.
-**Tools:** None - pure reasoning from inputs.
-**Returns:** Ordered plan (spec -> tests -> code -> migration) with per-step rationale.
+**Tools:** None — pure reasoning from inputs.
+**Returns:** Ordered plan (spec → tests → code → migration) with per-step rationale.
 
 ---
 
@@ -74,7 +74,7 @@ proposal branch.
 **Spawned:** During generation, before CodeGenerator, when change class requires it.
 **Inputs:** Change class, plan, related existing docs for format reference.
 **Tools:** `bash` (cat existing spec-kit docs), branch write.
-**Returns:** Markdown stubs committed on `foundry/prop_<id>` - before any code file.
+**Returns:** Markdown stubs committed on `foundry/prop_<id>` — before any code file.
 
 ---
 
@@ -92,33 +92,33 @@ branch.
 ### Parallel Execution Map
 
 ```
-classify(intent) [orchestrator - inline, from Tier 1]
-         \x{2502}
-         \x{251C}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2510}
-         \x{25BC}                                    \x{25BC}
+classify(intent) [orchestrator — inline, from Tier 1]
+         │
+         ├────────────────────────────────────┐
+         ▼                                    ▼
   SpecKitNavigator                  CodeContextGatherer
   reads ADR graph from              reads live NodeEntry
   NodeEntry entry points            finds pattern example
   checks INV-001..018               collects @description fields
-         \x{2502}                                    \x{2502}
-         \x{2514}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2500}\x{2518}
-                          \x{2502}
+         │                                    │
+         └────────────────────────────────────┘
+                          │
                   orchestrator synthesizes:
-                  contradiction check -> BLOCKED or proceed
+                  contradiction check → BLOCKED or proceed
                   change classification
-                          \x{2502}
-                          \x{25BC}  [sequential from here - each step depends on previous]
+                          │
+                          ▼  [sequential from here — each step depends on previous]
                     PlanArchitect
-                          \x{2502}
-                          \x{25BC}  [human confirmation]
-                    SpecKitDrafter -> CodeGenerator -> mix compile -> mix test -> diff
+                          │
+                          ▼  [human confirmation]
+                    SpecKitDrafter → CodeGenerator → mix compile → mix test → diff
 ```
 
 Parallelism ends at synthesis. Nothing in the generation phase runs concurrently.
 
 ---
 
-## Hard Invariants - Never Violate These
+## Hard Invariants — Never Violate These
 
 These are constraints the system enforces and agents must respect. Not guidelines.
 
@@ -298,15 +298,15 @@ reasoning obligation. The agent runs it internally before constructing the sessi
 ### Pre-generation checklist
 
 ```
-\x{25A1} ADR covers this design decision, or it is a :structural change
-\x{25A1} All touched Reactors with >3 steps have @runbook declarations
-\x{25A1} All new compliance links reference existing regulation entries
-\x{25A1} New sensitive resources will have paper_trail + archival
-\x{25A1} New Reactors with external side effects declare idempotency keys
-\x{25A1} @description drafted for all new attributes
-\x{25A1} @moduledoc drafted for the new module
-\x{25A1} @description fields on touched attributes are consistent with proposed change
-\x{25A1} Policy compatibility verified for all generated UI actions via Ash.Resource.Info.policies/1
+□ ADR covers this design decision, or it is a :structural change
+□ All touched Reactors with >3 steps have @runbook declarations
+□ All new compliance links reference existing regulation entries
+□ New sensitive resources will have paper_trail + archival
+□ New Reactors with external side effects declare idempotency keys
+□ @description drafted for all new attributes
+□ @moduledoc drafted for the new module
+□ @description fields on touched attributes are consistent with proposed change
+□ Policy compatibility verified for all generated UI actions via Ash.Resource.Info.policies/1
    (do not generate UI actions the current actor cannot authorize - check before generating)
 ```
 
@@ -414,7 +414,7 @@ surfaces only the finished output: a confirmed plan, a review diff, or a BLOCKED
 | `speckit.clarify` | Intent confidence below threshold - before the one permitted question | Up to 5 targeted gaps identified | Copilot distills to the single most critical (INV-005) |
 | `speckit.plan` | After spec exists; before session plan is presented to human | Design artifacts: approach, alternatives, trade-offs | PlanArchitect sub-agent |
 | `speckit.tasks` | After plan is confirmed by human | Dependency-ordered task list | CodeGenerator execution queue |
-| `speckit.analyze` | After task list is generated; before plan is shown to human | Cross-artifact consistency report (spec \x{2194} plan \x{2194} tasks) | Copilot resolves conflicts before surfacing plan |
+| `speckit.analyze` | After task list is generated; before plan is shown to human | Cross-artifact consistency report (spec ↔ plan ↔ tasks) | Copilot resolves conflicts before surfacing plan |
 | `speckit.implement` | On human confirmation (Phase 4+) | Executes tasks in dependency order | Igniter + branch operations |
 | `speckit.constitution` | When AGENTS.md or a project constitution would change | Keeps all dependent templates in sync | SpecKitDrafter (constitution update is first file on branch) |
 | `speckit.taskstoissues` | When user requests GitHub issue creation from a confirmed proposal | Dependency-ordered GitHub issues from tasks.md | External (GitHub) |
@@ -454,7 +454,7 @@ surfaced. The user sees:
 
 - The session plan (built by `speckit.plan` + `speckit.tasks`, confirmed before generation)
 - The review diff (code + spec-kit files together in the review panel)
-- Source citations in question answers ("Source: ADR-013 �Confidence")
+- Source citations in question answers ("Source: ADR-013 §Confidence")
 - The BLOCKED message if a contradiction was found
 
 The Activity Feed shows the proposal card and approval status. Not skill traces.
@@ -467,7 +467,7 @@ The Activity Feed shows the proposal card and approval status. Not skill traces.
 
 | Answer comes from Tier 1 (already in system prompt) | Answer requires bash |
 |---|---|
-| Which ADRs are relevant to this topic? | What does ADR-013 �Confidence actually say? |
+| Which ADRs are relevant to this topic? | What does ADR-013 §Confidence actually say? |
 | Which modules exist in the Finance domain? | What attributes does Wallet currently have? |
 | Which INV rules apply to `:sensitive` resources? | Full text of a specific regulation requirement |
 | Does a pattern exist for `transfer` type? | The actual pattern source code |
@@ -484,7 +484,7 @@ document. Fetching a document the Tier 1 index says doesn't exist is always wron
 
 ```elixir
 [
-      # Core Ash stack \x{2014} upgraded to 3.20 for Foundry compatibility
+      # Core Ash stack — upgraded to 3.20 for Foundry compatibility
       {:ash, "~> 3.20"},
       {:ash_postgres, "~> 2.0"},
       {:spark, "~> 2.0"},
@@ -504,7 +504,7 @@ document. Fetching a document the Tier 1 index says doesn't exist is always wron
       {:ash_archival, "~> 2.0"},
       {:ash_json_api, "~> 1.0"},
 
-      # Reactor \x{2014} upgraded to 1.0 (stable release) from 0.10
+      # Reactor — upgraded to 1.0 (stable release) from 0.10
       {:reactor, "~> 1.0"},
 
       # Money
@@ -513,7 +513,7 @@ document. Fetching a document the Tier 1 index says doesn't exist is always wron
       {:ex_money_sql, "~> 1.7"},
       {:ex_cldr, "~> 2.0"},
 
-      # Feature flags (runtime: false \x{2014} no Redis; configure Ecto persistence when needed)
+      # Feature flags (runtime: false — no Redis; configure Ecto persistence when needed)
       {:fun_with_flags, "~> 1.11", runtime: false},
       {:fun_with_flags_ui, "~> 1.0", runtime: false},
 
@@ -521,17 +521,17 @@ document. Fetching a document the Tier 1 index says doesn't exist is always wron
       {:oban, "~> 2.17"},
       {:ash_oban, "~> 0.2"},
 
-      # Rate limiting (runtime: false \x{2014} configure when needed)
+      # Rate limiting (runtime: false — configure when needed)
       {:hammer, "~> 7.0", runtime: false},
 
       # Observability
       {:opentelemetry, "~> 1.3"},
       {:opentelemetry_exporter, "~> 1.6"},
 
-      # Igniter \x{2014} upgraded for Ash 3.20 compatibility
+      # Igniter — upgraded for Ash 3.20 compatibility
       {:igniter, "~> 0.6"},
 
-      # Foundry \x{2014} meta-framework for governance
+      # Foundry — meta-framework for governance
       {:foundry, path: "../../apps/foundry"},
 
       # Serialisation
@@ -556,12 +556,12 @@ document. Fetching a document the Tier 1 index says doesn't exist is always wron
 ## Project Status
 
 ```json
-{"ci":{"branch":null,"commit":null,"context_lock_current":true,"last_run_at":null,"lint_passed":null,"tests_passed":null},"compiled_at":"2026-04-18T12:33:25Z","compliance":{"covered_count":0,"planned_count":14,"requirements":[{"coverage":0,"id":"RG-MGA-001","status":"planned"},{"coverage":0,"id":"RG-MGA-002","status":"planned"},{"coverage":0,"id":"RG-MGA-003","status":"planned"},{"coverage":0,"id":"RG-MGA-005","status":"planned"},{"coverage":0,"id":"RG-MGA-006","status":"planned"},{"coverage":0,"id":"RG-MGA-007","status":"planned"},{"coverage":0,"id":"RG-MGA-009","status":"planned"},{"coverage":0,"id":"RG-MMA-005","status":"planned"},{"coverage":0,"id":"RG-UK-002","status":"planned"},{"coverage":0,"id":"RG-UK-003","status":"planned"},{"coverage":0,"id":"RG-UK-007","status":"planned"},{"coverage":0,"id":"RG-UK-008","status":"planned"},{"coverage":0,"id":"RG-UK-011","status":"planned"},{"coverage":0,"id":"RG-UK-014","status":"planned"}],"total_requirements":14},"domain_type":"igaming","domains":["Accounts","Finance","Gaming","Infrastructure","Ops","Players","Policies","Promotions"],"generated_at":"2026-04-18T12:34:39.932474Z","lint":{"errors":71,"total_violations":111,"warnings":40},"manifest":{"domain_type":"igaming","sensitive_resources":["Elixir.IgamingRef.Finance.Wallet","Elixir.IgamingRef.Finance.LedgerEntry","Elixir.IgamingRef.Finance.WithdrawalRequest","Elixir.IgamingRef.Players.Player","Elixir.IgamingRef.Players.SelfExclusionRecord"]},"migrations":{"applied_count":0,"pending_count":0},"project":"IgamingRef","project_type":"standard","proposals":{"open_count":0,"recent":[]},"sensitive_modules":["LedgerEntry","Player","SelfExclusionRecord","Wallet","WithdrawalRequest"],"stack":{"ash":"3.24.3","ash_postgres":"2.9.0","elixir":null,"oban":"2.21.1","phoenix":"1.8.5","reactor":"1.0.1"},"test_coverage":{"e2e":0,"integration":0,"unit":0}}
+{"ci":{"branch":null,"commit":null,"context_lock_current":false,"last_run_at":null,"lint_passed":null,"tests_passed":null},"compiled_at":"2026-04-19T11:46:23Z","compliance":{"covered_count":0,"planned_count":14,"requirements":[{"coverage":0,"id":"RG-MGA-001","status":"planned"},{"coverage":0,"id":"RG-MGA-002","status":"planned"},{"coverage":0,"id":"RG-MGA-003","status":"planned"},{"coverage":0,"id":"RG-MGA-005","status":"planned"},{"coverage":0,"id":"RG-MGA-006","status":"planned"},{"coverage":0,"id":"RG-MGA-007","status":"planned"},{"coverage":0,"id":"RG-MGA-009","status":"planned"},{"coverage":0,"id":"RG-MMA-005","status":"planned"},{"coverage":0,"id":"RG-UK-002","status":"planned"},{"coverage":0,"id":"RG-UK-003","status":"planned"},{"coverage":0,"id":"RG-UK-007","status":"planned"},{"coverage":0,"id":"RG-UK-008","status":"planned"},{"coverage":0,"id":"RG-UK-011","status":"planned"},{"coverage":0,"id":"RG-UK-014","status":"planned"}],"total_requirements":14},"domain_type":"igaming","domains":["Accounts","Finance","Gaming","Infrastructure","Ops","Players","Policies","Promotions"],"generated_at":"2026-04-19T11:46:29.007725Z","lint":{"errors":71,"total_violations":113,"warnings":42},"manifest":{"domain_type":"igaming","sensitive_resources":["Elixir.IgamingRef.Finance.Wallet","Elixir.IgamingRef.Finance.LedgerEntry","Elixir.IgamingRef.Finance.WithdrawalRequest","Elixir.IgamingRef.Players.Player","Elixir.IgamingRef.Players.SelfExclusionRecord"]},"migrations":{"applied_count":0,"pending_count":0},"project":"IgamingRef","project_type":"standard","proposals":{"open_count":0,"recent":[]},"sensitive_modules":["LedgerEntry","Player","SelfExclusionRecord","Wallet","WithdrawalRequest"],"stack":{"ash":"3.24.3","ash_postgres":"2.9.0","elixir":null,"oban":"2.21.1","phoenix":"1.8.5","reactor":"1.0.1"},"test_coverage":{"e2e":0,"integration":0,"unit":0}}
 ```
 
 ## System Architecture (Full Project Context)
 
-# System Map: IgamingRef (standard � igaming)
+# System Map: IgamingRef (standard · igaming)
 
 Compact text format for LLM consumption.
 
@@ -574,231 +574,235 @@ Compact text format for LLM consumption.
 
 ## Module Aliases
 
-AC1=IgamingRef.Accounts.Token  AC2=IgamingRef.Accounts.User  FI1=IgamingRef.Finance.LedgerEntry  FI2=IgamingRef.Finance.Rules.PlayerKYCVerified  FI3=IgamingRef.Finance.Rules.SufficientBalance
-FI4=IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded  FI5=IgamingRef.Finance.Transfer  FI6=IgamingRef.Finance.Wallet  FI7=IgamingRef.Finance.WithdrawalRequest  FI8=IgamingRef.Finance.WithdrawalTransfer
-FI9=IgamingRef.Finance.WithdrawalWebhook  GA1=IgamingRef.Gaming.Adapters.PragmaticPlayV1  GA2=IgamingRef.Gaming.Adapters.PragmaticPlayV2  GA3=IgamingRef.Gaming.CatalogSyncJob  GA4=IgamingRef.Gaming.Game
-GA5=IgamingRef.Gaming.GameCatalog  GA6=IgamingRef.Gaming.GameVersion  GA7=IgamingRef.Gaming.ProviderConfig  GA8=IgamingRef.Gaming.ProviderSyncReactor  GA9=IgamingRef.Gaming.Rules.GameRTPCertified
-GA10=IgamingRef.Gaming.Rules.ProviderActive  OP1=IgamingRef.Ops.AuditEntry  OP2=IgamingRef.Ops.PIIVault  PL1=IgamingRef.Players.KYCDocument  PL2=IgamingRef.Players.KYCUploadToken
-PL3=IgamingRef.Players.Player  PL4=IgamingRef.Players.Rules.PlayerNotSelfExcluded  PL5=IgamingRef.Players.SelfExclusionRecord  PO1=IgamingRef.Policies.AuthenticatedSubject  PO2=IgamingRef.Policies.ComplianceOrPlatformLead
-PO3=IgamingRef.Policies.InternalSystemActor  PO4=IgamingRef.Policies.OperatorOnly  PO5=IgamingRef.Policies.OwnerOrOperator  PO6=IgamingRef.Policies.SelfOnly  PR1=IgamingRef.Promotions.BonusCampaign
-PR2=IgamingRef.Promotions.BonusGrant  PR3=IgamingRef.Promotions.BonusGrantTransfer  PR4=IgamingRef.Promotions.DepositMatchBlueprint  PR5=IgamingRef.Promotions.Rules.CampaignNotExpired  PR6=IgamingRef.Promotions.Rules.PlayerEligibleForCampaign
-RO1=external:postgres:Accounts  RO2=external:postgres:Finance  RO3=external:postgres:Gaming  RO4=external:postgres:Ops  RO5=external:postgres:Players
-RO6=external:postgres:Promotions  RO7=external:pragmaticplayv1  RO8=external:pragmaticplayv2
+AC1=IgamingRef.Accounts.Emails.MagicLinkEmail  AC2=IgamingRef.Accounts.Emails.PasswordResetEmail  AC3=IgamingRef.Accounts.Token  AC4=IgamingRef.Accounts.User  FI1=IgamingRef.Finance.LedgerEntry
+FI2=IgamingRef.Finance.Rules.PlayerKYCVerified  FI3=IgamingRef.Finance.Rules.SufficientBalance  FI4=IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded  FI5=IgamingRef.Finance.Transfer  FI6=IgamingRef.Finance.Wallet
+FI7=IgamingRef.Finance.WithdrawalRequest  FI8=IgamingRef.Finance.WithdrawalTransfer  FI9=IgamingRef.Finance.WithdrawalWebhook  GA1=IgamingRef.Gaming.Adapters.PragmaticPlayV1  GA2=IgamingRef.Gaming.Adapters.PragmaticPlayV2
+GA3=IgamingRef.Gaming.CatalogSyncJob  GA4=IgamingRef.Gaming.Game  GA5=IgamingRef.Gaming.GameCatalog  GA6=IgamingRef.Gaming.GameVersion  GA7=IgamingRef.Gaming.ProviderConfig
+GA8=IgamingRef.Gaming.ProviderSyncReactor  GA9=IgamingRef.Gaming.Rules.GameRTPCertified  GA10=IgamingRef.Gaming.Rules.ProviderActive  OP1=IgamingRef.Ops.AuditEntry  OP2=IgamingRef.Ops.PIIVault
+PL1=IgamingRef.Players.KYCDocument  PL2=IgamingRef.Players.KYCUploadToken  PL3=IgamingRef.Players.Player  PL4=IgamingRef.Players.Rules.PlayerNotSelfExcluded  PL5=IgamingRef.Players.SelfExclusionRecord
+PO1=IgamingRef.Policies.AuthenticatedSubject  PO2=IgamingRef.Policies.ComplianceOrPlatformLead  PO3=IgamingRef.Policies.InternalSystemActor  PO4=IgamingRef.Policies.OperatorOnly  PO5=IgamingRef.Policies.OwnerOrOperator
+PO6=IgamingRef.Policies.SelfOnly  PR1=IgamingRef.Promotions.BonusCampaign  PR2=IgamingRef.Promotions.BonusGrant  PR3=IgamingRef.Promotions.BonusGrantTransfer  PR4=IgamingRef.Promotions.DepositMatchBlueprint
+PR5=IgamingRef.Promotions.Rules.CampaignNotExpired  PR6=IgamingRef.Promotions.Rules.PlayerEligibleForCampaign  RO1=external:postgres:Accounts  RO2=external:postgres:Finance  RO3=external:postgres:Gaming
+RO4=external:postgres:Ops  RO5=external:postgres:Players  RO6=external:postgres:Promotions  RO7=external:pragmaticplayv1  RO8=external:pragmaticplayv2
 
 ## Nodes
 
-[AC1] res � accounts
+[AC1] res · accounts
+
+[AC2] res · accounts
+
+[AC3] res · accounts
   attrs: updated_at:utcdatetimeusec, created_at:utcdatetimeusec, extra_data:map, purpose:str, expires_at:utcdatetime, subject:str, jti:str:s, archived_at:utcdatetimeusec
   actions: get_token, store_token, store_confirmation_changes, get_confirmation_changes, revoked?, revoke_all_stored_for_subject, revoke_jti, revoke_token, read_expired, expunge_expired, destroy, read
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[AC2] res � accounts
+[AC4] res · accounts
   attrs: id:uuid, email:cistring:s, hashed_password:str:s, inserted_at:utcdatetimeusec, updated_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: request_magic_link, sign_in_with_magic_link, password_reset_with_password, request_password_reset_with_password, sign_in_with_token, sign_in_with_password, register_with_password, get_by_subject, read
-  dl=postgres � paper_trail � archival � auth_subject
+  dl=postgres · paper_trail · archival · auth_subject
 
-[FI1] res � finance � **sensitive**
+[FI1] res · finance · **sensitive**
   attrs: id:uuid, wallet_id:uuid, amount:money, direction:atom, kind:atom, idempotency_key:str, reference_id:str, inserted_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, record
   rels: belongs_to:FI6(wallet_id)
   compliance: RG_MGA_001, RG_MGA_002, RG_UK_003
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[FI2] rule � finance
+[FI2] rule · finance
   > Player must have verified KYC status
   compliance: RG_MGA_003
 
-[FI3] rule � finance
+[FI3] rule · finance
   > Wallet balance must cover the requested withdrawal amount
   compliance: RG_MGA_001
 
-[FI4] rule � finance
+[FI4] rule · finance
   > Withdrawal amount must not exceed the player's daily limit
   compliance: RG_UK_014, RG_MGA_007
 
-[FI5] res � finance
+[FI5] res · finance
   attrs: id:uuid, from_wallet_id:uuid, to_wallet_id:uuid, amount:money, status:atom, reason:str, inserted_at:utcdatetimeusec, updated_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, record, mark_completed, mark_failed
   compliance: RG_MGA_001, RG_UK_003
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[FI6] res � finance � **sensitive**
+[FI6] res · finance · **sensitive**
   attrs: id:uuid, player_id:uuid, currency:str, balance:money, status:atom, inserted_at:utcdatetimeusec, updated_at:utcdatetimeusec, archived_at:utcdatetimeusec, state:atom
   actions: destroy, read, create, credit, debit, freeze, unfreeze, close
   rels: belongs_to:PL3(player_id), has_many:FI1(id), has_many:FI7(id)
   compliance: RG_MGA_001, RG_UK_003
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[FI7] res � finance � **sensitive**
+[FI7] res · finance · **sensitive**
   attrs: id:uuid, player_id:uuid, wallet_id:uuid, amount:money, status:atom, provider:str, provider_reference:str, rejection_reason:str, inserted_at:utcdatetimeusec, updated_at:utcdatetimeusec, archived_at:utcdatetimeusec, state:atom
   actions: read, create, approve, reject, cancel, mark_processing, mark_completed
   rels: belongs_to:PL3(player_id), belongs_to:FI6(wallet_id)
   compliance: RG_UK_014, RG_MGA_007
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[FI8] rxr � finance
+[FI8] rxr · finance
   compliance: RG_UK_014, RG_MGA_007
 
-[FI9] res � finance
+[FI9] res · finance
   compliance: RG_UK_014, RG_MGA_007
 
-[GA1] pvr � gaming
+[GA1] pvr · gaming
   compliance: RG_MGA_006
 
-[GA2] pvr � gaming
+[GA2] pvr · gaming
   compliance: RG_MGA_006
 
-[GA3] job � gaming
+[GA3] job · gaming
 
-[GA4] res � gaming
+[GA4] res · gaming
   attrs: id:uuid, provider_id:uuid, provider_game_code:str, title:str, category:str, rtp:dec, volatility:atom, synced_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, sync
   compliance: RG_MGA_006, RG_UK_007
-  dl=postgres � archival
+  dl=postgres · archival
 
-[GA5] res � gaming
+[GA5] res · gaming
   attrs: id:uuid, game_id:uuid, current_version_id:uuid, available_regions:str, published_at:utcdatetime, hidden:bool, inserted_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, add_to_catalog, hide, show
   compliance: RG_UK_007, RG_MGA_006
-  dl=postgres � archival
+  dl=postgres · archival
 
-[GA6] res � gaming
+[GA6] res · gaming
   attrs: id:uuid, game_id:uuid, version_code:str, status:atom, release_date:date, rtp_certified:bool, synced_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, sync, mark_active, mark_deprecated
   compliance: RG_UK_007, RG_MGA_006
-  dl=postgres � archival
+  dl=postgres · archival
 
-[GA7] res � gaming
+[GA7] res · gaming
   attrs: id:uuid, provider_name:str, api_endpoint:str, api_key:str, status:atom, rtp_certified:bool, inserted_at:utcdatetimeusec, updated_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, create, update_status, mark_certified
   compliance: RG_MGA_006
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[GA8] rxr � gaming
+[GA8] rxr · gaming
   compliance: RG_MGA_006, RG_UK_007
 
-[GA9] rule � gaming
+[GA9] rule · gaming
   > Game version must be RTP-certified
   compliance: RG_UK_007
 
-[GA10] rule � gaming
+[GA10] rule · gaming
   > Provider must be in active status
   compliance: RG_MGA_006
 
-[OP1] res � ops
+[OP1] res · ops
   attrs: id:uuid, actor_id:uuid, actor_type:str, action:str, resource_type:str, resource_id:uuid, changes:map, reason:str, recorded_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, record
   compliance: RG_MGA_002
-  dl=postgres � archival
+  dl=postgres · archival
 
-[OP2] res � ops
+[OP2] res · ops
   attrs: id:uuid, player_id:uuid, pii_type:atom, encrypted_value:str, hash_digest:str, last_accessed_at:utcdatetime, access_count:int, inserted_at:utcdatetimeusec, updated_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, store, read_sensitive, touch_accessed
   rels: belongs_to:PL3(player_id)
   compliance: RG_MGA_002, RG_UK_002
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[PL1] res � players
+[PL1] res · players
   attrs: id:uuid, player_id:uuid, upload_token_id:uuid, document_type:atom, storage_path:str, status:atom, rejection_reason:str, verified_at:utcdatetime, inserted_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, upload, mark_verified, mark_rejected
   rels: belongs_to:PL3(player_id)
   compliance: RG_MGA_003, RG_UK_002
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[PL2] res � players
+[PL2] res · players
   attrs: id:uuid, player_id:uuid, token:str, expires_at:utcdatetime, consumed_at:utcdatetime, consumed_by_document_id:uuid, created_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, generate, mark_consumed
   rels: belongs_to:PL3(player_id)
   compliance: RG_MGA_003, RG_UK_002
-  dl=postgres � archival
+  dl=postgres · archival
 
-[PL3] res � players � **sensitive**
+[PL3] res · players · **sensitive**
   attrs: id:uuid, email:cistring, username:str, date_of_birth:date, country_code:str, kyc_status:atom, risk_level:atom, status:atom, inserted_at:utcdatetimeusec, updated_at:utcdatetimeusec, archived_at:utcdatetimeusec, state:atom
   actions: read, register, update_kyc_status, suspend, reinstate, self_exclude, close
   rels: has_many:FI6(id), has_many:FI7(id), has_many:PL5(id)
   compliance: RG_UK_002, RG_MGA_003, RG_UK_008
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[PL4] rule � players
+[PL4] rule · players
   > Player must not have an active self-exclusion
   compliance: RG_UK_008, RG_MGA_009
 
-[PL5] res � players � **sensitive**
+[PL5] res · players · **sensitive**
   attrs: id:uuid, player_id:uuid, excluded_at:utcdatetime, exclusion_type:atom, duration_days:int, reinstated_at:utcdatetime, inserted_at:utcdatetimeusec, archived_at:utcdatetimeusec
   actions: read, record, mark_reinstated
   rels: belongs_to:PL3(player_id)
   compliance: RG_UK_008, RG_MGA_009
-  dl=postgres � paper_trail � archival
+  dl=postgres · paper_trail · archival
 
-[PO1] rule � policies
+[PO1] rule · policies
 
-[PO2] rule � policies
+[PO2] rule · policies
 
-[PO3] rule � policies
+[PO3] rule · policies
 
-[PO4] rule � policies
+[PO4] rule · policies
 
-[PO5] rule � policies
+[PO5] rule · policies
 
-[PO6] rule � policies
+[PO6] rule · policies
 
-[PR1] res � promotions
+[PR1] res · promotions
   attrs: id:uuid, name:str, kind:atom, status:atom, eligibility_rule:str, bonus_amount:money, wagering_multiplier:dec, max_redemptions:int, starts_at:utcdatetime, expires_at:utcdatetime, inserted_at:utcdatetimeusec, updated_at:utcdatetimeusec, state:atom
   actions: read, create, update, activate, pause, resume, expire
   rels: has_many:PR2(id)
   compliance: RG_MGA_005, RG_UK_011
   dl=postgres
 
-[PR2] res � promotions
+[PR2] res · promotions
   attrs: id:uuid, player_id:uuid, campaign_id:uuid, amount:money, wagering_remaining:dec, status:atom, granted_at:utcdatetime, expires_at:utcdatetime, inserted_at:utcdatetimeusec, updated_at:utcdatetimeusec, state:atom
   actions: read, grant, apply_wager, forfeit, expire, complete
   rels: belongs_to:PL3(player_id), belongs_to:PR1(campaign_id)
   compliance: RG_MMA_005, RG_UK_011
   dl=postgres
 
-[PR3] rxr � promotions
+[PR3] rxr · promotions
   compliance: RG_MGA_005
 
-[PR4] bp � promotions
+[PR4] bp · promotions
   compliance: RG_MGA_005
 
-[PR5] rule � promotions
+[PR5] rule · promotions
   > Campaign must not have expired
   compliance: RG_MGA_005
 
-[PR6] rule � promotions
+[PR6] rule · promotions
   > Player must meet campaign eligibility criteria
   compliance: RG_MGA_005
 
-[RO1] external � infrastructure
+[RO1] external · infrastructure
   > PostgreSQL - Accounts domain tables (AshPostgres)
 
-[RO2] external � infrastructure
+[RO2] external · infrastructure
   > PostgreSQL - Finance domain tables (AshPostgres)
 
-[RO3] external � infrastructure
+[RO3] external · infrastructure
   > PostgreSQL - Gaming domain tables (AshPostgres)
 
-[RO4] external � infrastructure
+[RO4] external · infrastructure
   > PostgreSQL - Ops domain tables (AshPostgres)
 
-[RO5] external � infrastructure
+[RO5] external · infrastructure
   > PostgreSQL - Players domain tables (AshPostgres)
 
-[RO6] external � infrastructure
+[RO6] external · infrastructure
   > PostgreSQL - Promotions domain tables (AshPostgres)
 
-[RO7] external � infrastructure
+[RO7] external · infrastructure
   > External API: Pragmaticplayv1
 
-[RO8] external � infrastructure
+[RO8] external · infrastructure
   > External API: Pragmaticplayv2
 
 ## Edges
 
-AC1 --pers--> RO1
-AC2 --ath--> AC1
-AC2 --pers--> RO1
+AC3 --pers--> RO1
+AC4 --ath--> AC3
+AC4 --pers--> RO1
 FI1 --ref--> FI6
 FI1 --pers--> RO2
 FI2 --grd--> FI8

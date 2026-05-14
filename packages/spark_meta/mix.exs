@@ -4,12 +4,19 @@ defmodule SparkMeta.MixProject do
   def project do
     [
       app: :spark_meta,
+      name: "spark_meta",
+      source_url: "https://github.com/MaxSvargal/spark_meta",
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
+      description: description(),
       aliases: [test: "test --exclude integration"]
     ]
+  end
+
+  defp description() do
+    "Spark DSL walker and introspection library."
   end
 
   def application do

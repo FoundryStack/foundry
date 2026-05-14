@@ -4,6 +4,7 @@
   "dependencies": {
     "cytoscape": "^3.28",
     "cytoscape-cose-bilkent": "^4.1",
-    "cytoscape-node-html-label": "^1.0"
+    "cytoscape-node-html-label": "^1.0",
+    "geist": "^1.7.0"
   }
 }

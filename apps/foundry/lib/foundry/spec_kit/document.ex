@@ -1,6 +1,6 @@
 defmodule Foundry.SpecKit.Document do
   @moduledoc """
-  Ash resource representing a spec-kit document (ADR, runbook, regulation, or usage rule).
+  Ash resource representing a spec-kit document (ADR, runbook, finding, regulation, or usage rule).
 
   Delegates to `Foundry.Context.SpecKitIndexBuilder.build/1` for enumeration
   and document metadata extraction.
@@ -20,7 +20,10 @@ defmodule Foundry.SpecKit.Document do
     end
 
     attribute :path, :string do
-      description("Relative path from project root (e.g. 'docs/adrs/ADR-001-stack-selection.md').")
+      description(
+        "Relative path from project root (e.g. 'docs/adrs/ADR-001-stack-selection.md')."
+      )
+
       allow_nil?(false)
     end
 
@@ -30,7 +33,7 @@ defmodule Foundry.SpecKit.Document do
     end
 
     attribute :type, :atom do
-      description("Document type: :adr, :runbook, :regulation, :agents, :usage_rules.")
+      description("Document type: :adr, :runbook, :finding, :regulation, :agents, :usage_rules.")
       allow_nil?(false)
     end
 
@@ -46,14 +49,14 @@ defmodule Foundry.SpecKit.Document do
   end
 
   actions do
-    defaults [:read]
+    defaults([:read])
 
     read :read_agents_md do
-      description "Read the AGENTS.md spec-kit document."
+      description("Read the AGENTS.md spec-kit document.")
     end
 
     read :read_adr_index do
-      description "Read the ADR index JSON file."
+      description("Read the ADR index JSON file.")
     end
   end
 end

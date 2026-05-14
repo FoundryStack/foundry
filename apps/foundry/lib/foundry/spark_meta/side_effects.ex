@@ -55,7 +55,8 @@ defmodule Foundry.SparkMeta.SideEffects do
     inferred = []
 
     inferred =
-      if String.contains?(snippet, ["Oban.insert", "Oban.insert!"]) and not has_side_effect_type?(annotated, :oban_emit) do
+      if String.contains?(snippet, ["Oban.insert", "Oban.insert!"]) and
+           not has_side_effect_type?(annotated, :oban_emit) do
         oban_job_name =
           case Regex.run(~r/Oban\.insert[!]?\(\s*([A-Z][A-Za-z0-9.]+)\.new/, snippet) do
             [_, module] -> module
@@ -155,22 +156,64 @@ defmodule Foundry.SparkMeta.SideEffects do
   defp extract_module_side_effects(nil, _trigger_kind), do: []
 
   defp extract_module_side_effects(module_source, trigger_kind) do
-    Regex.scan(~r/#\s*@side_effect\s+([^:\n]+):\s*([^,\n]+)(.*)/, module_source)
-    |> Enum.map(fn [_, type_str, name_str, rest] ->
-      opts = parse_side_effect_opts(rest)
+    annotated =
+      Regex.scan(~r/#\s*@side_effect\s+([^:\n]+):\s*([^,\n]+)(.*)/, module_source)
+      |> Enum.map(fn [_, type_str, name_str, rest] ->
+        opts = parse_side_effect_opts(rest)
 
-      %SideEffectEntry{
-        type: String.trim(type_str) |> String.to_atom(),
-        name: String.trim(name_str),
-        declared_on: :module,
-        trigger: trigger_kind && to_string(trigger_kind),
-        queue: Map.get(opts, "queue"),
-        idempotent: Map.get(opts, "idempotent") == "true",
-        idempotency_key_from: Map.get(opts, "key_from") |> parse_list(),
-        declared: true,
-        epistemic: "VERIFIED"
-      }
-    end)
+        %SideEffectEntry{
+          type: String.trim(type_str) |> String.to_atom(),
+          name: String.trim(name_str),
+          declared_on: :module,
+          trigger: trigger_kind && to_string(trigger_kind),
+          queue: Map.get(opts, "queue"),
+          idempotent: Map.get(opts, "idempotent") == "true",
+          idempotency_key_from: Map.get(opts, "key_from") |> parse_list(),
+          declared: true,
+          epistemic: "VERIFIED"
+        }
+      end)
+
+    inferred_oban =
+      case Regex.run(~r/Oban\.insert[!]?\(\s*([A-Z][A-Za-z0-9.]+)\.new/, module_source) do
+        [_, module] ->
+          if has_side_effect_type?(annotated, :oban_emit) do
+            []
+          else
+            [
+              %SideEffectEntry{
+                type: :oban_emit,
+                name: module,
+                declared_on: :module,
+                trigger: trigger_kind && to_string(trigger_kind),
+                declared: false,
+                epistemic: "INFERRED"
+              }
+            ]
+          end
+
+        _ ->
+          []
+      end
+
+    inferred_http =
+      if String.contains?(module_source, ["Req.", "Finch.", "HTTPoison", "Tesla"]) and
+           not has_side_effect_type?(annotated, :external_http) do
+        [
+          %SideEffectEntry{
+            type: :external_http,
+            name: "external_call",
+            declared_on: :module,
+            trigger: trigger_kind && to_string(trigger_kind),
+            declared: false,
+            epistemic: "INFERRED"
+          }
+        ]
+      else
+        []
+      end
+
+    annotated ++ inferred_oban ++ inferred_http
   end
 
   defp parse_side_effect_opts(rest) do

@@ -14,6 +14,7 @@ config :igaming_ref, ash_domains: [
   IgamingRef.Promotions,
   IgamingRef.Ops
 ]
+config :igaming_ref, ecto_repos: [IgamingRef.Repo]
 
 # ex_money / ex_cldr — required for Money types at runtime
 config :ex_cldr, default_backend: IgamingRef.Cldr

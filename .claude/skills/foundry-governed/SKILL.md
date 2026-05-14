@@ -16,7 +16,7 @@ You are enforcing AGENTS.md §Agent reasoning sequence steps 1–10.
 
 ### Step 1 — Read NodeEntry
 ```bash
-mix foundry.project.context <affected_module> --json
+mix foundry.project.context <affected_module>
 ```
 If the module is unknown, identify it from the current tasks.md or plan.md.
 

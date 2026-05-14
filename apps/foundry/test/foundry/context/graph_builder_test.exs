@@ -49,6 +49,18 @@ defmodule Foundry.Context.GraphBuilderTest do
     assert job.performs == "IgamingRef.Gaming.ProviderSyncReactor"
   end
 
+  test "Page nodes create calls_action edges to real resources", %{edges: edges} do
+    calls_action_edges = Enum.filter(edges, &(&1.relation == :calls_action))
+    # Expected edges after igaming page/resource alignment:
+    # - HomeLive → Gaming.Game, Promotions.BonusCampaign
+    # - GameLive → Gaming.Game, Finance.Wallet, Gaming.GameSession
+    # - DepositLive → Finance.Transfer, Finance.Wallet
+    # - AuthLive → Accounts.Token
+    # - WithdrawalLive → Finance.WithdrawalRequest, Finance.Wallet
+    assert length(calls_action_edges) >= 8, "Expected at least 8 calls_action edges"
+  end
+
+
   # Relationship edges: Wallet → Player (references)
   test "Wallet→Player references edge exists", %{edges: edges} do
     assert find_edge(edges, "IgamingRef.Finance.Wallet", "IgamingRef.Players.Player", :references)
@@ -56,79 +68,224 @@ defmodule Foundry.Context.GraphBuilderTest do
 
   # Relationship edges: Wallet → LedgerEntry (referenced_by)
   test "Wallet→LedgerEntry referenced_by edge exists", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Finance.Wallet", "IgamingRef.Finance.LedgerEntry", :referenced_by)
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.Wallet",
+             "IgamingRef.Finance.LedgerEntry",
+             :referenced_by
+           )
   end
 
   # Relationship edges: Wallet → WithdrawalRequest (referenced_by)
   test "Wallet→WithdrawalRequest referenced_by edge exists", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Finance.Wallet", "IgamingRef.Finance.WithdrawalRequest", :referenced_by)
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.Wallet",
+             "IgamingRef.Finance.WithdrawalRequest",
+             :referenced_by
+           )
   end
 
   # Relationship edges: Player → Wallet (referenced_by)
   test "Player→Wallet referenced_by edge exists", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Players.Player", "IgamingRef.Finance.Wallet", :referenced_by)
+    assert find_edge(
+             edges,
+             "IgamingRef.Players.Player",
+             "IgamingRef.Finance.Wallet",
+             :referenced_by
+           )
   end
 
   # Relationship edges: Player → WithdrawalRequest (referenced_by)
   test "Player→WithdrawalRequest referenced_by edge exists", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Players.Player", "IgamingRef.Finance.WithdrawalRequest", :referenced_by)
+    assert find_edge(
+             edges,
+             "IgamingRef.Players.Player",
+             "IgamingRef.Finance.WithdrawalRequest",
+             :referenced_by
+           )
   end
 
   # Relationship edges: LedgerEntry → Wallet (references)
   test "LedgerEntry→Wallet references edge exists", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Finance.LedgerEntry", "IgamingRef.Finance.Wallet", :references)
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.LedgerEntry",
+             "IgamingRef.Finance.Wallet",
+             :references
+           )
   end
 
   # Relationship edges: WithdrawalRequest → Player (references)
   test "WithdrawalRequest→Player references edge exists", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Finance.WithdrawalRequest", "IgamingRef.Players.Player", :references)
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.WithdrawalRequest",
+             "IgamingRef.Players.Player",
+             :references
+           )
   end
 
   # Relationship edges: WithdrawalRequest → Wallet (references)
   test "WithdrawalRequest→Wallet references edge exists", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Finance.WithdrawalRequest", "IgamingRef.Finance.Wallet", :references)
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.WithdrawalRequest",
+             "IgamingRef.Finance.Wallet",
+             :references
+           )
   end
 
   # Auth edge: User → Token (authenticates)
   test "User→Token authenticates edge exists", %{edges: edges} do
     assert Enum.any?(edges, fn edge ->
-      edge.from == "IgamingRef.Accounts.User" and edge.relation == :authenticates
-    end)
+             edge.from == "IgamingRef.Accounts.User" and edge.relation == :authenticates
+           end)
   end
 
   # Async edge: CatalogSyncJob → ProviderSyncReactor
   test "CatalogSyncJob→ProviderSyncReactor async edge exists", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Gaming.CatalogSyncJob", "IgamingRef.Gaming.ProviderSyncReactor", :async)
+    assert find_edge(
+             edges,
+             "IgamingRef.Gaming.CatalogSyncJob",
+             "IgamingRef.Gaming.ProviderSyncReactor",
+             :async
+           )
   end
 
   test "WithdrawalTransfer reads WithdrawalRequest, Wallet, and Player", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.WithdrawalRequest", :reads)
-    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.Wallet", :reads)
-    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Players.Player", :reads)
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.WithdrawalTransfer",
+             "IgamingRef.Finance.WithdrawalRequest",
+             :reads
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.WithdrawalTransfer",
+             "IgamingRef.Finance.Wallet",
+             :reads
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.WithdrawalTransfer",
+             "IgamingRef.Players.Player",
+             :reads
+           )
   end
 
   test "WithdrawalTransfer writes Wallet, LedgerEntry, and WithdrawalRequest", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.Wallet", :writes)
-    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.LedgerEntry", :writes)
-    assert find_edge(edges, "IgamingRef.Finance.WithdrawalTransfer", "IgamingRef.Finance.WithdrawalRequest", :writes)
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.WithdrawalTransfer",
+             "IgamingRef.Finance.Wallet",
+             :writes
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.WithdrawalTransfer",
+             "IgamingRef.Finance.LedgerEntry",
+             :writes
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.WithdrawalTransfer",
+             "IgamingRef.Finance.WithdrawalRequest",
+             :writes
+           )
   end
 
   test "BonusGrantTransfer reads Player, BonusCampaign, Wallet, and BonusGrant", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Players.Player", :reads)
-    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Promotions.BonusCampaign", :reads)
-    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Finance.Wallet", :reads)
-    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Promotions.BonusGrant", :reads)
+    assert find_edge(
+             edges,
+             "IgamingRef.Promotions.BonusGrantTransfer",
+             "IgamingRef.Players.Player",
+             :reads
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Promotions.BonusGrantTransfer",
+             "IgamingRef.Promotions.BonusCampaign",
+             :reads
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Promotions.BonusGrantTransfer",
+             "IgamingRef.Finance.Wallet",
+             :reads
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Promotions.BonusGrantTransfer",
+             "IgamingRef.Promotions.BonusGrant",
+             :reads
+           )
   end
 
   test "BonusGrantTransfer writes Wallet, LedgerEntry, and BonusGrant", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Finance.Wallet", :writes)
-    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Finance.LedgerEntry", :writes)
-    assert find_edge(edges, "IgamingRef.Promotions.BonusGrantTransfer", "IgamingRef.Promotions.BonusGrant", :writes)
+    assert find_edge(
+             edges,
+             "IgamingRef.Promotions.BonusGrantTransfer",
+             "IgamingRef.Finance.Wallet",
+             :writes
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Promotions.BonusGrantTransfer",
+             "IgamingRef.Finance.LedgerEntry",
+             :writes
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Promotions.BonusGrantTransfer",
+             "IgamingRef.Promotions.BonusGrant",
+             :writes
+           )
   end
 
   test "ProviderSyncReactor reads ProviderConfig and writes Game", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Gaming.ProviderSyncReactor", "IgamingRef.Gaming.ProviderConfig", :reads)
-    assert find_edge(edges, "IgamingRef.Gaming.ProviderSyncReactor", "IgamingRef.Gaming.Game", :writes)
+    assert find_edge(
+             edges,
+             "IgamingRef.Gaming.ProviderSyncReactor",
+             "IgamingRef.Gaming.ProviderConfig",
+             :reads
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Gaming.ProviderSyncReactor",
+             "IgamingRef.Gaming.Game",
+             :writes
+           )
+  end
+
+  test "BonusEvaluationReactor reads and writes BonusEvent", %{edges: edges, node_map: nm} do
+    reactor = nm["IgamingRef.Promotions.BonusEvaluationReactor"]
+    assert reactor != nil
+    assert reactor.type == "reactor"
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Promotions.BonusEvaluationReactor",
+             "IgamingRef.Promotions.BonusEvent",
+             :reads
+           )
+
+    assert find_edge(
+             edges,
+             "IgamingRef.Promotions.BonusEvaluationReactor",
+             "IgamingRef.Promotions.BonusEvent",
+             :writes
+           )
   end
 
   test "behavioral edges carry step metadata", %{edges: edges} do
@@ -193,6 +350,19 @@ defmodule Foundry.Context.GraphBuilderTest do
     assert is_integer(sync_games.step_index)
   end
 
+  test "behavioral edges carry action metadata when available", %{edges: edges} do
+    debit_wallet =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Finance.WithdrawalTransfer",
+        "IgamingRef.Finance.Wallet",
+        :writes,
+        "debit_wallet"
+      )
+
+    assert debit_wallet.action_name == "debit"
+  end
+
   # Total edge sanity check: should have at least 20 edges with fixes
   test "at least 20 edges total", %{edges: edges} do
     assert length(edges) >= 20
@@ -207,29 +377,62 @@ defmodule Foundry.Context.GraphBuilderTest do
     end)
   end
 
-  test "reactor and transfer rules are no longer emitted as backend guard edges", %{edges: edges} do
-    refute find_edge(
+  test "all graph edges resolve to existing nodes", %{edges: edges, nodes: nodes} do
+    valid_ids = nodes |> Enum.map(& &1.id) |> MapSet.new()
+
+    Enum.each(edges, fn edge ->
+      assert MapSet.member?(valid_ids, edge.from),
+             "Unresolved edge source #{inspect(edge.from)} for #{inspect(edge)}"
+
+      assert MapSet.member?(valid_ids, edge.to),
+             "Unresolved edge target #{inspect(edge.to)} for #{inspect(edge)}"
+    end)
+  end
+
+  test "reactor fact extraction does not keep short alias targets from trace strings", %{
+    node_map: nm
+  } do
+    transfer = nm["IgamingRef.Promotions.BonusGrantTransfer"]
+    assert transfer != nil
+
+    load_context = Enum.find(transfer.steps, &(&1.name == :load_context))
+    assert load_context != nil
+
+    assert "IgamingRef.Players.Player" in load_context.read_targets
+    refute "Player" in load_context.read_targets
+    refute load_context.target_resource == "Player"
+  end
+
+  test "reactor and transfer guard edges are inferred from source rule calls", %{edges: edges} do
+    assert find_edge(
              edges,
              "IgamingRef.Finance.Rules.SufficientBalance",
              "IgamingRef.Finance.WithdrawalTransfer",
              :guards
            )
 
-    refute find_edge(
+    assert find_edge(
              edges,
              "IgamingRef.Finance.Rules.WithdrawalLimitNotExceeded",
              "IgamingRef.Finance.WithdrawalTransfer",
              :guards
            )
 
-    refute find_edge(
+    assert find_edge(
+             edges,
+             "IgamingRef.Finance.Rules.PlayerKYCVerified",
+             "IgamingRef.Finance.WithdrawalTransfer",
+             :guards
+           )
+
+    assert find_edge(
              edges,
              "IgamingRef.Players.Rules.PlayerNotSelfExcluded",
              "IgamingRef.Finance.WithdrawalTransfer",
              :guards
            )
 
-    refute find_edge(
+    assert find_edge(
              edges,
              "IgamingRef.Players.Rules.PlayerNotSelfExcluded",
              "IgamingRef.Promotions.BonusGrantTransfer",
@@ -238,11 +441,57 @@ defmodule Foundry.Context.GraphBuilderTest do
   end
 
   test "AuthenticatedSubject guards Wallet via policy DSL", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Policies.AuthenticatedSubject", "IgamingRef.Finance.Wallet", :guards)
+    assert find_edge(
+             edges,
+             "IgamingRef.Policies.AuthenticatedSubject",
+             "IgamingRef.Finance.Wallet",
+             :guards
+           )
   end
 
   test "ComplianceOrPlatformLead guards Wallet via policy DSL", %{edges: edges} do
-    assert find_edge(edges, "IgamingRef.Policies.ComplianceOrPlatformLead", "IgamingRef.Finance.Wallet", :guards)
+    assert find_edge(
+             edges,
+             "IgamingRef.Policies.ComplianceOrPlatformLead",
+             "IgamingRef.Finance.Wallet",
+             :guards
+           )
+  end
+
+  test "policy edges can target specific actions", %{edges: edges} do
+    debit_guard =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Policies.AuthenticatedSubject",
+        "IgamingRef.Finance.Wallet",
+        :guards,
+        nil,
+        "debit"
+      )
+
+    close_guard =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Policies.ComplianceOrPlatformLead",
+        "IgamingRef.Finance.Wallet",
+        :guards,
+        nil,
+        "close"
+      )
+
+    read_guard =
+      find_edge_entry(
+        edges,
+        "IgamingRef.Policies.OwnerOrOperator",
+        "IgamingRef.Finance.Wallet",
+        :guards,
+        nil,
+        "read"
+      )
+
+    assert debit_guard.action_name == "debit"
+    assert close_guard.action_name == "close"
+    assert read_guard.action_name == "read"
   end
 
   test "PlayerKYCVerified is a rule node", %{node_map: nm} do
@@ -257,15 +506,15 @@ defmodule Foundry.Context.GraphBuilderTest do
     assert active.type == "rule"
   end
 
-  test "stale comment-only rules do not produce consumer edges", %{edges: edges} do
-    refute find_edge(
+  test "rule usage comes from executable source, not comments", %{edges: edges} do
+    assert find_edge(
              edges,
              "IgamingRef.Finance.Rules.PlayerKYCVerified",
              "IgamingRef.Finance.WithdrawalTransfer",
              :guards
            )
 
-    refute find_edge(
+    assert find_edge(
              edges,
              "IgamingRef.Gaming.Rules.ProviderActive",
              "IgamingRef.Gaming.ProviderSyncReactor",
@@ -282,61 +531,75 @@ defmodule Foundry.Context.GraphBuilderTest do
 
   # Part A4: Per-domain external postgres nodes
   test "Finance resources connect to external:postgres:Finance", %{edges: edges} do
-    wallet_postgres = Enum.any?(edges, fn edge ->
-      edge.from == "IgamingRef.Finance.Wallet" and
-      edge.to == "external:postgres:Finance" and
-      edge.relation == :persists_to
-    end)
+    wallet_postgres =
+      Enum.any?(edges, fn edge ->
+        edge.from == "IgamingRef.Finance.Wallet" and
+          edge.to == "external:postgres:Finance" and
+          edge.relation == :persists_to
+      end)
+
     assert wallet_postgres, "Wallet should have persists_to edge to external:postgres:Finance"
   end
 
   test "Players resources connect to external:postgres:Players", %{edges: edges} do
-    player_postgres = Enum.any?(edges, fn edge ->
-      edge.from == "IgamingRef.Players.Player" and
-      edge.to == "external:postgres:Players" and
-      edge.relation == :persists_to
-    end)
+    player_postgres =
+      Enum.any?(edges, fn edge ->
+        edge.from == "IgamingRef.Players.Player" and
+          edge.to == "external:postgres:Players" and
+          edge.relation == :persists_to
+      end)
+
     assert player_postgres, "Player should have persists_to edge to external:postgres:Players"
   end
 
   test "Promotions resources connect to external:postgres:Promotions", %{edges: edges} do
-    campaign_postgres = Enum.any?(edges, fn edge ->
-      edge.from == "IgamingRef.Promotions.BonusCampaign" and
-      edge.to == "external:postgres:Promotions" and
-      edge.relation == :persists_to
-    end)
-    assert campaign_postgres, "BonusCampaign should have persists_to edge to external:postgres:Promotions"
+    campaign_postgres =
+      Enum.any?(edges, fn edge ->
+        edge.from == "IgamingRef.Promotions.BonusCampaign" and
+          edge.to == "external:postgres:Promotions" and
+          edge.relation == :persists_to
+      end)
+
+    assert campaign_postgres,
+           "BonusCampaign should have persists_to edge to external:postgres:Promotions"
   end
 
   test "no single external:postgres node exists (deprecated)", %{nodes: nodes} do
-    single_postgres = Enum.find(nodes, fn node ->
-      node.module == "external:postgres"
-    end)
-    assert single_postgres == nil, "Single external:postgres node should not exist; use per-domain instead"
+    single_postgres =
+      Enum.find(nodes, fn node ->
+        node.module == "external:postgres"
+      end)
+
+    assert single_postgres == nil,
+           "Single external:postgres node should not exist; use per-domain instead"
   end
 
   test "external:postgres:Finance node exists", %{nodes: nodes} do
-    postgres_finance = Enum.find(nodes, fn node ->
-      node.module == "external:postgres:Finance"
-    end)
+    postgres_finance =
+      Enum.find(nodes, fn node ->
+        node.module == "external:postgres:Finance"
+      end)
+
     assert postgres_finance != nil
     assert postgres_finance.type == "external"
   end
 
-  # Part A3: Provider adapter connections
-  test "PragmaticPlayV1 provider node exists", %{node_map: nm} do
-    provider = nm["IgamingRef.Gaming.Adapters.PragmaticPlayV1"]
-    assert provider != nil
-    assert provider.type == "provider"
+  # Part A3: Adapter connections
+  test "PragmaticPlayV1 adapter node exists", %{node_map: nm} do
+    adapter = nm["IgamingRef.Gaming.Adapters.PragmaticPlayV1"]
+    assert adapter != nil
+    assert adapter.type == "adapter"
   end
 
-  test "PragmaticPlayV1 has calls_provider edge to external system", %{edges: edges} do
-    provider_edge = Enum.any?(edges, fn edge ->
-      edge.from == "IgamingRef.Gaming.Adapters.PragmaticPlayV1" and
-      String.contains?(edge.to, "external:") and
-      edge.relation == :calls_provider
-    end)
-    assert provider_edge, "Provider should have calls_provider edge to external system"
+  test "PragmaticPlayV1 has calls_adapter edge to external system", %{edges: edges} do
+    adapter_edge =
+      Enum.any?(edges, fn edge ->
+        edge.from == "IgamingRef.Gaming.Adapters.PragmaticPlayV1" and
+          String.contains?(edge.to, "external:") and
+          edge.relation == :calls_adapter
+      end)
+
+    assert adapter_edge, "Adapter should have calls_adapter edge to external system"
   end
 
   test "WithdrawalWebhook is a trigger node", %{node_map: nm} do
@@ -364,6 +627,43 @@ defmodule Foundry.Context.GraphBuilderTest do
            )
   end
 
+  # Page route tests — these verify that the router is correctly introspected
+  # and page_route is populated from Phoenix router, not from module attributes.
+  test "HomeLive has page_route '/'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.HomeLive"]
+    assert node != nil, "HomeLive node not found"
+    assert node.page_route == "/", "Expected page_route '/' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == false
+  end
+
+  test "DepositLive has page_route '/deposit'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.DepositLive"]
+    assert node != nil, "DepositLive node not found"
+    assert node.page_route == "/deposit", "Expected '/deposit' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == false
+  end
+
+  test "WithdrawalLive has page_route '/withdrawal'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.WithdrawalLive"]
+    assert node != nil, "WithdrawalLive node not found"
+    assert node.page_route == "/withdrawal", "Expected '/withdrawal' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == false
+  end
+
+  test "AuthLive has page_route '/auth'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.AuthLive"]
+    assert node != nil, "AuthLive node not found"
+    assert node.page_route == "/auth", "Expected '/auth' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == false
+  end
+
+  test "GameLive has dynamic page_route '/games/:id'", %{node_map: nm} do
+    node = nm["IgamingRef.Web.GameLive"]
+    assert node != nil, "GameLive node not found"
+    assert node.page_route == "/games/:id", "Expected '/games/:id' but got #{inspect(node.page_route)}"
+    assert node.page_dynamic == true
+  end
+
   # Helper to find an edge
   defp find_edge(edges, from, to, relation) do
     Enum.any?(edges, fn edge ->
@@ -371,10 +671,11 @@ defmodule Foundry.Context.GraphBuilderTest do
     end)
   end
 
-  defp find_edge_entry(edges, from, to, relation, step_name) do
+  defp find_edge_entry(edges, from, to, relation, step_name, action_name \\ nil) do
     Enum.find(edges, fn edge ->
       edge.from == from and edge.to == to and edge.relation == relation and
-        edge.step_name == step_name
+        edge.step_name == step_name and
+        (is_nil(action_name) or edge.action_name == action_name)
     end)
   end
 end
