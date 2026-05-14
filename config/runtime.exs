@@ -29,6 +29,7 @@ runtime_port =
     server_enabled? and standalone_mode? ->
       # Standalone mode: always use port 4000 for consistency.
       # The Tauri client expects the server on 4000.
+      _ = Foundry.Studio.write_port_file(4000)
       4000
 
     server_enabled? and not standalone_mode? ->
