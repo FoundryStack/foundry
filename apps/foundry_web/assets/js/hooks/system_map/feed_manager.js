@@ -6,6 +6,8 @@ export class FeedManager {
     this._panelElement = null
     this._hiddenClass = 'hidden'
     this._openingClasses = ['translate-x-full', 'opacity-0', 'pointer-events-none']
+    this._closeDurationMs = 300
+    this._isOpen = null
 
     this._panel = new ResizablePanel({
       elementId: 'fm-feed',
@@ -38,9 +40,12 @@ export class FeedManager {
       cancelAnimationFrame(this._openAnimationFrame)
     }
 
+    this._clearCloseTimer()
+
     this._panelElement = null
     this._transitionEndHandler = null
     this._openAnimationFrame = null
+    this._isOpen = null
     this._panel.destroy()
   }
 
@@ -57,7 +62,7 @@ export class FeedManager {
         if (event.target !== panel || event.propertyName !== 'transform') return
         if (panel.dataset.open === 'true') return
 
-        panel.classList.add(this._hiddenClass)
+        this._finishClose(panel)
       }
 
       panel.addEventListener('transitionend', this._transitionEndHandler)
@@ -65,12 +70,14 @@ export class FeedManager {
     }
 
     const isOpen = panel.dataset.open === 'true'
+    const wasOpen = this._isOpen
 
     if (isOpen) {
+      this._clearCloseTimer()
       const wasHidden = panel.classList.contains(this._hiddenClass)
       panel.classList.remove(this._hiddenClass)
 
-      if (wasHidden || forceVisibility) {
+      if (wasHidden || forceVisibility || wasOpen === false) {
         panel.classList.add(...this._openingClasses)
         panel.getBoundingClientRect()
 
@@ -84,9 +91,39 @@ export class FeedManager {
         })
       }
 
+      this._isOpen = true
       return
     }
 
-    panel.classList.remove(this._hiddenClass)
+    if (wasOpen === true) {
+      panel.classList.remove(this._hiddenClass)
+      this._scheduleClose(panel)
+    } else if (wasOpen == null && !forceVisibility) {
+      panel.classList.add(this._hiddenClass)
+    }
+
+    this._isOpen = false
+  }
+
+  _scheduleClose(panel) {
+    this._clearCloseTimer()
+
+    this._closeTimer = window.setTimeout(() => {
+      this._finishClose(panel)
+    }, this._closeDurationMs + 50)
+  }
+
+  _finishClose(panel) {
+    if (!panel || panel.dataset.open === 'true') return
+
+    this._clearCloseTimer()
+    panel.classList.add(this._hiddenClass)
+  }
+
+  _clearCloseTimer() {
+    if (!this._closeTimer) return
+
+    window.clearTimeout(this._closeTimer)
+    this._closeTimer = null
   }
 }
