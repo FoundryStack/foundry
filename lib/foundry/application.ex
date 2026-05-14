@@ -1,9 +1,9 @@
 defmodule Foundry.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
   @moduledoc false
 
   use Application
+
+  require Logger
 
   @impl true
   def start(_type, _args) do
@@ -12,8 +12,7 @@ defmodule Foundry.Application do
         start_studio_mode(launch_opts)
 
       {:error, message} ->
-        IO.puts(:stderr, message)
-        System.halt(1)
+        {:error, message}
 
       :no_command ->
         start_default_mode()
@@ -30,8 +29,6 @@ defmodule Foundry.Application do
       Foundry.Context.ScenarioCache,
       {Foundry.PreviewServer, []},
       {Foundry.ProjectManager, []}
-      # Start a worker by calling: Foundry.Worker.start_link(arg)
-      # {Foundry.Worker, arg}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Foundry.Supervisor)
@@ -52,7 +49,7 @@ defmodule Foundry.Application do
     open_browser? = Keyword.get(launch_opts, :open_browser?, true)
     url = Foundry.Studio.url_for_port(port)
 
-    :ok = Foundry.Studio.configure_runtime(project_root, port)
+    :ok = Foundry.Studio.configure_runtime(project_root)
 
     launch = %{
       open_browser?: open_browser?,
@@ -80,25 +77,19 @@ defmodule Foundry.Application do
         :ok
 
       {:error, {:health_timeout, port}} ->
-        IO.puts(:stderr, "Foundry Studio did not become healthy on port #{port}.")
-        System.halt(1)
+        Logger.error("Foundry Studio did not become healthy on port #{port}.")
+        exit(:shutdown)
 
       {:error, reason} ->
-        IO.puts(:stderr, "Failed to finalize Foundry Studio launch: #{inspect(reason)}")
-        System.halt(1)
+        Logger.error("Failed to finalize Foundry Studio launch: #{inspect(reason)}")
+        exit(:shutdown)
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Mnesia initialization
-  # ---------------------------------------------------------------------------
-
   defp init_mnesia do
-    # Create and start Mnesia on the local node
     :mnesia.create_schema([node()])
     :mnesia.start()
 
-    # Determine table type based on node configuration
     table_config =
       if node() == :nonode@nohost do
         [ram_copies: [node()]]
@@ -106,8 +97,6 @@ defmodule Foundry.Application do
         [disc_copies: [node()]]
       end
 
-    # Create the chat sessions table if it doesn't exist
-    # Ash.DataLayer.Mnesia stores each resource as `{_pkey, val}`.
     case :mnesia.create_table(
            :foundry_chat_sessions,
            Keyword.merge(
@@ -122,7 +111,6 @@ defmodule Foundry.Application do
         :ok
 
       error ->
-        require Logger
         Logger.warning("Failed to create Mnesia table: #{inspect(error)}")
     end
   end
