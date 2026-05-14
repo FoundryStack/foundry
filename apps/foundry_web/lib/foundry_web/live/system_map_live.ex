@@ -341,6 +341,18 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
+  def handle_event("toggle_copilot_sidebar", _params, socket) do
+    socket =
+      if socket.assigns.feed_open and socket.assigns.feed_tab == :copilot do
+        assign(socket, :feed_open, false)
+      else
+        assign(socket, feed_open: true, feed_tab: :copilot)
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("set_feed_tab", %{"tab" => t}, socket) do
     {:noreply, assign_known(socket, :feed_tab, t, feed_tabs())}
   end

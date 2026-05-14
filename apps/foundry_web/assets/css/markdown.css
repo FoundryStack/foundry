@@ -4,8 +4,8 @@
 }
 
 [data-role="chat-markdown"][data-variant="user"] {
-  --chat-link-color: color-mix(in oklch, var(--color-primary-content) 92%, white);
-  --chat-link-decoration: color-mix(in oklch, var(--color-primary-content) 55%, transparent);
+  --chat-link-color: color-mix(in oklch, var(--color-base-content) 92%, white);
+  --chat-link-decoration: color-mix(in oklch, var(--color-base-content) 55%, transparent);
 }
 
 [data-role="chat-markdown"] .chat-markdown-body {

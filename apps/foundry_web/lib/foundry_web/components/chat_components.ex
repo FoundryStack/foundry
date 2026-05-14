@@ -47,19 +47,19 @@ defmodule FoundryWeb.ChatComponents do
       id="studio-chat-panel"
       phx-hook="StudioChat"
       data-project-root={@project_root}
-      class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#171717]"
+      class="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
     >
       <%= if @open_session_ids != [] do %>
-        <div class="flex min-h-0 shrink-0 items-center gap-1 overflow-x-auto border-b border-white/10 bg-[#111111] px-2 py-1">
+        <div class="flex min-h-0 shrink-0 items-center gap-0.5 overflow-x-auto px-3">
           <%= for id <- @open_session_ids do %>
             <% session = Map.get(@sessions_by_id, id, %{})
             title = session["title"] || "Session"
             is_active = id == @active_session_id %>
             <div class={[
-              "group flex min-w-0 max-w-[160px] shrink-0 items-center gap-1 rounded-t px-2 py-1.5 text-[11px] transition-colors",
+              "group flex min-w-0 max-w-[180px] shrink-0 items-center gap-1 border-0 border-b-2 border-transparent bg-transparent px-3 py-2 text-[11px] font-medium uppercase tracking-[0.04em] transition-colors",
               if(is_active,
-                do: "border border-white/10 border-b-0 bg-[#1d1d1d] text-white",
-                else: "text-neutral-content hover:bg-white/5 hover:text-white"
+                do: "border-primary text-gray-100",
+                else: "text-gray-100/72 hover:bg-white/8 hover:text-gray-100"
               )
             ]}>
               <button
@@ -70,7 +70,7 @@ defmodule FoundryWeb.ChatComponents do
                 {title}
               </button>
               <button
-                class="shrink-0 text-neutral-content opacity-0 transition-opacity group-hover:opacity-100 hover:text-base-content"
+                class="shrink-0 text-neutral-content opacity-0 transition-opacity group-hover:opacity-100 hover:text-base-content pl-2"
                 phx-click="chat_session_close"
                 phx-value-id={id}
                 title="Close tab"
@@ -80,7 +80,7 @@ defmodule FoundryWeb.ChatComponents do
             </div>
           <% end %>
           <button
-            class="ml-1 shrink-0 rounded px-2 py-1 text-[11px] text-neutral-content transition-colors hover:bg-white/5 hover:text-white"
+            class="ml-1 shrink-0 rounded-selector border border-transparent bg-transparent px-2 py-1.5 text-lg font-medium uppercase rounded-[50%] text-gray-100/72 transition-colors hover:bg-white/8 hover:text-gray-100"
             phx-click="chat_session_new"
             title="New session"
           >
@@ -88,18 +88,16 @@ defmodule FoundryWeb.ChatComponents do
           </button>
         </div>
       <% else %>
-        <div class="flex shrink-0 items-center justify-between border-b border-white/10 bg-[#111111] px-3 py-1.5">
-          <span class="text-[11px] text-neutral-content">No open sessions</span>
+        <div class="flex shrink-0 items-center justify-between px-3 py-2">
           <button
-            class="rounded px-2 py-1 text-[11px] text-neutral-content transition-colors hover:bg-base-100/50 hover:text-base-content"
+            class="rounded-selector px-2 py-1.5 text-[11px] font-medium uppercase tracking-[0.04em] text-gray-100/72 transition-colors hover:bg-white/8 hover:text-gray-100"
             phx-click="chat_session_new"
           >
             + New session
           </button>
         </div>
       <% end %>
-      <div class="border-b border-white/10 px-4 py-3">
-        <div class="flex items-start justify-between gap-3">
+        <%!-- <div class="flex items-start justify-between gap-3">
           <div class="space-y-1">
             <div class="flex flex-wrap items-center gap-2">
               <%= if @latest_run do %>
@@ -131,7 +129,7 @@ defmodule FoundryWeb.ChatComponents do
               <% end %>
             </div>
           <% end %>
-        </div>
+        </div> --%>
 
         <%!-- <div class="grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
           <%= if @latest_run do %>
@@ -143,12 +141,12 @@ defmodule FoundryWeb.ChatComponents do
             </div>
           <% end %>
         </div> --%>
-      </div>
+
 
       <%= if @show_system_context do %>
-        <div class="border-b border-base-300/80 px-4 py-3">
-          <div class="rounded-box border border-base-300/80 bg-base-300/35">
-            <div class="flex items-center justify-between gap-3 border-b border-base-300/80 px-3 py-2">
+        <div class="border-b border-white/10 px-4 py-3">
+          <div class="rounded-[18px] border border-white/10 bg-transparent">
+            <div class="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2">
               <p class="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-content">
                 System Context Prompt
               </p>
@@ -168,11 +166,10 @@ defmodule FoundryWeb.ChatComponents do
         </div>
       <% end %>
 
-      <div class="min-h-0 flex-1 px-4 pb-4 pt-3">
-        <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/10 bg-[#1f1f1f] shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
-          <div>
+        <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px]">
+          <div class="px-4 py-3">
             <div class="flex items-center justify-between gap-3">
-              <div class="inline-flex rounded-selector border border-base-300 bg-base-200/80 p-1">
+              <div class="inline-flex rounded-2xl text-xs uppercase text-neutral-content">
                 <button
                   type="button"
                   phx-click="set_chat_view"
@@ -202,7 +199,7 @@ defmodule FoundryWeb.ChatComponents do
               <button
                 type="button"
                 phx-click="toggle_system_context"
-                class="shrink-0 rounded-selector border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-neutral-content transition-colors hover:border-primary/40 hover:bg-white/10 hover:text-white"
+                class="shrink-0 rounded-2xl border border-white/10 bg-transparent px-3 py-2 text-xs font-medium text-neutral-content transition-colors hover:border-white/8 hover:bg-white/8 hover:text-base-content"
               >
                 {if @show_system_context, do: "Hide context", else: "Show context"}
               </button>
@@ -210,10 +207,10 @@ defmodule FoundryWeb.ChatComponents do
           </div>
 
           <%= if @chat_view == :conversation do %>
-            <div class="min-h-0 flex-1 overflow-y-auto">
+            <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
               <div id="studio-chat-conversation" class="space-y-3" aria-live="polite">
                 <%= if Enum.empty?(@messages) do %>
-                  <div class="rounded-box border border-dashed border-base-300 bg-base-200/50 px-4 py-6 text-center">
+                  <div class="rounded-[18px] border border-dashed border-white/10 bg-transparent px-4 py-6 text-center">
                     <p class="text-sm font-medium text-base-content">
                       Start a governed project conversation.
                     </p>
@@ -286,15 +283,9 @@ defmodule FoundryWeb.ChatComponents do
             id="studio-chat-form"
             phx-submit="send_message"
             phx-change="update_chat_input"
-            class="border-t border-white/10 bg-[#171717] px-4 py-4"
+            class="border-t border-white/8 bg-transparent px-4 py-4"
           >
             <div>
-              <label
-                for="chat-message-studio"
-                class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content"
-              >
-                Message
-              </label>
               <textarea
                 id="chat-message-studio"
                 name="message"
@@ -302,7 +293,7 @@ defmodule FoundryWeb.ChatComponents do
                 placeholder="Ask about the system, or request a change..."
                 data-role="chat-input"
                 phx-debounce="150"
-                class="w-full resize-none rounded-[14px] border border-white/10 bg-[#202020] px-3 py-3 text-sm leading-6 text-white outline-none placeholder:text-neutral-content/50"
+                class="w-full resize-none rounded-[18px] border border-white/10 bg-transparent px-3 py-3 text-sm leading-6 text-base-content outline-none backdrop-blur-sm placeholder:text-neutral-content/50"
               ><%= @input %></textarea>
               <% active_proposal_id = @session_digest["active_proposal_id"]
               active_proposal_status = @session_digest["active_proposal_status"]
@@ -346,34 +337,33 @@ defmodule FoundryWeb.ChatComponents do
               <% end %>
               <div class="mt-3 flex items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
-                  <select
-                    id="model-select"
-                    name="model"
-                    phx-change="set_chat_model"
-                    class="min-w-[220px] rounded-selector border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-medium text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <optgroup :for={{family_label, entries} <- grouped_catalog} label={family_label}>
-                      <option
-                        :for={entry <- entries}
-                        value={entry.id}
-                        selected={@selected_model && @selected_model.id == entry.id}
-                        disabled={entry.availability != :available}
-                      >
-                        {entry.label}
-                        <%= if entry.availability != :available and is_binary(entry.disabled_reason) do %>
-                          {" - " <> entry.disabled_reason}
-                        <% end %>
-                      </option>
-                    </optgroup>
-                  </select>
-                  <span
-                    :if={@selected_model}
-                    class="hidden rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content md:inline-flex"
-                  >
-                    {provider_label(@selected_model.provider)}
-                  </span>
+                  <div class="relative inline-flex w-auto max-w-[125px] flex-none items-center rounded-2xl border border-white/10 bg-transparent pr-7">
+                    <select
+                      id="model-select"
+                      name="model"
+                      phx-change="set_chat_model"
+                      class="w-auto min-w-[90px] max-w-[125px] flex-none appearance-none bg-transparent px-3 py-2 text-[11px] font-medium text-gray-100 outline-none focus:outline-none"
+                    >
+                      <optgroup :for={{family_label, entries} <- grouped_catalog} label={family_label}>
+                        <option
+                          :for={entry <- entries}
+                          value={entry.id}
+                          selected={@selected_model && @selected_model.id == entry.id}
+                          disabled={entry.availability != :available}
+                        >
+                          {entry.label}
+                          <%= if entry.availability != :available and is_binary(entry.disabled_reason) do %>
+                            {" - " <> entry.disabled_reason}
+                          <% end %>
+                        </option>
+                      </optgroup>
+                    </select>
+                    <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-neutral-content">
+                      ▾
+                    </span>
+                  </div>
                 </div>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center justify-end flex-1 gap-2">
                   <button
                     type="button"
                     phx-click="summarize_session"
@@ -397,18 +387,19 @@ defmodule FoundryWeb.ChatComponents do
                       </div>
                     </div>
                   </button>
+                </div>
                   <button
                     type="submit"
-                    class="inline-flex items-center rounded-selector bg-primary px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-primary-content transition-opacity hover:opacity-90"
+                    class="inline-flex items-center rounded-2xl border border-white/15 bg-white px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-neutral transition-colors hover:bg-gray-100"
                   >
                     Send
                   </button>
-                </div>
               </div>
             </div>
           </form>
         </div>
-      </div>
+
+
     </section>
     """
   end
@@ -462,7 +453,6 @@ defmodule FoundryWeb.ChatComponents do
 
       <div class="min-h-0 overflow-y-auto bg-base-100/30">
         <%= if @selected_run do %>
-          <div class="space-y-4 p-4">
             <div class="rounded-box border border-base-300/80 bg-base-100/85 p-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
@@ -473,9 +463,6 @@ defmodule FoundryWeb.ChatComponents do
                     {@selected_run.user_message}
                   </h2>
                 </div>
-                <span class={trace_status_class(@selected_run.status)}>
-                  {status_label(@selected_run.status)}
-                </span>
               </div>
 
               <div class="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
@@ -648,7 +635,7 @@ defmodule FoundryWeb.ChatComponents do
                 {@selected_run.error}
               </div>
             <% end %>
-          </div>
+
         <% else %>
           <div class="px-4 py-6 text-center">
             <p class="text-sm font-medium text-base-content">Trace inspection is ready.</p>
@@ -860,10 +847,8 @@ defmodule FoundryWeb.ChatComponents do
       |> assign(
         :bubble_class,
         if(is_user,
-          do:
-            "max-w-[92%] rounded-box border border-primary/25 bg-primary/12 px-4 py-3 text-primary-content/95 shadow-sm",
-          else:
-            "max-w-[92%] rounded-box border border-base-300 bg-base-200/80 px-4 py-3 text-base-content shadow-sm"
+          do: "max-w-[92%] rounded-box bg-primary/8 px-4 py-3 text-base-content shadow-sm",
+          else: "max-w-[92%] rounded-box px-4 py-3 text-base-content shadow-sm"
         )
       )
 
@@ -874,9 +859,6 @@ defmodule FoundryWeb.ChatComponents do
           <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">
             {if @is_user, do: "You", else: "Assistant"}
           </p>
-          <span :if={@is_user and @delivery_status} class={delivery_status_class(@delivery_status)}>
-            {@delivery_status}
-          </span>
         </div>
         <div
           class="space-y-3 break-words text-sm leading-6"
@@ -1187,11 +1169,11 @@ defmodule FoundryWeb.ChatComponents do
   end
 
   defp chat_tab_class(true) do
-    "rounded-selector bg-[#1f1f1f] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-white shadow-sm"
+    "rounded-xl border border-white/10 bg-white/10 px-3 py-1.5 font-semibold text-md shadow-sm backdrop-blur-sm"
   end
 
   defp chat_tab_class(false) do
-    "rounded-selector px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-content transition-colors hover:text-white"
+    "rounded-xl border border-transparent px-3 py-1.5 font-semibold text-md text-neutral-content transition-colors hover:bg-white/6 hover:text-base-content"
   end
 
   defp delivery_status_class("queued"),

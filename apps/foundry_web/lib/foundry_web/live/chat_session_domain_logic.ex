@@ -243,11 +243,18 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
 
   # --- Session Memory & Digest ---
 
-  def finalize_session_digest(socket, request_ref, _response, artifact \\ nil) do
+  def finalize_session_digest(
+        socket,
+        request_ref,
+        _response,
+        artifact \\ nil,
+        lock_session_label? \\ false
+      ) do
     run = find_activity_run(socket.assigns.activity_runs, request_ref)
 
     socket.assigns.session_digest
     |> normalize_session_digest()
+    |> maybe_lock_session_label(lock_session_label?)
     |> prepend_recent_finding(artifact)
     |> maybe_put_proposal(run && run.proposal)
   end
@@ -295,26 +302,23 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
     run = find_activity_run(socket.assigns.activity_runs, request_ref)
 
     metadata = run && run.metadata
+    extracted = SessionMemory.extract_hidden(response)
+    cleaned_response = extracted.response
 
-    case SessionMemory.persist(
-           project_root,
-           socket.assigns.session_id,
-           %{
-             messages: socket.assigns.messages,
-             response: response
-           },
-           metadata
-         ) do
-      {:ok, payload} ->
-        %{response: response, artifact: payload[:artifact], error: nil}
+    memory_result =
+      persist_session_memory(project_root, socket.assigns.session_id, metadata, extracted.memory)
 
-      {:error, :empty_memory_payload} ->
-        %{response: response, artifact: nil, error: nil}
+    session_title =
+      extracted.session.payload
+      |> normalize_session_title()
 
-      {:error, reason} ->
-        Logger.warning("Failed to persist memory: #{inspect(reason)}")
-        %{response: response, artifact: nil, error: reason}
+    if extracted.session.error do
+      Logger.warning(
+        "Failed to parse session title metadata: #{inspect(extracted.session.error)}"
+      )
     end
+
+    Map.merge(memory_result, %{response: cleaned_response, session_title: session_title})
   end
 
   def maybe_record_memory_trace(socket, _request_ref, %{artifact: nil, error: nil}), do: socket
@@ -523,7 +527,75 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
     end
   end
 
+  def rename_session(session_id, title) when is_binary(title) do
+    rename_hook = ChatConfig.hook(:rename_session)
+
+    result =
+      case rename_hook do
+        fun when is_function(fun, 2) -> fun.(session_id, title)
+        _ -> FileSessionStore.rename(session_id, title)
+      end
+
+    case result do
+      {:ok, session} when is_map(session) -> {:ok, session}
+      :ok -> load_session(session_id)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   # --- Helpers ---
+
+  defp persist_session_memory(_project_root, _session_id, _metadata, %{payload: nil, error: nil}) do
+    %{artifact: nil, error: nil}
+  end
+
+  defp persist_session_memory(_project_root, _session_id, _metadata, %{payload: nil, error: error}) do
+    Logger.warning("Failed to parse session memory payload: #{inspect(error)}")
+    %{artifact: nil, error: error}
+  end
+
+  defp persist_session_memory(project_root, session_id, metadata, %{payload: memory_payload}) do
+    persist_hook = ChatConfig.hook(:persist_session_memory)
+
+    result =
+      case persist_hook do
+        fun when is_function(fun, 4) ->
+          fun.(project_root, session_id, memory_payload, metadata || %{})
+
+        _ ->
+          SessionMemory.persist(project_root, session_id, memory_payload, metadata || %{})
+      end
+
+    case result do
+      {:ok, artifact} ->
+        %{artifact: artifact, error: nil}
+
+      {:error, :empty_memory_payload} ->
+        %{artifact: nil, error: nil}
+
+      {:error, reason} ->
+        Logger.warning("Failed to persist memory: #{inspect(reason)}")
+        %{artifact: nil, error: reason}
+    end
+  end
+
+  defp normalize_session_title(nil), do: nil
+
+  defp normalize_session_title(%{"title" => title}) when is_binary(title) do
+    normalized =
+      title
+      |> String.trim()
+      |> String.replace(~r/\s+/, " ")
+
+    cond do
+      normalized == "" -> nil
+      String.contains?(normalized, ["\n", "\r"]) -> nil
+      String.length(normalized) > 40 -> nil
+      true -> normalized
+    end
+  end
+
+  defp normalize_session_title(_payload), do: nil
 
   defp summarize_response(response) when is_binary(response) do
     response
@@ -553,13 +625,21 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
 
   defp prepend_recent_finding(digest, artifact) do
     case format_recent_finding(artifact) do
-      nil -> digest
-      formatted -> Map.put(digest, "recent_finding", formatted)
+      nil ->
+        digest
+
+      formatted ->
+        digest
+        |> Map.put("recent_finding", formatted)
+        |> Map.put(
+          "recent_findings",
+          ["#{formatted["title"]} (#{formatted["path"]})"]
+        )
     end
   end
 
   defp format_recent_finding(%{title: title, path: path}),
-    do: %{title: title, path: path}
+    do: %{"title" => title, "path" => path}
 
   defp format_recent_finding(_artifact), do: nil
 
@@ -568,6 +648,11 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   defp maybe_put_proposal(digest, proposal) do
     Map.put(digest, "last_proposal", stringify_atom_keys(proposal))
   end
+
+  defp maybe_lock_session_label(digest, true),
+    do: Map.put_new(digest, "session_label_locked", true)
+
+  defp maybe_lock_session_label(digest, _lock_session_label?), do: digest
 
   defp stringify_atom_keys(map) do
     Enum.reduce(map, %{}, fn

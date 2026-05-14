@@ -16,7 +16,7 @@
 
     <div class="flex shrink-0 gap-0.5 border-b border-white/10 px-2" role="tablist">
       <button
-        class="fm-sidebar-tab cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-2 py-2 text-xs font-medium uppercase tracking-[0.04em] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-secondary"
+        class="fm-sidebar-tab cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-2 py-2 text-xs font-medium tracking-[0.04em] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-secondary"
         data-active={@sidebar_tab == :system_map}
         phx-click="set_sidebar_tab"
         phx-value-tab="system_map"
@@ -40,12 +40,19 @@
         Operations
       </button> --%>
       <button
-        class="fm-sidebar-tab cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-2 py-2 text-xs font-medium uppercase tracking-[0.04em] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-secondary"
+        class="fm-sidebar-tab cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-2 py-2 text-xs font-medium tracking-[0.04em] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-secondary"
         data-active={@sidebar_tab == :test_coverage}
         phx-click="set_sidebar_tab"
         phx-value-tab="test_coverage"
       >
         Coverage
+      </button>
+      <button
+        class="fm-sidebar-tab cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-2 py-2 text-xs font-medium tracking-[0.04em] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-secondary"
+        data-active={@feed_open and @feed_tab == :copilot}
+        phx-click="toggle_copilot_sidebar"
+      >
+        Copilot AI
       </button>
     </div>
 
@@ -258,7 +265,7 @@
   </aside>
 
   <div class="flex min-w-0 flex-1 flex-col">
-    <div class="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-11 items-center px-3">
+    <%!-- <div class="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-11 items-center px-3">
       <div class="pointer-events-auto ml-[calc(var(--foundry-sidebar-width,240px)+12px)] flex items-center gap-1 rounded-2xl border border-white/10 bg-[color:color-mix(in_oklch,var(--color-base-200)_42%,transparent)] px-2 py-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
         <button
           class="flex cursor-pointer items-center gap-1 rounded-selector border border-transparent bg-transparent px-[7px] py-1 text-xs text-neutral-content transition-colors hover:bg-base-300 hover:text-base-content data-[active=true]:border-neutral/80 data-[active=true]:bg-base-300 data-[active=true]:text-base-content"
@@ -308,7 +315,7 @@
           <span class="size-[6px] shrink-0 rounded-full bg-secondary"></span> Copilot
         </button>
       </div>
-    </div>
+    </div> --%>
 
     <div class="relative min-h-0 flex-1">
       <div
@@ -379,7 +386,7 @@
             data-context={@context_json}
             data-preview-base-url={@preview_base_url}
             phx-update="ignore"
-            class="size-full pt-11"
+            class="size-full"
           >
             <div id="fm-hover-card" class="hidden"></div>
           </div>
@@ -395,20 +402,26 @@
   </div>
 
   <div
-    class="relative absolute inset-y-3 right-3 z-30 flex flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[color:color-mix(in_oklch,var(--color-base-200)_48%,transparent)] shadow-[0_24px_64px_rgba(0,0,0,0.32)] backdrop-blur-2xl transition-[width] duration-200"
+    class={[
+      "absolute inset-y-3 right-0 bottom-0 top-0 z-30 flex flex-col overflow-hidden border border-white/10 bg-[color:color-mix(in_oklch,var(--color-base-200)_52%,transparent)] backdrop-blur-2xl transition-transform transition-opacity duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
+      if(@feed_open,
+        do: "translate-x-0 opacity-100 pointer-events-auto",
+        else: "translate-x-full opacity-0 pointer-events-none"
+      )
+    ]}
     id="fm-feed"
     data-open={to_string(@feed_open)}
-    style={panel_width_style("--foundry-feed-width", @feed_open, 360)}
+    style={"width: var(--foundry-feed-width, 360px);"}
   >
     <div
       class="absolute inset-y-0 left-0 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary"
       id="feed-resize-handle"
     >
     </div>
-    <div class="flex shrink-0 items-center border-b border-white/10 px-3 py-2">
-      <div class="flex shrink-0 border-b border-white/10">
+    <div class="flex shrink-0 items-center px-3 py-2">
+      <div class="flex shrink-0">
         <button
-          class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+          class="cursor-pointer px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
           data-active={@feed_tab == :feed}
           phx-click="set_feed_tab"
           phx-value-tab="feed"
@@ -416,7 +429,7 @@
           Feed
         </button>
         <button
-          class="cursor-pointer border-0 border-b-2 border-transparent bg-transparent px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
+          class="cursor-pointer px-3 py-1.5 text-[11px] text-neutral-content transition-colors hover:text-base-content data-[active=true]:border-primary data-[active=true]:text-base-content"
           data-active={@feed_tab == :copilot}
           phx-click="set_feed_tab"
           phx-value-tab="copilot"

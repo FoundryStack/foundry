@@ -250,7 +250,7 @@ defmodule FoundryWeb.ChatSession do
   end
 
   def handle_event("chat_session_rename", %{"id" => id, "title" => title}, socket) do
-    case FileSessionStore.update(id, %{title: title}) do
+    case DomainLogic.rename_session(id, title) do
       {:ok, session} ->
         sessions_by_id = Map.put(socket.assigns.sessions_by_id, id, session)
         {:noreply, assign(socket, :sessions_by_id, sessions_by_id)}
@@ -517,6 +517,7 @@ defmodule FoundryWeb.ChatSession do
         socket
         |> DomainLogic.complete_activity_run(request_ref, memory_result.response, metadata)
         |> DomainLogic.maybe_record_memory_trace(request_ref, memory_result)
+        |> maybe_apply_session_title(memory_result.session_title)
 
       run = DomainLogic.find_activity_run(socket.assigns.activity_runs, request_ref)
       messages = finalize_streaming_response(socket.assigns.messages, memory_result.response, run)
@@ -526,7 +527,8 @@ defmodule FoundryWeb.ChatSession do
           socket,
           request_ref,
           memory_result.response,
-          memory_result.artifact
+          memory_result.artifact,
+          true
         )
 
       socket =
@@ -568,7 +570,7 @@ defmodule FoundryWeb.ChatSession do
   def handle_info({:llm_stream_error, request_ref, reason}, socket) do
     if request_ref == socket.assigns.active_request_ref do
       messages = drop_empty_streaming_response(socket.assigns.messages)
-      digest = DomainLogic.finalize_session_digest(socket, request_ref, nil)
+      digest = DomainLogic.finalize_session_digest(socket, request_ref, nil, nil, false)
 
       socket =
         socket
@@ -605,7 +607,15 @@ defmodule FoundryWeb.ChatSession do
     if ref == socket.assigns.active_request_task && ref != nil do
       Logger.warning("Task process died: pid=#{inspect(pid)}, reason=#{inspect(reason)}")
       messages = drop_empty_streaming_response(socket.assigns.messages)
-      digest = DomainLogic.finalize_session_digest(socket, socket.assigns.active_request_ref, nil)
+
+      digest =
+        DomainLogic.finalize_session_digest(
+          socket,
+          socket.assigns.active_request_ref,
+          nil,
+          nil,
+          false
+        )
 
       socket =
         socket
@@ -705,7 +715,6 @@ defmodule FoundryWeb.ChatSession do
 
   defp finalize_streaming_response(messages, response, run) do
     messages
-    |> drop_empty_streaming_response()
     |> mark_latest_user_message_complete()
     |> update_last_assistant_message(&Map.put(&1, "content", response))
     |> update_last_assistant_message(&DomainLogic.maybe_attach_message_metadata(&1, run))
@@ -754,6 +763,39 @@ defmodule FoundryWeb.ChatSession do
     socket
     |> assign(:active_request_ref, nil)
     |> assign(:active_request_task, nil)
+  end
+
+  defp maybe_apply_session_title(socket, nil), do: socket
+
+  defp maybe_apply_session_title(socket, title) do
+    session_ids =
+      [socket.assigns.session_id, socket.assigns.active_session_id]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    if session_ids == [] or session_label_locked?(socket) do
+      socket
+    else
+      case DomainLogic.rename_session(List.first(session_ids), title) do
+        {:ok, session} ->
+          update(socket, :sessions_by_id, fn sessions ->
+            Enum.reduce(session_ids, sessions, fn session_id, acc ->
+              existing = Map.get(acc, session_id, %{})
+              Map.put(acc, session_id, Map.merge(existing, session))
+            end)
+          end)
+
+        {:error, _reason} ->
+          socket
+      end
+    end
+  end
+
+  defp session_label_locked?(socket) do
+    digest = socket.assigns.session_digest || %{}
+    title = get_in(socket.assigns.sessions_by_id, [socket.assigns.session_id, "title"])
+
+    digest["session_label_locked"] == true or (is_binary(title) and title != "New session")
   end
 
   defp clear_active_task(socket) do
@@ -891,7 +933,11 @@ defmodule FoundryWeb.ChatSession do
   # --- Provider Selection ---
 
   defp call_llm_stream(messages, on_event, run_context) do
-    ChatProviders.call_stream(messages, on_event, run_context)
+    case ChatConfig.hook(:call_llm_stream) do
+      fun when is_function(fun, 3) -> fun.(messages, on_event, run_context)
+      fun when is_function(fun, 2) -> fun.(messages, on_event)
+      _ -> ChatProviders.call_stream(messages, on_event, run_context)
+    end
   end
 
   # --- System Prompt Building ---

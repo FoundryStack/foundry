@@ -9,6 +9,7 @@ export class ResizablePanel {
     maxWidth,
     deltaSign = 1,
     isOpen = () => true,
+    keepWidthWhenClosed = false,
   }) {
     this.elementId = elementId
     this.handleId = handleId
@@ -19,6 +20,7 @@ export class ResizablePanel {
     this.maxWidth = maxWidth
     this.deltaSign = deltaSign
     this.isOpen = isOpen
+    this.keepWidthWhenClosed = keepWidthWhenClosed
     this._width = null
     this._open = null
     this._element = null
@@ -46,7 +48,7 @@ export class ResizablePanel {
     this._setCssWidth(width)
 
     if (force || elementChanged || this._open !== open || this._width == null) {
-      element.style.width = open ? `${width}px` : '0px'
+      element.style.width = open || this.keepWidthWhenClosed ? `${width}px` : '0px'
     }
 
     this._element = element

@@ -56,21 +56,37 @@ defmodule Foundry.StudioLauncherTest do
     assert {:ok, 4311} = Studio.read_port_file()
   end
 
-  test "resolve_generic_server_port reuses an available port from the port file" do
+  test "resolve_generic_server_port prefers 4000 when it is available" do
+    assert :ok = Studio.write_port_file(4311)
+    assert {:ok, 4000} = Studio.resolve_generic_server_port()
+  end
+
+  test "resolve_generic_server_port reuses the port file when 4000 is occupied" do
+    {:ok, default_listener} =
+      :gen_tcp.listen(4000, [:binary, active: false, ip: {127, 0, 0, 1}])
+
+    on_exit(fn -> :gen_tcp.close(default_listener) end)
+
     assert :ok = Studio.write_port_file(4311)
     assert {:ok, 4311} = Studio.resolve_generic_server_port()
   end
 
   test "resolve_generic_server_port skips an occupied port from the port file" do
+    {:ok, default_listener} =
+      :gen_tcp.listen(4000, [:binary, active: false, ip: {127, 0, 0, 1}])
+
     {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}])
     {:ok, port} = :inet.port(listener)
 
-    on_exit(fn -> :gen_tcp.close(listener) end)
+    on_exit(fn ->
+      :gen_tcp.close(default_listener)
+      :gen_tcp.close(listener)
+    end)
 
     assert :ok = Studio.write_port_file(port)
     assert {:ok, next_port} = Studio.resolve_generic_server_port()
     assert next_port != port
-    assert next_port >= 4000
+    assert next_port > 4000
   end
 
   test "ignores invalid port file contents" do

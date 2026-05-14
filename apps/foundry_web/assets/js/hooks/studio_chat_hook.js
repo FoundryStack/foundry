@@ -98,6 +98,12 @@ export const StudioChatHook = {
       if (!message) return
 
       this._autoScrollEnabled = true
+      requestAnimationFrame(() => {
+        if (!this._input) return
+
+        this._input.value = ''
+        this._input.focus()
+      })
     }
 
     this._input.addEventListener('keydown', this._keydownHandler)

@@ -10,7 +10,9 @@ defmodule Foundry.SpecKit.SessionMemory do
   regulations.
   """
 
-  @memory_block_regex ~r/\n*```foundry-memory\s*(\{.*?\})\s*```\s*$/s
+  @single_hidden_block_regex ~r/\A```(foundry-memory|foundry-session)\s*(\{.*\})\s*```\z/s
+  @memory_block_open "```foundry-memory"
+  @session_block_open "```foundry-session"
   @max_list_items 8
   @max_text_length 600
 
@@ -22,27 +24,26 @@ defmodule Foundry.SpecKit.SessionMemory do
 
   @spec extract(String.t()) :: extraction_result()
   def extract(response) when is_binary(response) do
-    case Regex.run(@memory_block_regex, response, capture: :all_but_first) do
-      [json] ->
-        cleaned_response =
-          response
-          |> then(&Regex.replace(@memory_block_regex, &1, ""))
-          |> String.trim()
+    extracted = extract_hidden(response)
 
-        case Jason.decode(json) do
-          {:ok, payload} when is_map(payload) ->
-            %{response: cleaned_response, payload: payload, error: nil}
+    %{
+      response: extracted.response,
+      payload: extracted.memory.payload,
+      error: extracted.memory.error
+    }
+  end
 
-          {:ok, _payload} ->
-            %{response: cleaned_response, payload: nil, error: :invalid_payload_shape}
-
-          {:error, reason} ->
-            %{response: cleaned_response, payload: nil, error: {:invalid_json, reason}}
-        end
-
-      _ ->
-        %{response: response, payload: nil, error: nil}
-    end
+  @spec extract_hidden(String.t()) :: %{
+          response: String.t(),
+          memory: %{payload: map() | nil, error: term() | nil},
+          session: %{payload: map() | nil, error: term() | nil}
+        }
+  def extract_hidden(response) when is_binary(response) do
+    extract_hidden_blocks(response, %{
+      response: response,
+      memory: %{payload: nil, error: nil},
+      session: %{payload: nil, error: nil}
+    })
   end
 
   @spec persist(String.t(), String.t(), map(), map()) :: {:ok, map()} | {:error, term()}
@@ -268,6 +269,59 @@ defmodule Foundry.SpecKit.SessionMemory do
       |> String.slice(0, 6)
 
     "FND-#{stamp}-#{discriminator}-#{suffix}"
+  end
+
+  defp extract_hidden_blocks(response, acc) do
+    trimmed_response = String.trim_trailing(response)
+
+    case last_hidden_block_start(trimmed_response) do
+      nil ->
+        %{acc | response: String.trim(response)}
+
+      start_index ->
+        block =
+          binary_part(trimmed_response, start_index, byte_size(trimmed_response) - start_index)
+
+        case Regex.run(@single_hidden_block_regex, block, capture: :all_but_first) do
+          [block_type, json] ->
+            cleaned_response =
+              trimmed_response
+              |> binary_part(0, start_index)
+              |> String.trim_trailing()
+
+            result =
+              case Jason.decode(json) do
+                {:ok, payload} when is_map(payload) ->
+                  %{payload: payload, error: nil}
+
+                {:ok, _payload} ->
+                  %{payload: nil, error: :invalid_payload_shape}
+
+                {:error, reason} ->
+                  %{payload: nil, error: {:invalid_json, reason}}
+              end
+
+            acc
+            |> Map.put(:response, cleaned_response)
+            |> put_hidden_result(block_type, result)
+            |> then(&extract_hidden_blocks(cleaned_response, &1))
+
+          _ ->
+            %{acc | response: String.trim(response)}
+        end
+    end
+  end
+
+  defp put_hidden_result(acc, "foundry-memory", result), do: Map.put(acc, :memory, result)
+  defp put_hidden_result(acc, "foundry-session", result), do: Map.put(acc, :session, result)
+
+  defp last_hidden_block_start(response) do
+    response
+    |> :binary.matches([@memory_block_open, @session_block_open])
+    |> case do
+      [] -> nil
+      matches -> matches |> Enum.max_by(fn {start_index, _length} -> start_index end) |> elem(0)
+    end
   end
 
   defp slugify(text) do

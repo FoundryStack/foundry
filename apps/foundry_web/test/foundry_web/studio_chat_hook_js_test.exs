@@ -4,7 +4,7 @@ defmodule FoundryWeb.StudioChatHookJsTest do
   @root Path.expand("../../../..", __DIR__)
   @hook_path Path.join(@root, "apps/foundry_web/assets/js/hooks/studio_chat_hook.js")
 
-  test "submit keeps rendering server-driven and re-enables sticky scrolling" do
+  test "submit keeps rendering server-driven, clears the composer, and restores focus" do
     result =
       run_js("""
       const hooks = await importBundledModule([#{js_string_literal(@hook_path)}])
@@ -19,6 +19,7 @@ defmodule FoundryWeb.StudioChatHookJsTest do
           this.style = {}
           this.disabled = false
           this.value = ''
+          this.focusCalls = 0
           this.scrollHeight = 240
           this.clientHeight = 120
           this.scrollTop = 120
@@ -64,6 +65,10 @@ defmodule FoundryWeb.StudioChatHookJsTest do
         requestSubmit() {
           const handlers = this.listeners.get('submit') || []
           handlers.forEach(handler => handler({ preventDefault() {} }))
+        }
+
+        focus() {
+          this.focusCalls += 1
         }
       }
 
@@ -113,12 +118,16 @@ defmodule FoundryWeb.StudioChatHookJsTest do
         bubbles: conversation.children.length,
         autoScrollEnabled: state._autoScrollEnabled,
         scrollCalls: scroller.scrollCalls.length,
+        inputValue: input.value,
+        focusCalls: input.focusCalls,
       })
       """)
 
     assert result["bubbles"] == 0
     assert result["autoScrollEnabled"]
     assert result["scrollCalls"] == 0
+    assert result["inputValue"] == ""
+    assert result["focusCalls"] == 1
   end
 
   test "auto scroll stays disabled until the user returns to the bottom" do

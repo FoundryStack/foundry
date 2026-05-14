@@ -188,6 +188,32 @@ defmodule FoundryWeb.SystemMapLiveTest do
     end
   end
 
+  describe "copilot sidebar toggle" do
+    test "renders a Copilot AI button in the left sidebar", %{conn: conn} do
+      {:ok, _live, html} = live(conn, "/studio")
+
+      assert html =~ "Copilot AI"
+      assert html =~ ~s(phx-click="toggle_copilot_sidebar")
+    end
+
+    test "closes the right sidebar when copilot is already active", %{conn: conn} do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      html = render_click(live, "toggle_copilot_sidebar", %{})
+
+      assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="false"/, html)
+    end
+
+    test "reopens the right sidebar after it was closed", %{conn: conn} do
+      {:ok, live, _html} = live(conn, "/studio")
+
+      _closed_html = render_click(live, "toggle_feed", %{})
+      html = render_click(live, "toggle_copilot_sidebar", %{})
+
+      assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"/, html)
+    end
+  end
+
   describe "handle_event show_node_coverage" do
     test "switches to Coverage and filters scenarios explicitly", %{
       conn: conn,
@@ -919,6 +945,97 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert session_html =~ "docs/findings/FND-20260507-example.md"
     end
 
+    test "renames the session tab from the first hidden session label and ignores later labels",
+         %{
+           conn: conn
+         } do
+      test_pid = self()
+      {:ok, call_counter} = Agent.start_link(fn -> 0 end)
+
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages, session_digest ->
+          {:ok, %{session_digest: session_digest}}
+        end,
+        rename_session: fn session_id, title ->
+          send(test_pid, {:renamed_session, title})
+          {:ok, %{"id" => session_id, "title" => title}}
+        end,
+        persist_session_memory: fn _project_root, _session_id, _payload, _metadata ->
+          {:ok,
+           %{
+             id: "FND-20260514-example",
+             path: "docs/findings/FND-20260514-example.md",
+             title: "Callback retry note",
+             summary: "Retries replay callbacks."
+           }}
+        end,
+        call_llm_stream: fn _messages, _on_event, _run_context ->
+          next =
+            Agent.get_and_update(call_counter, fn count ->
+              {count + 1, count + 1}
+            end)
+
+          case next do
+            1 ->
+              {:ok,
+               """
+               Here is the first reply.
+
+               ```foundry-memory
+               {"title":"Callback retry note","summary":"Retries replay callbacks."}
+               ```
+
+               ```foundry-session
+               {"title":"Callback Risk"}
+               ```
+               """}
+
+            2 ->
+              {:ok,
+               """
+               Here is the second reply.
+
+               ```foundry-session
+               {"title":"Should Not Apply"}
+               ```
+               """}
+          end
+        end
+      )
+
+      {:ok, live, _html} = live(conn, "/studio")
+      html = render_click(live, "chat_session_new", %{})
+      assert html =~ "New session"
+
+      _html = render_submit(live, "send_message", %{"message" => "Explain the callback risk"})
+
+      assert eventually(fn ->
+               render(live) =~ "Here is the first reply."
+             end)
+
+      assert_receive {:renamed_session, "Callback Risk"}
+      assert session_title(live) == "Callback Risk"
+
+      html = render(live)
+      refute html =~ "```foundry-session"
+      refute html =~ "Should Not Apply"
+
+      _html = render_submit(live, "send_message", %{"message" => "Anything else?"})
+
+      assert eventually(fn ->
+               rendered = render(live)
+               rendered =~ "Here is the second reply." and rendered =~ "Callback Risk"
+             end)
+
+      refute_receive {:renamed_session, "Should Not Apply"}
+
+      assert session_title(live) == "Callback Risk"
+
+      html = render(live)
+      refute html =~ "Should Not Apply"
+      refute html =~ "```foundry-session"
+    end
+
     test "routes change requests into proposal-backed mode", %{conn: conn} do
       put_chat_hooks(
         save_messages: fn _session_id, _messages, session_digest ->
@@ -1110,6 +1227,12 @@ defmodule FoundryWeb.SystemMapLiveTest do
         {node_id, unique_ids}
       end
     end) || raise "expected a node with partial scenario coverage"
+  end
+
+  defp session_title(live) do
+    socket = :sys.get_state(live.pid).socket
+    session_id = socket.assigns.active_session_id || socket.assigns.session_id
+    get_in(socket.assigns.sessions_by_id, [session_id, "title"])
   end
 
   defp put_chat_hooks(overrides \\ []) do

@@ -131,16 +131,22 @@ defmodule Foundry.Studio do
 
   @spec resolve_generic_server_port() :: {:ok, pos_integer()} | {:error, :no_open_port}
   def resolve_generic_server_port do
-    case read_port_file() do
-      {:ok, port} when port > 0 ->
-        if port_available?(port) do
-          {:ok, port}
-        else
-          find_open_port(@default_port)
-        end
+    cond do
+      port_available?(@default_port) ->
+        {:ok, @default_port}
 
-      _ ->
-        find_open_port(@default_port)
+      true ->
+        case read_port_file() do
+          {:ok, port} when port > 0 and port != @default_port ->
+            if port_available?(port) do
+              {:ok, port}
+            else
+              find_open_port(@default_port)
+            end
+
+          _ ->
+            find_open_port(@default_port)
+        end
     end
   end
 
