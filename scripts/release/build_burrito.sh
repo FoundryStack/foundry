@@ -195,6 +195,7 @@ main() {
 
   mix deps.get
   mix compile
+  rm -rf _build/prod/rel
   mix cmd --app foundry_web mix assets.deploy
 
   if [[ -n "$TARGET" ]]; then
