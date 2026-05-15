@@ -10,6 +10,7 @@ import Config
 standalone_command? = Foundry.Studio.mix_task_invoked?("foundry.studio")
 phoenix_server_command? = Foundry.Studio.mix_task_invoked?("phx.server")
 
+# CRITICAL: Check if FOUNDRY_STANDALONE is set - this is set by Tauri's launcher.rs
 standalone_mode? = System.get_env("FOUNDRY_STANDALONE", "0") == "1" or standalone_command?
 
 server_enabled? =
@@ -19,6 +20,12 @@ runtime_port =
   cond do
     port = System.get_env("PORT") ->
       String.to_integer(port)
+
+    server_enabled? and standalone_mode? ->
+      # Standalone mode: always use port 4000 for consistency.
+      # The Tauri client expects the server on 4000.
+      _ = Foundry.Studio.write_port_file(4000)
+      4000
 
     server_enabled? and not standalone_mode? ->
       case Foundry.Studio.resolve_generic_server_port() do
@@ -34,9 +41,29 @@ runtime_port =
       4000
   end
 
-config :foundry_web, FoundryWeb.Endpoint,
-  http: [port: runtime_port],
-  server: server_enabled?
+# Build endpoint config with explicit settings for all modes
+check_origin_list = [
+  "http://127.0.0.1:4000",
+  "http://localhost:4000",
+  "//127.0.0.1:4000",
+  "//localhost:4000",
+  "http://127.0.0.1",
+  "http://localhost",
+  "//127.0.0.1",
+  "//localhost",
+  "tauri://localhost",
+  "tauri://localhost:4000"
+]
+
+endpoint_config = [
+  http: [ip: {127, 0, 0, 1}, port: runtime_port],
+  url: [host: "127.0.0.1", port: runtime_port],
+  server: server_enabled?,
+  check_origin: check_origin_list,
+  force_ssl: false
+]
+
+config :foundry_web, FoundryWeb.Endpoint, endpoint_config
 
 if config_env() == :prod do
   # The secret key base is used to sign/encrypt cookies and other secrets.
@@ -56,73 +83,7 @@ if config_env() == :prod do
       end
 
   config :foundry_web, FoundryWeb.Endpoint,
-    http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0}
-    ],
-    secret_key_base: secret_key_base,
-    server: server_enabled?
-
-  # ## Using releases
-  #
-  # If you are doing OTP releases, you need to instruct Phoenix
-  # to start each relevant endpoint:
-  #
-  #     config :foundry_web, FoundryWeb.Endpoint, server: true
-  #
-  # Then you can assemble a release by calling `mix release`.
-  # See `mix help release` for more information.
-
-  # ## SSL Support
-  #
-  # To get SSL working, you will need to add the `https` key
-  # to your endpoint configuration:
-  #
-  #     config :foundry_web, FoundryWeb.Endpoint,
-  #       https: [
-  #         ...,
-  #         port: 443,
-  #         cipher_suite: :strong,
-  #         keyfile: System.get_env("SOME_APP_SSL_KEY_PATH"),
-  #         certfile: System.get_env("SOME_APP_SSL_CERT_PATH")
-  #       ]
-  #
-  # The `cipher_suite` is set to `:strong` to support only the
-  # latest and more secure SSL ciphers. This means old browsers
-  # and clients may not be supported. You can set it to
-  # `:compatible` for wider support.
-  #
-  # `:keyfile` and `:certfile` expect an absolute path to the key
-  # and cert in disk or a relative path inside priv, for example
-  # "priv/ssl/server.key". For all supported SSL configuration
-  # options, see https://hexdocs.pm/plug/Plug.SSL.html#configure/1
-  #
-  # We also recommend setting `force_ssl` in your config/prod.exs,
-  # ensuring no data is ever sent via http, always redirecting to https:
-  #
-  #     config :foundry_web, FoundryWeb.Endpoint,
-  #       force_ssl: [hsts: true]
-  #
-  # Check `Plug.SSL` for all available options in `force_ssl`.
-
-  # ## Configuring the mailer
-  #
-  # In production you need to configure the mailer to use a different adapter.
-  # Here is an example configuration for Mailgun:
-  #
-  #     config :foundry, Foundry.Mailer,
-  #       adapter: Swoosh.Adapters.Mailgun,
-  #       api_key: System.get_env("MAILGUN_API_KEY"),
-  #       domain: System.get_env("MAILGUN_DOMAIN")
-  #
-  # Most non-SMTP adapters require an API client. Swoosh supports Req, Hackney,
-  # and Finch out-of-the-box. This configuration is typically done at
-  # compile-time in your config/prod.exs:
-  #
-  #     config :swoosh, :api_client, Swoosh.ApiClient.Req
-  #
-  # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
+    secret_key_base: secret_key_base
 
   config :foundry, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 end

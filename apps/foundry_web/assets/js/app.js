@@ -22,7 +22,7 @@ import "phoenix_html"
 // Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
-import {hooks as colocatedHooks} from "phoenix-colocated/foundry_web"
+import {hooks as colocatedHooks} from "./phoenix_colocated"
 import topbar from "../vendor/topbar"
 import { SystemMapHook } from "./hooks/system_map_hook"
 import { StudioChatHook } from "./hooks/studio_chat_hook"

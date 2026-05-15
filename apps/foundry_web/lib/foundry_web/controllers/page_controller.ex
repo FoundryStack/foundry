@@ -2,22 +2,6 @@ defmodule FoundryWeb.PageController do
   use FoundryWeb, :controller
   alias Foundry.ProjectManager
 
-  def home(conn, _params) do
-    cond do
-      ProjectManager.active_project_root() ->
-        redirect(conn, to: ~p"/studio")
-
-      auto_reopen?(conn) ->
-        case ProjectManager.reopen_last_project() do
-          :ok -> render(conn, :project_launch, target_url: ~p"/studio")
-          {:error, _reason} -> render_manager(conn)
-        end
-
-      true ->
-        render_manager(conn)
-    end
-  end
-
   def preview_launch(conn, params) do
     case Foundry.PreviewServer.get_status() do
       {:ok, %{state: state}} when state not in [:starting, :running] ->
@@ -40,22 +24,65 @@ defmodule FoundryWeb.PageController do
     json(conn, status)
   end
 
-  def project_launch(conn, params) do
-    case maybe_start_project_action(params) do
-      :ok -> render(conn, :project_launch, target_url: ~p"/studio")
-      {:error, :busy} -> render(conn, :project_launch, target_url: ~p"/studio")
-      {:error, _reason} -> render(conn, :project_launch, target_url: ~p"/studio")
+  def project_onboarding(conn, %{"path" => path}) do
+    normalized = path |> String.trim() |> Path.expand()
+
+    case ProjectManager.classify_folder(normalized) do
+      :existing_project ->
+        redirect(conn, to: ~p"/project-launch?path=#{normalized}")
+
+      :empty_folder ->
+        deps = Foundry.DepChecker.check_all()
+
+        render(conn, :project_onboarding,
+          step: "check_deps",
+          folder_path: normalized,
+          project_name: Path.basename(normalized),
+          deps: deps,
+          blocking_missing: Foundry.DepChecker.blocking_missing?(deps)
+        )
+
+      :partial_project ->
+        render(conn, :project_onboarding,
+          step: "partial_confirm",
+          folder_path: normalized,
+          project_name: Path.basename(normalized),
+          deps: %{},
+          blocking_missing: false
+        )
+
+      {:error, _} ->
+        conn |> put_flash(:error, "Directory not found.") |> redirect(to: ~p"/project-manager")
     end
+  end
+
+  def project_onboarding(conn, _params) do
+    redirect(conn, to: ~p"/project-manager")
+  end
+
+  def project_launch(conn, params) do
+    maybe_start_project_action(params)
+
+    target_url = if params["new_project"] == "1", do: ~p"/?onboarded=1", else: ~p"/"
+
+    render(conn, :project_launch, target_url: target_url)
   end
 
   def project_status(conn, _params) do
     json(conn, ProjectManager.get_status())
   end
 
+  def project_manager(conn, _params) do
+    render(conn, :project_manager,
+      can_open_local_dir: System.get_env("FOUNDRY_STANDALONE", "0") == "1",
+      recent_projects: ProjectManager.recent_projects()
+    )
+  end
+
   def healthz(conn, _params) do
     json(conn, %{
       ok: true,
-      mode: (System.get_env("FOUNDRY_STANDALONE", "0") == "1" && "standalone") || "local",
+      mode: if(System.get_env("FOUNDRY_STANDALONE", "0") == "1", do: "standalone", else: "local"),
       version: to_string(Application.spec(:foundry, :vsn) || "0.0.0")
     })
   end
@@ -112,16 +139,14 @@ defmodule FoundryWeb.PageController do
   defp normalize_route(route) when is_binary(route), do: "/" <> route
   defp normalize_route(_route), do: "/"
 
-  defp render_manager(conn) do
-    render(conn, :project_manager,
-      recent_projects: ProjectManager.recent_projects(),
-      can_open_local_dir: local_runtime?(conn)
-    )
-  end
-
   defp maybe_start_project_action(%{"repo_url" => repo_url, "parent_dir" => parent_dir})
        when repo_url != "" and parent_dir != "" do
     ProjectManager.clone_project(repo_url, parent_dir)
+  end
+
+  defp maybe_start_project_action(%{"path" => path, "project_name" => name, "new_project" => "1"})
+       when path != "" and name != "" do
+    ProjectManager.new_project(path, name)
   end
 
   defp maybe_start_project_action(%{"path" => path}) when path != "" do
@@ -129,12 +154,4 @@ defmodule FoundryWeb.PageController do
   end
 
   defp maybe_start_project_action(_params), do: :ok
-
-  defp auto_reopen?(conn) do
-    local_runtime?(conn) and get_req_header(conn, "x-foundry-no-auto-open") == []
-  end
-
-  defp local_runtime?(conn) do
-    conn.host in ["127.0.0.1", "localhost"]
-  end
 end

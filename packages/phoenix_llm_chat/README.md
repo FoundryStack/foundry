@@ -1,6 +1,6 @@
 # PhoenixLLMChat
 
-A generic, extensible Phoenix LiveView chat component with streaming LLM support and multi-tab session management.
+An extensible Phoenix LiveView chat component with streaming LLM support and multi-session management.
 
 ## Features
 
@@ -18,7 +18,7 @@ Add to your `mix.exs`:
 ```elixir
 def deps do
   [
-    {:phoenix_llm_chat, path: "packages/phoenix_llm_chat"}
+    {:phoenix_llm_chat, path: "phoenix_llm_chat"}
   ]
 end
 ```

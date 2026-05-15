@@ -77,7 +77,7 @@ defmodule IgamingRef.MixProject do
       {:foundry, path: "../../apps/foundry"},
 
       # Server-Driven UI
-      {:ash_sdui, path: "../../packages/ash_sdui"},
+      {:ash_sdui, "~> 0.1"},
 
       # Serialisation
       {:jason, "~> 1.4"},

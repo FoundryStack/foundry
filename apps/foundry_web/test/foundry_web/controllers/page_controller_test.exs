@@ -1,13 +1,15 @@
 defmodule FoundryWeb.PageControllerTest do
   use FoundryWeb.ConnCase
 
-  test "GET / renders the project manager shell", %{conn: conn} do
-    conn = get(conn, ~p"/")
+  test "GET /project-manager renders workspace chooser", %{conn: conn} do
+    conn = get(conn, ~p"/project-manager")
     html = html_response(conn, 200)
 
-    assert html =~ "Open a local project"
+    assert html =~ "Choose a workspace"
     assert html =~ "Open local project"
     assert html =~ "Clone Git repository"
+    assert html =~ "New Project"
+    assert html =~ "Recent workspaces"
   end
 
   test "GET /project-status returns project manager status payload", %{conn: conn} do
@@ -61,5 +63,34 @@ defmodule FoundryWeb.PageControllerTest do
     assert body["ok"] == true
     assert body["mode"] in ["local", "standalone"]
     assert is_binary(body["version"])
+  end
+
+  test "GET /project-onboarding with empty folder shows deps check", %{conn: conn} do
+    dir = System.tmp_dir!() |> Path.join("pm_onboard_#{:rand.uniform(99999)}")
+    File.mkdir_p!(dir)
+
+    try do
+      conn = get(conn, ~p"/project-onboarding?path=#{dir}")
+      html = html_response(conn, 200)
+
+      assert html =~ "Dependency"
+      assert html =~ "Status"
+      assert html =~ "Version"
+      assert html =~ "Required"
+    after
+      File.rm_rf!(dir)
+    end
+  end
+
+  test "GET /project-onboarding with nonexistent path redirects to manager", %{conn: conn} do
+    conn = get(conn, "/project-onboarding?path=/nonexistent/path_#{:rand.uniform(999)}")
+
+    assert redirected_to(conn) == ~p"/project-manager"
+  end
+
+  test "GET /project-onboarding without path redirects to manager", %{conn: conn} do
+    conn = get(conn, ~p"/project-onboarding")
+
+    assert redirected_to(conn) == ~p"/project-manager"
   end
 end

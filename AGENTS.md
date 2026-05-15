@@ -751,6 +751,7 @@ The pre-generation checklist items INV-014..017 apply to this syntax:
 | ADR-022 | side-effect-governance-and-copilot-precision | `SideEffectEntry` in NodeEntry/StepEntry; INV-019/020/021; BLOCKER/REFUSE distinction; epistemic markers; pre-mortem block; spec-gap escalation                                                                                                                                                        |
 | ADR-024 | mcp-server-architecture                      | Foundry IS the MCP server; external agents connect to it; AshAi.Mcp.Router; Tidewave complement; optional internal LLM                                                                                                                                                                                 |
 | ADR-027 | ui-surface-nodes                             | LiveView (▣) node extended with SDUI subtype, router-inferred routes, Sourceror action call scanning, `calls_action`+`feature_flagged_by` edges, dev server preview, igaming web layer                                                                                                                 |
+| ADR-028 | new-project-onboarding                       | Folder-open UX, one-click dependency install (nvm/homebrew), native Phoenix umbrella scaffolding, agent skills in `.agents/skills/` project directory, copilot-first seeding, no manual file editing                                                                                                  |
 
 ---
 

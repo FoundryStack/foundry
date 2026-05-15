@@ -1,9 +1,9 @@
 defmodule Foundry.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
   @moduledoc false
 
   use Application
+
+  require Logger
 
   @impl true
   def start(_type, _args) do
@@ -12,8 +12,7 @@ defmodule Foundry.Application do
         start_studio_mode(launch_opts)
 
       {:error, message} ->
-        IO.puts(:stderr, message)
-        System.halt(1)
+        {:error, message}
 
       :no_command ->
         start_default_mode()
@@ -30,8 +29,6 @@ defmodule Foundry.Application do
       Foundry.Context.ScenarioCache,
       {Foundry.PreviewServer, []},
       {Foundry.ProjectManager, []}
-      # Start a worker by calling: Foundry.Worker.start_link(arg)
-      # {Foundry.Worker, arg}
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Foundry.Supervisor)
@@ -40,34 +37,38 @@ defmodule Foundry.Application do
   defp start_studio_mode(launch_opts) do
     init_mnesia()
 
-    case Foundry.Studio.prepare_launch(launch_opts) do
-      {:ok, %{reused?: true, url: url} = launch} ->
-        Foundry.Studio.complete_reused_launch(launch)
-        IO.puts("Foundry Studio already running at #{url}")
-        System.halt(0)
+    # In standalone mode, the port was already selected by runtime.exs before
+    # the endpoint started. Read it from the endpoint config instead of
+    # re-selecting via prepare_launch, which would diverge from the running endpoint.
+    port = get_in(
+      Application.get_env(:foundry_web, FoundryWeb.Endpoint, []),
+      [:http, :port]
+    ) || 4000
 
-      {:ok, launch} ->
-        :ok = Foundry.Studio.configure_runtime(launch.project_root, launch.port)
+    project_root = Keyword.get(launch_opts, :project_root, File.cwd!()) |> Path.expand()
+    open_browser? = Keyword.get(launch_opts, :open_browser?, true)
+    url = Foundry.Studio.url_for_port(port)
 
-        children = [
-          {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},
-          {Phoenix.PubSub, name: Foundry.PubSub},
-          Foundry.Context.ScenarioCache,
-          {Foundry.PreviewServer, []},
-          {Foundry.ProjectManager, []},
-          {Task, fn -> finalize_studio_launch(launch) end}
-        ]
+    :ok = Foundry.Studio.configure_runtime(project_root)
 
-        Supervisor.start_link(children, strategy: :one_for_one, name: Foundry.Supervisor)
+    launch = %{
+      open_browser?: open_browser?,
+      port: port,
+      project_root: project_root,
+      reused?: false,
+      url: url
+    }
 
-      {:error, {:port_unavailable, port}} ->
-        IO.puts(:stderr, "Foundry Studio could not use port #{port}.")
-        System.halt(1)
+    children = [
+      {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},
+      {Phoenix.PubSub, name: Foundry.PubSub},
+      Foundry.Context.ScenarioCache,
+      {Foundry.PreviewServer, []},
+      {Foundry.ProjectManager, []},
+      {Task, fn -> finalize_studio_launch(launch) end}
+    ]
 
-      {:error, reason} ->
-        IO.puts(:stderr, "Failed to prepare Foundry Studio: #{inspect(reason)}")
-        System.halt(1)
-    end
+    Supervisor.start_link(children, strategy: :one_for_one, name: Foundry.Supervisor)
   end
 
   defp finalize_studio_launch(launch) do
@@ -76,25 +77,19 @@ defmodule Foundry.Application do
         :ok
 
       {:error, {:health_timeout, port}} ->
-        IO.puts(:stderr, "Foundry Studio did not become healthy on port #{port}.")
-        System.halt(1)
+        Logger.error("Foundry Studio did not become healthy on port #{port}.")
+        exit(:shutdown)
 
       {:error, reason} ->
-        IO.puts(:stderr, "Failed to finalize Foundry Studio launch: #{inspect(reason)}")
-        System.halt(1)
+        Logger.error("Failed to finalize Foundry Studio launch: #{inspect(reason)}")
+        exit(:shutdown)
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Mnesia initialization
-  # ---------------------------------------------------------------------------
-
   defp init_mnesia do
-    # Create and start Mnesia on the local node
     :mnesia.create_schema([node()])
     :mnesia.start()
 
-    # Determine table type based on node configuration
     table_config =
       if node() == :nonode@nohost do
         [ram_copies: [node()]]
@@ -102,8 +97,6 @@ defmodule Foundry.Application do
         [disc_copies: [node()]]
       end
 
-    # Create the chat sessions table if it doesn't exist
-    # Ash.DataLayer.Mnesia stores each resource as `{_pkey, val}`.
     case :mnesia.create_table(
            :foundry_chat_sessions,
            Keyword.merge(
@@ -118,7 +111,6 @@ defmodule Foundry.Application do
         :ok
 
       error ->
-        require Logger
         Logger.warning("Failed to create Mnesia table: #{inspect(error)}")
     end
   end

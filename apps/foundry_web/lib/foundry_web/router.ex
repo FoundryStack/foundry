@@ -10,10 +10,6 @@ defmodule FoundryWeb.Router do
     plug :put_secure_browser_headers
   end
 
-  pipeline :api do
-    plug :accepts, ["json"]
-  end
-
   # MCP server pipeline — authenticated via API key (AshAuthentication)
   # TODO: Replace with proper AshAuthentication API key strategy once
   # Foundry.Accounts.User resource is scaffolded. For now, uses BasicAuth
@@ -47,15 +43,16 @@ defmodule FoundryWeb.Router do
     scope "/", FoundryWeb do
       pipe_through :browser
 
-      live "/studio", SystemMapLive
+      live "/", SystemMapLive
     end
   end
 
   scope "/", FoundryWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
     get "/healthz", PageController, :healthz
+    get "/project-manager", PageController, :project_manager
+    get "/project-onboarding", PageController, :project_onboarding
     get "/project-launch", PageController, :project_launch
     get "/project-status", PageController, :project_status
     get "/project-recent", PageController, :recent_projects
@@ -81,11 +78,6 @@ defmodule FoundryWeb.Router do
       protocol_version_statement: "2024-11-05",
       otp_app: :foundry
   end
-
-  # Other scopes may use custom stacks.
-  # scope "/api", FoundryWeb do
-  #   pipe_through :api
-  # end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:foundry_web, :dev_routes) do

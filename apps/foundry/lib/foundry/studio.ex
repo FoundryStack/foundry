@@ -14,7 +14,7 @@ defmodule Foundry.Studio do
   @spec launch(keyword()) :: {:ok, map()} | {:error, term()}
   def launch(opts \\ []) do
     with {:ok, launch} <- prepare_launch(opts),
-         :ok <- configure_runtime(launch.project_root, launch.port),
+         :ok <- configure_runtime(launch.project_root),
          {:ok, _apps} <- Application.ensure_all_started(:foundry_web),
          :ok <- finalize_launch(launch) do
       {:ok, launch}
@@ -82,21 +82,13 @@ defmodule Foundry.Studio do
     end
   end
 
-  @spec configure_runtime(String.t(), pos_integer()) :: :ok
-  def configure_runtime(project_root, port) do
+  @spec configure_runtime(String.t()) :: :ok
+  def configure_runtime(project_root) do
     System.put_env("FOUNDRY_STANDALONE", "1")
     System.put_env("PHX_SERVER", "1")
 
     Application.put_env(:foundry, :current_project_root, project_root)
     Application.put_env(:foundry, :igaming_project_root, project_root)
-
-    endpoint_config =
-      Application.get_env(:foundry_web, FoundryWeb.Endpoint, [])
-      |> Keyword.put(:server, true)
-      |> Keyword.put(:url, host: "127.0.0.1", port: port)
-      |> Keyword.put(:http, ip: {127, 0, 0, 1}, port: port)
-
-    Application.put_env(:foundry_web, FoundryWeb.Endpoint, endpoint_config)
     Application.put_env(:foundry_web, :current_project_root, project_root)
     Application.put_env(:foundry_web, :igaming_project_root, project_root)
     :ok

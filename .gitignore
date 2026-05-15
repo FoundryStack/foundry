@@ -25,4 +25,7 @@ erl_crash.dump
 .specstory
 .vscode
 .zig-global-cache
+binaries
+burrito_out
 package-lock.json
+join_files.sh
