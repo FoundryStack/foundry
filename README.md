@@ -32,7 +32,7 @@ and the Foundry Studio UI.
 Add to your `mix.exs` dependencies:
 
 ```elixir
-{:foundry, "~> 0.1", only: [:dev, :test]}
+{:foundry_stack, "~> 0.1", only: [:dev, :test]}
 ```
 
 For umbrella projects, add to the specific app that owns the build tooling.
@@ -143,6 +143,7 @@ Also writes `.foundry/context.lock` — a SHA256 hash of all `lib/**/*.ex` and
 `test/**/*.ex` files. Use `--check` in CI to verify the lock is current.
 
 **Exit codes:**
+
 - `0` — success
 - `1` — lock stale or absent (only with `--check`)
 
@@ -177,6 +178,7 @@ mix foundry.lint.all --format=text  # human-readable summary
 ```
 
 **Exit codes:**
+
 - `0` — no `:error` violations (warnings and info are non-blocking)
 - `1` — one or more `:error` violations
 - `2` — lint runner crash (rule bug)
@@ -208,19 +210,19 @@ mix foundry.lint.all --format=text  # human-readable summary
 The following rules run in `mix foundry.lint.all`.
 Full catalogue including planned rules: [`docs/lint-catalogue.md`](../../docs/lint-catalogue.md)
 
-| Rule ID | INV | Severity | Description |
-|---|---|---|---|
-| `missing_paper_trail` | INV-011 | `:error` | Sensitive resource missing `AshPaperTrail.Resource` extension |
-| `missing_archival` | INV-012 | `:error` | Sensitive resource missing `AshArchival.Resource` extension |
-| `missing_runbook` | INV-005 | `:error` | Reactor with >3 steps missing `@runbook` declaration |
-| `missing_idempotency` | INV-004 | `:error` | Reactor with side-effect steps missing idempotency key |
-| `missing_description` | INV-006 | `:error` | Ash resource attribute missing `description:` value |
-| `ash_version_outdated` | — | `:error` | Resolved `ash` version in `mix.lock` is below 3.x |
-| `elixir_version_unsupported` | — | `:error` | Elixir version below minimum required for Ash 3.x |
-| `adapter_version_not_active` | — | `:warning` | Provider adapter registered but not active |
-| `manifest_missing_required_approver` | — | `:error` | `approvers.sensitive_lead` or `compliance_officer` absent |
-| `manifest_invalid_coverage_weights` | — | `:error` | `coverage_weights` values do not sum to 1.0 |
-| `manifest_missing_cldr_backend` | — | `:error` | `:ash_money` declared but no CLDR backend discoverable |
+| Rule ID                              | INV     | Severity   | Description                                                   |
+| ------------------------------------ | ------- | ---------- | ------------------------------------------------------------- |
+| `missing_paper_trail`                | INV-011 | `:error`   | Sensitive resource missing `AshPaperTrail.Resource` extension |
+| `missing_archival`                   | INV-012 | `:error`   | Sensitive resource missing `AshArchival.Resource` extension   |
+| `missing_runbook`                    | INV-005 | `:error`   | Reactor with >3 steps missing `@runbook` declaration          |
+| `missing_idempotency`                | INV-004 | `:error`   | Reactor with side-effect steps missing idempotency key        |
+| `missing_description`                | INV-006 | `:error`   | Ash resource attribute missing `description:` value           |
+| `ash_version_outdated`               | —       | `:error`   | Resolved `ash` version in `mix.lock` is below 3.x             |
+| `elixir_version_unsupported`         | —       | `:error`   | Elixir version below minimum required for Ash 3.x             |
+| `adapter_version_not_active`         | —       | `:warning` | Provider adapter registered but not active                    |
+| `manifest_missing_required_approver` | —       | `:error`   | `approvers.sensitive_lead` or `compliance_officer` absent     |
+| `manifest_invalid_coverage_weights`  | —       | `:error`   | `coverage_weights` values do not sum to 1.0                   |
+| `manifest_missing_cldr_backend`      | —       | `:error`   | `:ash_money` declared but no CLDR backend discoverable        |
 
 Rules are registered in `Foundry.LintRules.Registry`. New rules must be added there
 explicitly — accidental registration is worse than deliberate omission.
@@ -274,12 +276,12 @@ The file must live at exactly `.foundry/ci_status.json` in the project root.
 Every proposed change is classified into one of four classes. Classification determines
 approval requirements.
 
-| Class | When | Approver | Auto-apply |
-|---|---|---|---|
-| `:structural` | New resource, attribute, relationship, description, test skeleton | Any developer | Configurable (`auto_apply_structural`) |
-| `:behavioral` | New Rule, Transfer step, Reactor, Oban job, state machine transition | Domain lead | Never |
-| `:sensitive` | Changes to resources in `manifest.sensitive_resources` | Sensitive lead + one other (dual approval) | Never |
-| `:compliance` | Changes to compliance declarations, policy modules, compliance-gated flags | Compliance officer | Never — ADR link required |
+| Class         | When                                                                       | Approver                                   | Auto-apply                             |
+| ------------- | -------------------------------------------------------------------------- | ------------------------------------------ | -------------------------------------- |
+| `:structural` | New resource, attribute, relationship, description, test skeleton          | Any developer                              | Configurable (`auto_apply_structural`) |
+| `:behavioral` | New Rule, Transfer step, Reactor, Oban job, state machine transition       | Domain lead                                | Never                                  |
+| `:sensitive`  | Changes to resources in `manifest.sensitive_resources`                     | Sensitive lead + one other (dual approval) | Never                                  |
+| `:compliance` | Changes to compliance declarations, policy modules, compliance-gated flags | Compliance officer                         | Never — ADR link required              |
 
 **When in doubt, classify upward.** A `:behavioral` change misclassified as `:structural`
 and auto-applied is a governance failure. The reverse is merely inconvenient.
@@ -290,28 +292,28 @@ and auto-applied is a governance failure. The reverse is merely inconvenient.
 
 ### Module Map
 
-| Module | Role |
-|---|---|
-| `Foundry.FileSystem` | Validated read boundary — all file access routes through here; enforces permitted root paths |
-| `Foundry.SparkMeta` | Spark DSL walker — extracts typed information from compiled modules |
-| `SparkLint.Rule` (package) | Behaviour for lint rules: `check/2 → {:ok, [violation]}` |
-| `SparkLint.Runner` (package) | Executes rules across all modules, collects violations |
-| `SparkLint.Violation` (package) | Violation struct: `rule_id, module, message, severity, step, attribute` |
-| `Foundry.LintRules.*` | Rule implementations — one module per rule |
-| `Foundry.LintRules.Registry` | Explicit rule registration; `module_rules/0` and `manifest_validators/0` |
-| `Foundry.Lint.Runner` | High-level orchestrator: discovers modules, runs registry rules, emits `LintReport` |
-| `Foundry.Context.GraphBuilder` | Assembles the full node+edge graph from all project modules |
-| `Foundry.Context.NodeBuilder` | Constructs a `NodeEntry` from `SparkMeta` output |
-| `Foundry.Context.NodeEntry` | Core typed output struct for per-module context |
-| `Foundry.Context.EdgeEntry` | Typed edge between two nodes |
-| `Foundry.Context.LockFile` | Writes and validates `.foundry/context.lock` |
-| `Foundry.Context.ModuleDiscovery` | Discovers all compiled project modules |
+| Module                                | Role                                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `Foundry.FileSystem`                  | Validated read boundary — all file access routes through here; enforces permitted root paths            |
+| `Foundry.SparkMeta`                   | Spark DSL walker — extracts typed information from compiled modules                                     |
+| `SparkLint.Rule` (package)            | Behaviour for lint rules: `check/2 → {:ok, [violation]}`                                                |
+| `SparkLint.Runner` (package)          | Executes rules across all modules, collects violations                                                  |
+| `SparkLint.Violation` (package)       | Violation struct: `rule_id, module, message, severity, step, attribute`                                 |
+| `Foundry.LintRules.*`                 | Rule implementations — one module per rule                                                              |
+| `Foundry.LintRules.Registry`          | Explicit rule registration; `module_rules/0` and `manifest_validators/0`                                |
+| `Foundry.Lint.Runner`                 | High-level orchestrator: discovers modules, runs registry rules, emits `LintReport`                     |
+| `Foundry.Context.GraphBuilder`        | Assembles the full node+edge graph from all project modules                                             |
+| `Foundry.Context.NodeBuilder`         | Constructs a `NodeEntry` from `SparkMeta` output                                                        |
+| `Foundry.Context.NodeEntry`           | Core typed output struct for per-module context                                                         |
+| `Foundry.Context.EdgeEntry`           | Typed edge between two nodes                                                                            |
+| `Foundry.Context.LockFile`            | Writes and validates `.foundry/context.lock`                                                            |
+| `Foundry.Context.ModuleDiscovery`     | Discovers all compiled project modules                                                                  |
 | `Foundry.Context.SpecKitIndexBuilder` | Walks `docs/adrs/`, `docs/findings/`, `docs/runbooks/`, `docs/regulations/`; populates `spec_kit` field |
-| `Foundry.Context.SessionState` | Captures system map state for graph delta computation |
-| `Foundry.Manifest` | Ash resource for manifest schema + validation (no database — Simple data layer) |
-| `Foundry.Manifest.Parser` | Reads and parses `.foundry/manifest.exs` |
-| `Foundry.Status` | Composes the runtime health picture from all Phase 1 sources |
-| `Foundry.Status.StackVersions` | Extracts resolved dependency versions from `mix.lock` |
+| `Foundry.Context.SessionState`        | Captures system map state for graph delta computation                                                   |
+| `Foundry.Manifest`                    | Ash resource for manifest schema + validation (no database — Simple data layer)                         |
+| `Foundry.Manifest.Parser`             | Reads and parses `.foundry/manifest.exs`                                                                |
+| `Foundry.Status`                      | Composes the runtime health picture from all Phase 1 sources                                            |
+| `Foundry.Status.StackVersions`        | Extracts resolved dependency versions from `mix.lock`                                                   |
 
 ### Adding a Lint Rule
 
