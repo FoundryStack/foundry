@@ -51,6 +51,8 @@ defmodule FoundryWeb.Router do
     pipe_through :browser
 
     get "/healthz", PageController, :healthz
+    get "/project-manager", PageController, :project_manager
+    get "/project-onboarding", PageController, :project_onboarding
     get "/project-launch", PageController, :project_launch
     get "/project-status", PageController, :project_status
     get "/project-recent", PageController, :recent_projects

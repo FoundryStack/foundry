@@ -307,6 +307,20 @@
           <button
             type="button"
             class="project-manager-button"
+            onclick="document.getElementById('new-project-dialog').showModal()"
+          >
+            <span>
+              <span class="project-manager-button-title">New Project</span>
+              <span class="project-manager-button-copy">
+                Create a new Phoenix-based Foundry workspace in an existing folder.
+              </span>
+            </span>
+            <span class="project-manager-button-tag">New</span>
+          </button>
+
+          <button
+            type="button"
+            class="project-manager-button"
             onclick="document.getElementById('clone-project-dialog').showModal()"
           >
             <span>
@@ -380,6 +394,46 @@
           Cancel
         </button>
         <button type="submit" class="project-manager-primary-action">Open</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="new-project-dialog" class="project-manager-dialog">
+  <div class="project-manager-dialog-body">
+    <div class="project-manager-dialog-header">
+      <div>
+        <p class="project-manager-dialog-kicker">New Project</p>
+        <h2 class="project-manager-dialog-title">Create a new project</h2>
+      </div>
+      <button
+        type="button"
+        class="project-manager-dialog-close"
+        onclick="document.getElementById('new-project-dialog').close()"
+      >
+        Close
+      </button>
+    </div>
+
+    <form action={~p"/project-onboarding"} method="get" class="project-manager-form">
+      <div class="project-manager-field">
+        <label class="project-manager-field-label">Project folder</label>
+        <input
+          type="text"
+          name="path"
+          placeholder="~/Documents/my-foundry-app"
+          class="project-manager-field-input"
+        />
+      </div>
+      <div class="project-manager-form-actions">
+        <button
+          type="button"
+          onclick="document.getElementById('new-project-dialog').close()"
+          class="project-manager-secondary-action"
+        >
+          Cancel
+        </button>
+        <button type="submit" class="project-manager-primary-action">Next</button>
       </div>
     </form>
   </div>

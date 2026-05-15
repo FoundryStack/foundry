@@ -1,0 +1,168 @@
+<style>
+  .onboarding-dep-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1.5rem;
+  }
+
+  .onboarding-dep-table th {
+    text-align: left;
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .onboarding-dep-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .onboarding-dep-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .onboarding-dep-icon {
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: bold;
+  }
+
+  .onboarding-dep-icon-yes {
+    background: rgba(132, 204, 22, 0.2);
+    color: #84cc16;
+  }
+
+  .onboarding-dep-icon-no {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+  }
+
+  .onboarding-confirm-section {
+    margin-top: 2rem;
+    padding: 1.2rem;
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 1.35rem;
+    background: rgba(253, 79, 0, 0.04);
+  }
+
+  .onboarding-confirm-text {
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .onboarding-button-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+</style>
+
+<.project_shell
+  root_id="project-onboarding-root"
+  panel_id="project-manager-panel"
+  kicker="New Project Setup"
+  state=""
+  title="Set up your project"
+  message="Check system dependencies and configure your new Foundry workspace."
+>
+  <%= if @step == "check_deps" do %>
+    <div>
+      <p style="color: rgba(255, 255, 255, 0.62); font-size: 0.9rem; margin-bottom: 1rem;">
+        Verifying required dependencies:
+      </p>
+      <table class="onboarding-dep-table">
+        <thead>
+          <tr>
+            <th>Dependency</th>
+            <th>Status</th>
+            <th>Version</th>
+            <th>Required</th>
+          </tr>
+        </thead>
+        <tbody>
+          <%= for {dep_name, dep_info} <- @deps do %>
+            <tr>
+              <td><%= dep_info.name %></td>
+              <td>
+                <div class="onboarding-dep-status">
+                  <div class={["onboarding-dep-icon", if(dep_info.installed?, do: "onboarding-dep-icon-yes", else: "onboarding-dep-icon-no")]}>
+                    <%= if dep_info.installed?, do: "✓", else: "✕" %>
+                  </div>
+                  <%= if dep_info.installed?, do: "Installed", else: "Not found" %>
+                </div>
+              </td>
+              <td><%= dep_info.version || "—" %></td>
+              <td>
+                <span style={if(dep_info.required?, do: "color: #ef4444;", else: "color: rgba(255, 255, 255, 0.5);")} >
+                  <%= if dep_info.required?, do: "Yes", else: "Optional" %>
+                </span>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+
+      <%= if @blocking_missing do %>
+        <div class="onboarding-confirm-section">
+          <p class="onboarding-confirm-text">
+            ⚠️ Missing required dependencies. Please install Elixir and either Node.js or Bun before proceeding.
+          </p>
+        </div>
+      <% else %>
+        <div class="onboarding-confirm-section">
+          <p class="onboarding-confirm-text">
+            ✓ All required dependencies are installed. You're ready to scaffold your project.
+          </p>
+        </div>
+      <% end %>
+
+      <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: flex-end;">
+        <a href={~p"/project-manager"} class="project-manager-secondary-action" style="text-decoration: none; display: inline-flex; align-items: center;">
+          Cancel
+        </a>
+        <form action={~p"/project-launch"} method="get" style="display: inline;">
+          <input type="hidden" name="path" value={@folder_path} />
+          <input type="hidden" name="project_name" value={@project_name} />
+          <input type="hidden" name="new_project" value="1" />
+          <button
+            type="submit"
+            class={["project-manager-primary-action", if(@blocking_missing, do: "onboarding-button-disabled")]}
+            disabled={@blocking_missing}
+          >
+            Create Project
+          </button>
+        </form>
+      </div>
+    </div>
+  <% else %>
+    <!-- partial_confirm step -->
+    <div>
+      <div class="onboarding-confirm-section">
+        <p class="onboarding-confirm-text">
+          This folder appears to be a partially initialized project. Choose to continue setup or open as existing project.
+        </p>
+      </div>
+
+      <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: flex-end;">
+        <a href={~p"/project-manager"} class="project-manager-secondary-action" style="text-decoration: none; display: inline-flex; align-items: center;">
+          Back
+        </a>
+        <a href={~p"/project-launch?path=#{@folder_path}"} class="project-manager-primary-action" style="text-decoration: none; display: inline-flex; align-items: center;">
+          Open as Existing
+        </a>
+      </div>
+    </div>
+  <% end %>
+</.project_shell>

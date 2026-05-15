@@ -50,6 +50,16 @@ export const StudioChatHook = {
     this.handleEvent('chat:scroll_to_bottom', ({ force = false } = {}) => {
       this._scrollConversationToBottom(force)
     })
+
+    this.handleEvent('copilot:seed_message', ({ message }) => {
+      const inputEl = this.el.querySelector('[data-role="chat-input"]')
+      if (inputEl) {
+        inputEl.value = message
+        inputEl.focus()
+        inputEl.style.height = 'auto'
+        inputEl.style.height = inputEl.scrollHeight + 'px'
+      }
+    })
   },
 
   updated() {

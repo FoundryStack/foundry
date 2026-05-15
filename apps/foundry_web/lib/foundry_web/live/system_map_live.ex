@@ -7,7 +7,22 @@ defmodule FoundryWeb.SystemMapLive do
   alias ExTracer.Report
 
   @impl true
-  def mount(_params, session, socket) do
+  def mount(params, session, socket) do
+    case Foundry.ProjectManager.active_project_root() do
+      nil ->
+        if connected?(socket) do
+          {:ok, push_navigate(socket, to: "/project-manager")}
+        else
+          # When not connected, redirect via HTTP (happens server-side during static rendering)
+          {:ok, socket |> assign(:sidebar_tab, :system_map) |> push_navigate(to: "/project-manager")}
+        end
+
+      _ ->
+        mount_with_project(params, socket, session)
+    end
+  end
+
+  defp mount_with_project(params, socket, session) do
     if connected?(socket), do: ScenarioCache.subscribe()
 
     hooks = Application.get_env(:foundry_web, :system_map_live_hooks, [])
@@ -96,6 +111,13 @@ defmodule FoundryWeb.SystemMapLive do
           )
           |> ChatSession.mount(session)
 
+        socket =
+          if Map.get(params, "onboarded") == "1" and connected?(socket) do
+            push_event(socket, "copilot:seed_message", %{message: onboarding_seed_message()})
+          else
+            socket
+          end
+
         {:ok, socket}
 
       {:error, _reason} ->
@@ -141,6 +163,19 @@ defmodule FoundryWeb.SystemMapLive do
 
         {:ok, socket}
     end
+  end
+
+  defp onboarding_seed_message do
+    """
+    I've created a new Foundry project.
+
+    Help me define the domains and initial requirements:
+    • What are the main business domains?
+    • What's the first resource I'll build?
+    • What compliance requirements apply?
+
+    Use speckit.specify to gather requirements and I'll draft your AGENTS.md, ADRs, and first resources.
+    """
   end
 
   @impl true

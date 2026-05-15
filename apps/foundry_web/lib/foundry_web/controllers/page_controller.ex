@@ -24,13 +24,59 @@ defmodule FoundryWeb.PageController do
     json(conn, status)
   end
 
+  def project_onboarding(conn, %{"path" => path}) do
+    normalized = path |> String.trim() |> Path.expand()
+
+    case ProjectManager.classify_folder(normalized) do
+      :existing_project ->
+        redirect(conn, to: ~p"/project-launch?path=#{normalized}")
+
+      :empty_folder ->
+        deps = Foundry.DepChecker.check_all()
+
+        render(conn, :project_onboarding,
+          step: "check_deps",
+          folder_path: normalized,
+          project_name: Path.basename(normalized),
+          deps: deps,
+          blocking_missing: Foundry.DepChecker.blocking_missing?(deps)
+        )
+
+      :partial_project ->
+        render(conn, :project_onboarding,
+          step: "partial_confirm",
+          folder_path: normalized,
+          project_name: Path.basename(normalized),
+          deps: %{},
+          blocking_missing: false
+        )
+
+      {:error, _} ->
+        conn |> put_flash(:error, "Directory not found.") |> redirect(to: ~p"/project-manager")
+    end
+  end
+
+  def project_onboarding(conn, _params) do
+    redirect(conn, to: ~p"/project-manager")
+  end
+
   def project_launch(conn, params) do
     maybe_start_project_action(params)
-    render(conn, :project_launch, target_url: ~p"/")
+
+    target_url = if params["new_project"] == "1", do: ~p"/?onboarded=1", else: ~p"/"
+
+    render(conn, :project_launch, target_url: target_url)
   end
 
   def project_status(conn, _params) do
     json(conn, ProjectManager.get_status())
+  end
+
+  def project_manager(conn, _params) do
+    render(conn, :project_manager,
+      can_open_local_dir: System.get_env("FOUNDRY_STANDALONE", "0") == "1",
+      recent_projects: ProjectManager.recent_projects()
+    )
   end
 
   def healthz(conn, _params) do
@@ -96,6 +142,11 @@ defmodule FoundryWeb.PageController do
   defp maybe_start_project_action(%{"repo_url" => repo_url, "parent_dir" => parent_dir})
        when repo_url != "" and parent_dir != "" do
     ProjectManager.clone_project(repo_url, parent_dir)
+  end
+
+  defp maybe_start_project_action(%{"path" => path, "project_name" => name, "new_project" => "1"})
+       when path != "" and name != "" do
+    ProjectManager.new_project(path, name)
   end
 
   defp maybe_start_project_action(%{"path" => path}) when path != "" do
