@@ -156,9 +156,30 @@ if [[ -z "${HOST_TRIPLE}" ]]; then
   exit 1
 fi
 
+verify_config_requirements() {
+  # Ensure runtime.exs has the SECRET_KEY_BASE requirement met
+  # This is checked by the build script, but we verify it here too for clarity
+  if [[ -f "${REPO_ROOT}/scripts/release/build_burrito.sh" ]]; then
+    # Source the verification function
+    source "${REPO_ROOT}/scripts/release/build_burrito.sh" 2>/dev/null && \
+      verify_secret_key_base_config "${REPO_ROOT}/config/runtime.exs" || \
+      {
+        echo "⚠ Configuration validation failed. Build will likely fail." >&2
+        return 1
+      }
+  fi
+  return 0
+}
+
 if [[ "${FOUNDRY_DESKTOP_FORCE_REBUILD:-0}" != "1" ]] && reuse_existing_sidecar_if_available; then
   exit 0
 fi
+
+# Verify config before attempting build
+verify_config_requirements || {
+  echo "Cannot proceed without valid configuration." >&2
+  exit 1
+}
 
 if [[ "${FOUNDRY_DESKTOP_FORCE_MIX_FALLBACK:-0}" == "1" ]]; then
   create_mix_wrapper
