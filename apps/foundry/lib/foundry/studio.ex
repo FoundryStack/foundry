@@ -83,7 +83,7 @@ defmodule Foundry.Studio do
   end
 
   @spec configure_runtime(String.t()) :: :ok
-  def configure_runtime(project_root) do
+  def configure_runtime(project_root) when is_binary(project_root) do
     System.put_env("FOUNDRY_STANDALONE", "1")
     System.put_env("PHX_SERVER", "1")
 

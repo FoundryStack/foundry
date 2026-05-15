@@ -62,10 +62,7 @@ defmodule FoundryWeb.PageController do
 
   def project_launch(conn, params) do
     maybe_start_project_action(params)
-
-    target_url = if params["new_project"] == "1", do: ~p"/?onboarded=1", else: ~p"/"
-
-    render(conn, :project_launch, target_url: target_url)
+    render(conn, :project_launch, target_url: ~p"/")
   end
 
   def project_status(conn, _params) do
@@ -82,7 +79,7 @@ defmodule FoundryWeb.PageController do
   def healthz(conn, _params) do
     json(conn, %{
       ok: true,
-      mode: if(System.get_env("FOUNDRY_STANDALONE", "0") == "1", do: "standalone", else: "local"),
+      mode: System.get_env("FOUNDRY_STANDALONE", "0") == "1" && "standalone" || "local",
       version: to_string(Application.spec(:foundry, :vsn) || "0.0.0")
     })
   end

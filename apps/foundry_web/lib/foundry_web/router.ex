@@ -10,10 +10,6 @@ defmodule FoundryWeb.Router do
     plug :put_secure_browser_headers
   end
 
-  # MCP server pipeline — authenticated via API key (AshAuthentication)
-  # TODO: Replace with proper AshAuthentication API key strategy once
-  # Foundry.Accounts.User resource is scaffolded. For now, uses BasicAuth
-  # with a configurable env var for dev testing.
   pipeline :mcp do
     plug :accepts, ["json"]
     plug :mcp_auth
