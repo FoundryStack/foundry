@@ -48,6 +48,21 @@ liveSocket.connect()
 // >> liveSocket.disableLatencySim()
 window.liveSocket = liveSocket
 
+// Handle directory selection for project manager dialogs
+window.handleDirectorySelect = function(inputId, fileInputId) {
+  const fileInput = document.getElementById(fileInputId)
+  const input = document.getElementById(inputId)
+
+  fileInput.click()
+  fileInput.addEventListener('change', function() {
+    if (this.files && this.files.length > 0) {
+      const filePath = this.files[0].webkitRelativePath || this.files[0].name
+      const dirPath = filePath.split('/')[0]
+      input.value = dirPath
+    }
+  }, { once: true })
+}
+
 // The lines below enable quality of life phoenix_live_reload
 // development features:
 //
