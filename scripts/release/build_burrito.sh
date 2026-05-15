@@ -139,6 +139,39 @@ ensure_burrito_zig_on_darwin() {
   exit 1
 }
 
+verify_secret_key_base_config() {
+  # Plug cookie store requires SECRET_KEY_BASE to be at least 64 bytes
+  # Check that the fallback in config/runtime.exs meets this requirement
+  local runtime_exs="${1:-$ROOT_DIR/config/runtime.exs}"
+
+  if [[ ! -f "$runtime_exs" ]]; then
+    return 0  # File doesn't exist, skip check
+  fi
+
+  # Extract all quoted strings that look like secrets from the standalone_mode block
+  # Look for the pattern after "if standalone_mode? do"
+  local fallback_secret
+  fallback_secret=$(awk '/if standalone_mode\? do/,/else/' "$runtime_exs" | \
+    grep -o '"[^"]*"' | \
+    sed 's/"//g' | \
+    grep -v "^$" | \
+    head -1)
+
+  if [[ -z "$fallback_secret" ]]; then
+    return 0  # Couldn't extract, skip check
+  fi
+
+  # Check length (must be at least 64 bytes for Plug cookie store)
+  if [[ ${#fallback_secret} -lt 64 ]]; then
+    echo "ERROR: SECRET_KEY_BASE fallback is only ${#fallback_secret} bytes, but Plug requires 64+." >&2
+    echo "Update config/runtime.exs to use a fallback secret that is at least 64 bytes." >&2
+    echo "Current fallback: \"$fallback_secret\"" >&2
+    exit 1
+  fi
+
+  return 0
+}
+
 ensure_burrito_zig() {
   local current_version=""
   local uname_s uname_m
@@ -192,6 +225,10 @@ main() {
   export MIX_ENV=prod
   export PHX_SERVER=true
   export FOUNDRY_STANDALONE=1
+
+  # Verify runtime config will provide a valid SECRET_KEY_BASE
+  # Plug cookie store requires at least 64 bytes
+  verify_secret_key_base_config
 
   mix deps.get
   mix compile

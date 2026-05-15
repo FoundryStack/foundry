@@ -62,6 +62,9 @@ if config_env() == :prod do
   # want to use a different value for prod and you most likely don't want
   # to check this value into version control, so we use an environment
   # variable instead.
+  #
+  # IMPORTANT: The default must be at least 64 bytes for Plug.Session.COOKIE
+  # to accept it. Shorter secrets cause 500 errors on routes that set cookies.
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
       if standalone_mode? do
