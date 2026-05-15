@@ -27,6 +27,10 @@ defmodule Foundry.ProjectManager do
     :exit, _ -> nil
   end
 
+  def subscribe do
+    Phoenix.PubSub.subscribe(Foundry.PubSub, "project_manager")
+  end
+
   def recent_projects do
     GenServer.call(__MODULE__, :recent_projects)
   catch
@@ -116,7 +120,9 @@ defmodule Foundry.ProjectManager do
   end
 
   def handle_info({:project_manager_log, action_ref, chunk}, %{action_ref: action_ref} = state) do
-    {:noreply, update_in(state.status.logs, &append_log(&1, chunk))}
+    new_state = update_in(state.status.logs, &append_log(&1, chunk))
+    broadcast_status(new_state.status)
+    {:noreply, new_state}
   end
 
   def handle_info(
@@ -139,6 +145,8 @@ defmodule Foundry.ProjectManager do
       |> Map.put(:project_root, project_root)
       |> Map.put(:last_error, nil)
 
+    broadcast_status(status)
+
     {:noreply,
      %{
        state
@@ -160,6 +168,8 @@ defmodule Foundry.ProjectManager do
       |> Map.put(:step, "failed")
       |> Map.put(:message, "Project launch failed.")
       |> Map.put(:last_error, format_error(reason))
+
+    broadcast_status(status)
 
     {:noreply, %{state | action_ref: nil, status: status}}
   end
@@ -429,4 +439,8 @@ defmodule Foundry.ProjectManager do
 
   defp format_error(reason) when is_binary(reason), do: reason
   defp format_error(reason), do: inspect(reason)
+
+  defp broadcast_status(status) do
+    Phoenix.PubSub.broadcast(Foundry.PubSub, "project_manager", {:project_status, status})
+  end
 end

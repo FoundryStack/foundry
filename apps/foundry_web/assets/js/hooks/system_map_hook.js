@@ -1,4 +1,5 @@
 import { mountFoundryGraph, covColor, getActionTypeColor, getTypeColor } from '../foundry_graph'
+import { getGraphLoaderHook } from './graph_loader_hook'
 import {
   formatNodeDisplayLabel,
   getComplianceStatus,
@@ -39,6 +40,22 @@ export const SystemMapHook = {
       const contextJson = JSON.parse(this.el.dataset.context)
       this._previewBaseUrl = this.el.dataset.previewBaseUrl || 'http://localhost:4001'
       this.graph = mountFoundryGraph(this.el, contextJson)
+
+      // Wire layout complete callback to dismiss the graph loader overlay
+      this.graph.onLayoutComplete = () => {
+        const graphLoader = getGraphLoaderHook()
+        if (graphLoader) {
+          graphLoader.dismiss()
+        } else {
+          // Fallback: direct fade-out if hook not mounted
+          const wrapperEl = document.getElementById('graph-loader-wrapper')
+          if (wrapperEl) {
+            wrapperEl.style.opacity = '0'
+            wrapperEl.style.transition = 'opacity 600ms ease-out'
+            setTimeout(() => wrapperEl.remove(), 620)
+          }
+        }
+      }
 
       // Initialize managers
       const pushEvent = (event, payload) => {

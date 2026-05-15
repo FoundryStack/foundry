@@ -1,0 +1,181 @@
+let _instance = null
+export const getGraphLoaderHook = () => _instance
+
+// Minimum time to show the loader before allowing dismiss (ms)
+const MIN_DISPLAY_MS = 2000
+
+export const GraphLoaderHook = {
+  mounted() {
+    _instance = this
+    this._fireTimer = null
+    this._dismissed = false
+    this._readyToDismiss = false
+    this._mountedAt = Date.now()
+
+    const canvasEl = this.el
+    const logEl = document.getElementById("graph-loader-log")
+
+    // Populate log from server-rendered content (already in the <pre> from @graph_loader_logs)
+    if (logEl) {
+      logEl.scrollTop = logEl.scrollHeight
+      logEl.dataset.pinned = "true"
+
+      logEl.addEventListener("scroll", () => {
+        const pinned = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 32
+        logEl.dataset.pinned = pinned ? "true" : "false"
+      })
+    }
+
+    this._startFireBackdrop(canvasEl)
+  },
+
+  async _startFireBackdrop(canvasEl) {
+    if (!canvasEl) return
+
+    try {
+      // Always fetch fresh — cached window.WebGLFluid holds internal state tied to the
+      // previous canvas (from project_launch page), calling it again with a new canvas fails
+      const cached = window._webglFluidSource
+      let source = cached
+
+      if (!source) {
+        const response = await fetch("https://cdn.jsdelivr.net/npm/webgl-fluid@0.3.0/dist/webgl-fluid.umd.js")
+        if (!response.ok) throw new Error(`fetch ${response.status}`)
+        source = await response.text()
+        source = source.replace("o.color=it()", "o.color=p.SPLAT_COLOR||it()")
+        source = source.replace("N.forEach(s=>{s.color=it()})", "N.forEach(s=>{s.color=p.SPLAT_COLOR||it()})")
+        source = source.replace(
+          "const a=it();a.r*=10,a.g*=10,a.b*=10;",
+          "const a=p.SPLAT_COLOR?{...p.SPLAT_COLOR}:it();if(!p.SPLAT_COLOR){a.r*=10,a.g*=10,a.b*=10;}"
+        )
+        window._webglFluidSource = source
+      }
+
+      // If dismissed while fetching, skip initialization
+      if (this._dismissed) return
+
+      // Re-eval every time so WebGLFluid is re-initialized for this canvas
+      delete window.WebGLFluid
+      window.eval(source)
+
+      if (this._dismissed) return
+
+      window.WebGLFluid(canvasEl, {
+        TRIGGER: "hover",
+        IMMEDIATE: false,
+        AUTO: false,
+        SIM_RESOLUTION: 128,
+        DYE_RESOLUTION: 1024,
+        DENSITY_DISSIPATION: 0.97,
+        VELOCITY_DISSIPATION: 0.96,
+        PRESSURE: 0.8,
+        CURL: 10,
+        SPLAT_RADIUS: 0.04,
+        SPLAT_FORCE: 820,
+        SHADING: true,
+        SPLAT_COLOR: { r: 1.65, g: 0.34, b: 0.03 },
+        COLORFUL: false,
+        TRANSPARENT: true,
+        BLOOM: true,
+        BLOOM_ITERATIONS: 8,
+        BLOOM_RESOLUTION: 256,
+        BLOOM_INTENSITY: 0.18,
+        BLOOM_THRESHOLD: 0.7,
+        SUNRAYS: false
+      })
+
+      // Fade canvas in immediately after WebGL initialization
+      if (!this._dismissed) canvasEl.style.opacity = "1"
+
+      const logoEl = document.querySelector("#graph-loader-stage img")
+      let time = 0
+      let pointerPrimed = false
+
+      // Mark ready now so dismiss() will execute (respecting MIN_DISPLAY_MS)
+      this._readyToDismiss = true
+
+      this._fireTimer = window.setInterval(() => {
+        if (this._dismissed) {
+          clearInterval(this._fireTimer)
+          this._fireTimer = null
+          return
+        }
+        if (!logoEl) return
+        const rect = logoEl.getBoundingClientRect()
+        if (rect.width === 0) return
+
+        time += 0.13
+        const centerX = rect.left + rect.width / 2
+        const spread = rect.width * 0.08
+        const startX = centerX + Math.sin(time) * spread + Math.sin(time * 1.7) * (spread * 0.15)
+        const startY = rect.top + rect.height * 0.8
+        const endY = startY - 7
+
+        if (!pointerPrimed) {
+          canvasEl.dispatchEvent(new MouseEvent("mousedown", { clientX: startX, clientY: startY, bubbles: true }))
+          pointerPrimed = true
+        }
+        canvasEl.dispatchEvent(new MouseEvent("mousemove", { clientX: startX, clientY: startY, bubbles: true }))
+        canvasEl.dispatchEvent(new MouseEvent("mousemove", { clientX: startX + (Math.random() - 0.5) * 0.6, clientY: endY, bubbles: true }))
+      }, 60)
+
+      if (this._pendingDismiss) {
+        this._executeDismiss()
+      }
+    } catch (_err) {
+      // WebGL not supported or fetch failed — skip effect, still show loader
+      if (canvasEl) canvasEl.remove()
+      this._readyToDismiss = true
+      if (this._pendingDismiss) {
+        this._executeDismiss()
+      }
+    }
+  },
+
+  dismiss() {
+    if (this._dismissed) return
+
+    if (!this._readyToDismiss) {
+      // Fire not started yet — queue the dismiss for after fire starts
+      this._pendingDismiss = true
+      return
+    }
+
+    this._executeDismiss()
+  },
+
+  _executeDismiss() {
+    if (this._dismissed) return
+    this._dismissed = true
+
+    if (this._fireTimer) {
+      clearInterval(this._fireTimer)
+      this._fireTimer = null
+    }
+
+    const elapsed = Date.now() - this._mountedAt
+    const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed)
+
+    const wrapper = document.getElementById("graph-loader-wrapper")
+    if (!wrapper) return
+
+    // Single fade: wait for min display time, then fade everything together
+    setTimeout(() => {
+      wrapper.style.transition = "opacity 600ms ease-out"
+      wrapper.style.opacity = "0"
+      setTimeout(() => {
+        if (wrapper && wrapper.parentElement) wrapper.remove()
+        if (_instance === this) _instance = null
+      }, 620)
+    }, remaining)
+  },
+
+  destroyed() {
+    this._dismissed = true
+    if (this._fireTimer) {
+      clearInterval(this._fireTimer)
+      this._fireTimer = null
+    }
+    if (_instance === this) _instance = null
+  }
+}

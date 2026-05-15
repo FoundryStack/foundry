@@ -26,16 +26,18 @@ import {hooks as colocatedHooks} from "./phoenix_colocated"
 import topbar from "../vendor/topbar"
 import { SystemMapHook } from "./hooks/system_map_hook"
 import { StudioChatHook } from "./hooks/studio_chat_hook"
+import { ProjectLoaderHook } from "./hooks/project_loader_hook"
+import { GraphLoaderHook } from "./hooks/graph_loader_hook"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, SystemMap: SystemMapHook, StudioChat: StudioChatHook},
+  hooks: {...colocatedHooks, SystemMap: SystemMapHook, StudioChat: StudioChatHook, ProjectLoader: ProjectLoaderHook, GraphLoader: GraphLoaderHook},
 })
 
 // Show progress bar on live navigation and form submits
-topbar.config({barColors: {0: "#615ff6"}})
+topbar.config({barColors: {0: "#ed974f"}})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 

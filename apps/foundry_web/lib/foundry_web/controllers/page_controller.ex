@@ -29,7 +29,7 @@ defmodule FoundryWeb.PageController do
 
     case ProjectManager.classify_folder(normalized) do
       :existing_project ->
-        redirect(conn, to: ~p"/project-launch?path=#{normalized}")
+        redirect(conn, to: ~p"/?path=#{normalized}")
 
       :empty_folder ->
         deps = Foundry.DepChecker.check_all()
@@ -60,9 +60,8 @@ defmodule FoundryWeb.PageController do
     redirect(conn, to: ~p"/project-manager")
   end
 
-  def project_launch(conn, params) do
-    maybe_start_project_action(params)
-    render(conn, :project_launch, target_url: ~p"/")
+  def project_launch_redirect(conn, params) do
+    redirect(conn, to: "/?#{URI.encode_query(params)}")
   end
 
   def project_status(conn, _params) do
@@ -135,20 +134,4 @@ defmodule FoundryWeb.PageController do
   defp normalize_route("/" <> _ = route), do: route
   defp normalize_route(route) when is_binary(route), do: "/" <> route
   defp normalize_route(_route), do: "/"
-
-  defp maybe_start_project_action(%{"repo_url" => repo_url, "parent_dir" => parent_dir})
-       when repo_url != "" and parent_dir != "" do
-    ProjectManager.clone_project(repo_url, parent_dir)
-  end
-
-  defp maybe_start_project_action(%{"path" => path, "project_name" => name, "new_project" => "1"})
-       when path != "" and name != "" do
-    ProjectManager.new_project(path, name)
-  end
-
-  defp maybe_start_project_action(%{"path" => path}) when path != "" do
-    ProjectManager.open_project(path)
-  end
-
-  defp maybe_start_project_action(_params), do: :ok
 end

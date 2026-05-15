@@ -64,6 +64,7 @@ export class CytoscapeGraph {
     this.onNodeHover = () => {}
     this.onNodeUnhover = () => {}
     this.onReady = () => {}
+    this.onLayoutComplete = () => {}
 
     // Register extensions once globally
     if (!extensionsRegistered) {
@@ -979,6 +980,9 @@ export class CytoscapeGraph {
       if ((compacted || separated) && this.layoutOptions.fit !== false) {
         this._focusElements(this.cy.elements(), { padding: this.layoutOptions.padding, duration: 0 })
       }
+
+      // Signal that layout is complete
+      this.onLayoutComplete?.()
     })
     this.currentLayout.run()
   }

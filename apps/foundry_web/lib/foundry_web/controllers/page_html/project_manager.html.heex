@@ -393,7 +393,7 @@
           <div class="project-manager-recent-list">
             <%= for project <- @recent_projects do %>
               <a
-                href={~p"/project-launch?path=#{project["root"]}"}
+                href={~p"/?path=#{project["root"]}"}
                 class="project-manager-recent-link"
               >
                 <p class="project-manager-recent-title">{project["label"]}</p>
@@ -423,7 +423,7 @@
       </button>
     </div>
 
-    <form action={~p"/project-launch"} method="get" class="project-manager-form">
+    <form action={~p"/"} method="get" class="project-manager-form">
       <div class="project-manager-field">
         <label class="project-manager-field-label">Project path</label>
         <div class="project-manager-input-wrapper">
@@ -537,7 +537,7 @@
       </button>
     </div>
 
-    <form action={~p"/project-launch"} method="get" class="project-manager-form">
+    <form action={~p"/"} method="get" class="project-manager-form">
       <div class="project-manager-field">
         <label class="project-manager-field-label">Repository URL</label>
         <input

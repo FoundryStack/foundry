@@ -10,16 +10,72 @@ defmodule FoundryWeb.SystemMapLive do
   def mount(params, session, socket) do
     case Foundry.ProjectManager.active_project_root() do
       nil ->
-        if connected?(socket) do
-          {:ok, push_navigate(socket, to: "/project-manager")}
+        if has_project_action_params?(params) do
+          mount_loading(params, session, socket)
         else
-          # When not connected, redirect via HTTP (happens server-side during static rendering)
-          {:ok, socket |> assign(:sidebar_tab, :system_map) |> push_navigate(to: "/project-manager")}
+          {:ok, push_navigate(socket, to: "/project-manager")}
         end
 
       _ ->
         mount_with_project(params, socket, session)
     end
+  end
+
+  defp has_project_action_params?(%{"repo_url" => u, "parent_dir" => d}) when u != "" and d != "", do: true
+  defp has_project_action_params?(%{"path" => p, "new_project" => "1", "project_name" => n}) when p != "" and n != "", do: true
+  defp has_project_action_params?(%{"path" => p}) when p != "", do: true
+  defp has_project_action_params?(_), do: false
+
+  defp start_project_action(%{"repo_url" => url, "parent_dir" => dir}) when url != "" and dir != "" do
+    Foundry.ProjectManager.clone_project(url, dir)
+  end
+  defp start_project_action(%{"path" => path, "new_project" => "1", "project_name" => name}) when path != "" and name != "" do
+    Foundry.ProjectManager.new_project(path, name)
+  end
+  defp start_project_action(%{"path" => path}) when path != "" do
+    Foundry.ProjectManager.open_project(path)
+  end
+  defp start_project_action(_params), do: :ok
+
+  defp mount_loading(params, session, socket) do
+    if connected?(socket) do
+      start_project_action(params)
+      Foundry.ProjectManager.subscribe()
+    end
+
+    status = Foundry.ProjectManager.get_status()
+
+    socket =
+      socket
+      |> assign(:loading, true)
+      |> assign(:loading_state, status.state)
+      |> assign(:loading_step, status.step)
+      |> assign(:loading_message, status.message || "Preparing project…")
+      |> assign(:loading_logs, status.logs || "")
+      |> assign(:loading_error, status.last_error)
+      |> assign_graph_defaults()
+
+    {:ok, socket_with_chat} = ChatSession.mount(socket, session)
+    {:ok, socket_with_chat}
+  end
+
+  defp assign_graph_defaults(socket) do
+    # Preserve graph_loader_logs from socket if it exists to avoid clearing during transitions
+    existing_logs = socket.assigns[:graph_loader_logs] || ""
+
+    assign(socket,
+      context_json: nil, ui_nodes: [], nodes_by_domain: %{}, all_nodes: [],
+      all_edges: [], all_scenarios: [], scenarios: [], scenarios_by_category: %{},
+      coverage: %{}, performance: %{}, scenario_warnings: [], slow_test_durations: [],
+      node_index: %{}, uncovered_node_ids: [], domain_coverage: %{},
+      selected_scenario_id: nil, active_scenario_step_id: nil,
+      selected_node_scenario_count: nil, coverage_filtered_node: nil,
+      gap_count: 0, migration_count: 0, project_name: nil, sidebar_tab: :system_map,
+      lens: :default, system_map_view: :graph, drawer_open: false, drawer_tab: :details,
+      feed_open: true, feed_tab: :copilot, filter_query: "", selected_id: nil,
+      selected_node: nil, project_root: nil, preview_base_url: nil, loading: false,
+      graph_loader_logs: existing_logs
+    )
   end
 
   defp mount_with_project(params, socket, session) do
@@ -73,6 +129,7 @@ defmodule FoundryWeb.SystemMapLive do
 
         {:ok, socket} =
           socket
+          |> assign_graph_defaults()
           |> assign(
             context_json: context_json,
             ui_nodes: ui_nodes,
@@ -89,25 +146,12 @@ defmodule FoundryWeb.SystemMapLive do
             node_index: node_index,
             uncovered_node_ids: uncovered_node_ids,
             domain_coverage: domain_coverage,
-            selected_scenario_id: nil,
-            active_scenario_step_id: nil,
-            selected_node_scenario_count: nil,
-            coverage_filtered_node: nil,
             gap_count: gap_count,
             migration_count: migration_count,
             project_name: project_name,
-            sidebar_tab: :system_map,
-            lens: :default,
-            system_map_view: :graph,
-            drawer_open: false,
-            drawer_tab: :details,
-            feed_open: true,
-            feed_tab: :copilot,
-            filter_query: "",
-            selected_id: nil,
-            selected_node: nil,
             project_root: project_root,
-            preview_base_url: preview_base_url
+            preview_base_url: preview_base_url,
+            loading: false
           )
           |> ChatSession.mount(session)
 
@@ -123,46 +167,24 @@ defmodule FoundryWeb.SystemMapLive do
       {:error, _reason} ->
         {:ok, socket} =
           socket
+          |> assign_graph_defaults()
           |> assign(
-            context_json: nil,
-            ui_nodes: [],
-            nodes_by_domain: %{},
-            all_nodes: [],
-            all_edges: [],
-            all_scenarios: [],
-            scenarios: [],
-            scenarios_by_category: %{},
-            coverage: %{},
-            performance: %{},
-            scenario_warnings: [],
-            slow_test_durations: %{},
-            node_index: %{},
-            uncovered_node_ids: [],
-            domain_coverage: %{},
-            selected_scenario_id: nil,
-            active_scenario_step_id: nil,
-            selected_node_scenario_count: nil,
-            coverage_filtered_node: nil,
-            gap_count: 0,
-            migration_count: 0,
             project_name: project_name,
-            sidebar_tab: :system_map,
-            lens: :default,
-            system_map_view: :graph,
-            drawer_open: false,
-            drawer_tab: :details,
-            feed_open: true,
-            feed_tab: :copilot,
-            filter_query: "",
-            selected_id: nil,
-            selected_node: nil,
             project_root: project_root,
-            preview_base_url: preview_base_url
+            preview_base_url: preview_base_url,
+            loading: false
           )
           |> ChatSession.mount(session)
 
         {:ok, socket}
     end
+  end
+
+  def format_loader_state(state, step) do
+    [to_string(state), to_string(step || "")]
+    |> Enum.map(&String.replace(&1, "_", " "))
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join(" • ")
   end
 
   defp onboarding_seed_message do
@@ -545,6 +567,33 @@ defmodule FoundryWeb.SystemMapLive do
   def terminate(_reason, _socket) do
     Foundry.PreviewServer.stop_preview()
     :ok
+  end
+
+  @impl true
+  def handle_info({:project_status, %{state: :ready} = status}, socket) do
+    # Project ready — transition in-place from loader to graph
+    # Preserve the final logs so graph-loader overlay can display them
+    final_logs =
+      [status.logs, socket.assigns[:loading_logs]]
+      |> Enum.find("", &(is_binary(&1) and byte_size(&1) > 0))
+
+    case mount_with_project(%{}, socket, %{}) do
+      {:ok, new_socket} ->
+        {:noreply, assign(new_socket, loading: false, graph_loader_logs: final_logs)}
+      _ ->
+        {:noreply, assign(socket, loading_state: :failed, loading_error: "Failed to build project context.")}
+    end
+  end
+
+  @impl true
+  def handle_info({:project_status, status}, socket) do
+    {:noreply,
+     socket
+     |> assign(:loading_state, status.state)
+     |> assign(:loading_step, status.step)
+     |> assign(:loading_message, status.message)
+     |> assign(:loading_logs, status.logs)
+     |> assign(:loading_error, status.last_error)}
   end
 
   @impl true

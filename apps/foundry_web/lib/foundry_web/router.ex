@@ -49,7 +49,7 @@ defmodule FoundryWeb.Router do
     get "/healthz", PageController, :healthz
     get "/project-manager", PageController, :project_manager
     get "/project-onboarding", PageController, :project_onboarding
-    get "/project-launch", PageController, :project_launch
+    get "/project-launch", PageController, :project_launch_redirect
     get "/project-status", PageController, :project_status
     get "/project-recent", PageController, :recent_projects
     get "/preview-launch", PageController, :preview_launch

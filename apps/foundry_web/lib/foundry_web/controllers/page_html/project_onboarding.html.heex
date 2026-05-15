@@ -132,7 +132,7 @@
         <a href={~p"/project-manager"} class="project-manager-secondary-action" style="text-decoration: none; display: inline-flex; align-items: center;">
           Cancel
         </a>
-        <form action={~p"/project-launch"} method="get" style="display: inline;">
+        <form action={~p"/"} method="get" style="display: inline;">
           <input type="hidden" name="path" value={@folder_path} />
           <input type="hidden" name="project_name" value={@project_name} />
           <input type="hidden" name="new_project" value="1" />
@@ -159,7 +159,7 @@
         <a href={~p"/project-manager"} class="project-manager-secondary-action" style="text-decoration: none; display: inline-flex; align-items: center;">
           Back
         </a>
-        <a href={~p"/project-launch?path=#{@folder_path}"} class="project-manager-primary-action" style="text-decoration: none; display: inline-flex; align-items: center;">
+        <a href={~p"/?path=#{@folder_path}"} class="project-manager-primary-action" style="text-decoration: none; display: inline-flex; align-items: center;">
           Open as Existing
         </a>
       </div>
