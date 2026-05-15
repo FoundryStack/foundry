@@ -30,6 +30,7 @@ const SIDECAR_NAME: &str = "foundry-sidecar";
 const STATUS_EVENT: &str = "foundry://launch-status";
 const ERROR_EVENT: &str = "foundry://launch-error";
 const FILE_OPEN_ID: &str = "file.open";
+const FILE_CLONE_ID: &str = "file.clone";
 const FILE_RECENT_PREFIX: &str = "file.recent.";
 const STANDALONE_SECRET_FILE: &str = "standalone_secret_key_base";
 
@@ -51,6 +52,7 @@ struct RecentProject {
 
 pub fn build_menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let open_item = MenuItem::with_id(app, FILE_OPEN_ID, "Open...", true, None::<&str>)?;
+    let clone_item = MenuItem::with_id(app, FILE_CLONE_ID, "Clone Git Repository...", true, None::<&str>)?;
     let recent_items = build_recent_menu_items(app)?;
     let recent_refs = recent_items
         .iter()
@@ -63,7 +65,7 @@ pub fn build_menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R
         app,
         "File",
         true,
-        &[&open_item, &recent_submenu, &separator, &quit],
+        &[&open_item, &clone_item, &recent_submenu, &separator, &quit],
     )?;
 
     Menu::with_items(app, &[&file_menu])
@@ -92,6 +94,13 @@ pub fn handle_menu_event<R: tauri::Runtime>(app: &AppHandle<R>, event: MenuEvent
             }
         });
 
+        return;
+    }
+
+    if id == FILE_CLONE_ID {
+        if let Err(message) = navigate_to_url(app, "/project-manager") {
+            emit_status(app, ERROR_EVENT, message);
+        }
         return;
     }
 
@@ -372,6 +381,24 @@ fn navigate_to_project_launch<R: tauri::Runtime>(
     window
         .navigate(parsed)
         .map_err(|error| format!("Failed to navigate to project launch: {error}"))?;
+
+    Ok(())
+}
+
+fn navigate_to_url<R: tauri::Runtime>(app: &AppHandle<R>, path: &str) -> Result<(), String> {
+    let base_url = running_base_url()?;
+    let url = format!("{base_url}{path}");
+    let parsed = url
+        .parse()
+        .map_err(|error| format!("Failed to parse URL {url}: {error}"))?;
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window is not available".to_string())?;
+
+    window
+        .navigate(parsed)
+        .map_err(|error| format!("Failed to navigate to {path}: {error}"))?;
 
     Ok(())
 }
