@@ -17,6 +17,7 @@ A new user opening Foundry needs a clear path to their first working project. Cu
 5. **File editing burden** — current flow suggests manual AGENTS.md edits; user should never touch files directly
 
 The onboarding must be:
+
 - **Copilot-first** — user interacts with copilot, not command line
 - **Self-service dependency install** — detect missing runtimes, offer one-click fixes via nvm/homebrew
 - **Skills in the project** — sandboxed copilot session must access agent skills locally, not from binary internals
@@ -48,18 +49,18 @@ Before scaffolding, the UI shows:
 ```
 Required Dependencies:
   ✓ Erlang 27.0+    [Installed]
-  ✗ Elixir 1.17+    [Install via Homebrew] [Install via asdf] [Skip]
-  ✗ Node.js 20+     [Install via nvm] [Install via Homebrew] [Skip]
-  ○ Bun 1.0+        [Install via npm] [Skip]
+  ✗ Elixir 1.17+    [Install via asdf] [Install via Homebrew]
+  ✗ Node.js 20+     [Install via asdf] [Install via Homebrew]
+  ○ Bun 1.0+        [Install via asdf] [Install via Homebrew]
 ```
 
 **One-click install strategy:**
+
 - `Homebrew` → runs `brew install elixir` (user must have Homebrew; install prompts if missing)
-- `nvm` → runs `nvm install 20 && nvm use 20` (nvm must exist; install link provided if not)
 - `asdf` → runs `asdf install` (reads .tool-versions)
-- `Skip` → proceed with warning ("project may not run without X")
 
 **Blocking rule:** Cannot proceed to scaffolding without Elixir and (Node.js OR Bun). This is a hard gate because:
+
 - `mix phx.new` requires Elixir
 - Asset builds require a JavaScript runtime
 
@@ -69,8 +70,7 @@ Foundry does not reinvent Phoenix scaffolding. Instead:
 
 ```elixir
 # User prompted for:
-#   - Project name: "my_platform"
-#   - Umbrella: yes/no
+#   - Project name get from dir name (my_platform as example)
 
 # Foundry runs:
 mix phx.new my_platform --umbrella
@@ -82,66 +82,58 @@ mix phx.new my_platform --umbrella
 ```
 
 Umbrella is the default because regulated platforms need separation of concerns:
+
 - Core domain (Ash resources, Reactors, business rules)
 - Web layer (Phoenix, LiveView, API routes)
 - External integrations (optional separate app)
 
-### 4. Spec-Kit Initialization and `.specify/` Directory Structure
+### 4. Unified Spec-Kit and Foundry Bootstrap Scaffold
 
-After Phoenix scaffolds, Foundry runs `mix foundry.spec_kit.init`, which creates:
+After Phoenix scaffolds, Foundry runs a single `mix foundry.init` that creates the complete project structure:
 
 ```
-project/.agents/
-  ├─ skills/
-  │   ├─ speckit-specify.md          ← Foundry-provided templates
-  │   ├─ speckit-plan.md
-  │   ├─ speckit-clarify.md
-  │   ├─ speckit-implement.md
-  │   ├─ speckit-analyze.md
-  │   ├─ foundry-context-gather.md
-  │   ├─ foundry-spec-navigator.md
-  │   ├─ foundry-plan-architect.md
-  │   └─ custom/                    ← Project extends/customizes
-  │
-  └─ settings.json                 ← Claude Code config (hooked to copilot)
+project/.agents/ # copy existed foundry/.agents/
 
-project/.specify/
-  ├─ memory/                        ← Session state, findings (gitignored)
-  ├─ scripts/                       ← Custom spec-kit automation
-  ├─ templates/                     ← ADR, runbook, regulation stubs
-  └─ foundry_extensions.exs         ← Custom Spark extensions for this project
+project/.specify/  # copy existed foundry/.specify/
+
+project/.foundry/
+  └─ manifest.exs                         # Project config
+
+project/docs/
+  ├─ adrs/                                # Architecture Decision Records
+  ├─ runbooks/                            # Operational guides
+  └─ regulations/                         # Compliance requirements
+
+project/AGENTS.md                         # Template with Foundry defaults
+project/.gitignore # copy from reference_projects/igaming/.gitignore
 ```
 
 **Why skills live in the project, not the Foundry binary:**
+
 - Copilot runs sandboxed in the project root; cannot reliably access parent binary internals
 - Each project can customize/extend skills without affecting Foundry distribution
 - Projects are portable: move folder, Foundry still works (no binary path dependencies)
 - Skills are versioned with the project via `.agents/skills/` committed to git
 
-**Foundry's role:** On `spec_kit.init`, Foundry provides skill templates (Markdown stubs for each agent skill). Project gets local copies.
+**Foundry's role:** On `spec_kit.init`, Foundry scaffolds all directories and provides Markdown templates for each agent skill. Project gets local copies ready to customize.
 
-### 5. Copilot-First Onboarding Message
+### 5. Copilot-First Onboarding: Auto-Seeded Interview
 
-After scaffolding completes, Foundry:
+After all scaffolding completes, Foundry automatically opens the Copilot with a seed message:
 
 ```
-1. Creates .foundry/manifest.exs          (project config)
-2. Creates docs/adrs/, docs/runbooks/, docs/regulations/  (directories)
-3. Creates template AGENTS.md with Foundry defaults
-4. Auto-opens Copilot with seed message:
+"I've created a new Foundry project.
 
-   "I've created a new Foundry project. 
-    
-    Help me define the domains and initial requirements:
-    • What are the main business domains?
-    • What's the first resource I'll build?
-    • What compliance requirements apply?
-    
-    Use speckit.specify to gather requirements and I'll 
-    draft your AGENTS.md, ADRs, and first resources."
+Help me define the domains and initial requirements:
+• What are the main business domains?
+• What's the first resource I'll build?
+• What compliance requirements apply?
+
+Use speckit.specify to gather requirements and I'll
+draft your AGENTS.md, ADRs, and first resources."
 ```
 
-Copilot then runs `speckit.specify` interview without waiting for user request.
+Copilot then runs `speckit.specify` interview without waiting for user request, collecting answers and generating the initial spec-kit from responses.
 
 ### 6. No Manual File Editing
 
@@ -156,38 +148,44 @@ User:        Approves
 Copilot:     → applies changes
 ```
 
-AGENTS.md is system-generated from user intent via copilot. Manual edits are discouraged (future: lint warning if AGENTS.md was edited outside copilot).
+AGENTS.md and spec-kit are system-generated from user intent via copilot. Manual edits outside copilot are discouraged to maintain clarity of decision history and prevent confusion about what triggered each change.
 
 ## Rationale
 
 **Folder-open onboarding:**
+
 - Users expect it (VSCode, Cursor, etc.); discoverable gesture
 - Avoids "new project" ceremony and configuration dialogs
 - Project detection is deterministic: check for mix.exs and .foundry/
 
 **One-click dependency install:**
+
 - Regulated domains have strict requirements: teams can't proceed without proper tooling
 - Foundry is packaging Burrito binary for standalone use; help users complete their environment
-- nvm/homebrew are platform-standard; failures are transparent and fixable
+- asdf/homebrew are platform-standard; failures are transparent and fixable
 - Blocking on missing dependencies prevents silent failures during first build/compile
 
 **Native Phoenix scaffolding:**
+
 - `mix phx.new` is idiomatic, battle-tested, tracks Elixir evolution
 - Foundry doesn't maintain a forked generator; delegation reduces maintenance
 - Umbrella is standard for regulated platforms (separation of concerns, deployment flexibility)
 
 **Skills in project, not binary:**
+
 - Sandboxing: copilot's working directory is project root; file access is scoped
 - Portability: binary path dependencies (e.g., `/usr/local/foundry/...`) break when moving projects or Foundry updates location
 - Customization: project-specific skill extensions don't pollute Foundry distribution
 - Version alignment: skills.md and project code co-evolve in git history
 
 **Copilot-first seed message:**
+
 - User sees copilot as the primary interface, not CLI commands
 - Structured interview (speckit.specify) is less intimidating than blank AGENTS.md
 - Copilot generates system artifacts → user reviews in one panel → reduces context switching
 
 **No manual editing:**
+
 - Source of truth is copilot decision history, not file timestamps
 - Diffs are always reviewed proposals; no silent file changes
 - Reduces user confusion ("did I change this or did the tool?")
@@ -204,18 +202,19 @@ AGENTS.md is system-generated from user intent via copilot. Manual edits are dis
 ## Alternatives Considered
 
 **Auto-install all dependencies without user prompts:**
+
 - Rejected: too fragile (shell paths, version conflicts, permissions). Better to show options and let user choose.
 
 **Keep agent skills in Foundry binary, make them accessible via MCP:**
+
 - Rejected: MCP tools are for target platform integrations, not Foundry internals. Copilot needs local, fast access to skill definitions during iteration.
 
 **Scaffold custom `.foundry/` directory instead of `.specify/`:**
+
 - Rejected: `.specify/` separates spec-kit memory/scripts/templates (user-specific) from Foundry config (shared). Clear boundaries.
 
-**Manual AGENTS.md editing with linting:**
-- Rejected: preventive design is better than detective design. If the tool can prevent confusion, it should.
-
 **Require `mix foundry.spec_kit.init` as separate command:**
+
 - Rejected: User shouldn't know this exists. Part of the onboarding flow, transparent to them.
 
 ---
