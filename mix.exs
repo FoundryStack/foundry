@@ -51,10 +51,14 @@ defmodule Foundry.MixProject do
       {:req, "~> 0.5"},
       {:req_llm, "~> 1.0"},
       {:muontrap, "~> 1.8"},
-      {:ex_tracer, "~> 0.1"},
-      {:scenario_tracer, "~> 0.1"},
-      {:spark_meta, "~> 0.1"},
-      {:spark_lint, "~> 0.1"}
+      # {:ex_tracer, "~> 0.1"},
+      # {:scenario_tracer, "~> 0.1"},
+      # {:spark_meta, "~> 0.1"},
+      # {:spark_lint, "~> 0.1"}
+      {:ex_tracer, path: "../../packages/ex_tracer"},
+      {:scenario_tracer, path: "../../packages/scenario_tracer"},
+      {:spark_meta, path: "../../packages/spark_meta"},
+      {:spark_lint, path: "../../packages/spark_lint"}
     ]
   end
 
