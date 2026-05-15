@@ -1,13 +1,11 @@
 import Config
 
-standalone_command? = Foundry.Studio.mix_task_invoked?("foundry.studio")
-phoenix_server_command? = Foundry.Studio.mix_task_invoked?("phx.server")
-
 # CRITICAL: Check if FOUNDRY_STANDALONE is set - this is set by Tauri's launcher.rs
-standalone_mode? = System.get_env("FOUNDRY_STANDALONE", "0") == "1" or standalone_command?
+# In release mode, we can't call Foundry.Studio.mix_task_invoked?, so rely on env var
+standalone_mode? = System.get_env("FOUNDRY_STANDALONE", "0") == "1"
 
 server_enabled? =
-  System.get_env("PHX_SERVER") in ["true", "1"] or standalone_mode? or phoenix_server_command?
+  System.get_env("PHX_SERVER") in ["true", "1"] or standalone_mode?
 
 runtime_port =
   cond do
@@ -67,7 +65,7 @@ if config_env() == :prod do
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
       if standalone_mode? do
-        "foundry-standalone-secret-key-base-change-me-if-exposed"
+        "foundry-standalone-secret-key-base-change-me-if-exposed-0000000000"
       else
         raise """
         environment variable SECRET_KEY_BASE is missing.
