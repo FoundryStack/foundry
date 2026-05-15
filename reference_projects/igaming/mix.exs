@@ -74,7 +74,7 @@ defmodule IgamingRef.MixProject do
       {:igniter, "~> 0.6"},
 
       # Foundry — meta-framework for governance
-      {:foundry_stack, "~> 0.1.1"},
+      {:foundry, "~> 0.1.6", hex: :foundry_stack},
 
       # Server-Driven UI
       {:ash_sdui, "~> 0.1"},
