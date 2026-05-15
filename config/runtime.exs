@@ -5,7 +5,7 @@ import Config
 standalone_mode? = System.get_env("FOUNDRY_STANDALONE", "0") == "1"
 
 server_enabled? =
-  System.get_env("PHX_SERVER") in ["true", "1"] or standalone_mode?
+  config_env() == :dev or System.get_env("PHX_SERVER") in ["true", "1"] or standalone_mode?
 
 runtime_port =
   cond do
