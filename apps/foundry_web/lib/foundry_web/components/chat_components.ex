@@ -1085,31 +1085,6 @@ defmodule FoundryWeb.ChatComponents do
     """
   end
 
-  attr :meter, :map, required: true
-
-  defp token_meter(assigns) do
-    ~H"""
-    <div class="flex items-center gap-2" title={token_meter_title(@meter)}>
-      <div
-        class="relative grid h-10 w-10 place-items-center rounded-full border border-base-300/80 bg-base-200/70"
-        data-role="token-meter"
-        data-fill={round((@meter.ratio || 0) * 100)}
-        style={token_meter_style(@meter)}
-      >
-        <div class="grid h-7 w-7 place-items-center rounded-full bg-base-100/95 text-[9px] font-semibold uppercase tracking-[0.08em] text-base-content">
-          {token_meter_inner_label(@meter)}
-        </div>
-      </div>
-      <div class="min-w-[7rem] text-right">
-        <p class="text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content">
-          Context
-        </p>
-        <p class="text-[11px] text-base-content">{token_meter_summary(@meter)}</p>
-      </div>
-    </div>
-    """
-  end
-
   defp streaming_message?(%{"role" => "assistant"}, index, message_count, true),
     do: index == message_count - 1
 
@@ -1176,22 +1151,6 @@ defmodule FoundryWeb.ChatComponents do
     "rounded-xl border border-transparent px-3 py-1.5 font-semibold text-md text-neutral-content transition-colors hover:bg-white/6 hover:text-base-content"
   end
 
-  defp delivery_status_class("queued"),
-    do:
-      "rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
-
-  defp delivery_status_class("sending"),
-    do:
-      "rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info"
-
-  defp delivery_status_class("sent"),
-    do:
-      "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success"
-
-  defp delivery_status_class(_status),
-    do:
-      "rounded-full border border-base-300 bg-base-100/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
-
   defp trace_run_class(true) do
     "w-full rounded-box border border-primary/40 bg-primary/10 px-3 py-3 text-left shadow-sm"
   end
@@ -1256,13 +1215,6 @@ defmodule FoundryWeb.ChatComponents do
     do: Map.get(run, :total_tokens)
 
   defp run_total_tokens(_run), do: nil
-
-  defp token_badge_label(run) do
-    case run_total_tokens(run) do
-      nil -> "tokens unavailable"
-      total -> "#{total} tokens"
-    end
-  end
 
   defp runtime_message_metadata(message, active_run, true) when is_map(active_run) do
     %{

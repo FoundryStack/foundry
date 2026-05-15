@@ -14,6 +14,13 @@ defmodule Foundry.DepChecker do
       not (results[:node].installed? or results[:bun].installed?)
   end
 
+  defp get_otp_version do
+    case System.otp_release() do
+      version when is_binary(version) -> "Erlang/OTP #{version}"
+      _ -> nil
+    end
+  end
+
   defp check(:erlang) do
     case System.find_executable("erl") do
       nil ->
@@ -23,13 +30,6 @@ defmodule Foundry.DepChecker do
         # Erlang/OTP is running (we're in a Mix project), so it's installed
         version = get_otp_version()
         %{installed?: true, version: version, name: "Erlang/OTP", required?: true}
-    end
-  end
-
-  defp get_otp_version do
-    case System.otp_release() do
-      version when is_binary(version) -> "Erlang/OTP #{version}"
-      _ -> nil
     end
   end
 
