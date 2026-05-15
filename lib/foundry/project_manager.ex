@@ -57,6 +57,23 @@ defmodule Foundry.ProjectManager do
     )
   end
 
+  def classify_folder(path) do
+    normalized = path |> String.trim() |> Path.expand()
+    has_mix = File.exists?(Path.join(normalized, "mix.exs"))
+    has_foundry = File.dir?(Path.join(normalized, ".foundry"))
+
+    cond do
+      not File.dir?(normalized) -> {:error, :not_a_directory}
+      has_mix and has_foundry -> :existing_project
+      not has_mix and not has_foundry -> :empty_folder
+      true -> :partial_project
+    end
+  end
+
+  def new_project(folder_path, project_name) when is_binary(folder_path) and is_binary(project_name) do
+    GenServer.call(__MODULE__, {:new_project, folder_path, project_name}, 120_000)
+  end
+
   def init(_opts) do
     persisted = load_persisted_state()
 
@@ -92,6 +109,10 @@ defmodule Foundry.ProjectManager do
 
   def handle_call({:clone_project, repo_url, parent_dir}, _from, state) do
     reply_with_start({:clone, repo_url, parent_dir}, state)
+  end
+
+  def handle_call({:new_project, folder_path, project_name}, _from, state) do
+    reply_with_start({:new_project, folder_path, project_name}, state)
   end
 
   def handle_info({:project_manager_log, action_ref, chunk}, %{action_ref: action_ref} = state) do
@@ -176,6 +197,19 @@ defmodule Foundry.ProjectManager do
          :ok <- install_dependencies(server, action_ref, target_root),
          :ok <- configure_runtime(target_root) do
       {:ok, target_root, recent_entry(target_root, repo_url)}
+    end
+  end
+
+  defp run_action(server, action_ref, {:new_project, folder_path, project_name}) do
+    normalized_folder = folder_path |> String.trim() |> Path.expand()
+    project_root = Path.join(normalized_folder, project_name)
+
+    with {:ok, _} <- validate_parent_dir(normalized_folder),
+         :ok <- run_command(server, action_ref, "mix", ["phx.new", project_name, "--umbrella"], normalized_folder),
+         :ok <- run_command(server, action_ref, "mix", ["foundry.init"], project_root),
+         :ok <- install_dependencies(server, action_ref, project_root),
+         :ok <- configure_runtime(project_root) do
+      {:ok, project_root, recent_entry(project_root, nil)}
     end
   end
 
@@ -314,6 +348,17 @@ defmodule Foundry.ProjectManager do
       step: "cloning",
       message: "Cloning repository...",
       project_root: Path.expand(Path.join(String.trim(parent_dir), derive_repo_name(repo_url))),
+      logs: "",
+      last_error: nil
+    }
+  end
+
+  defp status_for_action({:new_project, folder_path, project_name}) do
+    %{
+      state: @status_running,
+      step: "scaffolding",
+      message: "Creating new project...",
+      project_root: Path.join(Path.expand(String.trim(folder_path)), project_name),
       logs: "",
       last_error: nil
     }
