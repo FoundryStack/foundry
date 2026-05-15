@@ -7,7 +7,7 @@ REPO_ROOT="${FOUNDRY_DESKTOP_REPO_ROOT:-$(cd "${DESKTOP_ROOT}/../.." && pwd)}"
 BINARIES_DIR="${FOUNDRY_DESKTOP_BINARIES_DIR:-${DESKTOP_ROOT}/src-tauri/binaries}"
 BURRITO_OUT_DIR="${FOUNDRY_DESKTOP_BURRITO_OUT_DIR:-${REPO_ROOT}/burrito_out}"
 HOST_TRIPLE="${FOUNDRY_DESKTOP_HOST_TRIPLE:-$(rustc -vV | sed -n 's/^host: //p')}"
-SIDECAR_DEST="${BINARIES_DIR}/foundry-sidecar-${HOST_TRIPLE}"
+SIDECAR_DEST="${BINARIES_DIR}/foundry-sidecar"
 
 case "${HOST_TRIPLE}" in
   aarch64-apple-darwin)
