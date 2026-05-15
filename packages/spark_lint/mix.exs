@@ -5,17 +5,27 @@ defmodule SparkLint.MixProject do
     [
       app: :spark_lint,
       name: "spark_lint",
-      source_url: "https://github.com/MaxSvargal/spark_lint",
+      source_url: "https://github.com/FoundryStack/spark_lint",
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       description: description(),
+      package: package(),
     ]
   end
 
   defp description() do
     "Lint rule runner for Elixir/Spark/Ash projects."
+  end
+
+  defp package do
+    [
+      licenses: ["Apache-2.0"],
+      links: %{
+        "GitHub" => "https://github.com/FoundryStack/spark_lint"
+      }
+    ]
   end
 
   def application do

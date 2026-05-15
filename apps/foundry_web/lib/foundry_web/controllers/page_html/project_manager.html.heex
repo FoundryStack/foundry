@@ -267,6 +267,39 @@
     color: white;
   }
 
+  .project-manager-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .project-manager-input-wrapper input {
+    width: 100%;
+    padding-right: 3rem;
+  }
+
+  .project-manager-input-button {
+    position: absolute;
+    right: 0.5rem;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 0.4rem 0.6rem;
+    transition: color 0.2s ease;
+    display: none;
+  }
+
+  .project-manager-input-button:hover {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  /* Show file picker only in Tauri standalone mode */
+  body.tauri .project-manager-input-button {
+    display: block;
+  }
+
   @media (min-width: 860px) {
     #project-manager-grid {
       grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
@@ -274,6 +307,22 @@
     }
   }
 </style>
+
+<script>
+  function handleDirectorySelect(inputId, fileInputId) {
+    const fileInput = document.getElementById(fileInputId);
+    fileInput.onchange = function() {
+      if (this.files.length > 0) {
+        const file = this.files[0];
+        // In web mode, we can only get relative path within the selected folder
+        // In Tauri standalone, file.path gives the absolute path
+        const path = file.path || file.webkitRelativePath.split('/')[0] || file.name;
+        document.getElementById(inputId).value = path;
+      }
+    };
+    fileInput.click();
+  }
+</script>
 
 <.project_shell
   root_id="project-manager-root"
@@ -293,7 +342,6 @@
             type="button"
             class="project-manager-button"
             onclick="document.getElementById('open-project-dialog').showModal()"
-            disabled={!@can_open_local_dir}
           >
             <span>
               <span class="project-manager-button-title">Open local project</span>
@@ -378,12 +426,29 @@
     <form action={~p"/project-launch"} method="get" class="project-manager-form">
       <div class="project-manager-field">
         <label class="project-manager-field-label">Project path</label>
-        <input
-          type="text"
-          name="path"
-          placeholder="~/Documents/my_app"
-          class="project-manager-field-input"
-        />
+        <div class="project-manager-input-wrapper">
+          <input
+            type="text"
+            id="open-project-path"
+            name="path"
+            placeholder="~/Documents/my_app"
+            class="project-manager-field-input"
+          />
+          <button
+            type="button"
+            class="project-manager-input-button"
+            onclick="handleDirectorySelect('open-project-path', 'open-project-file-input')"
+            title="Browse folder (Tauri only)"
+          >
+            📁
+          </button>
+          <input
+            type="file"
+            id="open-project-file-input"
+            webkitdirectory
+            style="display: none;"
+          />
+        </div>
       </div>
       <div class="project-manager-form-actions">
         <button
@@ -418,12 +483,29 @@
     <form action={~p"/project-onboarding"} method="get" class="project-manager-form">
       <div class="project-manager-field">
         <label class="project-manager-field-label">Project folder</label>
-        <input
-          type="text"
-          name="path"
-          placeholder="~/Documents/my-foundry-app"
-          class="project-manager-field-input"
-        />
+        <div class="project-manager-input-wrapper">
+          <input
+            type="text"
+            id="new-project-path"
+            name="path"
+            placeholder="~/Documents/my-foundry-app"
+            class="project-manager-field-input"
+          />
+          <button
+            type="button"
+            class="project-manager-input-button"
+            onclick="handleDirectorySelect('new-project-path', 'new-project-file-input')"
+            title="Browse folder (Tauri only)"
+          >
+            📁
+          </button>
+          <input
+            type="file"
+            id="new-project-file-input"
+            webkitdirectory
+            style="display: none;"
+          />
+        </div>
       </div>
       <div class="project-manager-form-actions">
         <button
@@ -467,12 +549,29 @@
       </div>
       <div class="project-manager-field">
         <label class="project-manager-field-label">Destination parent folder</label>
-        <input
-          type="text"
-          name="parent_dir"
-          placeholder="~/Documents"
-          class="project-manager-field-input"
-        />
+        <div class="project-manager-input-wrapper">
+          <input
+            type="text"
+            id="clone-project-parent-dir"
+            name="parent_dir"
+            placeholder="~/Documents"
+            class="project-manager-field-input"
+          />
+          <button
+            type="button"
+            class="project-manager-input-button"
+            onclick="handleDirectorySelect('clone-project-parent-dir', 'clone-project-file-input')"
+            title="Browse folder (Tauri only)"
+          >
+            📁
+          </button>
+          <input
+            type="file"
+            id="clone-project-file-input"
+            webkitdirectory
+            style="display: none;"
+          />
+        </div>
       </div>
       <div class="project-manager-form-actions">
         <button

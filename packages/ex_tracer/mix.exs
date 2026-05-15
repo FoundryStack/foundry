@@ -5,7 +5,7 @@ defmodule ExTracer.MixProject do
     [
       app: :ex_tracer,
       name: "ex_tracer",
-      source_url: "https://github.com/MaxSvargal/ex_tracer",
+      source_url: "https://github.com/FoundryStack/ex_tracer",
       version: "0.1.0",
       build_path: "../../_build",
       config_path: "../../config/config.exs",
@@ -15,11 +15,21 @@ defmodule ExTracer.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       description: description(),
+      package: package(),
     ]
   end
 
   defp description() do
     "Scenario extraction primitives for Elixir test suites."
+  end
+
+  defp package do
+    [
+      licenses: ["Apache-2.0"],
+      links: %{
+        "GitHub" => "https://github.com/FoundryStack/ex_tracer"
+      }
+    ]
   end
 
   def application do

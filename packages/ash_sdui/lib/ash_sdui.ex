@@ -95,13 +95,7 @@ defmodule AshSDUI do
 
       def sdui_root(assigns) do
         tree = Map.get(assigns, :tree) || Map.get(assigns, :__sdui_tree__)
-        AshSDUI.Components.SDUIRoot.render(
-          Map.put(assigns, :tree, tree)
-        )
-      end
-
-      def __sdui_lookup__ do
-        unquote(lookup)
+        AshSDUI.Components.SDUIRoot.render(Map.put(assigns, :tree, tree))
       end
     end
   end
