@@ -405,6 +405,28 @@ defmodule FoundryWeb.SystemMapHookJsTest do
            }
   end
 
+  test "preview launch normalization collapses undefined-like routes to root" do
+    result =
+      run_js("""
+      const hookModule = await importBundledModule([#{js_string_literal(@hook_path)}])
+      const hook = hookModule.SystemMapHook
+
+      printJson({
+        undefinedString: hook._normalizePreviewRoute('undefined'),
+        nullString: hook._normalizePreviewRoute('null'),
+        blank: hook._normalizePreviewRoute('   '),
+        real: hook._normalizePreviewRoute('games'),
+      })
+      """)
+
+    assert result == %{
+             "undefinedString" => "/",
+             "nullString" => "/",
+             "blank" => "/",
+             "real" => "/games"
+           }
+  end
+
   test "focused node keeps only its immediate neighborhood active" do
     result =
       run_js("""

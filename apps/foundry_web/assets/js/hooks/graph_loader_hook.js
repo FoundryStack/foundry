@@ -1,9 +1,6 @@
 let _instance = null
 let _dismissRequested = false
 
-// Minimum time to show the loader before allowing dismiss (ms)
-const MIN_DISPLAY_MS = 2000
-
 export const requestGraphLoaderDismiss = () => {
   if (_instance) {
     _instance.dismiss()
@@ -51,28 +48,12 @@ export const GraphLoaderHook = {
     let pointerPrimed = false
 
     try {
-      const cached = window._webglFluidSource
-      let source = cached
-
-      if (!source) {
-        const response = await fetch("https://cdn.jsdelivr.net/npm/webgl-fluid@0.3.0/dist/webgl-fluid.umd.js")
-        if (!response.ok) throw new Error(`fetch ${response.status}`)
-        source = await response.text()
-        source = source.replace("o.color=it()", "o.color=p.SPLAT_COLOR||it()")
-        source = source.replace("N.forEach(s=>{s.color=it()})", "N.forEach(s=>{s.color=p.SPLAT_COLOR||it()})")
-        source = source.replace(
-          "const a=it();a.r*=10,a.g*=10,a.b*=10;",
-          "const a=p.SPLAT_COLOR?{...p.SPLAT_COLOR}:it();if(!p.SPLAT_COLOR){a.r*=10,a.g*=10,a.b*=10;}"
-        )
-        window._webglFluidSource = source
-      }
-
-      // If dismissed while fetching, skip initialization
+      // If dismissed before library loaded, skip initialization
       if (this._dismissed) return
 
-      // Re-eval every time so WebGLFluid is re-initialized for this canvas
-      delete window.WebGLFluid
-      window.eval(source)
+      if (!window.WebGLFluid) {
+        throw new Error("WebGLFluid library not loaded")
+      }
 
       if (this._dismissed) return
 
@@ -103,7 +84,7 @@ export const GraphLoaderHook = {
       // Fade canvas in immediately after WebGL initialization
       if (!this._dismissed) canvasEl.style.opacity = "1"
 
-      // Mark ready now so dismiss() will execute (respecting MIN_DISPLAY_MS)
+      // Mark ready now so dismiss() will execute as soon as layout completes.
       this._readyToDismiss = true
 
       this._fireTimer = window.setInterval(() => {
@@ -174,9 +155,6 @@ export const GraphLoaderHook = {
     const wrapper = document.getElementById("graph-loader-wrapper")
     if (!wrapper) return
 
-    const elapsed = Date.now() - this._mountedAt
-    const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed)
-
     wrapper.style.transition = "opacity 600ms ease-out"
     wrapper.style.opacity = "0"
 
@@ -184,7 +162,7 @@ export const GraphLoaderHook = {
       if (wrapper && wrapper.parentElement) wrapper.remove()
       if (_instance === this) _instance = null
       this._dismissTimer = null
-    }, remaining + 20)
+    }, 20)
   },
 
   destroyed() {

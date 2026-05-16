@@ -15,11 +15,6 @@ export const SystemMapHook = {
   mounted() {
     try {
       this.feed = new FeedManager()
-
-      if (document.readyState !== 'complete' && document.readyState !== 'interactive') {
-        setTimeout(() => this._initGraph(), 0)
-        return
-      }
       this._initGraph()
 
       // Register keyboard shortcut for feed toggle (⌘\)
@@ -40,138 +35,14 @@ export const SystemMapHook = {
       const contextJson = JSON.parse(this.el.dataset.context)
       this._previewBaseUrl = this.el.dataset.previewBaseUrl || 'http://localhost:4001'
       this.graph = mountFoundryGraph(this.el, contextJson)
+      this.graph.whenReady(() => {
+        this._wireGraphInteractions(contextJson)
+      })
 
       // Wire layout complete callback to dismiss the graph loader overlay
       this.graph.onLayoutComplete = () => {
         requestGraphLoaderDismiss()
       }
-
-      // Initialize managers
-      const pushEvent = (event, payload) => {
-        this.pushEvent(event, payload)
-      }
-      this.drawer = new DrawerManager(this.graph.normalizedNodes, pushEvent, {
-        onNodeSelect: nodeId => {
-          const nodeData = this.graph.normalizedNodes.get(nodeId)
-          this._selectNode(nodeId, nodeData, { pushSelection: true })
-        },
-        onStartPreview: (route) => {
-          this._startPreview(route)
-        },
-      })
-      this.sidebar = new SidebarManager(this.graph, this.graph.normalizedNodes)
-
-      // Wire sidebar node select callback
-      this.sidebar.onNodeSelect = (nodeId) => {
-        const nodeData = this.graph.normalizedNodes.get(nodeId)
-        this._selectNode(nodeId, nodeData, { pushSelection: true })
-      }
-
-      // Wire node click handler
-      this.graph.onNodeClick = (nodeId, nodeData) => {
-        const resolvedNodeData = nodeData || this.graph.normalizedNodes.get(nodeId)
-
-        this._selectNode(nodeId, resolvedNodeData, { pushSelection: true })
-
-        if (contextJson.nodes.length > UI_CONFIG.nodeThreshold) {
-          this.pushEvent('fetch_node_detail', { id: nodeId })
-        }
-      }
-
-      this.graph.onBackgroundClick = () => {
-        if (this._isCoverageMode()) {
-          this.pushEvent('clear_node_filter', {})
-        }
-
-        this.pushEvent('clear_scenario', {})
-      }
-
-      // Wire hover handler
-      this.graph.onNodeHover = (nodeId, nodeData, event) => {
-        this._showHoverCard(nodeId, nodeData, event)
-      }
-
-      this.graph.onNodeUnhover = () => {
-        this._hideHoverCard()
-      }
-
-      // Server-pushed events
-      this.handleEvent('graph:delta', (delta) => {
-        if (this.graph) {
-          this.graph.applyDelta(delta)
-        }
-      })
-
-      this.handleEvent('graph:proposal_overlay', (delta) => {
-        if (this.graph) {
-          this.graph.applyProposalOverlay(delta)
-        }
-      })
-
-      this.handleEvent('graph:scenario_overlay', (payload) => {
-        if (this.graph) {
-          try {
-            this.graph.applyScenarioOverlay(payload)
-          } catch (e) {
-            console.error('  ❌ applyScenarioOverlay error:', e)
-          }
-        }
-
-        if (this.drawer) {
-          this.drawer.renderForScenario(payload)
-        }
-      })
-
-      this.handleEvent('graph:coverage_overlay', (payload) => {
-        if (this.graph) {
-          this.graph.applyCoverageOverlay(payload)
-        }
-      })
-
-      this.handleEvent('graph:scenario_status_overlay', (payload) => {
-        if (this.graph) {
-          this.graph.applyScenarioStatusOverlay(payload)
-        }
-      })
-
-      this.handleEvent('drawer:open_flow', () => {
-        this.drawer?.open()
-      })
-
-      this.handleEvent('graph:clear_overlay', () => {
-        if (this.graph) {
-          this.graph.clearScenarioOverlay()
-        }
-
-        if (this.sidebar) {
-          this.sidebar.clearHighlight()
-        }
-
-        if (this.drawer) {
-          this.drawer.clearScenario()
-        }
-      })
-
-      this.handleEvent('node_detail', (payload) => {
-        if (payload.node) {
-          this._hydrateNodeDetail(payload.node)
-        }
-      })
-
-      this.handleEvent('file_content', (payload) => {
-        this.drawer.open()
-        this.drawer.renderFileContent(payload)
-      })
-
-      this.handleEvent('proposal_file_preview', (payload) => {
-        this.drawer.open()
-        this.drawer.renderProposalFilePreview(payload)
-      })
-
-      this.handleEvent('file_error', (payload) => {
-        this.drawer.open()
-        this.drawer.renderFileError(payload)
-      })
     } catch (error) {
       console.error('SystemMapHook init error:', error)
     }
@@ -179,6 +50,133 @@ export const SystemMapHook = {
     this._syncCoverageOverlay()
     this._syncUiState()
     this._startUiObservers()
+  },
+
+  _wireGraphInteractions(contextJson) {
+    if (this._graphInteractionsBound) return
+    this._graphInteractionsBound = true
+
+    const pushEvent = (event, payload) => {
+      this.pushEvent(event, payload)
+    }
+    this.drawer = new DrawerManager(this.graph.normalizedNodes, pushEvent, {
+      onNodeSelect: nodeId => {
+        const nodeData = this.graph.normalizedNodes.get(nodeId)
+        this._selectNode(nodeId, nodeData, { pushSelection: true })
+      },
+      onStartPreview: (route) => {
+        this._startPreview(route)
+      },
+    })
+    this.sidebar = new SidebarManager(this.graph, this.graph.normalizedNodes)
+
+    this.sidebar.onNodeSelect = (nodeId) => {
+      const nodeData = this.graph.normalizedNodes.get(nodeId)
+      this._selectNode(nodeId, nodeData, { pushSelection: true })
+    }
+
+    this.graph.onNodeClick = (nodeId, nodeData) => {
+      const resolvedNodeData = nodeData || this.graph.normalizedNodes.get(nodeId)
+
+      this._selectNode(nodeId, resolvedNodeData, { pushSelection: true })
+
+      if (contextJson.nodes.length > UI_CONFIG.nodeThreshold) {
+        this.pushEvent('fetch_node_detail', { id: nodeId })
+      }
+    }
+
+    this.graph.onBackgroundClick = () => {
+      if (this._isCoverageMode()) {
+        this.pushEvent('clear_node_filter', {})
+      }
+
+      this.pushEvent('clear_scenario', {})
+    }
+
+    this.graph.onNodeHover = (nodeId, nodeData, event) => {
+      this._showHoverCard(nodeId, nodeData, event)
+    }
+
+    this.graph.onNodeUnhover = () => {
+      this._hideHoverCard()
+    }
+
+    this.handleEvent('graph:delta', (delta) => {
+      if (this.graph) {
+        this.graph.applyDelta(delta)
+      }
+    })
+
+    this.handleEvent('graph:proposal_overlay', (delta) => {
+      if (this.graph) {
+        this.graph.applyProposalOverlay(delta)
+      }
+    })
+
+    this.handleEvent('graph:scenario_overlay', (payload) => {
+      if (this.graph) {
+        try {
+          this.graph.applyScenarioOverlay(payload)
+        } catch (e) {
+          console.error('  ❌ applyScenarioOverlay error:', e)
+        }
+      }
+
+      if (this.drawer) {
+        this.drawer.renderForScenario(payload)
+      }
+    })
+
+    this.handleEvent('graph:coverage_overlay', (payload) => {
+      if (this.graph) {
+        this.graph.applyCoverageOverlay(payload)
+      }
+    })
+
+    this.handleEvent('graph:scenario_status_overlay', (payload) => {
+      if (this.graph) {
+        this.graph.applyScenarioStatusOverlay(payload)
+      }
+    })
+
+    this.handleEvent('drawer:open_flow', () => {
+      this.drawer?.open()
+    })
+
+    this.handleEvent('graph:clear_overlay', () => {
+      if (this.graph) {
+        this.graph.clearScenarioOverlay()
+      }
+
+      if (this.sidebar) {
+        this.sidebar.clearHighlight()
+      }
+
+      if (this.drawer) {
+        this.drawer.clearScenario()
+      }
+    })
+
+    this.handleEvent('node_detail', (payload) => {
+      if (payload.node) {
+        this._hydrateNodeDetail(payload.node)
+      }
+    })
+
+    this.handleEvent('file_content', (payload) => {
+      this.drawer.open()
+      this.drawer.renderFileContent(payload)
+    })
+
+    this.handleEvent('proposal_file_preview', (payload) => {
+      this.drawer.open()
+      this.drawer.renderProposalFilePreview(payload)
+    })
+
+    this.handleEvent('file_error', (payload) => {
+      this.drawer.open()
+      this.drawer.renderFileError(payload)
+    })
   },
 
   _handleNodeSelected(nodeId, nodeData = null) {
@@ -227,8 +225,15 @@ export const SystemMapHook = {
   },
 
   _normalizePreviewRoute(route = '/') {
-    if (typeof route !== 'string' || route.trim() === '') return '/'
-    return route.startsWith('/') ? route : `/${route}`
+    if (typeof route !== 'string') return '/'
+
+    const trimmedRoute = route.trim()
+
+    if (trimmedRoute === '' || trimmedRoute === 'undefined' || trimmedRoute === 'null') {
+      return '/'
+    }
+
+    return trimmedRoute.startsWith('/') ? trimmedRoute : `/${trimmedRoute}`
   },
 
   async _openPreviewLaunch(launchUrl) {

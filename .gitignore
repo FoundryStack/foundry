@@ -19,6 +19,7 @@ erl_crash.dump
 .DS_Store
 .elixir_ls
 .foundry/tools/
+.foundry/local/
 .hex-docs
 .hex-packages
 .specify

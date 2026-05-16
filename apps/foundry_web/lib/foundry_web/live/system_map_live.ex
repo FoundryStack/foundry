@@ -137,7 +137,8 @@ defmodule FoundryWeb.SystemMapLive do
       selected_node: nil,
       project_root: nil,
       preview_base_url: nil,
-      loading: false,
+      loading: true,
+      loading_visible: true,
       graph_loader_logs: existing_logs
     )
   end
@@ -160,6 +161,7 @@ defmodule FoundryWeb.SystemMapLive do
 
       project_name = Path.basename(project_root)
       preview_base_url = Foundry.PreviewServer.preview_base_url(project_root)
+      initial_loading_logs = direct_mount_loading_logs()
 
       case build_context.(project_root) do
         {:ok, context} ->
@@ -198,7 +200,8 @@ defmodule FoundryWeb.SystemMapLive do
             |> ChatSession.mount(session)
 
           socket =
-            assign(socket,
+            socket
+            |> assign(
               context_json: context_json,
               ui_nodes: ui_nodes,
               nodes_by_domain: nodes_by_domain,
@@ -219,7 +222,12 @@ defmodule FoundryWeb.SystemMapLive do
               project_name: project_name,
               project_root: project_root,
               preview_base_url: preview_base_url,
-              loading: false
+              loading: true,
+              loading_state: :building,
+              loading_step: nil,
+              loading_message: "Loading project…",
+              loading_logs: initial_loading_logs,
+              loading_error: nil
             )
 
           socket =
@@ -228,6 +236,8 @@ defmodule FoundryWeb.SystemMapLive do
             else
               socket
             end
+
+          socket = maybe_schedule_finish_loading(socket)
 
           {:ok, socket}
 
@@ -242,11 +252,34 @@ defmodule FoundryWeb.SystemMapLive do
               project_name: project_name,
               project_root: project_root,
               preview_base_url: preview_base_url,
-              loading: false
+              loading_state: :failed,
+              loading_message: "Failed to load project",
+              loading_logs: initial_loading_logs
             )
+
+          socket = maybe_schedule_finish_loading(socket)
 
           {:ok, socket}
       end
+    end
+  end
+
+  defp direct_mount_loading_logs do
+    """
+    [system-map] Opening active project
+    [system-map] Building project context
+    [system-map] Preparing workspace
+    """
+  end
+
+  defp maybe_schedule_finish_loading(socket) do
+    cond do
+      not connected?(socket) ->
+        socket
+
+      true ->
+        Process.send_after(self(), :finish_loading, 0)
+        socket
     end
   end
 
@@ -282,6 +315,11 @@ defmodule FoundryWeb.SystemMapLive do
   @impl true
   def handle_event("chat_workspace_hydrate", params, socket) do
     ChatSession.handle_event("chat_workspace_hydrate", params, socket)
+  end
+
+  @impl true
+  def handle_event("project_loader_faded_out", _params, socket) do
+    {:noreply, assign(socket, loading_visible: false)}
   end
 
   @impl true
@@ -651,7 +689,8 @@ defmodule FoundryWeb.SystemMapLive do
 
     case mount_with_project(%{}, socket, %{}, project_root) do
       {:ok, new_socket} ->
-        {:noreply, assign(new_socket, loading: false, graph_loader_logs: final_logs)}
+        {:noreply,
+         assign(new_socket, loading: false, loading_visible: true, graph_loader_logs: final_logs)}
 
       _ ->
         {:noreply,
@@ -663,11 +702,17 @@ defmodule FoundryWeb.SystemMapLive do
   def handle_info({:project_status, status}, socket) do
     {:noreply,
      socket
+     |> assign(:loading, status.state != :ready)
      |> assign(:loading_state, status.state)
      |> assign(:loading_step, status.step)
      |> assign(:loading_message, status.message)
      |> assign(:loading_logs, status.logs)
      |> assign(:loading_error, status.last_error)}
+  end
+
+  @impl true
+  def handle_info(:finish_loading, socket) do
+    {:noreply, assign(socket, loading: false)}
   end
 
   @impl true

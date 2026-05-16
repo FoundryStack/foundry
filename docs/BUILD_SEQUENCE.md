@@ -155,7 +155,9 @@ accessibility requirements in that document govern Phase 2 implementation.
 resources clickable with correct detail panels, updates within 2 seconds of a file save,
 passes WCAG 2.1 AA audit (ADR-012 §Accessibility), meets all ADR-012 §Performance Budgets,
 AND LiveView page nodes appear with correct route labels, `calls_action` edges to Ash
-resources, feature flag external nodes, and a functioning sidebar Preview button.
+resources, feature flag external nodes, and a functioning sidebar Preview button. Project
+launch shows the branded canvas+logs overlay immediately on first paint, and that overlay
+fades out before being removed from the DOM.
 
 ---
 

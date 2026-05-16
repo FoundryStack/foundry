@@ -57,6 +57,7 @@ export class CytoscapeGraph {
     this._hiddenRelations = new Set()
     this._pendingViewportFrame = null
     this._pendingViewportAction = null
+    this._isReady = false
 
     // Initialize callback properties with no-op defaults
     this.onNodeClick = () => {}
@@ -82,7 +83,20 @@ export class CytoscapeGraph {
       ...cyOptions,
     })
 
+    this.cy.ready(() => {
+      this._isReady = true
+      this.onReady?.(this.cy)
+    })
+
     this._bindEvents()
+  }
+
+  whenReady(callback) {
+    this.onReady = callback
+
+    if (this._isReady) {
+      callback?.(this.cy)
+    }
   }
 
   setupHtmlLabels(templates) {
@@ -116,7 +130,6 @@ export class CytoscapeGraph {
 
     this.cy.add([...nodeElements, ...edgeElements])
     this._runLayout()
-    this.onReady()
   }
 
   applyDelta(delta) {

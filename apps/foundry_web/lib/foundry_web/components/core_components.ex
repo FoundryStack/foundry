@@ -31,6 +31,11 @@ defmodule FoundryWeb.CoreComponents do
 
   alias Phoenix.LiveView.JS
 
+  @doc false
+  def layout_shell_class(extra_classes \\ nil) do
+    ["foundry-scroll-shell h-full overflow-hidden", extra_classes]
+  end
+
   @doc """
   Renders flash notices.
 

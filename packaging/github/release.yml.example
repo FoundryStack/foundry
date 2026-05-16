@@ -11,9 +11,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-13
-            target: macos
           - runner: macos-14
+            target: macos
+          - runner: macos-15
             target: macos_silicon
           - runner: ubuntu-latest
             target: linux

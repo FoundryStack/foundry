@@ -460,6 +460,13 @@ System Map shows the compile error state (described above). All other panels sho
 
 Loading states appear after a 200ms delay. Below 200ms, no loading indicator is shown.
 
+For Studio project launch specifically, the System Map uses a full-screen launch overlay with
+the branded canvas animation and log stream. The animation must bootstrap from inline script
+as soon as the loader markup is parsed; it must not wait for LiveView hook attachment before
+starting. Once loading completes, the overlay fades out, then is removed from the DOM after
+the opacity transition finishes. Any preview route value of `undefined`, `null`, or empty
+string normalizes to `/` and must never produce a `/undefined` browser request.
+
 ---
 
 ## Decision: Performance Budgets
