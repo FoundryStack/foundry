@@ -1,18 +1,32 @@
 let _instance = null
-export const getGraphLoaderHook = () => _instance
+let _dismissRequested = false
 
 // Minimum time to show the loader before allowing dismiss (ms)
 const MIN_DISPLAY_MS = 2000
 
+export const requestGraphLoaderDismiss = () => {
+  if (_instance) {
+    _instance.dismiss()
+  } else {
+    _dismissRequested = true
+  }
+}
+
 export const GraphLoaderHook = {
   mounted() {
     _instance = this
+    this._dismissTimer = null
     this._fireTimer = null
     this._dismissed = false
+    this._pendingDismiss = false
     this._readyToDismiss = false
     this._mountedAt = Date.now()
 
-    const canvasEl = this.el
+    const canvasEl = document.getElementById("graph-loader-canvas")
+    if (canvasEl) {
+      canvasEl.width = window.innerWidth
+      canvasEl.height = window.innerHeight
+    }
     const logEl = document.getElementById("graph-loader-log")
 
     // Populate log from server-rendered content (already in the <pre> from @graph_loader_logs)
@@ -32,9 +46,11 @@ export const GraphLoaderHook = {
   async _startFireBackdrop(canvasEl) {
     if (!canvasEl) return
 
+    const logoEl = document.querySelector("#graph-loader-stage img")
+    let time = 0
+    let pointerPrimed = false
+
     try {
-      // Always fetch fresh — cached window.WebGLFluid holds internal state tied to the
-      // previous canvas (from project_launch page), calling it again with a new canvas fails
       const cached = window._webglFluidSource
       let source = cached
 
@@ -87,10 +103,6 @@ export const GraphLoaderHook = {
       // Fade canvas in immediately after WebGL initialization
       if (!this._dismissed) canvasEl.style.opacity = "1"
 
-      const logoEl = document.querySelector("#graph-loader-stage img")
-      let time = 0
-      let pointerPrimed = false
-
       // Mark ready now so dismiss() will execute (respecting MIN_DISPLAY_MS)
       this._readyToDismiss = true
 
@@ -119,14 +131,20 @@ export const GraphLoaderHook = {
         canvasEl.dispatchEvent(new MouseEvent("mousemove", { clientX: startX + (Math.random() - 0.5) * 0.6, clientY: endY, bubbles: true }))
       }, 60)
 
-      if (this._pendingDismiss) {
+      if (_dismissRequested) {
+        _dismissRequested = false
+        this._executeDismiss()
+      } else if (this._pendingDismiss) {
         this._executeDismiss()
       }
     } catch (_err) {
       // WebGL not supported or fetch failed — skip effect, still show loader
       if (canvasEl) canvasEl.remove()
       this._readyToDismiss = true
-      if (this._pendingDismiss) {
+      if (_dismissRequested) {
+        _dismissRequested = false
+        this._executeDismiss()
+      } else if (this._pendingDismiss) {
         this._executeDismiss()
       }
     }
@@ -153,25 +171,28 @@ export const GraphLoaderHook = {
       this._fireTimer = null
     }
 
-    const elapsed = Date.now() - this._mountedAt
-    const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed)
-
     const wrapper = document.getElementById("graph-loader-wrapper")
     if (!wrapper) return
 
-    // Single fade: wait for min display time, then fade everything together
-    setTimeout(() => {
-      wrapper.style.transition = "opacity 600ms ease-out"
-      wrapper.style.opacity = "0"
-      setTimeout(() => {
-        if (wrapper && wrapper.parentElement) wrapper.remove()
-        if (_instance === this) _instance = null
-      }, 620)
-    }, remaining)
+    const elapsed = Date.now() - this._mountedAt
+    const remaining = Math.max(0, MIN_DISPLAY_MS - elapsed)
+
+    wrapper.style.transition = "opacity 600ms ease-out"
+    wrapper.style.opacity = "0"
+
+    this._dismissTimer = setTimeout(() => {
+      if (wrapper && wrapper.parentElement) wrapper.remove()
+      if (_instance === this) _instance = null
+      this._dismissTimer = null
+    }, remaining + 20)
   },
 
   destroyed() {
     this._dismissed = true
+    if (this._dismissTimer) {
+      clearTimeout(this._dismissTimer)
+      this._dismissTimer = null
+    }
     if (this._fireTimer) {
       clearInterval(this._fireTimer)
       this._fireTimer = null
