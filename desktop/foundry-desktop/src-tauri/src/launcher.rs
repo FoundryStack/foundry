@@ -7,7 +7,7 @@ use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{Menu, MenuEvent, MenuItem, Submenu, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::{
@@ -51,24 +51,56 @@ struct RecentProject {
 }
 
 pub fn build_menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let app_menu = SubmenuBuilder::new(app, "App")
+        .about(None)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+
     let open_item = MenuItem::with_id(app, FILE_OPEN_ID, "Open...", true, None::<&str>)?;
-    let clone_item = MenuItem::with_id(app, FILE_CLONE_ID, "Clone Git Repository...", true, None::<&str>)?;
+    let clone_item = MenuItem::with_id(
+        app,
+        FILE_CLONE_ID,
+        "Clone Git Repository...",
+        true,
+        None::<&str>,
+    )?;
     let recent_items = build_recent_menu_items(app)?;
     let recent_refs = recent_items
         .iter()
         .map(|item| item as _)
         .collect::<Vec<_>>();
     let recent_submenu = Submenu::with_items(app, "Open Recent", true, &recent_refs)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let quit = PredefinedMenuItem::quit(app, None)?;
-    let file_menu = Submenu::with_items(
-        app,
-        "File",
-        true,
-        &[&open_item, &clone_item, &recent_submenu, &separator, &quit],
-    )?;
+    let file_menu = SubmenuBuilder::new(app, "File")
+        .item(&open_item)
+        .item(&clone_item)
+        .item(&recent_submenu)
+        .build()?;
 
-    Menu::with_items(app, &[&file_menu])
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+
+    let window_menu = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .close_window()
+        .build()?;
+
+    Menu::with_items(app, &[&app_menu, &file_menu, &edit_menu, &window_menu])
 }
 
 pub fn handle_menu_event<R: tauri::Runtime>(app: &AppHandle<R>, event: MenuEvent) {
@@ -157,15 +189,14 @@ async fn launch_and_navigate(app: AppHandle) -> Result<(), String> {
         command = command.env("PATH", new_path);
     }
 
-    let command = command
-        .args([
-            "studio",
-            "--project",
-            project_root_string.as_str(),
-            "--port",
-            "auto",
-            "--no-browser",
-        ]);
+    let command = command.args([
+        "studio",
+        "--project",
+        project_root_string.as_str(),
+        "--port",
+        "auto",
+        "--no-browser",
+    ]);
 
     let (mut rx, child) = command
         .spawn()
@@ -255,11 +286,7 @@ fn wait_for_health(app: &AppHandle) -> Result<String, String> {
 
         if last_status_update != Some(status_bucket) {
             last_status_update = Some(status_bucket);
-            emit_status(
-                app,
-                STATUS_EVENT,
-                "Foundry is starting and compiling...",
-            );
+            emit_status(app, STATUS_EVENT, "Foundry is starting and compiling...");
         }
 
         std::thread::sleep(HEALTH_POLL_INTERVAL);
