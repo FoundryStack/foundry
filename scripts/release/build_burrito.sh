@@ -239,6 +239,13 @@ main() {
     rm -f "${picosat_c}.bak"
   fi
 
+  # Patch picosat_elixir Makefile to remove unsupported -undefined suppress flag for macOS
+  local picosat_makefile="deps/picosat_elixir/c_src/Makefile"
+  if [[ -f "$picosat_makefile" ]]; then
+    sed -i.bak 's/-undefined suppress//' "$picosat_makefile"
+    rm -f "${picosat_makefile}.bak"
+  fi
+
   npm install --prefix apps/foundry_web/assets
   mix compile
   rm -rf _build/prod/rel
