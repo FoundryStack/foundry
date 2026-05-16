@@ -35,8 +35,10 @@ defmodule FoundryWeb.Layouts do
 
   def app(assigns) do
     ~H"""
-    {render_slot(@inner_block)}
-    <.flash_group flash={@flash} />
+    <div class={layout_shell_class()}>
+      {render_slot(@inner_block)}
+      <.flash_group flash={@flash} />
+    </div>
     """
   end
 
