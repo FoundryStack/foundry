@@ -225,6 +225,9 @@ main() {
   export MIX_ENV=prod
   export PHX_SERVER=true
   export FOUNDRY_STANDALONE=1
+  # Force linker flags to avoid unsupported options from picosat_elixir
+  export LDFLAGS="${LDFLAGS:-} -Wl,-undefined,dynamic_lookup"
+  export CFLAGS="${CFLAGS:--O2}"
 
   # Verify runtime config will provide a valid SECRET_KEY_BASE
   # Plug cookie store requires at least 64 bytes
