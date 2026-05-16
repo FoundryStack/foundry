@@ -231,6 +231,14 @@ main() {
   verify_secret_key_base_config
 
   mix deps.get
+
+  # Patch picosat_elixir to fix incorrect sys/unistd.h include on Linux
+  local picosat_c="deps/picosat_elixir/c_src/picosat.c"
+  if [[ -f "$picosat_c" ]]; then
+    sed -i.bak 's/#include <sys\/unistd\.h>/#include <unistd.h>/' "$picosat_c"
+    rm -f "${picosat_c}.bak"
+  fi
+
   npm install --prefix apps/foundry_web/assets
   mix compile
   rm -rf _build/prod/rel
