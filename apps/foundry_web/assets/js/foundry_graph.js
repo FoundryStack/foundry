@@ -61,7 +61,6 @@ export function mountFoundryGraph(container, contextJson) {
   }
 
   graph._runLayout()
-  graph.onReady()
 
   return graph
 }

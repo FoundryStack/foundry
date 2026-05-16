@@ -26,6 +26,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
     llm_provider = Application.get_env(:foundry, :llm_provider)
     codex = Application.get_env(:foundry, :codex)
     project_manager_state = :sys.get_state(Foundry.ProjectManager)
+    loader_delay = Application.get_env(:foundry_web, :system_map_loader_delay_ms)
 
     project_root =
       Application.get_env(:foundry_web, :current_project_root) ||
@@ -37,6 +38,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
     chat_live_hooks = Application.get_env(:foundry_web, :chat_live_hooks)
     system_map_live_hooks = Application.get_env(:foundry_web, :system_map_live_hooks)
+    Application.put_env(:foundry_web, :system_map_loader_delay_ms, 0)
 
     on_exit(fn ->
       restore_env(:foundry, :llm_provider, llm_provider)
@@ -44,6 +46,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       restore_env(:foundry_web, :igaming_project_root, project_root)
       restore_env(:foundry_web, :chat_live_hooks, chat_live_hooks)
       restore_env(:foundry_web, :system_map_live_hooks, system_map_live_hooks)
+      restore_env(:foundry_web, :system_map_loader_delay_ms, loader_delay)
       :sys.replace_state(Foundry.ProjectManager, fn _state -> project_manager_state end)
     end)
 
@@ -84,6 +87,36 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
       assert socket.assigns.loading
       assert socket.assigns.loading_state == Foundry.ProjectManager.get_status().state
+    end
+
+    test "direct project mount seeds the unified loader state", %{
+      project_context: project_context
+    } do
+      previous_project_root = Application.get_env(:foundry_web, :current_project_root)
+      previous_loader_delay = Application.get_env(:foundry_web, :system_map_loader_delay_ms)
+      project_root = "/tmp/foundry-active"
+
+      Application.put_env(:foundry_web, :current_project_root, project_root)
+      Application.put_env(:foundry_web, :system_map_loader_delay_ms, 1_500)
+
+      on_exit(fn ->
+        restore_env(:foundry_web, :current_project_root, previous_project_root)
+        restore_env(:foundry_web, :system_map_loader_delay_ms, previous_loader_delay)
+      end)
+
+      Application.put_env(:foundry_web, :system_map_live_hooks,
+        build_context: fn _project_root -> {:ok, project_context} end
+      )
+
+      socket = %Phoenix.LiveView.Socket{endpoint: FoundryWeb.Endpoint, router: FoundryWeb.Router}
+
+      assert {:ok, socket} = FoundryWeb.SystemMapLive.mount(%{}, %{}, socket)
+
+      assert socket.assigns.loading
+      assert socket.assigns.loading_state == :building
+      assert socket.assigns.loading_message == "Loading project…"
+      assert socket.assigns.loading_error == nil
+      assert socket.assigns.loading_logs =~ "[system-map] Building project context"
     end
 
     @scenario category: :invariant

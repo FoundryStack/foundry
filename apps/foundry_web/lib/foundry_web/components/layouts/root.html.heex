@@ -11,6 +11,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap" />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <script src="https://cdn.jsdelivr.net/npm/webgl-fluid@0.3.0/dist/webgl-fluid.umd.js"></script>
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
     <script>
@@ -37,7 +38,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body class="foundry-scroll-shell">
     {@inner_content}
   </body>
 </html>
