@@ -32,7 +32,21 @@ jobs:
           version: "0.15.2"
       - run: ./scripts/release/build_burrito.sh ${{ matrix.target }}
       - run: ./scripts/release/package_burrito_artifacts.sh ${GITHUB_REF_NAME#v}
-      - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      - uses: actions/upload-artifact@v4
         with:
-          files: dist/*
+          name: artifacts-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: warn
+
+  upload:
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+          pattern: artifacts-*
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: all-artifacts/**/*
