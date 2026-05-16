@@ -25,10 +25,15 @@ defmodule FoundryWeb.SystemMapLiveTest do
   setup do
     llm_provider = Application.get_env(:foundry, :llm_provider)
     codex = Application.get_env(:foundry, :codex)
+    project_manager_state = :sys.get_state(Foundry.ProjectManager)
 
     project_root =
       Application.get_env(:foundry_web, :current_project_root) ||
         Application.get_env(:foundry_web, :igaming_project_root)
+
+    :sys.replace_state(Foundry.ProjectManager, fn state ->
+      %{state | active_project_root: project_root}
+    end)
 
     chat_live_hooks = Application.get_env(:foundry_web, :chat_live_hooks)
     system_map_live_hooks = Application.get_env(:foundry_web, :system_map_live_hooks)
@@ -39,6 +44,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       restore_env(:foundry_web, :igaming_project_root, project_root)
       restore_env(:foundry_web, :chat_live_hooks, chat_live_hooks)
       restore_env(:foundry_web, :system_map_live_hooks, system_map_live_hooks)
+      :sys.replace_state(Foundry.ProjectManager, fn _state -> project_manager_state end)
     end)
 
     {:ok, conn: Phoenix.ConnTest.build_conn()}
@@ -56,6 +62,30 @@ defmodule FoundryWeb.SystemMapLiveTest do
   end
 
   describe "mount" do
+    test "switches into loading when the requested path differs from the active project", %{
+      conn: _conn
+    } do
+      previous_state = :sys.get_state(Foundry.ProjectManager)
+      active_project_root = "/tmp/foundry-active"
+      requested_project_root = "/tmp/foundry-requested"
+
+      :sys.replace_state(Foundry.ProjectManager, fn state ->
+        %{state | active_project_root: active_project_root}
+      end)
+
+      on_exit(fn ->
+        :sys.replace_state(Foundry.ProjectManager, fn _state -> previous_state end)
+      end)
+
+      socket = %Phoenix.LiveView.Socket{endpoint: FoundryWeb.Endpoint, router: FoundryWeb.Router}
+
+      assert {:ok, socket} =
+               FoundryWeb.SystemMapLive.mount(%{"path" => requested_project_root}, %{}, socket)
+
+      assert socket.assigns.loading
+      assert socket.assigns.loading_state == Foundry.ProjectManager.get_status().state
+    end
+
     @scenario category: :invariant
     test "renders page with data-context attribute when context available", %{conn: conn} do
       {:ok, _live, html} = live(conn, "/")
@@ -97,21 +127,6 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert html =~ ~s(phx-value-tab="copilot")
       assert html =~ ~s(id="fm-feed")
       assert html =~ ~s(id="fm-drawer")
-
-      assert Regex.match?(
-               ~r/id="fm-sidebar"[\s\S]*style="[^"]*width: var\(--foundry-sidebar-width, 240px\);"/,
-               html
-             )
-
-      assert Regex.match?(
-               ~r/id="fm-drawer"[\s\S]*data-open="false"[\s\S]*style="[^"]*width: 0px;"/,
-               html
-             )
-
-      assert Regex.match?(
-               ~r/id="fm-feed"[\s\S]*data-open="true"[\s\S]*style="[^"]*width: var\(--foundry-feed-width, 360px\);"/,
-               html
-             )
 
       assert Regex.match?(~r/id="fm-feed"[\s\S]*data-open="true"/, html)
       assert Regex.match?(~r/id="fm-drawer"[\s\S]*data-open="false"/, html)

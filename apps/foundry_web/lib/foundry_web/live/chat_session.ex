@@ -71,6 +71,12 @@ defmodule FoundryWeb.ChatSession do
         Map.get(session, "selected_model_id")
         |> resolve_selected_model(model_catalog)
 
+    project_root =
+      case Map.fetch(socket.assigns, :project_root) do
+        {:ok, existing_project_root} -> existing_project_root
+        :error -> ChatConfig.project_root()
+      end
+
     socket =
       socket
       |> Core.mount(session)
@@ -81,7 +87,7 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:active_request_ref, nil)
       |> assign(:active_request_task, nil)
       |> assign(:pending_messages, [])
-      |> assign(:project_root, ChatConfig.project_root())
+      |> assign(:project_root, project_root)
       |> assign(:show_system_context, false)
       |> assign(:system_context_prompt, nil)
       |> assign(:system_context_error, nil)

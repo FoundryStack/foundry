@@ -1,40 +1,71 @@
 defmodule FoundryWeb.SystemMapLive do
   use FoundryWeb, :live_view
   alias FoundryWeb.ChatSession
-  alias FoundryWeb.ChatConfig
   alias Foundry.Context.ScenarioCache
   alias Foundry.Context.ProjectContext
   alias ExTracer.Report
 
   @impl true
   def mount(params, session, socket) do
-    case Foundry.ProjectManager.active_project_root() do
-      nil ->
-        if has_project_action_params?(params) do
-          mount_loading(params, session, socket)
-        else
-          {:ok, push_navigate(socket, to: "/project-manager")}
-        end
+    active_project_root = Foundry.ProjectManager.active_project_root()
+    configured_project_root = configured_project_root()
+    current_project_root = active_project_root || configured_project_root
 
-      _ ->
-        mount_with_project(params, socket, session)
+    cond do
+      should_mount_loading?(params, current_project_root) ->
+        mount_loading(params, session, socket)
+
+      is_nil(current_project_root) ->
+        {:ok, push_navigate(socket, to: "/project-manager")}
+
+      true ->
+        mount_with_project(params, socket, session, current_project_root)
     end
   end
 
-  defp has_project_action_params?(%{"repo_url" => u, "parent_dir" => d}) when u != "" and d != "", do: true
-  defp has_project_action_params?(%{"path" => p, "new_project" => "1", "project_name" => n}) when p != "" and n != "", do: true
-  defp has_project_action_params?(%{"path" => p}) when p != "", do: true
-  defp has_project_action_params?(_), do: false
+  defp should_mount_loading?(%{"repo_url" => u, "parent_dir" => d}, _active_project_root)
+       when u != "" and d != "",
+       do: true
 
-  defp start_project_action(%{"repo_url" => url, "parent_dir" => dir}) when url != "" and dir != "" do
+  defp should_mount_loading?(
+         %{"path" => p, "new_project" => "1", "project_name" => n},
+         _active_project_root
+       )
+       when p != "" and n != "", do: true
+
+  defp should_mount_loading?(%{"path" => path}, nil) when path != "", do: true
+
+  defp should_mount_loading?(%{"path" => path}, active_project_root)
+       when path != "" and is_binary(active_project_root) do
+    normalize_project_root(path) != normalize_project_root(active_project_root)
+  end
+
+  defp should_mount_loading?(_params, _active_project_root), do: false
+
+  defp normalize_project_root(path) when is_binary(path) do
+    path
+    |> String.trim()
+    |> Path.expand()
+  end
+
+  defp configured_project_root do
+    Application.get_env(:foundry_web, :current_project_root)
+  end
+
+  defp start_project_action(%{"repo_url" => url, "parent_dir" => dir})
+       when url != "" and dir != "" do
     Foundry.ProjectManager.clone_project(url, dir)
   end
-  defp start_project_action(%{"path" => path, "new_project" => "1", "project_name" => name}) when path != "" and name != "" do
+
+  defp start_project_action(%{"path" => path, "new_project" => "1", "project_name" => name})
+       when path != "" and name != "" do
     Foundry.ProjectManager.new_project(path, name)
   end
+
   defp start_project_action(%{"path" => path}) when path != "" do
     Foundry.ProjectManager.open_project(path)
   end
+
   defp start_project_action(_params), do: :ok
 
   defp mount_loading(params, session, socket) do
@@ -45,6 +76,11 @@ defmodule FoundryWeb.SystemMapLive do
 
     status = Foundry.ProjectManager.get_status()
 
+    {:ok, socket} =
+      socket
+      |> assign_graph_defaults()
+      |> ChatSession.mount(session)
+
     socket =
       socket
       |> assign(:loading, true)
@@ -53,10 +89,8 @@ defmodule FoundryWeb.SystemMapLive do
       |> assign(:loading_message, status.message || "Preparing project…")
       |> assign(:loading_logs, status.logs || "")
       |> assign(:loading_error, status.last_error)
-      |> assign_graph_defaults()
 
-    {:ok, socket_with_chat} = ChatSession.mount(socket, session)
-    {:ok, socket_with_chat}
+    {:ok, socket}
   end
 
   defp assign_graph_defaults(socket) do
@@ -64,119 +98,155 @@ defmodule FoundryWeb.SystemMapLive do
     existing_logs = socket.assigns[:graph_loader_logs] || ""
 
     assign(socket,
-      context_json: nil, ui_nodes: [], nodes_by_domain: %{}, all_nodes: [],
-      all_edges: [], all_scenarios: [], scenarios: [], scenarios_by_category: %{},
-      coverage: %{}, performance: %{}, scenario_warnings: [], slow_test_durations: [],
-      node_index: %{}, uncovered_node_ids: [], domain_coverage: %{},
-      selected_scenario_id: nil, active_scenario_step_id: nil,
-      selected_node_scenario_count: nil, coverage_filtered_node: nil,
-      gap_count: 0, migration_count: 0, project_name: nil, sidebar_tab: :system_map,
-      lens: :default, system_map_view: :graph, drawer_open: false, drawer_tab: :details,
-      feed_open: true, feed_tab: :copilot, filter_query: "", selected_id: nil,
-      selected_node: nil, project_root: nil, preview_base_url: nil, loading: false,
+      context_json: nil,
+      ui_nodes: [],
+      nodes_by_domain: %{},
+      all_nodes: [],
+      all_edges: [],
+      all_scenarios: [],
+      scenarios: [],
+      scenarios_by_category: %{},
+      coverage: %{},
+      performance: %{},
+      scenario_warnings: [],
+      slow_test_durations: [],
+      node_index: %{},
+      uncovered_node_ids: [],
+      domain_coverage: %{},
+      selected_scenario_id: nil,
+      active_scenario_step_id: nil,
+      selected_node_scenario_count: nil,
+      coverage_filtered_node: nil,
+      gap_count: 0,
+      migration_count: 0,
+      project_name: nil,
+      loading_state: nil,
+      loading_step: nil,
+      loading_message: nil,
+      loading_logs: "",
+      loading_error: nil,
+      sidebar_tab: :system_map,
+      lens: :default,
+      system_map_view: :graph,
+      drawer_open: false,
+      drawer_tab: :details,
+      feed_open: true,
+      feed_tab: :copilot,
+      filter_query: "",
+      selected_id: nil,
+      selected_node: nil,
+      project_root: nil,
+      preview_base_url: nil,
+      loading: false,
       graph_loader_logs: existing_logs
     )
   end
 
-  defp mount_with_project(params, socket, session) do
-    if connected?(socket), do: ScenarioCache.subscribe()
+  defp mount_with_project(params, socket, session, project_root) do
+    if is_nil(project_root) do
+      {:ok, push_navigate(socket, to: "/project-manager")}
+    else
+      if connected?(socket), do: ScenarioCache.subscribe()
 
-    hooks = Application.get_env(:foundry_web, :system_map_live_hooks, [])
-    build_context = Keyword.get(hooks, :build_context, &ProjectContext.build/1)
+      hooks = Application.get_env(:foundry_web, :system_map_live_hooks, [])
+      build_context = Keyword.get(hooks, :build_context, &ProjectContext.build/1)
 
-    project_root = ChatConfig.project_root()
+      # Ensure igaming ebin path is in the code path so modules can be loaded
+      ebin_path = Path.join([project_root, "_build", "dev", "lib", "igaming_ref", "ebin"])
 
-    # Ensure igaming ebin path is in the code path so modules can be loaded
-    ebin_path = Path.join([project_root, "_build", "dev", "lib", "igaming_ref", "ebin"])
+      if File.dir?(ebin_path) do
+        Code.append_path(ebin_path)
+      end
 
-    if File.dir?(ebin_path) do
-      Code.append_path(ebin_path)
-    end
+      project_name = Path.basename(project_root)
+      preview_base_url = Foundry.PreviewServer.preview_base_url(project_root)
 
-    project_name = Path.basename(project_root)
-    preview_base_url = Foundry.PreviewServer.preview_base_url(project_root)
+      case build_context.(project_root) do
+        {:ok, context} ->
+          nodes = context.nodes || []
+          ui_nodes = Enum.map(nodes, &serialize_node/1)
+          ui_edges = Enum.map(context.edges || [], &serialize_edge/1)
+          context_json = Jason.encode!(%{nodes: ui_nodes, edges: ui_edges})
+          report = ScenarioCache.get()
+          coverage = if(report, do: report.coverage, else: %{})
+          performance = if(report, do: report.performance, else: %{})
+          scenario_warnings = if(report, do: report.warnings || [], else: [])
+          all_scenarios = scenarios_for_context(context, report)
+          node_index = scenario_node_index(report, all_scenarios)
+          filtered_scenarios = all_scenarios
+          scenarios_by_category = grouped_scenarios(filtered_scenarios)
+          uncovered_node_ids = coverage_uncovered_node_ids(coverage)
 
-    case build_context.(project_root) do
-      {:ok, context} ->
-        nodes = context.nodes || []
-        ui_nodes = Enum.map(nodes, &serialize_node/1)
-        ui_edges = Enum.map(context.edges || [], &serialize_edge/1)
-        context_json = Jason.encode!(%{nodes: ui_nodes, edges: ui_edges})
-        report = ScenarioCache.get()
-        coverage = if(report, do: report.coverage, else: %{})
-        performance = if(report, do: report.performance, else: %{})
-        scenario_warnings = if(report, do: report.warnings || [], else: [])
-        all_scenarios = scenarios_for_context(context, report)
-        node_index = scenario_node_index(report, all_scenarios)
-        filtered_scenarios = all_scenarios
-        scenarios_by_category = grouped_scenarios(filtered_scenarios)
-        uncovered_node_ids = coverage_uncovered_node_ids(coverage)
+          nodes_by_domain = build_nodes_by_domain(ui_nodes)
 
-        nodes_by_domain = build_nodes_by_domain(ui_nodes)
+          # Count compliance coverage gaps: declared requirements without linked E2E coverage
+          gap_count =
+            Enum.count(nodes, fn n ->
+              (n.compliance || []) |> Enum.any?(fn _ -> true end) and
+                not n.test_coverage.e2e_tests
+            end)
 
-        # Count compliance coverage gaps: declared requirements without linked E2E coverage
-        gap_count =
-          Enum.count(nodes, fn n ->
-            (n.compliance || []) |> Enum.any?(fn _ -> true end) and
-              not n.test_coverage.e2e_tests
-          end)
+          # Count migrations
+          migration_count = Enum.count(nodes, fn n -> n.pending_migrations end)
 
-        # Count migrations
-        migration_count = Enum.count(nodes, fn n -> n.pending_migrations end)
+          # Calculate domain coverage
+          domain_coverage = calculate_domain_coverage(nodes, all_scenarios)
 
-        # Calculate domain coverage
-        domain_coverage = calculate_domain_coverage(nodes, all_scenarios)
-
-        {:ok, socket} =
-          socket
-          |> assign_graph_defaults()
-          |> assign(
-            context_json: context_json,
-            ui_nodes: ui_nodes,
-            nodes_by_domain: nodes_by_domain,
-            all_nodes: nodes,
-            all_edges: context.edges || [],
-            all_scenarios: all_scenarios,
-            scenarios: filtered_scenarios,
-            scenarios_by_category: scenarios_by_category,
-            coverage: coverage,
-            performance: performance,
-            scenario_warnings: scenario_warnings,
-            slow_test_durations: slow_test_durations(performance),
-            node_index: node_index,
-            uncovered_node_ids: uncovered_node_ids,
-            domain_coverage: domain_coverage,
-            gap_count: gap_count,
-            migration_count: migration_count,
-            project_name: project_name,
-            project_root: project_root,
-            preview_base_url: preview_base_url,
-            loading: false
-          )
-          |> ChatSession.mount(session)
-
-        socket =
-          if Map.get(params, "onboarded") == "1" and connected?(socket) do
-            push_event(socket, "copilot:seed_message", %{message: onboarding_seed_message()})
-          else
+          {:ok, socket} =
             socket
-          end
+            |> assign_graph_defaults()
+            |> ChatSession.mount(session)
 
-        {:ok, socket}
+          socket =
+            assign(socket,
+              context_json: context_json,
+              ui_nodes: ui_nodes,
+              nodes_by_domain: nodes_by_domain,
+              all_nodes: nodes,
+              all_edges: context.edges || [],
+              all_scenarios: all_scenarios,
+              scenarios: filtered_scenarios,
+              scenarios_by_category: scenarios_by_category,
+              coverage: coverage,
+              performance: performance,
+              scenario_warnings: scenario_warnings,
+              slow_test_durations: slow_test_durations(performance),
+              node_index: node_index,
+              uncovered_node_ids: uncovered_node_ids,
+              domain_coverage: domain_coverage,
+              gap_count: gap_count,
+              migration_count: migration_count,
+              project_name: project_name,
+              project_root: project_root,
+              preview_base_url: preview_base_url,
+              loading: false
+            )
 
-      {:error, _reason} ->
-        {:ok, socket} =
-          socket
-          |> assign_graph_defaults()
-          |> assign(
-            project_name: project_name,
-            project_root: project_root,
-            preview_base_url: preview_base_url,
-            loading: false
-          )
-          |> ChatSession.mount(session)
+          socket =
+            if Map.get(params, "onboarded") == "1" and connected?(socket) do
+              push_event(socket, "copilot:seed_message", %{message: onboarding_seed_message()})
+            else
+              socket
+            end
 
-        {:ok, socket}
+          {:ok, socket}
+
+        {:error, _reason} ->
+          {:ok, socket} =
+            socket
+            |> assign_graph_defaults()
+            |> ChatSession.mount(session)
+
+          socket =
+            assign(socket,
+              project_name: project_name,
+              project_root: project_root,
+              preview_base_url: preview_base_url,
+              loading: false
+            )
+
+          {:ok, socket}
+      end
     end
   end
 
@@ -577,11 +647,15 @@ defmodule FoundryWeb.SystemMapLive do
       [status.logs, socket.assigns[:loading_logs]]
       |> Enum.find("", &(is_binary(&1) and byte_size(&1) > 0))
 
-    case mount_with_project(%{}, socket, %{}) do
+    project_root = Foundry.ProjectManager.active_project_root() || configured_project_root()
+
+    case mount_with_project(%{}, socket, %{}, project_root) do
       {:ok, new_socket} ->
         {:noreply, assign(new_socket, loading: false, graph_loader_logs: final_logs)}
+
       _ ->
-        {:noreply, assign(socket, loading_state: :failed, loading_error: "Failed to build project context.")}
+        {:noreply,
+         assign(socket, loading_state: :failed, loading_error: "Failed to build project context.")}
     end
   end
 
