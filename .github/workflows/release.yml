@@ -47,6 +47,12 @@ jobs:
         with:
           path: all-artifacts
           pattern: artifacts-*
+      - run: |
+          mkdir -p release-files
+          find all-artifacts -type f -name "*.tar.gz" -o -name "SHA256SUMS" | while read file; do
+            cp "$file" release-files/
+          done
+          ls -la release-files/
       - uses: softprops/action-gh-release@v2
         with:
-          files: all-artifacts/**/*
+          files: release-files/*
