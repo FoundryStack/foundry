@@ -236,23 +236,30 @@ main() {
   mix deps.get
 
   # Patch picosat_elixir to fix incorrect sys/unistd.h include on Linux
-  local picosat_c="deps/picosat_elixir/c_src/picosat.c"
-  if [[ -f "$picosat_c" ]]; then
-    sed -i.bak 's/#include <sys\/unistd\.h>/#include <unistd.h>/' "$picosat_c"
-    rm -f "${picosat_c}.bak"
-  fi
+  # This needs to be done both before initial compile and before release for cross-compilation
+  apply_picosat_patches() {
+    local picosat_c="deps/picosat_elixir/c_src/picosat.c"
+    if [[ -f "$picosat_c" ]]; then
+      sed -i.bak 's/#include <sys\/unistd\.h>/#include <unistd.h>/' "$picosat_c"
+      rm -f "${picosat_c}.bak"
+    fi
 
-  # Patch picosat_elixir Makefile to remove unsupported -undefined suppress flag for macOS
-  local picosat_makefile="deps/picosat_elixir/c_src/Makefile"
-  if [[ -f "$picosat_makefile" ]]; then
-    sed -i.bak 's/-undefined suppress//' "$picosat_makefile"
-    rm -f "${picosat_makefile}.bak"
-  fi
+    local picosat_makefile="deps/picosat_elixir/c_src/Makefile"
+    if [[ -f "$picosat_makefile" ]]; then
+      sed -i.bak 's/-undefined suppress//' "$picosat_makefile"
+      rm -f "${picosat_makefile}.bak"
+    fi
+  }
+
+  apply_picosat_patches
 
   npm install --prefix apps/foundry_web/assets
   mix compile
   rm -rf _build/prod/rel
   mix cmd --app foundry_web mix assets.deploy
+
+  # Apply patches again before release in case they got reset
+  apply_picosat_patches
 
   if [[ -n "$TARGET" ]]; then
     BURRITO_TARGET="$TARGET" mix release --overwrite foundry
