@@ -231,6 +231,7 @@ main() {
   verify_secret_key_base_config
 
   mix deps.get
+  npm install --prefix apps/foundry_web/assets
   mix compile
   rm -rf _build/prod/rel
   mix cmd --app foundry_web mix assets.deploy
