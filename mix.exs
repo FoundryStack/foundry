@@ -4,7 +4,7 @@ defmodule Foundry.MixProject do
   def project do
     [
       app: :foundry,
-      version: "0.1.1",
+      version: "0.2.0",
       build_path: "../../_build",
       config_path: "config/config.exs",
       deps_path: "../../deps",
@@ -59,7 +59,7 @@ defmodule Foundry.MixProject do
       {:ash_archival, "~> 2.0"},
       {:ash_diagram, "~> 0.1"},
       {:ash_json_api, "~> 1.6"},
-      {:picosat_elixir, "~> 0.2"},
+      {:simple_sat, ">= 0.1.1 and < 1.0.0-0"},
       {:dns_cluster, "~> 0.2.0"},
       {:phoenix_pubsub, "~> 2.1"},
       {:jason, "~> 1.4"},
@@ -70,7 +70,8 @@ defmodule Foundry.MixProject do
       {:ex_tracer, "~> 0.1"},
       {:scenario_tracer, "~> 0.1"},
       {:spark_meta, "~> 0.1"},
-      {:spark_lint, "~> 0.1"}
+      {:spark_lint, "~> 0.1"},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
       # {:scenario_tracer, path: "../../packages/scenario_tracer"},
       # {:spark_meta, path: "../../packages/spark_meta"},
       # {:spark_lint, path: "../../packages/spark_lint"}
