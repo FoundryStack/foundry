@@ -139,7 +139,8 @@ defmodule FoundryWeb.SystemMapLive do
       preview_base_url: nil,
       loading: true,
       loading_visible: true,
-      graph_loader_logs: existing_logs
+      graph_loader_logs: existing_logs,
+      chat_loading: false
     )
   end
 
