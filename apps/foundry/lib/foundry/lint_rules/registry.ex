@@ -16,7 +16,9 @@ defmodule Foundry.LintRules.Registry do
     # Phase C — new rules
     Foundry.LintRules.ObanTriggerRule,
     Foundry.LintRules.GraphqlMutationRule,
-    Foundry.LintRules.AshAiStepRule
+    Foundry.LintRules.AshAiStepRule,
+    # ADR-033 — LiveView state coverage
+    Foundry.LintRules.LiveViewStateCoverageRule
   ]
 
   def module_rules, do: @module_rules

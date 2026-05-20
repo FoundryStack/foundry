@@ -503,6 +503,15 @@ defmodule FoundryWeb.ChatSession do
     _ -> {:noreply, socket}
   end
 
+  # D<N> structured option selection — bypasses re-classification, sends option label directly
+  def handle_event(
+        "copilot_option_select",
+        %{"label" => letter, "question" => _question, "text" => option_text},
+        socket
+      ) do
+    handle_event("send_message", %{"message" => "#{letter}) #{option_text}"}, socket)
+  end
+
   def handle_event(_event, _params, _socket), do: :unhandled
 
   # --- Streaming Events ---

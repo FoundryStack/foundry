@@ -875,6 +875,10 @@ defmodule FoundryWeb.ChatComponents do
             mdex_opts={markdown_options()}
           />
         </div>
+        <.copilot_options
+          :if={!@is_user and !@streaming}
+          content={@content}
+        />
         <%= if !@is_user and (@total_tokens || @read_files != [] || @written_files != [] || @tools != [] || @partial) do %>
           <div class="mt-3 flex flex-wrap gap-2">
             <span
@@ -926,6 +930,57 @@ defmodule FoundryWeb.ChatComponents do
     </div>
     """
   end
+
+  attr :content, :string, required: true
+
+  defp copilot_options(assigns) do
+    questions = parse_dn_options(assigns.content)
+    assigns = assign(assigns, :questions, questions)
+
+    ~H"""
+    <%= if @questions != [] do %>
+      <div class="mt-4 space-y-4">
+        <%= for question <- @questions do %>
+          <div class="rounded-box border border-primary/20 bg-primary/5 px-4 py-3">
+            <p class="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
+              {question.label}
+            </p>
+            <div class="mt-3 flex flex-col gap-2">
+              <%= for option <- question.options do %>
+                <button
+                  type="button"
+                  phx-click="copilot_option_select"
+                  phx-value-label={option.letter}
+                  phx-value-question={question.label}
+                  phx-value-text={option.text}
+                  class="rounded-box border border-base-300/60 bg-base-100/60 px-3 py-2.5 text-left text-sm text-base-content transition-colors hover:border-primary/50 hover:bg-primary/8"
+                >
+                  <span class="font-semibold text-primary">{option.letter})</span>
+                  {" "}{option.text}
+                </button>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+    """
+  end
+
+  defp parse_dn_options(content) when is_binary(content) do
+    ~r/D\d+\s*[—–-]\s*([^\n]+)\n(?:.*\n)*?(?=(?:A\))|(?:A\s+—))((?:(?:[A-C]\)|[A-C]\s+—)[^\n]*\n?)+)/
+    |> Regex.scan(content, capture: :all)
+    |> Enum.map(fn [_full, title, options_block] ->
+      options =
+        Regex.scan(~r/([A-C])\)\s*([^\n]+)/, options_block, capture: :all)
+        |> Enum.map(fn [_full, letter, text] -> %{letter: letter, text: String.trim(text)} end)
+
+      %{label: String.trim(title), options: options}
+    end)
+    |> Enum.reject(fn q -> q.options == [] end)
+  end
+
+  defp parse_dn_options(_), do: []
 
   attr :proposal, :map, required: true
 

@@ -58,7 +58,7 @@ Never violate. These are constraints, not guidelines.
 
 **INV-004** Infrastructure is proposal-only. Kubernetes, Postgres config, GitHub Actions — structured proposals rendered as diffs. No `Op.ApplyInfrastructure`.
 
-**INV-005** One clarifying question maximum at generation time — grounded in spec-kit quality. If the spec-kit is complete, context resolves ambiguity; frequent questions signal an incomplete spec-kit. Present two interpretations and ask the user to choose. Never generate on unresolved ambiguity. Binary-choice buttons per ADR-013. Does **not** apply to pre-spec requirements interviews (INV-022).
+**INV-005** One clarifying question maximum at generation time — grounded in spec-kit quality. If the spec-kit is complete, context resolves ambiguity; frequent questions signal an incomplete spec-kit. When a clarifying question is required, use the D<N> structured format (see §Clarifying Question Format below). Never generate on unresolved ambiguity. Does **not** apply to pre-spec requirements interviews (INV-022).
 
 **INV-006** Stack versions always in system prompt — injected by `Foundry.Copilot.ContextBuilder` before the agent loop. When in doubt about DSL: `mix foundry.exdoc <Module> --function <fn>`. About a pattern: `mix foundry.pattern.find <type>`. About an operation: `cat .foundry/usage_rules/foundry_operations.md`. Never generate from training memory when the API surface is retrievable.
 
@@ -92,9 +92,86 @@ Never violate. These are constraints, not guidelines.
 
 **INV-021** Every substantive claim in a copilot proposal annotation (review panel Impact tab) must carry an epistemic marker: `[VERIFIED]`, `[INFERRED]`, or `[ASSUMPTION]`. An `[ASSUMPTION]` on a `:compliance`-class claim blocks the Approve button until explicitly dismissed by the Compliance officer.
 
-**INV-022** Pre-spec requirements interviews run until all design branches are resolved — no fixed turn limit. Questions are batched (2–4 per round) with structured answer options plus free-text fallback. When no branches remain unresolved, generate the spec. Remaining uncertainties become `[ASSUMPTION]` markers with explicit risk notes.
+**INV-022** Pre-spec requirements interviews run until all design branches are resolved — no fixed turn limit. Questions are batched (2–4 per round) using the D<N> format (same as INV-005). First round always asks the domain-specific forcing questions below before any other questions. When no branches remain unresolved, generate the spec. Remaining uncertainties become `[ASSUMPTION]` markers with explicit risk notes.
 
 **INV-023** Tests define correctness — implementation satisfies tests, never the reverse. Test skeletons must be committed on the proposal branch before any implementation code. The copilot may never: modify assertion values to make tests pass, remove tests to reduce failure count, or generate trivially-passing tests. After implementation: max 3 self-corrections at compile level, max 1 at assertion logic level (fix implementation only). If still failing: surface `APPLY_FAILED`; do not weaken tests.
+
+---
+
+## Clarifying Question Format
+
+Every clarifying question (INV-005) and requirements interview question (INV-022) uses this exact structure. No exceptions.
+
+```
+D<N> — <one-line question title>
+Context: <one sentence grounding the question to the specific request and project>
+At stake: <what breaks or becomes harder to reverse if the wrong option is chosen>
+Recommendation: <option letter> — <one-line reason>
+
+A) <Option label>
+   Pro: <≥35 chars — concrete benefit>
+   Con: <≥35 chars — concrete tradeoff>
+
+B) <Option label>
+   Pro: <≥35 chars — concrete benefit>
+   Con: <≥35 chars — concrete tradeoff>
+
+Or describe what you have in mind:
+[________________________________________________]
+```
+
+**Rules:**
+- D-numbering starts at D1 each session, increments per question
+- Always include a Recommendation
+- Maximum 3 options (A/B/C) — if you have more, scope down
+- Never embed the question inside a prose paragraph
+- Free-text input always available below options (never hidden)
+- Maximum two questions across all paths in one turn
+
+---
+
+## INV-022 First-Round Forcing Questions
+
+Always ask these in round 1 for any `:behavioral` or `:compliance` change request. Batch as many as apply (max 4 per round). Skip if already answered in the request or spec-kit.
+
+**Actor & trigger:**
+D? — Who initiates this action?  
+Context: [action name] in [domain]  
+Options must cover: Player / Operator / System (scheduled) / External provider / Admin
+
+**Pre-condition state:**
+D? — What must be true before this action can run?  
+Forces: Which resource is checked? What status/balance/flag gates it?
+
+**Post-condition guarantee:**
+D? — What must be guaranteed after this action completes?  
+Forces: Ledger balance? Audit record? Notification sent? State machine transition?
+
+**Failure path:**
+D? — What happens if this action fails partway through?  
+Forces: Compensate (Reactor)? Retry? Alert operator? Hard block?
+
+**Domain-specific additions (inject when manifest.domain_type matches):**
+
+**:igaming**
+- "Does this action affect player balance, wagering requirement, or withdrawal eligibility?"
+- "Is this action subject to responsible gambling limits (daily/weekly/monthly)?"
+- "Must this action be reversible by a compliance officer within 24h?"
+
+**:fintech**
+- "Does this action touch a ledger entry, transfer, or settlement record?"
+- "Is this action subject to AML/fraud screening before or after execution?"
+- "Must this action produce a regulatory report entry?"
+
+**:healthcare**
+- "Does this action access, modify, or create PHI?"
+- "Is consent verified before this action runs?"
+- "Is this action subject to HIPAA minimum-necessary access controls?"
+
+**:legal / :insurance**
+- "Does this action affect a policy, claim, or coverage record?"
+- "Is this action subject to jurisdiction-specific regulatory rules?"
+- "Must this action produce a legally admissible audit record?"
 
 ---
 
@@ -188,7 +265,43 @@ Shell discovery is only warranted for **exact source text** not present in injec
       :behavioral or :compliance  → ADR draft required (first file on branch)
       :structural with new concept → ADR draft offered, not required
       :structural modification     → no spec-kit step
-9.  Construct ordered session plan:
+9.  Multi-review pipeline — for :behavioral/:compliance only; :structural skips to 9c:
+
+    9a. Scope assessment (present before plan construction):
+        Present three scope tiers as a D<N> structured question:
+        MINIMAL  — Smallest working version. What must exist, nothing extra.
+        STANDARD — Production-ready for domain. Governance hooks + standard coverage.
+        FULL     — Domain-compliant. All invariants, all edge cases, all regulatory paths.
+        Recommendation: STANDARD unless spec-kit explicitly constrains scope.
+        Human picks scope. Plan is constructed from the confirmed scope tier only.
+
+    9b. Phase A — Business fit:
+        □ Is there an existing resource/action that covers this? (check system map + mix foundry.pattern.find)
+        □ What is the narrowest version that proves the feature works?
+        Auto-resolve if: pattern exists AND spec-kit covers the case
+        Surface as D<N> if: no pattern found OR spec-kit silent on scope
+
+    9c. Phase B — Governance:
+        □ Change class confirmed (INV → class mapping)
+        □ Approval chain identified (who must approve)
+        □ ADR required? (:behavioral/:compliance → yes; :structural+new concept → offer)
+        □ All INV constraints enumerated for this change
+        Auto-resolve if: class is :structural AND no sensitive resources touched
+        Surface as D<N> if: class ambiguous OR sensitive resource boundary unclear
+
+    9d. Phase C — Architecture:
+        □ Resources touched (from system map, not assumed)
+        □ New edges in graph (what will change in visualization)
+        □ Migration needed? (check pending_migrations in project status)
+        □ Reactor or action? (>1 side effect → must be Reactor per INV-019)
+        □ Interface assessment (PlanArchitect: public surface, hidden complexity)
+        Auto-resolve if: single resource, no migration, single side effect
+        Surface as D<N> if: reactor boundary unclear OR migration timing ambiguous
+
+    Output: ordered plan with per-phase rationale + all D<N> questions batched at end.
+    Auto-resolve obvious decisions; surface only genuine ambiguities as D<N> questions.
+
+    9e. Construct ordered session plan from confirmed scope + review output:
       [spec]      ADR/runbook stub if required by step 8 — always first
       [interface] PlanArchitect interface assessment for :behavioral/:compliance
                   and :structural changes introducing a new module
@@ -235,6 +348,8 @@ Run internally before constructing the session plan:
 □ @description fields on touched attributes are consistent with proposed change
 □ Interface assessment confirmed by human for new modules and :behavioral/:compliance changes
 □ Policy compatibility verified for all generated UI actions via Ash.Resource.Info.policies/1
+□ LiveView components cover all 5 interaction states: empty, loading, error, partial, full
+  (missing states are :warning lint violations — surfaced in proposal review checklist)
 ```
 
 `@description` fields are treated as invariant declarations. A proposed change that contradicts a description is surfaced in the contradiction check.

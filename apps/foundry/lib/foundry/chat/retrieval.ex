@@ -756,4 +756,92 @@ defmodule Foundry.Chat.Retrieval do
        do: uncovered_node_ids
 
   defp coverage_uncovered_node_ids(_coverage), do: []
+
+  @doc """
+  Builds business-fit signals for Phase A of the autoplan review pipeline (ADR-033).
+
+  Returns a map with pattern match signals and spec-kit coverage indicators
+  that `build_autoplan_review/3` uses to auto-resolve or surface Phase A questions.
+  """
+  @spec autoplan_context(String.t(), map()) :: map()
+  def autoplan_context(project_root, retrieval) do
+    nodes = retrieval[:project_status] || %{}
+    module_contexts = retrieval[:module_contexts] || []
+    documents = retrieval[:documents] || []
+
+    pattern_match = find_pattern_match(module_contexts)
+    spec_coverage = find_spec_coverage(documents, pattern_match)
+
+    resources_touched =
+      module_contexts
+      |> Enum.map(& &1.id)
+      |> Enum.filter(&resource_node?(project_root, &1))
+
+    sensitive_resources =
+      resources_touched
+      |> Enum.filter(&sensitive_resource?(project_root, &1))
+
+    migration_needed =
+      case nodes do
+        %{"pending_migrations" => migrations} when is_list(migrations) -> migrations != []
+        _ -> false
+      end
+
+    %{
+      pattern_match: pattern_match,
+      spec_coverage: spec_coverage,
+      resources_touched: resources_touched,
+      sensitive_resources_touched: sensitive_resources,
+      migration_needed: migration_needed,
+      side_effect_count: estimate_side_effects(module_contexts),
+      reactor_boundary_unclear: false,
+      class_ambiguous: false
+    }
+  end
+
+  defp find_pattern_match(module_contexts) do
+    module_contexts
+    |> Enum.find_value(fn ctx ->
+      case ctx do
+        %{node: %{pattern_examples: [ex | _]}} -> ex
+        %{node: %{"pattern_examples" => [ex | _]}} -> ex
+        _ -> nil
+      end
+    end)
+  end
+
+  defp find_spec_coverage(_documents, nil), do: false
+
+  defp find_spec_coverage(documents, _pattern) do
+    Enum.any?(documents, fn doc ->
+      (doc[:type] || doc["type"]) in ["adr", "runbook"]
+    end)
+  end
+
+  defp resource_node?(project_root, module_id) do
+    case ProjectContext.build_one(project_root, module_id) do
+      {:ok, node} -> Map.get(node, :kind) == "resource" or Map.get(node, "kind") == "resource"
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp sensitive_resource?(project_root, module_id) do
+    case ProjectContext.build_one(project_root, module_id) do
+      {:ok, node} -> Map.get(node, :sensitive) == true or Map.get(node, "sensitive") == true
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp estimate_side_effects(module_contexts) do
+    module_contexts
+    |> Enum.flat_map(fn ctx ->
+      node = ctx[:node] || ctx["node"] || %{}
+      (node[:side_effects] || node["side_effects"] || [])
+    end)
+    |> length()
+  end
 end

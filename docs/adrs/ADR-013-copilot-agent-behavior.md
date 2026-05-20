@@ -145,35 +145,15 @@ which situation applies — that interpretation belongs in the tool.
 
 ## Decision: Clarifying Question UX (INV-005 Implementation)
 
-When a clarifying question is required (gap surfaced or ambiguous classification):
+When a clarifying question is required (gap surfaced or ambiguous classification), use the
+D<N> structured format defined in §Clarifying Question Format in `core.md`. The format is
+mandatory — no prose-based clarifications.
 
-**Step 1 — State what was understood:**
-A brief sentence: "I understand you want to [paraphrase of the request]."
+The Activity Feed renders options as clickable buttons. Clicking a button sends the option
+label as a structured message; the engine does not re-classify it, it proceeds directly.
 
-**Step 2 — Name the specific ambiguity:**
-One sentence identifying the gap: "I'm not certain whether [X] or [Y]."
-
-**Step 3 — Present as a binary or small-choice selection:**
-Rendered as clickable option buttons — two or three options maximum.
-The Activity Feed input box remains visible and active below the buttons.
-
-```
-I understand you want to add a rule for withdrawal limits.
-I'm not certain whether this should be a new Rule module or an additional
-clause in the existing StakeLimitRule.
-
-[New Rule module]   [Add clause to StakeLimitRule]
-
-Or describe what you have in mind:
-[_________________________________________________]
-```
-
-**Buttons are the primary path** — structured, unambiguous, guaranteed resolvable.
-Clicking a button sends the option label as a structured message; the engine
-does not re-classify it, it proceeds directly.
-
-**The input box is always present** — never hidden or disabled when clarifying
-buttons are shown. Free-text via the input re-enters the classification cycle:
+**The input box is always present** — never hidden or disabled when clarifying buttons are shown.
+Free-text via the input re-enters the classification cycle:
 - Resolves ambiguity → proceed
 - Introduces new ambiguity → present two explicit interpretations (second question)
 
@@ -181,11 +161,32 @@ The engine never asks a third question regardless of path taken.
 
 **What the copilot never does:**
 - Asks three questions in sequence (two is the hard maximum across all paths)
-- Asks an open-ended question without options — if asking, always present concrete
-  choices alongside
+- Asks an open-ended question without options — if asking, always present concrete choices alongside per D<N> format
 - Hides or disables the Activity Feed input while clarifying buttons are shown
 - Guesses and generates on unresolved ambiguity
 - Embeds the clarifying question inside a longer prose paragraph where it might be missed
+
+---
+
+## Decision: Requirements Interview (INV-022 Implementation)
+
+Pre-spec requirements interviews (INV-022) use the same D<N> format as clarifying questions.
+The interview runs until all design branches are resolved — no fixed turn limit.
+
+**First-round forcing questions** (always ask in round 1 for `:behavioral`/`:compliance`):
+As defined in §INV-022 First-Round Forcing Questions in `core.md`. These force explicit answers
+about actor, pre-conditions, post-conditions, and failure paths before domain-specific questions.
+
+**Domain-specific questions** (inject based on manifest.domain_type):
+After first round, ask domain-specific questions (iGaming, fintech, healthcare, legal/insurance)
+as listed in `core.md` §INV-022 First-Round Forcing Questions.
+
+**[ASSUMPTION] markers on unresolved branches:**
+When the interview completes but questions remain ambiguous, the unresolved branches become
+`[ASSUMPTION]` markers with explicit risk notes in the generated spec-kit. These do not block
+generation for `:structural` changes. For `:behavioral` and `:compliance` changes, each
+`[ASSUMPTION]` is surfaced in the review panel and must be explicitly dismissed by the approver
+before the Approve button is enabled.
 
 ---
 

@@ -660,4 +660,137 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
       {k, v}, acc -> Map.put(acc, k, v)
     end)
   end
+
+  # --- Autoplan Review Pipeline (ADR-033) ---
+
+  @doc """
+  Runs the three-phase pre-plan review for :behavioral and :compliance changes.
+
+  Returns %{decisions: [...], open_questions: [...], phase_log: [...]} where:
+  - decisions: auto-resolved decisions with rationale
+  - open_questions: D<N>-formatted questions for genuine ambiguities
+  - phase_log: per-phase summary for the proposal review panel
+  """
+  def build_autoplan_review(change_class, autoplan_ctx, session_digest)
+      when change_class in [:behavioral, :compliance] do
+    phase_a = run_phase_a(autoplan_ctx, session_digest)
+    phase_b = run_phase_b(change_class, autoplan_ctx, session_digest)
+    phase_c = run_phase_c(autoplan_ctx, session_digest)
+
+    all_decisions = phase_a.decisions ++ phase_b.decisions ++ phase_c.decisions
+    open_questions = phase_a.open_questions ++ phase_b.open_questions ++ phase_c.open_questions
+
+    %{
+      decisions: all_decisions,
+      open_questions: open_questions,
+      phase_log: [
+        %{phase: "A", label: "Business Fit", summary: phase_a.summary},
+        %{phase: "B", label: "Governance", summary: phase_b.summary},
+        %{phase: "C", label: "Architecture", summary: phase_c.summary}
+      ]
+    }
+  end
+
+  def build_autoplan_review(_change_class, _ctx, _digest), do: %{decisions: [], open_questions: [], phase_log: []}
+
+  defp run_phase_a(ctx, _digest) do
+    pattern_match = ctx[:pattern_match]
+    spec_coverage = ctx[:spec_coverage]
+
+    cond do
+      pattern_match && spec_coverage ->
+        %{
+          decisions: [%{phase: "A", decision: "Reuse existing pattern: #{pattern_match}", auto: true}],
+          open_questions: [],
+          summary: "Pattern found and spec covers the case — no ambiguity."
+        }
+
+      pattern_match ->
+        %{
+          decisions: [%{phase: "A", decision: "Existing pattern found: #{pattern_match}", auto: true}],
+          open_questions: [%{phase: "A", question: "Spec-kit is silent on scope for this pattern. Confirm intended behaviour."}],
+          summary: "Pattern found but spec-kit silent on scope — surfacing scope question."
+        }
+
+      true ->
+        %{
+          decisions: [],
+          open_questions: [%{phase: "A", question: "No existing pattern found. What is the narrowest version that proves this feature works?"}],
+          summary: "No pattern found — scope ambiguity surfaced."
+        }
+    end
+  end
+
+  defp run_phase_b(change_class, ctx, digest) do
+    sensitive_touched = ctx[:sensitive_resources_touched] || []
+    class_ambiguous = ctx[:class_ambiguous] || false
+
+    cond do
+      change_class == :structural and sensitive_touched == [] ->
+        %{
+          decisions: [%{phase: "B", decision: "Class: :structural, no sensitive resources — approval by any developer", auto: true}],
+          open_questions: [],
+          summary: "Governance auto-resolved: structural change, no sensitive boundary."
+        }
+
+      class_ambiguous ->
+        %{
+          decisions: [],
+          open_questions: [%{phase: "B", question: "Change class is ambiguous between :structural and :behavioral. Which class applies?"}],
+          summary: "Class ambiguous — surfacing classification question."
+        }
+
+      sensitive_touched != [] ->
+        approver = Map.get(digest || %{}, "sensitive_lead", "Sensitive lead")
+        %{
+          decisions: [%{phase: "B", decision: "Sensitive resources touched: #{Enum.join(sensitive_touched, ", ")} — requires #{approver} approval", auto: true}],
+          open_questions: [],
+          summary: "Sensitive resources identified, approval chain set."
+        }
+
+      true ->
+        %{
+          decisions: [%{phase: "B", decision: "Change class: #{change_class} — approval chain follows standard governance", auto: true}],
+          open_questions: [],
+          summary: "Governance resolved via standard #{change_class} path."
+        }
+    end
+  end
+
+  defp run_phase_c(ctx, _digest) do
+    resources = ctx[:resources_touched] || []
+    needs_migration = ctx[:migration_needed] || false
+    side_effect_count = ctx[:side_effect_count] || 0
+    reactor_boundary_unclear = ctx[:reactor_boundary_unclear] || false
+
+    cond do
+      reactor_boundary_unclear ->
+        %{
+          decisions: [],
+          open_questions: [%{phase: "C", question: "Multiple side effects detected but Reactor boundary is unclear. Model as Reactor (per INV-019)?"}],
+          summary: "Reactor boundary ambiguous — surfacing architecture question."
+        }
+
+      side_effect_count > 1 ->
+        %{
+          decisions: [%{phase: "C", decision: "#{side_effect_count} side effects — must model as Reactor per INV-019", auto: true}],
+          open_questions: [],
+          summary: "Multiple side effects auto-resolved to Reactor pattern."
+        }
+
+      length(resources) == 1 and not needs_migration and side_effect_count <= 1 ->
+        %{
+          decisions: [%{phase: "C", decision: "Single resource (#{hd(resources)}), no migration, single side effect — resource action pattern", auto: true}],
+          open_questions: [],
+          summary: "Architecture auto-resolved: single resource action."
+        }
+
+      true ->
+        %{
+          decisions: [%{phase: "C", decision: "Resources: #{Enum.join(resources, ", ")}, migration: #{needs_migration}", auto: true}],
+          open_questions: [],
+          summary: "Architecture signals gathered."
+        }
+    end
+  end
 end
