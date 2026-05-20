@@ -69,6 +69,9 @@ defmodule Foundry.Umbrella.MixProject do
             linux: [os: :linux, cpu: :x86_64]
           ]
         ]
+      ],
+      server: [
+        applications: [foundry: :permanent, foundry_web: :permanent]
       ]
     ]
   end
