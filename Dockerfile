@@ -1,8 +1,11 @@
 FROM elixir:latest AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential git nodejs npm \
+    build-essential git curl unzip \
+    && curl -fsSL https://bun.sh/install | bash \
     && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.bun/bin:$PATH"
 
 WORKDIR /build
 
@@ -10,12 +13,12 @@ COPY mix.exs mix.lock ./
 COPY apps/foundry/mix.exs apps/foundry/mix.exs
 COPY apps/foundry_web/mix.exs apps/foundry_web/mix.exs
 
-COPY apps/foundry_web/assets/package.json apps/foundry_web/assets/package-lock.json apps/foundry_web/assets/
+COPY apps/foundry_web/assets/package.json apps/foundry_web/assets/bun.lock apps/foundry_web/assets/
 
 RUN mix local.hex --force && \
     mix local.rebar --force && \
     MIX_ENV=prod mix deps.get --only prod && \
-    cd apps/foundry_web/assets && npm ci
+    cd apps/foundry_web/assets && bun install --frozen-lockfile
 
 COPY . .
 RUN MIX_ENV=prod mix compile && \
