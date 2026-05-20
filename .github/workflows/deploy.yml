@@ -57,6 +57,5 @@ jobs:
 
       - name: Verify health
         run: |
-          sleep 15
           ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
-            "curl -sf http://localhost:4001/health && echo 'Studio healthy'"
+            "sleep 15 && curl -sf http://localhost:4001/health && echo 'Studio healthy'"
