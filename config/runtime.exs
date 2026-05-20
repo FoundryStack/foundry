@@ -46,8 +46,10 @@ check_origin_list = [
   "tauri://localhost:4000"
 ]
 
+listen_ip = if config_env() == :prod, do: {0, 0, 0, 0}, else: {127, 0, 0, 1}
+
 endpoint_config = [
-  http: [ip: {127, 0, 0, 1}, port: runtime_port],
+  http: [ip: listen_ip, port: runtime_port],
   url: [host: "127.0.0.1", port: runtime_port],
   server: server_enabled?,
   check_origin: check_origin_list,
