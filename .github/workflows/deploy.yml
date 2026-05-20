@@ -52,8 +52,8 @@ jobs:
         run: |
           ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
             "cd /opt/saas_panel && \
-             docker compose pull foundry && \
-             docker compose up -d foundry"
+             docker-compose pull foundry && \
+             docker-compose up -d foundry"
 
       - name: Verify health
         run: |

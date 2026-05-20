@@ -10,9 +10,12 @@ COPY mix.exs mix.lock ./
 COPY apps/foundry/mix.exs apps/foundry/mix.exs
 COPY apps/foundry_web/mix.exs apps/foundry_web/mix.exs
 
+COPY apps/foundry_web/assets/package.json apps/foundry_web/assets/package-lock.json apps/foundry_web/assets/
+
 RUN mix local.hex --force && \
     mix local.rebar --force && \
-    MIX_ENV=prod mix deps.get --only prod
+    MIX_ENV=prod mix deps.get --only prod && \
+    cd apps/foundry_web/assets && npm ci
 
 COPY . .
 RUN MIX_ENV=prod mix compile && \
