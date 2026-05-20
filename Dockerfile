@@ -25,7 +25,7 @@ RUN MIX_ENV=prod mix compile && \
     MIX_ENV=prod mix assets.deploy && \
     MIX_ENV=prod mix release server --overwrite
 
-FROM debian:12-slim
+FROM debian:trixie-slim
 
 WORKDIR /app
 
