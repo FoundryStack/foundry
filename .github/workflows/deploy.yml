@@ -58,4 +58,4 @@ jobs:
       - name: Verify health
         run: |
           ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
-            "sleep 15 && curl -sf http://localhost:4001/health && echo 'Studio healthy'"
+            "for i in \$(seq 1 20); do curl -sf http://localhost:4001/healthz && echo 'Studio healthy' && exit 0; sleep 3; done; echo 'Health check timed out'; exit 1"

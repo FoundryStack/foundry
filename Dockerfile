@@ -42,6 +42,6 @@ USER foundry
 EXPOSE 4001
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -sf http://localhost:4001/health || exit 1
+    CMD curl -sf http://localhost:4001/healthz || exit 1
 
 CMD ["/app/bin/server", "start"]
