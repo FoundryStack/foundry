@@ -16,7 +16,7 @@ defmodule PhoenixLLMChat.Core do
     socket
     |> Phoenix.Component.assign(:messages, [])
     |> Phoenix.Component.assign(:input, "")
-    |> Phoenix.Component.assign(:loading, false)
+    |> Phoenix.Component.assign(:chat_loading, false)
     |> Phoenix.Component.assign(:error, nil)
     |> Phoenix.Component.assign(:response, nil)
     |> Phoenix.Component.assign(:current_request_ref, nil)
@@ -39,7 +39,7 @@ defmodule PhoenixLLMChat.Core do
         socket
         |> add_message(%{"role" => "user", "content" => trimmed_input, "session_id" => session_id})
         |> Phoenix.Component.assign(:input, "")
-        |> Phoenix.Component.assign(:loading, true)
+        |> Phoenix.Component.assign(:chat_loading, true)
         |> Phoenix.Component.assign(:response, nil)
         |> Phoenix.Component.assign(:error, nil)
         |> submit_to_llm(trimmed_input)

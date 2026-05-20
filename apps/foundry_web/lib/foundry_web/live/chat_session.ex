@@ -375,7 +375,7 @@ defmodule FoundryWeb.ChatSession do
                     |> assign(:messages, messages)
                     |> assign(:session_digest, run_context.session_digest)
                     |> assign(:input, "")
-                    |> assign(:loading, true)
+                    |> assign(:chat_loading, true)
                     |> assign(:error, nil)
                     |> assign(:active_request_ref, request_ref)
                     |> assign(:active_request_task, task)
@@ -396,7 +396,7 @@ defmodule FoundryWeb.ChatSession do
                   {:noreply,
                    socket
                    |> assign(:error, persistence_error("Failed to save chat session", reason))
-                   |> assign(:loading, false)}
+                   |> assign(:chat_loading, false)}
               end
             else
               {:error, reason} ->
@@ -549,7 +549,7 @@ defmodule FoundryWeb.ChatSession do
       socket =
         socket
         |> assign(:messages, messages)
-        |> assign(:loading, false)
+        |> assign(:chat_loading, false)
         |> assign(:session_digest, digest)
         |> clear_active_request()
 
@@ -591,7 +591,7 @@ defmodule FoundryWeb.ChatSession do
         socket
         |> DomainLogic.fail_activity_run(request_ref, reason, &format_request_error/1)
         |> assign(:messages, messages)
-        |> assign(:loading, false)
+        |> assign(:chat_loading, false)
         |> assign(:session_digest, digest)
         |> clear_active_request()
         |> assign(:error, format_request_error(reason))
@@ -640,7 +640,7 @@ defmodule FoundryWeb.ChatSession do
           &format_request_error/1
         )
         |> assign(:messages, messages)
-        |> assign(:loading, false)
+        |> assign(:chat_loading, false)
         |> assign(:session_digest, digest)
         |> clear_active_request()
         |> assign(:error, format_task_shutdown_error(reason))
@@ -1054,7 +1054,7 @@ defmodule FoundryWeb.ChatSession do
         |> assign(:selected_model, selected_model)
         |> assign(:llm_provider, selected_model && selected_model.provider)
         |> assign(:llm_diagnostics, llm_diagnostics(selected_model))
-        |> assign(:loading, false)
+        |> assign(:chat_loading, false)
         |> assign(:error, nil)
         |> assign(:active_request_ref, nil)
         |> assign(:active_request_task, nil)
@@ -1181,7 +1181,7 @@ defmodule FoundryWeb.ChatSession do
           socket
           |> assign(:messages, messages)
           |> assign(:session_digest, run_context.session_digest)
-          |> assign(:loading, true)
+          |> assign(:chat_loading, true)
           |> assign(:error, nil)
           |> assign(:active_request_ref, request_ref)
           |> assign(:active_request_task, task)

@@ -8,7 +8,7 @@ defmodule FoundryWeb.ChatComponents do
   attr :active_session_id, :string, default: nil
   attr :sessions_by_id, :map, default: %{}
   attr :messages, :list, required: true
-  attr :loading, :boolean, required: true
+  attr :chat_loading, :boolean, required: true
   attr :error, :string, default: nil
   attr :project_root, :string, required: true
   attr :show_system_context, :boolean, required: true
@@ -245,12 +245,12 @@ defmodule FoundryWeb.ChatComponents do
                   <.message_bubble
                     message={msg}
                     message_index={index}
-                    streaming={streaming_message?(msg, index, @message_count, @loading)}
-                    active_run={message_active_run(msg, index, @message_count, @loading, @latest_run)}
+                    streaming={streaming_message?(msg, index, @message_count, @chat_loading)}
+                    active_run={message_active_run(msg, index, @message_count, @chat_loading, @latest_run)}
                   />
                 <% end %>
 
-                <.thinking_bubble :if={thinking_visible?(@messages, @loading)} />
+                <.thinking_bubble :if={thinking_visible?(@messages, @chat_loading)} />
               </div>
             </div>
           <% end %>
@@ -259,7 +259,7 @@ defmodule FoundryWeb.ChatComponents do
             <.trace_panel
               activity_runs={@activity_runs}
               selected_run={@selected_run}
-              loading={@loading}
+              chat_loading={@chat_loading}
             />
           <% end %>
 
@@ -267,7 +267,7 @@ defmodule FoundryWeb.ChatComponents do
             <.session_panel
               session_digest={@session_digest}
               selected_run={@selected_run}
-              loading={@loading}
+              chat_loading={@chat_loading}
               last_session_summary_at={@last_session_summary_at}
             />
           <% end %>
@@ -310,7 +310,7 @@ defmodule FoundryWeb.ChatComponents do
                     type="button"
                     phx-click="proposal_apply"
                     phx-value-id={active_proposal_id}
-                    disabled={@loading}
+                    disabled={@chat_loading}
                     class="rounded-selector bg-success/90 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-base-100 transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Apply
@@ -319,7 +319,7 @@ defmodule FoundryWeb.ChatComponents do
                     type="button"
                     phx-click="proposal_revise"
                     phx-value-id={active_proposal_id}
-                    disabled={@loading}
+                    disabled={@chat_loading}
                     class="rounded-selector border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning transition-colors hover:bg-warning/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Revise
@@ -328,7 +328,7 @@ defmodule FoundryWeb.ChatComponents do
                     type="button"
                     phx-click="proposal_cancel"
                     phx-value-id={active_proposal_id}
-                    disabled={@loading}
+                    disabled={@chat_loading}
                     class="rounded-selector border border-base-300 bg-base-100/70 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content transition-colors hover:text-base-content disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Cancel
@@ -367,7 +367,7 @@ defmodule FoundryWeb.ChatComponents do
                   <button
                     type="button"
                     phx-click="summarize_session"
-                    disabled={@loading}
+                    disabled={@chat_loading}
                     title={token_meter_title(@token_meter)}
                     class="group relative grid h-10 w-10 place-items-center rounded-full border border-base-300/80 bg-base-200/70 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
                     data-role="token-meter-summarize"
@@ -406,7 +406,7 @@ defmodule FoundryWeb.ChatComponents do
 
   attr :activity_runs, :list, required: true
   attr :selected_run, :map, default: nil
-  attr :loading, :boolean, required: true
+  attr :chat_loading, :boolean, required: true
 
   defp trace_panel(assigns) do
     ~H"""
@@ -568,7 +568,7 @@ defmodule FoundryWeb.ChatComponents do
                   Event Timeline
                 </p>
                 <p class="text-[11px] text-neutral-content">
-                  {if @loading, do: "Streaming live", else: "Grouped by phase"}
+                  {if @chat_loading, do: "Streaming live", else: "Grouped by phase"}
                 </p>
               </div>
 
@@ -651,7 +651,7 @@ defmodule FoundryWeb.ChatComponents do
 
   attr :session_digest, :map, default: %{}
   attr :selected_run, :map, default: nil
-  attr :loading, :boolean, required: true
+  attr :chat_loading, :boolean, required: true
   attr :last_session_summary_at, :string, default: nil
 
   defp session_panel(assigns) do

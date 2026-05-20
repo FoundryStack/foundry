@@ -59,4 +59,43 @@ defmodule FoundryWeb.ChatSessionTest do
     contents = Enum.map(pending, & &1["content"])
     assert contents == ["first message", "second message", "third message"]
   end
+
+  # Tests for :loading/:chat_loading naming collision bug
+  # Bug: ChatSession.handle_event("send_message") assigns :loading true, which
+  # collides with SystemMapLive's project loader overlay gate `if not @loading`.
+  # Fix: rename ChatSession's loading assign to :chat_loading.
+
+  describe "chat_loading assign isolation from project :loading assign" do
+    test "ChatSession.mount initializes :chat_loading, not :loading" do
+      # After mount, chat session should use :chat_loading for its streaming state
+      # so it doesn't collide with the project loader's :loading assign
+      session = %{"chat_session_id" => Ecto.UUID.generate()}
+      socket = %Phoenix.LiveView.Socket{endpoint: FoundryWeb.Endpoint, router: FoundryWeb.Router}
+
+      {:ok, mounted_socket} = FoundryWeb.ChatSession.mount(socket, session)
+
+      # :chat_loading must be set (not :loading) to avoid project loader collision
+      assert Map.has_key?(mounted_socket.assigns, :chat_loading),
+             "ChatSession.mount must assign :chat_loading, not :loading"
+
+      assert mounted_socket.assigns.chat_loading == false,
+             "chat_loading should initialize to false"
+    end
+
+    test "ChatSession.mount does not clobber :loading assign set to false by project loader" do
+      # The project loader sets :loading false on success — ChatSession must not touch it
+      session = %{"chat_session_id" => Ecto.UUID.generate()}
+      socket = %Phoenix.LiveView.Socket{endpoint: FoundryWeb.Endpoint, router: FoundryWeb.Router}
+      socket = Phoenix.Component.assign(socket, :loading, false)
+
+      {:ok, mounted_socket} = FoundryWeb.ChatSession.mount(socket, session)
+
+      # :loading should remain false (not be overwritten)
+      assert Map.has_key?(mounted_socket.assigns, :loading),
+             ":loading assign should still exist after ChatSession.mount"
+
+      assert mounted_socket.assigns.loading == false,
+             "ChatSession.mount must not change :loading (project loader owns this assign)"
+    end
+  end
 end

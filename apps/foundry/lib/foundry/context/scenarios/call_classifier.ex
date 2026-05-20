@@ -47,6 +47,9 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
       module_name == "Reactor" and fun == :run ->
         infer_reactor_trace(args, call_ast, caller)
 
+      is_binary(module_name) ->
+        infer_module_trace(module_name, fun_name, call_ast)
+
       true ->
         nil
     end
@@ -342,6 +345,21 @@ defmodule Foundry.Context.Scenarios.CallClassifier do
   end
 
   defp infer_reactor_trace(_, _, _), do: nil
+
+  defp infer_module_trace(module_name, fun_name, _call_ast) do
+    kind =
+      cond do
+        fun_name == "handle_webhook" -> :trigger_receive
+        fun_name == "perform" -> :job_execute
+        fun_name == "evaluate" -> :rule_check
+        true -> :action_execute
+      end
+
+    build_trace_attrs(module_name, %{
+      kind: kind,
+      module_function: "#{module_name}.#{fun_name}"
+    })
+  end
 
   defp resolve_runtime_module_name(ast, caller) do
     expanded = Macro.expand(ast, caller)
