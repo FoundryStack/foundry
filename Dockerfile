@@ -1,4 +1,4 @@
-FROM elixir:latest AS builder
+FROM --platform=linux/amd64 elixir:latest AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential git curl unzip \
@@ -25,12 +25,12 @@ RUN MIX_ENV=prod mix compile && \
     MIX_ENV=prod mix assets.deploy && \
     MIX_ENV=prod mix release server --overwrite
 
-FROM debian:trixie-slim
+FROM --platform=linux/amd64 debian:trixie-slim
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates openssl curl \
+    ca-certificates openssl curl git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/_build/prod/rel/server ./
