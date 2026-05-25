@@ -299,40 +299,22 @@ defmodule Foundry.ProjectManager do
     if is_nil(resolved) do
       {:error, "#{executable} is not installed or not on PATH."}
     else
-      # Build a shell wrapper that unsets RELEASE_* vars before exec
-      # This ensures child processes don't inherit release boot environment
-      wrapper_script = build_wrapper_script(resolved, args)
-
       port =
         Port.open(
-          {:spawn_executable, "/bin/sh"},
+          {:spawn_executable, resolved},
           [
             :binary,
             :exit_status,
             :stderr_to_stdout,
             :use_stdio,
             :hide,
-            args: ["-c", wrapper_script],
+            args: args,
             env: build_env()
           ] ++ port_cd_option(cd)
         )
 
       collect_command_output(server, action_ref, port, "")
     end
-  end
-
-  defp build_wrapper_script(executable, args) do
-    # Escape args for shell execution
-    escaped_args = args |> Enum.map(&escape_shell_arg/1) |> Enum.join(" ")
-
-    # Unset known RELEASE_* vars that the Erlang VM might check
-    # This prevents the release boot process from interfering with mix/git
-    "unset RELEASE_ROOT RELEASE_BOOT_SCRIPT RELEASE_SYS_CONFIG RELEASE_VSN RELEASE_COOKIE RELEASE_DISTRIBUTION RELEASE_NAME RELEASE_NODE RELEASE_MODE RELEASE_TMP RELEASE_VM_ARGS; exec #{executable} #{escaped_args}"
-  end
-
-  defp escape_shell_arg(arg) do
-    # Simple shell escaping: quote and escape single quotes
-    "'" <> String.replace(arg, "'", "'\\''") <> "'"
   end
 
   @doc false
