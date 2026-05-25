@@ -295,43 +295,48 @@ defmodule Foundry.ProjectManager do
 
   defp run_command(server, action_ref, executable, args, cd) do
     resolved = System.find_executable(executable)
+    env_bin = System.find_executable("env")
 
-    if is_nil(resolved) do
-      {:error, "#{executable} is not installed or not on PATH."}
-    else
-      port =
-        Port.open(
-          {:spawn_executable, resolved},
-          [
-            :binary,
-            :exit_status,
-            :stderr_to_stdout,
-            :use_stdio,
-            :hide,
-            args: args,
-            env: build_env()
-          ] ++ port_cd_option(cd)
-        )
+    cond do
+      is_nil(resolved) ->
+        {:error, "#{executable} is not installed or not on PATH."}
 
-      collect_command_output(server, action_ref, port, "")
+      is_nil(env_bin) ->
+        {:error, "env binary not found — cannot create clean environment."}
+
+      true ->
+        # Use `env -i` to spawn with a completely clean environment, preventing
+        # RELEASE_* vars (set by the Elixir release boot process) from being
+        # inherited by child processes. Port.open's env: option only adds/overrides
+        # vars — it does NOT remove vars already in the parent process environment.
+        env_prefix = build_env() |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
+
+        port =
+          Port.open(
+            {:spawn_executable, env_bin},
+            [
+              :binary,
+              :exit_status,
+              :stderr_to_stdout,
+              :use_stdio,
+              :hide,
+              args: ["-i"] ++ env_prefix ++ [resolved | args]
+            ] ++ port_cd_option(cd)
+          )
+
+        collect_command_output(server, action_ref, port, "")
     end
   end
 
   @doc false
   def build_env do
-    # Strip RELEASE_* vars inherited from the release boot process — if present,
-    # the Erlang VM spawned by mix tries to boot as a release and crashes looking
-    # for /app/bin/start.boot. Also redirect MIX_HOME/HEX_HOME to /tmp so the
-    # non-root foundry user can write there regardless of home dir permissions.
-    release_keys =
-      System.get_env()
-      |> Map.keys()
-      |> Enum.filter(&String.starts_with?(&1, "RELEASE_"))
-
+    # Returns the environment to pass to child processes — used with `env -i` so
+    # RELEASE_* vars from the release boot process are never inherited. Also
+    # redirects MIX_HOME/HEX_HOME to /tmp for write access in container environments.
     overrides = %{"MIX_HOME" => "/tmp/.mix", "HEX_HOME" => "/tmp/.hex"}
 
     System.get_env()
-    |> Map.drop(release_keys)
+    |> Map.reject(fn {k, _v} -> String.starts_with?(k, "RELEASE_") end)
     |> Map.merge(overrides)
     |> Enum.map(fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
   end

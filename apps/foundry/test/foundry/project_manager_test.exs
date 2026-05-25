@@ -201,6 +201,73 @@ defmodule Foundry.ProjectManagerTest do
     end
   end
 
+  describe "child process env isolation" do
+    # These tests verify what actually reaches the child process — not just that
+    # build_env/0 filters correctly, but that the Port.open invocation (via env -i)
+    # prevents RELEASE_* vars from being inherited. This is the regression test for
+    # the production crash: "Runtime terminating during boot ({'cannot get bootfile'...})"
+
+    defp run_env_inspect(extra_system_env \\ %{}) do
+      Enum.each(extra_system_env, fn {k, v} -> System.put_env(k, v) end)
+
+      env_bin = System.find_executable("env")
+      env_pairs = Foundry.ProjectManager.build_env()
+      env_prefix = Enum.map(env_pairs, fn {k, v} -> "#{k}=#{v}" end)
+
+      port =
+        Port.open(
+          {:spawn_executable, env_bin},
+          [:binary, :exit_status, :stderr_to_stdout, :use_stdio, :hide,
+           args: ["-i"] ++ env_prefix ++ [env_bin]]
+        )
+
+      output =
+        Stream.repeatedly(fn -> nil end)
+        |> Enum.reduce_while("", fn _, acc ->
+          receive do
+            {^port, {:data, data}} -> {:cont, acc <> data}
+            {^port, {:exit_status, _}} -> {:halt, acc}
+          after
+            5000 -> {:halt, acc}
+          end
+        end)
+
+      Enum.each(extra_system_env, fn {k, _} -> System.delete_env(k) end)
+      output
+    end
+
+    test "RELEASE_* vars do not reach child process when set in parent" do
+      output =
+        run_env_inspect(%{
+          "RELEASE_ROOT" => "/app",
+          "RELEASE_BOOT_SCRIPT" => "start",
+          "RELEASE_SYS_CONFIG" => "/app/releases/0.1.0/sys"
+        })
+
+      child_vars = String.split(output, "\n") |> Enum.filter(&String.starts_with?(&1, "RELEASE_"))
+
+      assert child_vars == [],
+             "RELEASE_* vars leaked into child process: #{inspect(child_vars)}"
+    end
+
+    test "MIX_HOME is /tmp/.mix in child process regardless of parent value" do
+      output = run_env_inspect(%{"MIX_HOME" => "/home/user/.mix"})
+
+      mix_home =
+        String.split(output, "\n")
+        |> Enum.find("", &String.starts_with?(&1, "MIX_HOME="))
+        |> String.trim_leading("MIX_HOME=")
+
+      assert mix_home == "/tmp/.mix",
+             "Expected MIX_HOME=/tmp/.mix in child, got: #{inspect(mix_home)}"
+    end
+
+    test "PATH is passed through to child process" do
+      output = run_env_inspect()
+      assert String.contains?(output, "PATH="), "PATH should be present in child process"
+    end
+  end
+
   describe "derive_repo_name/1" do
     test "extracts repo name from https URL" do
       assert Foundry.ProjectManager.derive_repo_name("https://github.com/user/repo.git") == "repo"
