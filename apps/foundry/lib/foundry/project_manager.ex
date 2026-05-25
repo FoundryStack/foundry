@@ -325,9 +325,9 @@ defmodule Foundry.ProjectManager do
     # Escape args for shell execution
     escaped_args = args |> Enum.map(&escape_shell_arg/1) |> Enum.join(" ")
 
-    # Unset all RELEASE_* vars and exec the command
-    # Use printf to avoid shell interpretation issues with env output
-    "unset $(env | grep -E '^RELEASE_' | sed 's/=.*//'); exec #{executable} #{escaped_args}"
+    # Unset known RELEASE_* vars that the Erlang VM might check
+    # This prevents the release boot process from interfering with mix/git
+    "unset RELEASE_ROOT RELEASE_BOOT_SCRIPT RELEASE_SYS_CONFIG RELEASE_VSN RELEASE_COOKIE RELEASE_DISTRIBUTION RELEASE_NAME RELEASE_NODE RELEASE_MODE RELEASE_TMP RELEASE_VM_ARGS; exec #{executable} #{escaped_args}"
   end
 
   defp escape_shell_arg(arg) do
