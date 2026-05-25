@@ -299,22 +299,39 @@ defmodule Foundry.ProjectManager do
     if is_nil(resolved) do
       {:error, "#{executable} is not installed or not on PATH."}
     else
+      # Build a shell wrapper that unsets RELEASE_* vars before exec
+      # This ensures child processes don't inherit release boot environment
+      wrapper_script = build_wrapper_script(resolved, args)
+
       port =
         Port.open(
-          {:spawn_executable, resolved},
+          {:spawn_executable, "/bin/sh"},
           [
             :binary,
             :exit_status,
             :stderr_to_stdout,
             :use_stdio,
             :hide,
-            args: args,
+            args: ["-c", wrapper_script],
             env: build_env()
           ] ++ port_cd_option(cd)
         )
 
       collect_command_output(server, action_ref, port, "")
     end
+  end
+
+  defp build_wrapper_script(executable, args) do
+    # Escape args for shell execution
+    escaped_args = args |> Enum.map(&escape_shell_arg/1) |> Enum.join(" ")
+
+    # Unset all RELEASE_* vars and exec the command
+    "unset $(env | grep '^RELEASE_' | cut -d= -f1 | tr '\\n' ' '); exec #{executable} #{escaped_args}"
+  end
+
+  defp escape_shell_arg(arg) do
+    # Simple shell escaping: quote and escape single quotes
+    "'" <> String.replace(arg, "'", "'\\''") <> "'"
   end
 
   @doc false
