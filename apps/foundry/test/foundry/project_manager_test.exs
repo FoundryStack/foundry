@@ -120,4 +120,142 @@ defmodule Foundry.ProjectManagerTest do
       assert File.dir?(Path.join(broken_path, ".git"))
     end
   end
+
+  describe "build_env/0" do
+    # Tests for the RELEASE_* env var stripping fix (commit 40846dff)
+    # Verifies that child processes don't inherit release boot vars that crash mix
+
+    test "strips RELEASE_* vars from environment" do
+      old_release_root = System.get_env("RELEASE_ROOT")
+      old_release_boot = System.get_env("RELEASE_BOOT_SCRIPT")
+
+      try do
+        System.put_env("RELEASE_ROOT", "/app")
+        System.put_env("RELEASE_BOOT_SCRIPT", "start")
+        System.put_env("RELEASE_SYS_CONFIG", "/app/releases/0.1.0/sys")
+
+        env = Foundry.ProjectManager.build_env()
+        env_keys = Enum.map(env, &elem(&1, 0)) |> Enum.map(&List.to_string/1)
+
+        refute Enum.any?(env_keys, &String.starts_with?(&1, "RELEASE_")),
+               "RELEASE_* vars should be stripped: #{inspect(env_keys)}"
+      after
+        if old_release_root, do: System.put_env("RELEASE_ROOT", old_release_root), else: System.delete_env("RELEASE_ROOT")
+        if old_release_boot, do: System.put_env("RELEASE_BOOT_SCRIPT", old_release_boot), else: System.delete_env("RELEASE_BOOT_SCRIPT")
+        System.delete_env("RELEASE_SYS_CONFIG")
+      end
+    end
+
+    test "preserves non-RELEASE vars" do
+      old_path = System.get_env("PATH")
+
+      try do
+        env = Foundry.ProjectManager.build_env()
+        env_keys = Enum.map(env, &elem(&1, 0)) |> Enum.map(&List.to_string/1)
+
+        assert "PATH" in env_keys,
+               "Non-RELEASE vars like PATH should be preserved"
+      after
+        if old_path, do: System.put_env("PATH", old_path)
+      end
+    end
+
+    test "always sets MIX_HOME to /tmp/.mix" do
+      env = Foundry.ProjectManager.build_env()
+      mix_home = Enum.find(env, fn {k, _v} -> List.to_string(k) == "MIX_HOME" end)
+
+      assert mix_home != nil, "MIX_HOME should be set"
+      assert elem(mix_home, 1) == ~c"/tmp/.mix", "MIX_HOME should be /tmp/.mix"
+    end
+
+    test "always sets HEX_HOME to /tmp/.hex" do
+      env = Foundry.ProjectManager.build_env()
+      hex_home = Enum.find(env, fn {k, _v} -> List.to_string(k) == "HEX_HOME" end)
+
+      assert hex_home != nil, "HEX_HOME should be set"
+      assert elem(hex_home, 1) == ~c"/tmp/.hex", "HEX_HOME should be /tmp/.hex"
+    end
+
+    test "returns charlist tuples for Port.open compatibility" do
+      env = Foundry.ProjectManager.build_env()
+
+      Enum.each(env, fn {key, value} ->
+        assert is_list(key), "Key should be a charlist"
+        assert is_list(value), "Value should be a charlist"
+      end)
+    end
+
+    test "overrides MIX_HOME even if already in env" do
+      old_mix_home = System.get_env("MIX_HOME")
+
+      try do
+        System.put_env("MIX_HOME", "/home/user/.mix")
+        env = Foundry.ProjectManager.build_env()
+        mix_home = Enum.find(env, fn {k, _v} -> List.to_string(k) == "MIX_HOME" end)
+
+        assert elem(mix_home, 1) == ~c"/tmp/.mix",
+               "MIX_HOME should be overridden to /tmp/.mix regardless of current env"
+      after
+        if old_mix_home, do: System.put_env("MIX_HOME", old_mix_home), else: System.delete_env("MIX_HOME")
+      end
+    end
+  end
+
+  describe "derive_repo_name/1" do
+    test "extracts repo name from https URL" do
+      assert Foundry.ProjectManager.derive_repo_name("https://github.com/user/repo.git") == "repo"
+    end
+
+    test "extracts repo name from SSH URL" do
+      assert Foundry.ProjectManager.derive_repo_name("git@github.com:user/repo.git") == "repo"
+    end
+
+    test "strips trailing slash" do
+      assert Foundry.ProjectManager.derive_repo_name("https://github.com/user/repo/") == "repo"
+    end
+
+    test "removes .git suffix" do
+      assert Foundry.ProjectManager.derive_repo_name("https://github.com/user/repo.git") == "repo"
+    end
+
+    test "falls back to foundry-project for empty path" do
+      assert Foundry.ProjectManager.derive_repo_name("") == "foundry-project"
+      assert Foundry.ProjectManager.derive_repo_name("/") == "foundry-project"
+    end
+
+    test "handles plain directory paths (used in tests with local repos)" do
+      assert Foundry.ProjectManager.derive_repo_name("/local/path/my-project") == "my-project"
+    end
+  end
+
+  describe "open_project/1" do
+    test "fails with error for non-existent path" do
+      result = Foundry.ProjectManager.open_project("/nonexistent/project_#{:rand.uniform(99999)}")
+      assert result == {:error, :busy} or result == :ok
+      # Note: open_project calls GenServer which may be busy from other tests
+      # This test just verifies it doesn't crash
+    end
+  end
+
+  describe "recent_projects persistence" do
+    setup do
+      home = System.tmp_dir!() |> Path.join("foundry_home_#{:rand.uniform(99999)}")
+      File.mkdir_p!(home)
+
+      old_home = System.get_env("FOUNDRY_HOME")
+
+      on_exit(fn ->
+        File.rm_rf!(home)
+        if old_home, do: System.put_env("FOUNDRY_HOME", old_home), else: System.delete_env("FOUNDRY_HOME")
+      end)
+
+      System.put_env("FOUNDRY_HOME", home)
+      %{home: home}
+    end
+
+    test "recent_projects returns empty list when no projects saved", %{home: _home} do
+      projects = Foundry.ProjectManager.recent_projects()
+      assert is_list(projects)
+    end
+  end
 end

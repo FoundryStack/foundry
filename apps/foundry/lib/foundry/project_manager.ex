@@ -317,7 +317,8 @@ defmodule Foundry.ProjectManager do
     end
   end
 
-  defp build_env do
+  @doc false
+  def build_env do
     # Strip RELEASE_* vars inherited from the release boot process — if present,
     # the Erlang VM spawned by mix tries to boot as a release and crashes looking
     # for /app/bin/start.boot. Also redirect MIX_HOME/HEX_HOME to /tmp so the
@@ -360,7 +361,8 @@ defmodule Foundry.ProjectManager do
   defp port_cd_option(nil), do: []
   defp port_cd_option(cd), do: [cd: cd]
 
-  defp derive_repo_name(repo_url) do
+  @doc false
+  def derive_repo_name(repo_url) do
     repo_url
     |> String.trim()
     |> String.trim_trailing("/")
