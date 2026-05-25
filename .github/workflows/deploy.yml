@@ -32,8 +32,6 @@ jobs:
           tags: |
             ghcr.io/maxsvargal/foundry:latest
             ghcr.io/maxsvargal/foundry:${{ github.sha }}
-            ghcr.io/maxsvargal/foundry-studio:latest
-            ghcr.io/maxsvargal/foundry-studio:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
