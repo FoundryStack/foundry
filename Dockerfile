@@ -31,9 +31,12 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates openssl curl git \
-    && rm -rf /var/lib/apt/lists/* \
-    && mix local.hex --force \
-    && mix local.rebar --force
+    && rm -rf /var/lib/apt/lists/*
+
+# Pre-install hex/rebar into /tmp/.mix so the foundry (non-root) user can use mix
+# without needing a writable home directory.
+ENV MIX_HOME=/tmp/.mix
+RUN mix local.hex --force && mix local.rebar --force && chmod -R 755 /tmp/.mix
 
 COPY --from=builder /build/_build/prod/rel/server ./
 

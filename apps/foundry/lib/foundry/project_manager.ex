@@ -308,12 +308,26 @@ defmodule Foundry.ProjectManager do
             :stderr_to_stdout,
             :use_stdio,
             :hide,
-            args: args
+            args: args,
+            env: build_env()
           ] ++ port_cd_option(cd)
         )
 
       collect_command_output(server, action_ref, port, "")
     end
+  end
+
+  defp build_env do
+    # Use /tmp for mix/hex home so mix commands work regardless of user home permissions.
+    # Convert all current env vars to charlist tuples as required by Port.
+    overrides = %{
+      "MIX_HOME" => "/tmp/.mix",
+      "HEX_HOME" => "/tmp/.hex"
+    }
+
+    System.get_env()
+    |> Map.merge(overrides)
+    |> Enum.map(fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
   end
 
   defp collect_command_output(server, action_ref, port, acc) do
