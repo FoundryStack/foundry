@@ -461,8 +461,21 @@ defmodule Foundry.ProjectManager do
   defp valid_recent_entry?(_entry), do: false
 
   defp persisted_state_path do
-    home_dir = System.get_env("FOUNDRY_HOME") || System.user_home!()
+    home_dir =
+      System.get_env("FOUNDRY_HOME") ||
+        writable_home_dir(System.user_home()) ||
+        "/tmp"
+
     Path.join([home_dir, ".foundry", "project_manager.json"])
+  end
+
+  defp writable_home_dir(nil), do: nil
+
+  defp writable_home_dir(dir) do
+    case File.stat(dir) do
+      {:ok, %{access: access}} when access in [:read_write, :write] -> dir
+      _ -> nil
+    end
   end
 
   defp load_persisted_state do
