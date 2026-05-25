@@ -119,6 +119,21 @@ defmodule Foundry.ProjectManagerTest do
       assert status.state == :ready, "Expected :ready after re-clone, got: #{status.state} — #{inspect(status.last_error)}"
       assert File.dir?(Path.join(broken_path, ".git"))
     end
+
+    test "compiles project so _build/dev exists after ready", %{repo_url: repo_url, dest_parent: dest_parent} do
+      # Regression: install_dependencies only ran mix deps.get, not mix compile.
+      # ModuleDiscovery.all_project_modules/2 looks for _build/dev/lib/<name>/ebin —
+      # without compilation it returns [] and the studio shows an empty graph.
+      repo_name = Path.basename(repo_url)
+      project_root = Path.join(dest_parent, repo_name)
+
+      Foundry.ProjectManager.clone_project(repo_url, dest_parent)
+      status = wait_for_terminal_status(30_000)
+
+      assert status.state == :ready, "Expected :ready, got: #{status.state} — #{inspect(status.last_error)}"
+      assert File.dir?(Path.join(project_root, "_build")),
+             "_build/ must exist after install_dependencies so ModuleDiscovery can load BEAM files"
+    end
   end
 
   describe "build_env/0" do

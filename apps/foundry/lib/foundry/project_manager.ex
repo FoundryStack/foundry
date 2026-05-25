@@ -308,7 +308,11 @@ defmodule Foundry.ProjectManager do
 
   defp install_dependencies(server, action_ref, project_root) do
     emit_log(server, action_ref, "$ mix deps.get\n")
-    run_command(server, action_ref, "mix", ["deps.get"], project_root)
+
+    with :ok <- run_command(server, action_ref, "mix", ["deps.get"], project_root) do
+      emit_log(server, action_ref, "$ mix compile\n")
+      run_command(server, action_ref, "mix", ["compile"], project_root)
+    end
   end
 
   defp configure_runtime(project_root) do
