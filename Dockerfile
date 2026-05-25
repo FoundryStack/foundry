@@ -1,5 +1,7 @@
 FROM --platform=linux/amd64 elixir:latest AS builder
 
+ARG GIT_SHA=unknown
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential git curl unzip \
     && curl -fsSL https://bun.sh/install | bash \
@@ -21,7 +23,9 @@ RUN mix local.hex --force && \
     cd apps/foundry_web/assets && bun install --frozen-lockfile
 
 COPY . .
-RUN MIX_ENV=prod mix compile && \
+# Cache-buster: include GIT_SHA in compile step to force rebuild on code changes
+RUN echo "Building from $GIT_SHA" && \
+    MIX_ENV=prod mix compile && \
     MIX_ENV=prod mix assets.deploy && \
     MIX_ENV=prod mix release server --overwrite
 
