@@ -260,15 +260,27 @@ defmodule Foundry.ProjectManager do
     repo_name = derive_repo_name(repo_url)
     target_root = Path.join(parent_dir, repo_name)
 
-    if File.exists?(target_root) do
-      {:error, "Clone target already exists: #{target_root}"}
-    else
-      emit_log(server, action_ref, "$ git clone #{repo_url} #{target_root}\n")
+    cond do
+      File.exists?(Path.join(target_root, ".git")) ->
+        emit_log(server, action_ref, "Project already cloned at #{target_root}, reusing.\n")
+        validate_project_root(target_root)
 
-      with :ok <- run_command(server, action_ref, "git", ["clone", repo_url, target_root], nil),
-           {:ok, normalized_root} <- validate_project_root(target_root) do
-        {:ok, normalized_root}
-      end
+      File.exists?(target_root) ->
+        emit_log(server, action_ref, "Removing incomplete clone at #{target_root}\n")
+        File.rm_rf!(target_root)
+        do_clone(server, action_ref, repo_url, target_root)
+
+      true ->
+        do_clone(server, action_ref, repo_url, target_root)
+    end
+  end
+
+  defp do_clone(server, action_ref, repo_url, target_root) do
+    emit_log(server, action_ref, "$ git clone #{repo_url} #{target_root}\n")
+
+    with :ok <- run_command(server, action_ref, "git", ["clone", repo_url, target_root], nil),
+         {:ok, normalized_root} <- validate_project_root(target_root) do
+      {:ok, normalized_root}
     end
   end
 
