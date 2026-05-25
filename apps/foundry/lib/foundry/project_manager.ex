@@ -326,7 +326,8 @@ defmodule Foundry.ProjectManager do
     escaped_args = args |> Enum.map(&escape_shell_arg/1) |> Enum.join(" ")
 
     # Unset all RELEASE_* vars and exec the command
-    "unset $(env | grep '^RELEASE_' | cut -d= -f1 | tr '\\n' ' '); exec #{executable} #{escaped_args}"
+    # Use printf to avoid shell interpretation issues with env output
+    "unset $(env | grep -E '^RELEASE_' | sed 's/=.*//'); exec #{executable} #{escaped_args}"
   end
 
   defp escape_shell_arg(arg) do
