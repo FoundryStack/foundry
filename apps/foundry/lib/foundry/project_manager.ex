@@ -318,14 +318,19 @@ defmodule Foundry.ProjectManager do
   end
 
   defp build_env do
-    # Use /tmp for mix/hex home so mix commands work regardless of user home permissions.
-    # Convert all current env vars to charlist tuples as required by Port.
-    overrides = %{
-      "MIX_HOME" => "/tmp/.mix",
-      "HEX_HOME" => "/tmp/.hex"
-    }
+    # Strip RELEASE_* vars inherited from the release boot process — if present,
+    # the Erlang VM spawned by mix tries to boot as a release and crashes looking
+    # for /app/bin/start.boot. Also redirect MIX_HOME/HEX_HOME to /tmp so the
+    # non-root foundry user can write there regardless of home dir permissions.
+    release_keys =
+      System.get_env()
+      |> Map.keys()
+      |> Enum.filter(&String.starts_with?(&1, "RELEASE_"))
+
+    overrides = %{"MIX_HOME" => "/tmp/.mix", "HEX_HOME" => "/tmp/.hex"}
 
     System.get_env()
+    |> Map.drop(release_keys)
     |> Map.merge(overrides)
     |> Enum.map(fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
   end
