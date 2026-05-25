@@ -48,14 +48,24 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H 178.128.17.11 >> ~/.ssh/known_hosts
 
-      - name: Pull and restart
+      - name: Pull and restart foundry service
         run: |
           ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
             "cd /opt/saas_panel && \
              docker compose pull foundry && \
              docker compose up -d foundry"
 
+      - name: Restart saas_panel to redeploy studio container
+        run: |
+          ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
+            "docker pull ghcr.io/maxsvargal/foundry:latest && \
+             docker rm -f foundry-studio 2>/dev/null || true && \
+             cd /opt/saas_panel && \
+             docker compose restart app"
+
       - name: Verify health
         run: |
           ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
             "sleep 10 && for i in \$(seq 1 25); do curl -sf http://localhost:4001/healthz && echo 'Studio healthy' && exit 0; sleep 3; done; echo 'Health check timed out'; exit 1"
+          ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
+            "for i in \$(seq 1 30); do curl -sf http://localhost:4000/health && echo 'Panel healthy' && exit 0; sleep 3; done; echo 'Panel health check timed out'; exit 1"
