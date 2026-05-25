@@ -81,15 +81,37 @@ defmodule Foundry.ProjectManager do
   def init(_opts) do
     persisted = load_persisted_state()
 
-    {:ok,
-     %{
-       active_project_root: nil,
-       action_ref: nil,
-       recent_projects: persisted.recent_projects,
-       last_project_root: persisted.last_project_root,
-       auto_reopen_attempted?: false,
-       status: default_status()
-     }}
+    state = %{
+      active_project_root: nil,
+      action_ref: nil,
+      recent_projects: persisted.recent_projects,
+      last_project_root: persisted.last_project_root,
+      auto_reopen_attempted?: false,
+      status: default_status()
+    }
+
+    if persisted.last_project_root && File.dir?(persisted.last_project_root) do
+      {:ok, state, {:continue, :auto_reopen}}
+    else
+      {:ok, state}
+    end
+  end
+
+  def handle_continue(:auto_reopen, %{last_project_root: root} = state) when is_binary(root) do
+    action_ref = make_ref()
+    status = status_for_action({:open, root})
+    server = self()
+
+    Task.start(fn ->
+      result = run_action(server, action_ref, {:open, root})
+      send(server, {:project_manager_complete, action_ref, result})
+    end)
+
+    {:noreply, %{state | action_ref: action_ref, auto_reopen_attempted?: true, status: status}}
+  end
+
+  def handle_continue(:auto_reopen, state) do
+    {:noreply, %{state | auto_reopen_attempted?: true}}
   end
 
   def handle_call(:get_status, _from, state), do: {:reply, state.status, state}
