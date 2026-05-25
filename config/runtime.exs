@@ -35,8 +35,10 @@ runtime_port =
 # Build endpoint config with explicit settings for all modes
 listen_ip = if config_env() == :prod, do: {0, 0, 0, 0}, else: {127, 0, 0, 1}
 
+phx_host = System.get_env("PHX_HOST")
+
 endpoint_config =
-  if not standalone_mode? and phx_host = System.get_env("PHX_HOST") do
+  if not standalone_mode? and phx_host do
     # Cloud/studio mode: running behind a reverse proxy with a real public hostname.
     # check_origin: false is safe here because all traffic arrives through the proxy.
     [
