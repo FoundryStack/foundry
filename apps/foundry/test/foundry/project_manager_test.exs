@@ -199,6 +199,33 @@ defmodule Foundry.ProjectManagerTest do
         if old_mix_home, do: System.put_env("MIX_HOME", old_mix_home), else: System.delete_env("MIX_HOME")
       end
     end
+
+    test "strips RELEASE_ROOT/erts-*/bin and RELEASE_ROOT/bin from PATH" do
+      # Regression test: the release boot process prepends /app/erts-*/bin and /app/bin
+      # to PATH. These contain the release's erlexec which is pre-configured to boot as a
+      # release (looking for /app/bin/start.boot). mix picks up that erlexec and crashes
+      # with "cannot get bootfile /app/bin/start.boot" even when RELEASE_* vars are stripped.
+      old_path = System.get_env("PATH")
+      old_release_root = System.get_env("RELEASE_ROOT")
+
+      try do
+        System.put_env("RELEASE_ROOT", "/app")
+        System.put_env("PATH", "/app/erts-16.4/bin:/app/bin:/usr/local/bin:/usr/bin:/bin")
+
+        env = Foundry.ProjectManager.build_env()
+        path_entry = Enum.find(env, fn {k, _v} -> List.to_string(k) == "PATH" end)
+        path = path_entry |> elem(1) |> List.to_string()
+        path_parts = String.split(path, ":")
+
+        refute Enum.any?(path_parts, &String.starts_with?(&1, "/app")),
+               "Release ERTS/bin paths should be removed from PATH: #{path}"
+
+        assert "/usr/local/bin" in path_parts, "System paths should be preserved"
+      after
+        if old_path, do: System.put_env("PATH", old_path), else: System.delete_env("PATH")
+        if old_release_root, do: System.put_env("RELEASE_ROOT", old_release_root), else: System.delete_env("RELEASE_ROOT")
+      end
+    end
   end
 
   describe "child process env isolation" do
@@ -265,6 +292,33 @@ defmodule Foundry.ProjectManagerTest do
     test "PATH is passed through to child process" do
       output = run_env_inspect()
       assert String.contains?(output, "PATH="), "PATH should be present in child process"
+    end
+
+    test "release ERTS/bin paths are stripped from PATH in child process" do
+      # Regression test: /app/erts-*/bin in PATH causes mix to pick up the release erlexec,
+      # which crashes with "cannot get bootfile /app/bin/start.boot" even without RELEASE_* vars.
+      old_path = System.get_env("PATH")
+      old_release_root = System.get_env("RELEASE_ROOT")
+
+      try do
+        System.put_env("RELEASE_ROOT", "/app")
+        System.put_env("PATH", "/app/erts-16.4/bin:/app/bin:/usr/local/bin:/usr/bin:/bin")
+
+        output = run_env_inspect()
+
+        path_line =
+          String.split(output, "\n")
+          |> Enum.find("", &String.starts_with?(&1, "PATH="))
+          |> String.trim_leading("PATH=")
+
+        path_parts = String.split(path_line, ":")
+
+        refute Enum.any?(path_parts, &String.starts_with?(&1, "/app")),
+               "Release ERTS/bin paths leaked into child PATH: #{path_line}"
+      after
+        if old_path, do: System.put_env("PATH", old_path), else: System.delete_env("PATH")
+        if old_release_root, do: System.put_env("RELEASE_ROOT", old_release_root), else: System.delete_env("RELEASE_ROOT")
+      end
     end
   end
 

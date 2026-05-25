@@ -333,12 +333,34 @@ defmodule Foundry.ProjectManager do
     # Returns the environment to pass to child processes — used with `env -i` so
     # RELEASE_* vars from the release boot process are never inherited. Also
     # redirects MIX_HOME/HEX_HOME to /tmp for write access in container environments.
+    #
+    # CRITICAL: The release boot process prepends RELEASE_ROOT/erts-*/bin and
+    # RELEASE_ROOT/bin to PATH. These point to the release's own erlexec which is
+    # pre-configured to boot as a release (looking for RELEASE_ROOT/bin/start.boot).
+    # If mix inherits this PATH, it picks up the release erlexec instead of the
+    # system one, causing "cannot get bootfile /app/bin/start.boot" crash even when
+    # all RELEASE_* env vars have been stripped.
+    release_root = System.get_env("RELEASE_ROOT")
     overrides = %{"MIX_HOME" => "/tmp/.mix", "HEX_HOME" => "/tmp/.hex"}
 
-    System.get_env()
-    |> Map.reject(fn {k, _v} -> String.starts_with?(k, "RELEASE_") end)
-    |> Map.merge(overrides)
-    |> Enum.map(fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
+    env =
+      System.get_env()
+      |> Map.reject(fn {k, _v} -> String.starts_with?(k, "RELEASE_") end)
+      |> Map.merge(overrides)
+
+    env =
+      if release_root do
+        Map.update(env, "PATH", "", fn path ->
+          path
+          |> String.split(":")
+          |> Enum.reject(&String.starts_with?(&1, release_root))
+          |> Enum.join(":")
+        end)
+      else
+        env
+      end
+
+    Enum.map(env, fn {k, v} -> {String.to_charlist(k), String.to_charlist(v)} end)
   end
 
   defp collect_command_output(server, action_ref, port, acc) do
