@@ -33,28 +33,41 @@ runtime_port =
   end
 
 # Build endpoint config with explicit settings for all modes
-check_origin_list = [
-  "http://127.0.0.1:4000",
-  "http://localhost:4000",
-  "//127.0.0.1:4000",
-  "//localhost:4000",
-  "http://127.0.0.1",
-  "http://localhost",
-  "//127.0.0.1",
-  "//localhost",
-  "tauri://localhost",
-  "tauri://localhost:4000"
-]
-
 listen_ip = if config_env() == :prod, do: {0, 0, 0, 0}, else: {127, 0, 0, 1}
 
-endpoint_config = [
-  http: [ip: listen_ip, port: runtime_port],
-  url: [host: "127.0.0.1", port: runtime_port],
-  server: server_enabled?,
-  check_origin: check_origin_list,
-  force_ssl: false
-]
+phx_host = System.get_env("PHX_HOST")
+
+endpoint_config =
+  if not standalone_mode? and phx_host do
+    # Cloud/studio mode: running behind a reverse proxy with a real public hostname.
+    # check_origin: false is safe here because all traffic arrives through the proxy.
+    [
+      http: [ip: listen_ip, port: runtime_port],
+      url: [scheme: "https", host: phx_host, port: 443],
+      server: server_enabled?,
+      check_origin: false,
+      force_ssl: false
+    ]
+  else
+    [
+      http: [ip: listen_ip, port: runtime_port],
+      url: [host: "127.0.0.1", port: runtime_port],
+      server: server_enabled?,
+      check_origin: [
+        "http://127.0.0.1:4000",
+        "http://localhost:4000",
+        "//127.0.0.1:4000",
+        "//localhost:4000",
+        "http://127.0.0.1",
+        "http://localhost",
+        "//127.0.0.1",
+        "//localhost",
+        "tauri://localhost",
+        "tauri://localhost:4000"
+      ],
+      force_ssl: false
+    ]
+  end
 
 config :foundry_web, FoundryWeb.Endpoint, endpoint_config
 
