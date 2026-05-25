@@ -23,8 +23,8 @@ defmodule FoundryWeb.SystemMapLive do
     end
   end
 
-  defp should_mount_loading?(%{"repo_url" => u, "parent_dir" => d}, _active_project_root)
-       when u != "" and d != "",
+  defp should_mount_loading?(%{"repo_url" => u}, _active_project_root)
+       when u != "",
        do: true
 
   defp should_mount_loading?(
@@ -52,9 +52,22 @@ defmodule FoundryWeb.SystemMapLive do
     Application.get_env(:foundry_web, :current_project_root)
   end
 
-  defp start_project_action(%{"repo_url" => url, "parent_dir" => dir})
-       when url != "" and dir != "" do
+  defp start_project_action(%{"repo_url" => url} = params)
+       when url != "" do
+    dir =
+      if System.get_env("FOUNDRY_STANDALONE", "0") == "1" do
+        params["parent_dir"] || System.user_home!()
+      else
+        cloud_projects_dir()
+      end
+
     Foundry.ProjectManager.clone_project(url, dir)
+  end
+
+  defp cloud_projects_dir do
+    dir = "/app/projects"
+    File.mkdir_p!(dir)
+    dir
   end
 
   defp start_project_action(%{"path" => path, "new_project" => "1", "project_name" => name})
