@@ -25,13 +25,15 @@ RUN MIX_ENV=prod mix compile && \
     MIX_ENV=prod mix assets.deploy && \
     MIX_ENV=prod mix release server --overwrite
 
-FROM --platform=linux/amd64 debian:trixie-slim
+FROM --platform=linux/amd64 elixir:latest
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates openssl curl git \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mix local.hex --force \
+    && mix local.rebar --force
 
 COPY --from=builder /build/_build/prod/rel/server ./
 
