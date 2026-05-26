@@ -989,6 +989,7 @@ export class CytoscapeGraph {
     this.currentLayout = this.cy.layout(this.layoutOptions)
     this.currentLayout.one('layoutstop', () => {
       const compacted = this._compactSparseCompoundNodes()
+      if (compacted) this.cy.nodes('node:parent').updateCompoundBounds(true)
       const separated = this._separateOverlappingDomainClusters()
 
       if ((compacted || separated) && this.layoutOptions.fit !== false) {
@@ -1011,9 +1012,12 @@ export class CytoscapeGraph {
     parents.forEach(parent => {
       const children = parent.children().nodes().sort((a, b) => a.id().localeCompare(b.id()))
 
-      if (children.length < 2 || children.length > this.compoundCompaction.maxChildren) return
-      const isSparse = this._compoundOccupancy(parent, children) < this.compoundCompaction.minOccupancy
+      if (children.length < 2) return
+
       const hasOverlap = this._childrenOverlap(children)
+      const oversized = children.length > this.compoundCompaction.maxChildren
+      const isSparse = !oversized && this._compoundOccupancy(parent, children) < this.compoundCompaction.minOccupancy
+
       if (!isSparse && !hasOverlap) return
 
       const boundingBox = this._compactBoundingBox(parent, children)
