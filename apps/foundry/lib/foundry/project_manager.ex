@@ -312,17 +312,29 @@ defmodule Foundry.ProjectManager do
 
   defp install_dependencies(server, action_ref, project_root) do
     build_dir = Path.join(project_root, "_build")
+    preview_build_dir = Path.join(project_root, "_build/preview")
 
-    if File.dir?(build_dir) do
-      emit_log(server, action_ref, "Project already compiled, skipping deps.get and compile.\n")
-      :ok
-    else
-      emit_log(server, action_ref, "$ mix deps.get\n")
+    cond do
+      File.dir?(preview_build_dir) ->
+        emit_log(server, action_ref, "Project already compiled (preview build exists), skipping deps.get and compile.\n")
+        :ok
 
-      with :ok <- run_command(server, action_ref, "mix", ["deps.get"], project_root) do
-        emit_log(server, action_ref, "$ mix compile\n")
-        run_command(server, action_ref, "mix", ["compile"], project_root)
-      end
+      File.dir?(build_dir) ->
+        emit_log(server, action_ref, "Building preview dev environment...\n")
+        emit_log(server, action_ref, "$ MIX_ENV=dev MIX_BUILD_PATH=_build/preview mix compile\n")
+        run_command(server, action_ref, "mix", ["compile"], project_root, %{"MIX_ENV" => "dev", "MIX_BUILD_PATH" => "_build/preview"})
+
+      true ->
+        emit_log(server, action_ref, "$ mix deps.get\n")
+
+        with :ok <- run_command(server, action_ref, "mix", ["deps.get"], project_root) do
+          emit_log(server, action_ref, "$ mix compile\n")
+
+          with :ok <- run_command(server, action_ref, "mix", ["compile"], project_root) do
+            emit_log(server, action_ref, "$ MIX_ENV=dev MIX_BUILD_PATH=_build/preview mix compile\n")
+            run_command(server, action_ref, "mix", ["compile"], project_root, %{"MIX_ENV" => "dev", "MIX_BUILD_PATH" => "_build/preview"})
+          end
+        end
     end
   end
 
@@ -330,7 +342,7 @@ defmodule Foundry.ProjectManager do
     Foundry.Studio.configure_runtime(project_root)
   end
 
-  defp run_command(server, action_ref, executable, args, cd) do
+  defp run_command(server, action_ref, executable, args, cd, extra_env \\ %{}) do
     resolved = System.find_executable(executable)
     env_bin = System.find_executable("env")
 
@@ -346,7 +358,8 @@ defmodule Foundry.ProjectManager do
         # RELEASE_* vars (set by the Elixir release boot process) from being
         # inherited by child processes. Port.open's env: option only adds/overrides
         # vars — it does NOT remove vars already in the parent process environment.
-        env_prefix = build_env() |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
+        base = build_env() |> Map.new(fn {k, v} -> {List.to_string(k), List.to_string(v)} end)
+        env_prefix = Map.merge(base, extra_env) |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
 
         port =
           Port.open(
