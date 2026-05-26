@@ -1,11 +1,11 @@
-FROM --platform=linux/amd64 elixir:latest AS builder
+FROM --platform=linux/amd64 elixir:1.19-alpine AS builder
 
 ARG GIT_SHA=unknown
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential git curl unzip \
+RUN apk add --no-cache \
+    build-base git curl unzip bash \
     && curl -fsSL https://bun.sh/install | bash \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/cache/apk/*
 
 ENV PATH="/root/.bun/bin:$PATH"
 
@@ -27,15 +27,16 @@ COPY . .
 RUN echo "Building from $GIT_SHA" && \
     MIX_ENV=prod mix compile && \
     MIX_ENV=prod mix assets.deploy && \
-    MIX_ENV=prod mix release server --overwrite
+    MIX_ENV=prod mix release server --overwrite && \
+    rm -rf /build/deps /build/_build/prod/lib /root/.cache
 
-FROM --platform=linux/amd64 elixir:latest
+FROM --platform=linux/amd64 elixir:1.19-alpine
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apk add --no-cache \
     ca-certificates openssl curl git \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/cache/apk/*
 
 # Pre-install hex/rebar into /tmp/.mix so the foundry (non-root) user can use mix
 # without needing a writable home directory.
