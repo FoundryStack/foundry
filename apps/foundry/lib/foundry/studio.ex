@@ -84,8 +84,17 @@ defmodule Foundry.Studio do
 
   @spec configure_runtime(String.t()) :: :ok
   def configure_runtime(project_root) when is_binary(project_root) do
-    System.put_env("FOUNDRY_STANDALONE", "1")
-    System.put_env("PHX_SERVER", "1")
+    # Only set FOUNDRY_STANDALONE=1 when not already explicitly set by the environment.
+    # In cloud mode, the container sets FOUNDRY_STANDALONE=0 and we must not overwrite it —
+    # doing so causes clone_project to use System.user_home!() (/home/foundry) instead of
+    # /app/projects, which fails because /home/foundry doesn't exist in the container.
+    if System.get_env("FOUNDRY_STANDALONE") == nil do
+      System.put_env("FOUNDRY_STANDALONE", "1")
+    end
+
+    if System.get_env("FOUNDRY_STANDALONE") == "1" do
+      System.put_env("PHX_SERVER", "1")
+    end
 
     Application.put_env(:foundry, :current_project_root, project_root)
     Application.put_env(:foundry, :igaming_project_root, project_root)

@@ -418,6 +418,38 @@ defmodule Foundry.ProjectManagerTest do
     end
   end
 
+  describe "configure_runtime does not corrupt FOUNDRY_STANDALONE in cloud mode" do
+    # Regression: configure_runtime called System.put_env("FOUNDRY_STANDALONE", "1")
+    # unconditionally. After first project open, any ?repo_url= visit saw FOUNDRY_STANDALONE=1
+    # and tried to clone into System.user_home!() = /home/foundry (which doesn't exist).
+
+    test "FOUNDRY_STANDALONE stays '0' after configure_runtime when running in cloud mode" do
+      old_val = System.get_env("FOUNDRY_STANDALONE")
+
+      try do
+        System.put_env("FOUNDRY_STANDALONE", "0")
+        Foundry.Studio.configure_runtime("/tmp/fake_project")
+        assert System.get_env("FOUNDRY_STANDALONE") == "0",
+               "configure_runtime must not overwrite FOUNDRY_STANDALONE when it is already '0' (cloud mode)"
+      after
+        if old_val, do: System.put_env("FOUNDRY_STANDALONE", old_val), else: System.delete_env("FOUNDRY_STANDALONE")
+      end
+    end
+
+    test "FOUNDRY_STANDALONE is set to '1' when not previously set (standalone / desktop mode)" do
+      old_val = System.get_env("FOUNDRY_STANDALONE")
+
+      try do
+        System.delete_env("FOUNDRY_STANDALONE")
+        Foundry.Studio.configure_runtime("/tmp/fake_project")
+        assert System.get_env("FOUNDRY_STANDALONE") == "1",
+               "configure_runtime should set FOUNDRY_STANDALONE=1 when launching in standalone mode"
+      after
+        if old_val, do: System.put_env("FOUNDRY_STANDALONE", old_val), else: System.delete_env("FOUNDRY_STANDALONE")
+      end
+    end
+  end
+
   describe "persist_state fallback when home is not writable" do
     # Regression test: in the foundry-studio container, System.user_home!() returns
     # /home/foundry which doesn't exist, causing persist_state to crash with
