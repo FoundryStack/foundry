@@ -81,16 +81,20 @@ defmodule Foundry.ProjectManager do
   def init(_opts) do
     persisted = load_persisted_state()
 
+    last_project_root =
+      persisted.last_project_root ||
+        discover_cloud_project()
+
     state = %{
       active_project_root: nil,
       action_ref: nil,
       recent_projects: persisted.recent_projects,
-      last_project_root: persisted.last_project_root,
+      last_project_root: last_project_root,
       auto_reopen_attempted?: false,
       status: default_status()
     }
 
-    if persisted.last_project_root && File.dir?(persisted.last_project_root) do
+    if last_project_root && File.dir?(last_project_root) do
       {:ok, state, {:continue, :auto_reopen}}
     else
       {:ok, state}
@@ -307,11 +311,18 @@ defmodule Foundry.ProjectManager do
   end
 
   defp install_dependencies(server, action_ref, project_root) do
-    emit_log(server, action_ref, "$ mix deps.get\n")
+    build_dir = Path.join(project_root, "_build")
 
-    with :ok <- run_command(server, action_ref, "mix", ["deps.get"], project_root) do
-      emit_log(server, action_ref, "$ mix compile\n")
-      run_command(server, action_ref, "mix", ["compile"], project_root)
+    if File.dir?(build_dir) do
+      emit_log(server, action_ref, "Project already compiled, skipping deps.get and compile.\n")
+      :ok
+    else
+      emit_log(server, action_ref, "$ mix deps.get\n")
+
+      with :ok <- run_command(server, action_ref, "mix", ["deps.get"], project_root) do
+        emit_log(server, action_ref, "$ mix compile\n")
+        run_command(server, action_ref, "mix", ["compile"], project_root)
+      end
     end
   end
 
@@ -485,6 +496,29 @@ defmodule Foundry.ProjectManager do
 
   defp valid_recent_entry?(%{"root" => root}) when is_binary(root), do: File.dir?(root)
   defp valid_recent_entry?(_entry), do: false
+
+  # When running in cloud (FOUNDRY_STANDALONE != "1") and no persisted state,
+  # scan /app/projects for the first directory that looks like a ready Mix+Foundry project.
+  # This recovers gracefully when the container restarts without a persistent home volume.
+  defp discover_cloud_project do
+    if System.get_env("FOUNDRY_STANDALONE", "1") != "1" do
+      cloud_dir = "/app/projects"
+
+      case File.ls(cloud_dir) do
+        {:ok, entries} ->
+          entries
+          |> Enum.map(&Path.join(cloud_dir, &1))
+          |> Enum.find(fn path ->
+            File.dir?(path) and
+              File.exists?(Path.join(path, "mix.exs")) and
+              File.dir?(Path.join(path, ".foundry"))
+          end)
+
+        _ ->
+          nil
+      end
+    end
+  end
 
   defp persisted_state_path do
     home_dir =

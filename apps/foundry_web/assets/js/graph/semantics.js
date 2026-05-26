@@ -131,7 +131,7 @@ export const LEGEND_SECTION_LABELS = {
   nodeKinds: 'Node Kinds',
   boundaryKinds: 'Boundaries',
   statusIcons: 'Status Icons',
-  edgeTypes: 'Edge Types',
+  edgeTypes: 'Edges',
 }
 
 export const BOUNDARY_KIND_LEGEND = [

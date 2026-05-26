@@ -76,7 +76,7 @@ export function buildCanvasOverlays(container, nodes, graph) {
       <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-base-200/75 px-3 py-2 shadow-[0_12px_32px_rgba(0,0,0,0.24)] backdrop-blur-xl">
         <button class="fm-legend-toggle flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-base-content/75 transition hover:bg-white/10 hover:text-base-content data-[open=true]:border-white/15 data-[open=true]:bg-white/12 data-[open=true]:text-base-content" data-legend-toggle="meta" data-open="${metaExpanded ? 'true' : 'false'}" type="button">
           ${renderHeroIcon('hero-eye-solid')}
-          <span>Node Kinds, Boundaries, Status Icons</span>
+          <span>Legend</span>
         </button>
         <button class="fm-legend-toggle flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-base-content/75 transition hover:bg-white/10 hover:text-base-content data-[open=true]:border-white/15 data-[open=true]:bg-white/12 data-[open=true]:text-base-content" data-legend-toggle="edges" data-open="${edgesVisible ? 'true' : 'false'}" type="button">
           ${renderHeroIcon('hero-share-solid')}

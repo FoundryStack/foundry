@@ -11,9 +11,9 @@ defmodule Foundry.Context.ModuleDiscovery do
     underscored = Macro.underscore(project_name_string)
     prefix = "Elixir." <> project_name_string <> "."
 
-    # Try dev first, then fall back to test (for subprocess with MIX_ENV=test)
+    # Try dev first, then prod (cloud studio compiles with MIX_ENV=prod), then test
     ebin_path =
-      ["dev", "test"]
+      ["dev", "prod", "test"]
       |> Enum.map(&Path.join([project_root, "_build", &1, "lib", underscored, "ebin"]))
       |> Enum.find(&File.dir?/1)
 
