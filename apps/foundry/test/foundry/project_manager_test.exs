@@ -120,10 +120,10 @@ defmodule Foundry.ProjectManagerTest do
       assert File.dir?(Path.join(broken_path, ".git"))
     end
 
-    test "compiles project so _build/dev exists after ready", %{repo_url: repo_url, dest_parent: dest_parent} do
-      # Regression: install_dependencies only ran mix deps.get, not mix compile.
-      # ModuleDiscovery.all_project_modules/2 looks for _build/dev/lib/<name>/ebin —
-      # without compilation it returns [] and the studio shows an empty graph.
+    test "compiles into _build/dev/ after ready", %{repo_url: repo_url, dest_parent: dest_parent} do
+      # Regression: install_dependencies compiled with MIX_ENV=prod into _build/prod/.
+      # ModuleDiscovery scans ["dev","prod","test"] but preview server requires _build/dev/
+      # to skip recompilation. Both must use the same dir.
       repo_name = Path.basename(repo_url)
       project_root = Path.join(dest_parent, repo_name)
 
@@ -131,8 +131,25 @@ defmodule Foundry.ProjectManagerTest do
       status = wait_for_terminal_status(30_000)
 
       assert status.state == :ready, "Expected :ready, got: #{status.state} — #{inspect(status.last_error)}"
-      assert File.dir?(Path.join(project_root, "_build")),
-             "_build/ must exist after install_dependencies so ModuleDiscovery can load BEAM files"
+      assert File.dir?(Path.join(project_root, "_build/dev")),
+             "_build/dev/ must exist after install_dependencies so both ModuleDiscovery and the preview server find pre-built artifacts"
+    end
+
+    test "skips compile when _build/dev/ already exists", %{repo_url: repo_url, dest_parent: dest_parent} do
+      # First open: builds _build/dev/
+      Foundry.ProjectManager.clone_project(repo_url, dest_parent)
+      first = wait_for_terminal_status(30_000)
+      assert first.state == :ready
+
+      # Second open of the same project: must hit the fast-path skip — no mix compile in logs
+      repo_name = Path.basename(repo_url)
+      project_root = Path.join(dest_parent, repo_name)
+      Foundry.ProjectManager.open_project(project_root)
+      second = wait_for_terminal_status(10_000)
+
+      assert second.state == :ready
+      refute String.contains?(second.logs, "mix compile"),
+             "install_dependencies should skip compile when _build/dev/ already exists, but logs had: #{second.logs}"
     end
 
   end
@@ -330,6 +347,28 @@ defmodule Foundry.ProjectManagerTest do
     test "PATH is passed through to child process" do
       output = run_env_inspect()
       assert String.contains?(output, "PATH="), "PATH should be present in child process"
+    end
+
+    test "extra_env overrides MIX_ENV in child process" do
+      # Regression: install_dependencies used to ignore extra_env, so MIX_ENV=dev never
+      # reached mix compile, causing it to build into _build/prod/ instead of _build/dev/.
+      old_mix_env = System.get_env("MIX_ENV")
+
+      try do
+        System.put_env("MIX_ENV", "prod")
+        output = run_env_inspect(%{"MIX_ENV" => "dev"})
+
+        mix_env =
+          String.split(output, "\n")
+          |> Enum.find("", &String.starts_with?(&1, "MIX_ENV="))
+          |> String.trim_leading("MIX_ENV=")
+          |> String.trim()
+
+        assert mix_env == "dev",
+               "extra_env MIX_ENV=dev should override parent MIX_ENV=prod in child, got: #{inspect(mix_env)}"
+      after
+        if old_mix_env, do: System.put_env("MIX_ENV", old_mix_env), else: System.delete_env("MIX_ENV")
+      end
     end
 
     test "release ERTS/bin paths are stripped from PATH in child process" do

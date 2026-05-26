@@ -5,6 +5,9 @@ defmodule Foundry.PreviewServerTest do
 
   setup do
     Application.ensure_all_started(:foundry)
+    # Use a short timeout in tests so the "times out" test doesn't take 3 minutes.
+    Application.put_env(:foundry, :preview_startup_timeout_ms, 10_000)
+    on_exit(fn -> Application.delete_env(:foundry, :preview_startup_timeout_ms) end)
     PreviewServer.stop_preview()
     assert wait_for_state(:idle)
 
@@ -81,6 +84,32 @@ defmodule Foundry.PreviewServerTest do
       assert PreviewServer.preview_base_url(project_root) == "/preview-app"
     after
       if prev, do: System.put_env("FOUNDRY_STANDALONE", prev), else: System.delete_env("FOUNDRY_STANDALONE")
+    end
+  end
+
+  test "build_clean_env sets MIX_ENV=dev so preview server reuses _build/dev compiled by install_dependencies" do
+    # install_dependencies compiles into _build/dev/ (MIX_ENV=dev).
+    # If build_clean_env passed a different MIX_ENV, mix phx.server would find an empty
+    # _build/<other>/ and trigger a full recompile on every container start.
+    state = %{env: [], port_num: 4001}
+    env = PreviewServer.build_clean_env_for_test(state)
+    assert Map.get(env, "MIX_ENV") == "dev",
+           "build_clean_env must set MIX_ENV=dev to match the _build/dev/ artifacts from install_dependencies"
+  end
+
+  test "manifest env cannot override MIX_ENV away from dev without explicit intent" do
+    # A manifest with no env entries must not accidentally inherit MIX_ENV=prod
+    # from the container environment, which would send mix phx.server to _build/prod/.
+    old = System.get_env("MIX_ENV")
+
+    try do
+      System.put_env("MIX_ENV", "prod")
+      state = %{env: [], port_num: 4001}
+      env = PreviewServer.build_clean_env_for_test(state)
+      assert Map.get(env, "MIX_ENV") == "dev",
+             "build_clean_env must force MIX_ENV=dev even when parent process has MIX_ENV=prod"
+    after
+      if old, do: System.put_env("MIX_ENV", old), else: System.delete_env("MIX_ENV")
     end
   end
 

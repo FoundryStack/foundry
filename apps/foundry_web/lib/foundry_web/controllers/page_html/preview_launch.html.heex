@@ -40,7 +40,9 @@
 
     const renderStatus = status => {
       const state = String(status.state || "idle");
-      stateEl.textContent = state;
+      const pmState = String(status.project_manager_state || "ready");
+      const projectCompiling = pmState === "running";
+      stateEl.textContent = projectCompiling ? "compiling" : state;
 
       if (state === "failed" || status.last_error) {
         titleEl.textContent = "Preview failed to start";
@@ -52,6 +54,9 @@
       } else if (state === "starting") {
         titleEl.textContent = "Starting preview…";
         messageEl.textContent = "Preview process spawned. Waiting for the HTTP port to open.";
+      } else if (projectCompiling) {
+        titleEl.textContent = "Compiling project…";
+        messageEl.textContent = "The project is being compiled. Preview will start automatically when ready.";
       } else if (status.command) {
         titleEl.textContent = "Preview stopped";
         messageEl.textContent = "The preview process exited before the UI became reachable.";
@@ -72,7 +77,7 @@
 
       if (state === "starting") {
         schedulePoll(1000);
-      } else if (state === "idle" && !status.command && !status.output && !status.last_error) {
+      } else if (projectCompiling || (state === "idle" && !status.command && !status.output && !status.last_error)) {
         schedulePoll(500);
       }
     };

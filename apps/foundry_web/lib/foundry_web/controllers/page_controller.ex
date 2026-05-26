@@ -3,25 +3,48 @@ defmodule FoundryWeb.PageController do
   alias Foundry.ProjectManager
 
   def preview_launch(conn, params) do
-    case Foundry.PreviewServer.get_status() do
-      {:ok, %{state: state}} when state not in [:starting, :running] ->
-        Foundry.PreviewServer.start_preview(preview_project_root())
+    # Don't start the preview while ProjectManager is still compiling dependencies —
+    # mix holds the build lock during compile, so a concurrent mix phx.server would
+    # block on the lock and produce no output, triggering a false timeout.
+    project_manager_ready? = ProjectManager.get_status().state == :ready
 
-      _ ->
-        :ok
+    if project_manager_ready? do
+      case Foundry.PreviewServer.get_status() do
+        {:ok, %{state: state}} when state not in [:starting, :running] ->
+          Foundry.PreviewServer.start_preview(preview_project_root())
+
+        _ ->
+          :ok
+      end
     end
 
     render(conn, :preview_launch, target_url: preview_target_url(params))
   end
 
   def preview_status(conn, _params) do
+    pm_status = ProjectManager.get_status()
+
+    # If the project manager just became ready and nothing is running yet, kick off the preview.
+    # This handles the case where the user loaded /preview-launch while the project was still
+    # compiling — the page polls this endpoint and we start the preview as soon as it's safe.
+    if pm_status.state == :ready do
+      case Foundry.PreviewServer.get_status() do
+        {:ok, %{state: state}} when state not in [:starting, :running] ->
+          Foundry.PreviewServer.start_preview(preview_project_root())
+
+        _ ->
+          :ok
+      end
+    end
+
     status =
       case Foundry.PreviewServer.get_status() do
         {:ok, status} -> status
         {:error, _reason} -> %{state: :idle, output: "", last_error: "Preview server unavailable"}
       end
 
-    json(conn, status)
+    # Merge project_manager_state so the browser can show "Compiling project…" while waiting.
+    json(conn, Map.put(status, :project_manager_state, pm_status.state))
   end
 
   def project_onboarding(conn, %{"path" => path}) do
@@ -106,7 +129,7 @@ defmodule FoundryWeb.PageController do
   defp preview_target_url(_params), do: "http://localhost:4001/"
 
   defp preview_project_root do
-    FoundryWeb.ChatConfig.project_root()
+    Foundry.ProjectManager.current_project_root()
   end
 
   defp validate_preview_target(target) do

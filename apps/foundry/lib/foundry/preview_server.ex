@@ -40,7 +40,10 @@ defmodule Foundry.PreviewServer do
 
   @default_preview_port 4001
   @startup_check_delay_ms 250
-  @startup_timeout_ms 10_000
+  # 3 minutes default: first-run compilation can take 2+ minutes; activity-based
+  # reset means fast starts (no compile needed) still detect port open in <1s.
+  # Override via :foundry, :preview_startup_timeout_ms for tests.
+  @default_startup_timeout_ms 180_000
   @delay_to_sigkill_ms 1_000
 
   @state_idle :idle
@@ -526,7 +529,8 @@ defmodule Foundry.PreviewServer do
   defp startup_timed_out?(%{startup_started_at: nil}), do: false
 
   defp startup_timed_out?(state) do
-    now_ms() - (state.last_activity_at || state.startup_started_at) >= @startup_timeout_ms
+    timeout = Application.get_env(:foundry, :preview_startup_timeout_ms, @default_startup_timeout_ms)
+    now_ms() - (state.last_activity_at || state.startup_started_at) >= timeout
   end
 
   defp runner_alive?(nil), do: false
@@ -606,8 +610,9 @@ defmodule Foundry.PreviewServer do
   end
 
   defp startup_timeout_error(state) do
+    timeout = Application.get_env(:foundry, :preview_startup_timeout_ms, @default_startup_timeout_ms)
     base =
-      "Preview HTTP port #{state.port_num} did not open within #{@startup_timeout_ms}ms after the last process output."
+      "Preview HTTP port #{state.port_num} did not open within #{timeout}ms after the last process output."
 
     cond do
       is_binary(state.last_error) and state.last_error != "" ->
