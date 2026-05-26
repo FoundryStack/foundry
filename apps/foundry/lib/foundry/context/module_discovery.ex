@@ -24,9 +24,16 @@ defmodule Foundry.Context.ModuleDiscovery do
       path ->
         Code.append_path(path)
         Path.wildcard(Path.join(path, "*.beam"))
-        |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
-        |> Enum.filter(&(Atom.to_string(&1) |> String.starts_with?(prefix)))
-        |> Enum.filter(&(Code.ensure_loaded(&1) == {:module, &1}))
+        |> Enum.filter(&(Path.basename(&1, ".beam") |> String.starts_with?(prefix)))
+        |> Enum.flat_map(fn beam_file ->
+          mod = beam_file |> Path.basename(".beam") |> String.to_atom()
+          abs = beam_file |> Path.rootname() |> String.to_charlist()
+          :code.purge(mod)
+          case :code.load_abs(abs) do
+            {:module, ^mod} -> [mod]
+            _ -> []
+          end
+        end)
         |> Enum.filter(&is_project_module?/1)
     end
   end
