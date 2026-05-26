@@ -26,7 +26,7 @@ defmodule Foundry.Context.ModuleDiscovery do
         Path.wildcard(Path.join(path, "*.beam"))
         |> Enum.map(&(&1 |> Path.basename(".beam") |> String.to_atom()))
         |> Enum.filter(&(Atom.to_string(&1) |> String.starts_with?(prefix)))
-        |> Enum.filter(&Code.ensure_loaded?/1)
+        |> Enum.filter(&(Code.ensure_loaded(&1) == {:module, &1}))
         |> Enum.filter(&is_project_module?/1)
     end
   end
