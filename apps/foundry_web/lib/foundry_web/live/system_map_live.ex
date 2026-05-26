@@ -166,11 +166,18 @@ defmodule FoundryWeb.SystemMapLive do
       hooks = Application.get_env(:foundry_web, :system_map_live_hooks, [])
       build_context = Keyword.get(hooks, :build_context, &ProjectContext.build/1)
 
-      # Ensure igaming ebin path is in the code path so modules can be loaded
-      ebin_path = Path.join([project_root, "_build", "dev", "lib", "igaming_ref", "ebin"])
-
-      if File.dir?(ebin_path) do
-        Code.append_path(ebin_path)
+      # Ensure project ebin paths are in the code path so modules can be loaded.
+      # Check all MIX_ENV build dirs since the studio may run in prod or dev.
+      for env <- ["prod", "dev", "test"] do
+        lib_dir = Path.join([project_root, "_build", env, "lib"])
+        if File.dir?(lib_dir) do
+          lib_dir
+          |> File.ls!()
+          |> Enum.each(fn app ->
+            ebin = Path.join([lib_dir, app, "ebin"])
+            if File.dir?(ebin), do: Code.append_path(ebin)
+          end)
+        end
       end
 
       project_name = Path.basename(project_root)

@@ -44,10 +44,10 @@ RUN mix local.hex --force && mix local.rebar --force && chmod -R 755 /tmp/.mix
 
 COPY --from=builder /build/_build/prod/rel/server ./
 
-RUN groupadd -r foundry && useradd -r -g foundry foundry && \
-    chown -R foundry:foundry /app
+RUN groupadd -g 1000 deploy && useradd -u 1000 -g deploy deploy && \
+    chown -R deploy:deploy /app
 
-USER foundry
+USER deploy
 EXPOSE 4001
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
