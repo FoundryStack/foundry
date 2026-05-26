@@ -3,7 +3,7 @@ FROM --platform=linux/amd64 elixir:1.19-slim AS builder
 ARG GIT_SHA=unknown
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential git curl unzip \
+    build-essential git curl unzip ca-certificates \
     && curl -fsSL https://bun.sh/install | bash \
     && rm -rf /var/lib/apt/lists/*
 
