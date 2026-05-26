@@ -2097,4 +2097,152 @@ defmodule FoundryWeb.SystemMapLiveTest do
 
     tmp_project_root
   end
+
+  # ---------------------------------------------------------------------------
+  # Cloud deployment flow — integration tests
+  #
+  # Covers the path that caused two distinct production failures:
+  #
+  #   FAILURE 1 (routing): configure_runtime clobbered FOUNDRY_STANDALONE=0 → "1",
+  #   so the next ?repo_url= visit sent clone_project to System.user_home!()
+  #   (/home/foundry — non-existent in container) instead of /app/projects.
+  #
+  #   FAILURE 2 (empty graph): VM ran in :embedded code loading mode, so
+  #   Code.ensure_loaded? returned false for all project modules loaded via
+  #   Code.append_path, causing ModuleDiscovery to return [] and the studio
+  #   to render an empty graph.
+  #
+  # Test 1 — routing: uses a minimal git fixture (fast, no compilation needed)
+  #   to verify FOUNDRY_STANDALONE is not clobbered and clone lands in parent_dir.
+  #
+  # Test 2 — graph rendering: uses open_project on a copy of the bundled igaming
+  #   reference project (which has a pre-built _build/ so compilation is skipped),
+  #   then mounts SystemMapLive and asserts the sidebar contains real graph nodes.
+  # ---------------------------------------------------------------------------
+
+  describe "cloud deployment flow (integration)" do
+    @moduletag :integration
+    @moduletag timeout: 60_000
+
+    setup do
+      pm_state = :sys.get_state(Foundry.ProjectManager)
+      old_standalone = System.get_env("FOUNDRY_STANDALONE")
+      old_current_root = Application.get_env(:foundry_web, :current_project_root)
+      old_hooks = Application.get_env(:foundry_web, :system_map_live_hooks)
+
+      # Simulate cloud mode — container explicitly sets FOUNDRY_STANDALONE=0
+      System.put_env("FOUNDRY_STANDALONE", "0")
+
+      # Reset ProjectManager to idle/no-project so tests start from a clean state
+      :sys.replace_state(Foundry.ProjectManager, fn state ->
+        %{state | active_project_root: nil, action_ref: nil}
+      end)
+
+      # Use the real ProjectContext.build/1 so ModuleDiscovery runs end-to-end
+      Application.delete_env(:foundry_web, :system_map_live_hooks)
+
+      on_exit(fn ->
+        if old_standalone, do: System.put_env("FOUNDRY_STANDALONE", old_standalone), else: System.delete_env("FOUNDRY_STANDALONE")
+        restore_env(:foundry_web, :current_project_root, old_current_root)
+        restore_env(:foundry_web, :system_map_live_hooks, old_hooks)
+        :sys.replace_state(Foundry.ProjectManager, fn _state -> pm_state end)
+      end)
+
+      {:ok, reference_root: Foundry.ProjectManager.default_project_root()}
+    end
+
+    defp wait_pm_ready(timeout_ms \\ 15_000) do
+      deadline = System.monotonic_time(:millisecond) + timeout_ms
+
+      Stream.repeatedly(fn -> Process.sleep(200) end)
+      |> Enum.reduce_while(nil, fn _, _ ->
+        status = Foundry.ProjectManager.get_status()
+
+        cond do
+          status.state == :ready -> {:halt, {:ok, status}}
+          status.state == :failed -> {:halt, {:error, status}}
+          System.monotonic_time(:millisecond) >= deadline -> {:halt, {:timeout, status}}
+          true -> {:cont, nil}
+        end
+      end)
+    end
+
+    test "clone_project uses cloud dir and does not clobber FOUNDRY_STANDALONE", %{} do
+      # Build a minimal git fixture — just mix.exs, no compilation needed.
+      # The goal is verifying routing, not graph content.
+      src = System.tmp_dir!() |> Path.join("cloud_clone_src_#{System.unique_integer([:positive])}")
+      parent_dir = System.tmp_dir!() |> Path.join("cloud_clone_dest_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(src)
+      File.mkdir_p!(parent_dir)
+
+      on_exit(fn ->
+        File.rm_rf(src)
+        File.rm_rf(parent_dir)
+      end)
+
+      File.write!(Path.join(src, "mix.exs"), """
+      defmodule T.MixProject do
+        use Mix.Project
+        def project, do: [app: :t, version: "0.1.0"]
+      end
+      """)
+
+      {_, 0} = System.cmd("git", ["-C", src, "init"])
+      {_, 0} = System.cmd("git", ["-C", src, "config", "user.email", "t@t.com"])
+      {_, 0} = System.cmd("git", ["-C", src, "config", "user.name", "T"])
+      {_, 0} = System.cmd("git", ["-C", src, "add", "."])
+      {_, 0} = System.cmd("git", ["-C", src, "commit", "-m", "init"])
+
+      # Pre-create a fake _build/ so install_dependencies skips compilation
+      File.mkdir_p!(Path.join([parent_dir, Path.basename(src), "_build"]))
+
+      assert Foundry.ProjectManager.clone_project(src, parent_dir) == :ok
+
+      {:ok, _} = wait_pm_ready()
+
+      # FOUNDRY_STANDALONE must still be "0" — configure_runtime must not clobber it
+      assert System.get_env("FOUNDRY_STANDALONE") == "0",
+             "configure_runtime clobbered FOUNDRY_STANDALONE=0 (cloud mode)"
+
+      # Clone must have landed in our parent_dir
+      cloned_root = Path.join(parent_dir, Path.basename(src))
+      assert File.dir?(cloned_root), "Cloned project must be at #{cloned_root}"
+    end
+
+    test "open_project with pre-compiled _build/ results in graph nodes in LiveView", %{reference_root: reference_root} do
+      # This test exercises ModuleDiscovery end-to-end: open an already-compiled
+      # project, wait for :ready, mount the LiveView, assert graph is non-empty.
+      # Regression for: VM :embedded mode made Code.ensure_loaded? return false for
+      # all modules → ModuleDiscovery returned [] → empty studio graph.
+
+      assert Foundry.ProjectManager.open_project(reference_root) == :ok
+      {:ok, _status} = wait_pm_ready()
+
+      assert is_binary(Foundry.ProjectManager.active_project_root()),
+             "active_project_root must be set after :ready"
+
+      conn = Phoenix.ConnTest.build_conn()
+      {:ok, _live, html} = live(conn, "/")
+
+      assert Regex.match?(~r/data-context="[^"]*nodes[^"]*"/, html),
+             "data-context must include a nodes array — graph context not rendered"
+
+      context_json_match = Regex.run(~r/data-context="([^"]+)"/, html)
+      assert context_json_match, "data-context attribute not found in rendered HTML"
+
+      context_json =
+        context_json_match
+        |> List.last()
+        |> String.replace("&quot;", "\"")
+        |> String.replace("&#39;", "'")
+        |> String.replace("&amp;", "&")
+
+      assert {:ok, context} = Jason.decode(context_json)
+      node_count = length(context["nodes"] || [])
+
+      assert node_count > 0,
+             "Studio graph has 0 nodes — ModuleDiscovery returned [] " <>
+               "(check :code.get_mode() — must be :interactive, got: #{inspect(:code.get_mode())})"
+    end
+  end
 end
