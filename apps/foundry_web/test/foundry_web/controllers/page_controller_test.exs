@@ -47,6 +47,24 @@ defmodule FoundryWeb.PageControllerTest do
     assert html =~ "http://localhost:4001/"
   end
 
+  test "GET /preview-launch accepts path-relative target for cloud mode proxy", %{conn: conn} do
+    conn = get(conn, "/preview-launch?target=/preview-app/games")
+    html = html_response(conn, 200)
+
+    assert html =~ "Starting preview"
+    assert html =~ "/preview-app/games"
+  end
+
+  test "GET /preview-launch rejects path traversal attempts", %{conn: conn} do
+    conn = get(conn, "/preview-launch?target=/preview-app/../etc/passwd")
+    html = html_response(conn, 200)
+
+    # Falls back to default, does not serve the traversal path
+    assert html =~ "Starting preview"
+    assert html =~ "http://localhost:4001/"
+    refute html =~ "etc/passwd"
+  end
+
   test "GET /preview-status returns preview server status payload", %{conn: conn} do
     conn = get(conn, ~p"/preview-status")
     body = json_response(conn, 200)

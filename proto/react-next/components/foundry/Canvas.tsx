@@ -70,16 +70,12 @@ export default function Canvas() {
     []
   );
 
-  // Layout: cose-bilkent with randomize:false to use positions from elements
+  // Layout: preset to use positions from elements directly (skip cose-bilkent physics)
   const layout = useMemo(
     () => ({
-      name: 'cose-bilkent' as const,
-      randomize: false,
+      name: 'preset' as const,
       fit: true,
       padding: 55,
-      idealEdgeLength: 80,
-      nodeRepulsion: 6000,
-      nodeDimensionsIncludeLabels: true,
     }),
     []
   );
@@ -89,24 +85,26 @@ export default function Canvas() {
     const cy = cyRef.current;
     if (!cy) return;
 
-    // Clear previous
-    cy.elements().removeClass('trace trace-gap selected');
+    cy.batch(() => {
+      // Clear previous
+      cy.elements().removeClass('trace trace-gap selected');
 
-    // Apply selection (map entity id to graph node id for compounds)
-    if (selectedId) {
-      const graphId = getGraphNodeId(selectedId);
-      const sel = cy.getElementById(graphId);
-      if (sel.length) {
-        sel.addClass('selected');
-        cy.animate({ center: { eles: sel }, zoom: cy.zoom() }, { duration: 200 });
+      // Apply selection (map entity id to graph node id for compounds)
+      if (selectedId) {
+        const graphId = getGraphNodeId(selectedId);
+        const sel = cy.getElementById(graphId);
+        if (sel.length) {
+          sel.addClass('selected');
+          cy.animate({ center: { eles: sel }, zoom: cy.zoom() }, { duration: 200 });
+        }
       }
-    }
 
-    // Apply trace
-    traceSet.forEach((id) => {
-      const graphId = getGraphNodeId(id);
-      const el = cy.getElementById(graphId);
-      if (el.length) el.addClass(traceGaps.has(id) ? 'trace-gap' : 'trace');
+      // Apply trace
+      traceSet.forEach((id) => {
+        const graphId = getGraphNodeId(id);
+        const el = cy.getElementById(graphId);
+        if (el.length) el.addClass(traceGaps.has(id) ? 'trace-gap' : 'trace');
+      });
     });
   }, [selectedId, traceSet, traceGaps]);
 

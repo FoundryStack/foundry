@@ -221,6 +221,13 @@ export const SystemMapHook = {
   _buildPreviewTargetUrl(route = '/') {
     const base = this._previewBaseUrl || 'http://localhost:4001'
     const normalizedRoute = this._normalizePreviewRoute(route)
+    // In cloud mode, base is a path prefix like "/preview-app" — resolve relative
+    // to the current page origin rather than treating it as an absolute URL.
+    if (base.startsWith('/')) {
+      const prefix = base.replace(/\/$/, '')
+      const suffix = normalizedRoute.startsWith('/') ? normalizedRoute : `/${normalizedRoute}`
+      return prefix + suffix
+    }
     return new URL(normalizedRoute, base).toString()
   },
 

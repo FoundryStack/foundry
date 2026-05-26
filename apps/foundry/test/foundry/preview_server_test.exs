@@ -71,6 +71,50 @@ defmodule Foundry.PreviewServerTest do
     assert PreviewServer.preview_base_url(project_root) == "http://localhost:4202"
   end
 
+  test "preview_base_url returns /preview-app path in cloud mode (FOUNDRY_STANDALONE=0)", %{
+    project_root: project_root
+  } do
+    prev = System.get_env("FOUNDRY_STANDALONE")
+
+    try do
+      System.put_env("FOUNDRY_STANDALONE", "0")
+      assert PreviewServer.preview_base_url(project_root) == "/preview-app"
+    after
+      if prev, do: System.put_env("FOUNDRY_STANDALONE", prev), else: System.delete_env("FOUNDRY_STANDALONE")
+    end
+  end
+
+  test "build_clean_env strips RELEASE_* variables and release PATH entries" do
+    release_root = "/fake/release"
+
+    System.put_env("RELEASE_ROOT", release_root)
+    System.put_env("RELEASE_COOKIE", "supersecret")
+    original_path = System.get_env("PATH", "")
+    System.put_env("PATH", "#{release_root}/erts-14.0/bin:#{release_root}/bin:/usr/bin:/bin")
+
+    state = %{env: [], port_num: 4001}
+
+    try do
+      env = PreviewServer.build_clean_env_for_test(state)
+
+      refute Map.has_key?(env, "RELEASE_ROOT"), "RELEASE_ROOT should be stripped"
+      refute Map.has_key?(env, "RELEASE_COOKIE"), "RELEASE_COOKIE should be stripped"
+
+      path = Map.get(env, "PATH", "")
+      refute String.contains?(path, "#{release_root}/erts-14.0/bin"),
+             "release erts bin should be removed from PATH"
+
+      refute String.contains?(path, "#{release_root}/bin"),
+             "release bin should be removed from PATH"
+
+      assert String.contains?(path, "/usr/bin"), "system PATH entries should be preserved"
+    after
+      System.delete_env("RELEASE_ROOT")
+      System.delete_env("RELEASE_COOKIE")
+      System.put_env("PATH", original_path)
+    end
+  end
+
   test "captures process output and exit failures", %{project_root: project_root} do
     File.write!(
       Path.join(project_root, "manifest.exs"),

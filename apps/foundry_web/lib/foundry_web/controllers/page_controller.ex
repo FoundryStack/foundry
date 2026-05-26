@@ -110,12 +110,18 @@ defmodule FoundryWeb.PageController do
   end
 
   defp validate_preview_target(target) do
-    with %URI{} = uri <- URI.parse(target),
-         true <- preview_host?(uri.host),
-         true <- is_integer(uri.port) do
-      {:ok, URI.to_string(%{uri | query: nil, fragment: nil, path: normalize_route(uri.path)})}
+    # In cloud mode the target is a server-relative path like "/preview-app/route".
+    # Accept paths that start with "/" and contain no traversal sequences.
+    if String.starts_with?(target, "/") and not String.contains?(target, "..") do
+      {:ok, normalize_route(target)}
     else
-      _ -> :error
+      with %URI{} = uri <- URI.parse(target),
+           true <- preview_host?(uri.host),
+           true <- is_integer(uri.port) do
+        {:ok, URI.to_string(%{uri | query: nil, fragment: nil, path: normalize_route(uri.path)})}
+      else
+        _ -> :error
+      end
     end
   end
 

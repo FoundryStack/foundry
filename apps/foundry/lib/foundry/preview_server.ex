@@ -68,13 +68,20 @@ defmodule Foundry.PreviewServer do
   end
 
   def preview_base_url(project_root) do
-    case load_manifest_config(project_root) do
-      {:ok, config} ->
-        port = config[:port] || @default_preview_port
-        "http://localhost:#{port}"
+    if System.get_env("FOUNDRY_STANDALONE", "1") == "0" do
+      # In cloud mode the preview dev server (port 4001) is proxied through
+      # the studio container's public endpoint via the /preview-app path prefix.
+      # The browser cannot reach localhost:4001 directly.
+      "/preview-app"
+    else
+      case load_manifest_config(project_root) do
+        {:ok, config} ->
+          port = config[:port] || @default_preview_port
+          "http://localhost:#{port}"
 
-      {:error, _reason} ->
-        "http://localhost:#{@default_preview_port}"
+        {:error, _reason} ->
+          "http://localhost:#{@default_preview_port}"
+      end
     end
   end
 
@@ -319,9 +326,25 @@ defmodule Foundry.PreviewServer do
   defp run_preview_command(owner, state, command_spec) do
     collector = %Foundry.PreviewServer.OutputCollector{owner: owner, runner_pid: self()}
 
+    # Resolve binaries before building env -i args.
+    env_bin = System.find_executable("env")
+    resolved = System.find_executable(command_spec.executable)
+
+    {executable, args} =
+      if env_bin && resolved do
+        # Use `env -i` to spawn with a completely clean environment so that
+        # RELEASE_* vars and the release's /app/erts-*/bin PATH prefix are not
+        # inherited. Without this, MuonTrap inherits the release PATH which
+        # causes `mix` to pick up the release erlexec, which crashes with
+        # "cannot get bootfile /app/bin/start.boot".
+        env_prefix = build_clean_env(state) |> Enum.map(fn {k, v} -> "#{k}=#{v}" end)
+        {env_bin, ["-i"] ++ env_prefix ++ [resolved | command_spec.args]}
+      else
+        {command_spec.executable, command_spec.args}
+      end
+
     opts = [
       cd: state.project_root,
-      env: normalized_env(state),
       stderr_to_stdout: true,
       delay_to_sigkill: @delay_to_sigkill_ms,
       into: collector
@@ -329,7 +352,7 @@ defmodule Foundry.PreviewServer do
 
     exit_result =
       try do
-        case MuonTrap.cmd(command_spec.executable, command_spec.args, opts) do
+        case MuonTrap.cmd(executable, args, opts) do
           {_collector, status} -> normalize_exit_result(status)
           other -> normalize_exit_result(other)
         end
@@ -342,13 +365,39 @@ defmodule Foundry.PreviewServer do
     send(owner, {:preview_exit, self(), exit_result})
   end
 
-  defp normalized_env(state) do
-    state.env
-    |> Kernel.++([
-      {"MIX_ENV", "dev"},
-      {"PORT", Integer.to_string(state.port_num)}
-    ])
-    |> Enum.map(&normalize_env_entry/1)
+  # Returns a cleaned environment for the preview subprocess: strips RELEASE_*
+  # vars, removes release bin dirs from PATH, adds preview-specific overrides.
+  @doc false
+  def build_clean_env_for_test(state), do: build_clean_env(state)
+
+  defp build_clean_env(state) do
+    release_root = System.get_env("RELEASE_ROOT")
+    overrides = %{"MIX_HOME" => "/tmp/.mix", "HEX_HOME" => "/tmp/.hex", "MIX_ENV" => "dev", "PORT" => Integer.to_string(state.port_num)}
+
+    base_env =
+      System.get_env()
+      |> Map.reject(fn {k, _v} -> String.starts_with?(k, "RELEASE_") end)
+      |> Map.merge(overrides)
+
+    base_env =
+      if release_root do
+        Map.update(base_env, "PATH", "", fn path ->
+          path
+          |> String.split(":")
+          |> Enum.reject(&String.starts_with?(&1, release_root))
+          |> Enum.join(":")
+        end)
+      else
+        base_env
+      end
+
+    # Merge manifest env overrides last so they win.
+    extra_env =
+      state.env
+      |> Enum.map(&normalize_env_entry/1)
+      |> Map.new(fn {k, v} -> {to_string(k), to_string(v)} end)
+
+    Map.merge(base_env, extra_env)
   end
 
   defp normalize_command(command) when is_binary(command) do
