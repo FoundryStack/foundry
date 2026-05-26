@@ -311,30 +311,18 @@ defmodule Foundry.ProjectManager do
   end
 
   defp install_dependencies(server, action_ref, project_root) do
-    build_dir = Path.join(project_root, "_build")
-    preview_build_dir = Path.join(project_root, "_build/preview")
+    dev_build_dir = Path.join(project_root, "_build/dev")
 
-    cond do
-      File.dir?(preview_build_dir) ->
-        emit_log(server, action_ref, "Project already compiled (preview build exists), skipping deps.get and compile.\n")
-        :ok
+    if File.dir?(dev_build_dir) do
+      emit_log(server, action_ref, "Project already compiled, skipping deps.get and compile.\n")
+      :ok
+    else
+      emit_log(server, action_ref, "$ mix deps.get\n")
 
-      File.dir?(build_dir) ->
-        emit_log(server, action_ref, "Building preview dev environment...\n")
-        emit_log(server, action_ref, "$ MIX_ENV=dev MIX_BUILD_PATH=_build/preview mix compile\n")
-        run_command(server, action_ref, "mix", ["compile"], project_root, %{"MIX_ENV" => "dev", "MIX_BUILD_PATH" => "_build/preview"})
-
-      true ->
-        emit_log(server, action_ref, "$ mix deps.get\n")
-
-        with :ok <- run_command(server, action_ref, "mix", ["deps.get"], project_root) do
-          emit_log(server, action_ref, "$ mix compile\n")
-
-          with :ok <- run_command(server, action_ref, "mix", ["compile"], project_root) do
-            emit_log(server, action_ref, "$ MIX_ENV=dev MIX_BUILD_PATH=_build/preview mix compile\n")
-            run_command(server, action_ref, "mix", ["compile"], project_root, %{"MIX_ENV" => "dev", "MIX_BUILD_PATH" => "_build/preview"})
-          end
-        end
+      with :ok <- run_command(server, action_ref, "mix", ["deps.get"], project_root) do
+        emit_log(server, action_ref, "$ MIX_ENV=dev mix compile\n")
+        run_command(server, action_ref, "mix", ["compile"], project_root, %{"MIX_ENV" => "dev"})
+      end
     end
   end
 
