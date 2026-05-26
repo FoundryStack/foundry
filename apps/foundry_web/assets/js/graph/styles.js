@@ -53,6 +53,8 @@ export const STATIC_STYLES = [
       'text-wrap': 'none',
       'padding': 6,
       'label': 'data(label)',
+      'overlay-opacity': 0,
+      'min-zoomed-font-size': 8,
     },
   },
   {
@@ -178,6 +180,7 @@ export const STATIC_STYLES = [
       'target-arrow-shape': 'triangle',
       'curve-style': 'bezier',
       'opacity': 0.8,
+      'overlay-opacity': 0,
     },
   },
   ...EDGE_CATALOG.map(edge => ({

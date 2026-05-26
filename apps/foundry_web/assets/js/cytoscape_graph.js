@@ -80,6 +80,7 @@ export class CytoscapeGraph {
       container: this.container,
       style: [],
       layout: { name: 'null' },
+      textureOnViewport: true,
       ...cyOptions,
     })
 
