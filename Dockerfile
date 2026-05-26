@@ -30,6 +30,12 @@ RUN echo "Building from $GIT_SHA" && \
     MIX_ENV=prod mix release server --overwrite && \
     rm -rf /build/deps /build/_build/prod/lib /root/.cache
 
+# Pre-compile the igaming reference project so the preview server starts instantly
+# without recompiling 100+ files. MIX_BUILD_PATH=_build/preview matches manifest.exs.
+RUN cd /build/reference_projects/igaming && \
+    MIX_HOME=/tmp/.mix MIX_ENV=dev MIX_BUILD_PATH=_build/preview mix deps.get && \
+    MIX_HOME=/tmp/.mix MIX_ENV=dev MIX_BUILD_PATH=_build/preview mix compile
+
 FROM --platform=linux/amd64 elixir:1.19-slim
 
 WORKDIR /app
@@ -45,8 +51,14 @@ RUN mix local.hex --force && mix local.rebar --force && chmod -R 755 /tmp/.mix
 
 COPY --from=builder /build/_build/prod/rel/server ./
 
+# Copy the pre-compiled igaming reference project to the path baked into the release config.
+# The compile-time path is /build/reference_projects/igaming (WORKDIR was /build during build).
+# We copy deps too so mix can do fast incremental checks without downloading anything.
+COPY --from=builder /build/reference_projects/igaming /build/reference_projects/igaming
+
 RUN groupadd -g 1000 deploy && useradd -u 1000 -g deploy deploy && \
-    chown -R deploy:deploy /app
+    chown -R deploy:deploy /app && \
+    chown -R deploy:deploy /build/reference_projects
 
 USER deploy
 EXPOSE 4001
