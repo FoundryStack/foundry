@@ -71,7 +71,8 @@ defmodule Foundry.Umbrella.MixProject do
         ]
       ],
       server: [
-        applications: [foundry: :permanent, foundry_web: :permanent]
+        applications: [foundry: :permanent, foundry_web: :permanent],
+        code_loading_mode: :interactive
       ]
     ]
   end

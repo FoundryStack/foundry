@@ -134,6 +134,29 @@ defmodule Foundry.ProjectManagerTest do
       assert File.dir?(Path.join(project_root, "_build")),
              "_build/ must exist after install_dependencies so ModuleDiscovery can load BEAM files"
     end
+
+  end
+
+  test "VM is not in :embedded code loading mode" do
+    # Regression: server release defaults to :embedded, which blocks Code.append_path
+    # at runtime. The studio must run in :interactive mode to load project BEAM files.
+    refute :code.get_mode() == :embedded,
+           "Release is in :embedded mode — add code_loading_mode: :interactive to the server release in mix.exs"
+  end
+
+  test "ModuleDiscovery returns non-empty list for the bundled igaming reference project" do
+    # Regression: server release ran in :embedded mode — Code.ensure_loaded? returned false
+    # for all modules loaded via Code.append_path, so ModuleDiscovery always returned [].
+    # Fix: code_loading_mode: :interactive in mix.exs releases config.
+    project_root = Foundry.ProjectManager.default_project_root()
+    {:ok, manifest} = Foundry.Manifest.Parser.read(project_root)
+    project_name = Keyword.fetch!(manifest, :project_name)
+
+    modules = Foundry.Context.ModuleDiscovery.all_project_modules(project_root, project_name)
+
+    assert length(modules) > 0,
+           "ModuleDiscovery returned [] — BEAM files exist but Code.ensure_loaded? failed. " <>
+             "Likely cause: VM in :embedded mode (current: #{inspect(:code.get_mode())})"
   end
 
   describe "build_env/0" do
