@@ -58,6 +58,13 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H 178.128.17.11 >> ~/.ssh/known_hosts
 
+      - name: Free up disk space on server
+        run: |
+          ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
+            "docker image prune -a --force --filter 'until=24h' && \
+             docker container prune --force && \
+             docker builder prune --force"
+
       - name: Pull and restart foundry service
         run: |
           ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
