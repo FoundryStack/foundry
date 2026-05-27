@@ -90,6 +90,46 @@ defmodule Foundry.PreviewServerTest do
     end
   end
 
+  test "cloud mode ignores manifest port and always uses default preview port (4002)", %{
+    project_root: project_root
+  } do
+    # Regression: manifest.exs with port: 4001 caused the preview server to bind on 4001
+    # in cloud mode, but Caddy is hardwired to proxy preview.* to port 4002 — causing 502.
+    # In cloud mode the manifest port must be ignored; the server must always use 4002.
+    prev_standalone = System.get_env("FOUNDRY_STANDALONE")
+    prev_host = System.get_env("PHX_HOST")
+
+    try do
+      System.put_env("FOUNDRY_STANDALONE", "0")
+      System.put_env("PHX_HOST", "studio.example.com")
+
+      File.write!(
+        Path.join(project_root, "manifest.exs"),
+        """
+        [preview_server: [command: "mix phx.server", port: 4001]]
+        """
+      )
+
+      # build_clean_env uses state.port_num which is set during start_cast.
+      # Verify cloud mode env has PORT=4002, not PORT=4001.
+      state = %{env: [], port_num: PreviewServer.cloud_preview_port()}
+      env = PreviewServer.build_clean_env_for_test(state)
+      assert Map.get(env, "PORT") == "4002",
+             "In cloud mode PORT env must be 4002 so Phoenix binds on the Caddy-proxied port"
+
+      assert PreviewServer.cloud_preview_port() == 4002,
+             "cloud_preview_port/0 must return 4002 to match Caddy config"
+    after
+      if prev_standalone,
+        do: System.put_env("FOUNDRY_STANDALONE", prev_standalone),
+        else: System.delete_env("FOUNDRY_STANDALONE")
+
+      if prev_host,
+        do: System.put_env("PHX_HOST", prev_host),
+        else: System.delete_env("PHX_HOST")
+    end
+  end
+
   test "build_clean_env sets MIX_ENV=dev so preview server reuses _build/dev compiled by install_dependencies" do
     # install_dependencies compiles into _build/dev/ (MIX_ENV=dev).
     # If build_clean_env passed a different MIX_ENV, mix phx.server would find an empty

@@ -66,6 +66,8 @@ defmodule Foundry.PreviewServer do
     GenServer.cast(__MODULE__, {:start, project_root})
   end
 
+  def cloud_preview_port, do: @default_preview_port
+
   def stop_preview do
     GenServer.cast(__MODULE__, :stop)
   end
@@ -144,7 +146,7 @@ defmodule Foundry.PreviewServer do
               project_root: project_root,
               command: command_spec.command,
               env: config[:env] || [],
-              port_num: config[:port] || @default_preview_port,
+              port_num: effective_preview_port(config),
               os_pid: nil,
               startup_started_at: now_ms(),
               last_activity_at: now_ms(),
@@ -275,6 +277,16 @@ defmodule Foundry.PreviewServer do
   def handle_info(msg, state) do
     Logger.debug("PreviewServer ignoring message: #{inspect(msg)}")
     {:noreply, state}
+  end
+
+  defp effective_preview_port(config) do
+    # In cloud mode Caddy is hardwired to proxy preview.* → container:4002.
+    # Manifest port is a local-dev convenience and must be ignored in cloud mode.
+    if System.get_env("FOUNDRY_STANDALONE", "1") == "0" do
+      @default_preview_port
+    else
+      config[:port] || @default_preview_port
+    end
   end
 
   defp load_manifest_config(project_root) do
