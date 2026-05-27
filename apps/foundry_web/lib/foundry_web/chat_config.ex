@@ -38,6 +38,10 @@ defmodule FoundryWeb.ChatConfig do
     Application.get_env(:foundry, :lm_studio, [])
   end
 
+  def gemini_config do
+    Application.get_env(:foundry, :gemini, [])
+  end
+
   def hook(key) do
     hooks =
       Application.get_env(:foundry_web, :chat_live_hooks) ||

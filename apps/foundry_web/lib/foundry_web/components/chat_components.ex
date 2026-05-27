@@ -282,7 +282,6 @@ defmodule FoundryWeb.ChatComponents do
           <form
             id="studio-chat-form"
             phx-submit="send_message"
-            phx-change="update_chat_input"
             class="border-t border-white/8 bg-transparent px-4 py-4"
           >
             <div>
@@ -292,7 +291,6 @@ defmodule FoundryWeb.ChatComponents do
                 rows="3"
                 placeholder="Ask about the system, or request a change..."
                 data-role="chat-input"
-                phx-debounce="150"
                 class="w-full resize-none rounded-[18px] border border-white/10 bg-transparent px-3 py-3 text-sm leading-6 text-base-content outline-none backdrop-blur-sm placeholder:text-neutral-content/50"
               ><%= @input %></textarea>
               <% active_proposal_id = @session_digest["active_proposal_id"]
@@ -388,12 +386,22 @@ defmodule FoundryWeb.ChatComponents do
                     </div>
                   </button>
                 </div>
-                  <button
-                    type="submit"
-                    class="inline-flex items-center rounded-2xl border border-white/15 bg-white px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-neutral transition-colors hover:bg-gray-100"
-                  >
-                    Send
-                  </button>
+                  <%= if @chat_loading do %>
+                    <button
+                      type="button"
+                      phx-click="cancel_message"
+                      class="inline-flex items-center rounded-2xl border border-warning/30 bg-warning/10 px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-warning transition-colors hover:bg-warning/15"
+                    >
+                      Stop
+                    </button>
+                  <% else %>
+                    <button
+                      type="submit"
+                      class="inline-flex items-center rounded-2xl border border-white/15 bg-white px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-neutral transition-colors hover:bg-gray-100"
+                    >
+                      Send
+                    </button>
+                  <% end %>
               </div>
             </div>
           </form>

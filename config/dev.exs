@@ -116,6 +116,11 @@ config :foundry, :lm_studio,
   timeout_ms: 120_000,
   temperature: 0.2
 
+config :foundry, :gemini,
+  api_key: System.get_env("GEMINI_API_KEY"),
+  model: System.get_env("GEMINI_MODEL", "gemini-2.0-flash"),
+  timeout_ms: 120_000
+
 # Configure igaming project root for System Map Viewer
 config :foundry_web,
        :igaming_project_root,

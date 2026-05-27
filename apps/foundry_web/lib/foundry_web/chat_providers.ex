@@ -19,6 +19,7 @@ defmodule FoundryWeb.ChatProviders do
       :claude_code -> call_claude_code(messages, on_event, run_context)
       :codex -> call_codex(messages, on_event, run_context)
       :lm_studio -> call_lm_studio(messages, on_event, run_context)
+      :gemini -> call_gemini(messages, on_event, run_context)
       _ -> {:error, {:unknown_provider, provider_from_run_context(run_context)}}
     end
   end
@@ -89,6 +90,26 @@ defmodule FoundryWeb.ChatProviders do
     end)
   rescue
     _ -> {:error, {:lm_studio_error, "LM Studio not available"}}
+  end
+
+  defp call_gemini(messages, on_event, run_context) do
+    config = ChatConfig.gemini_config()
+
+    opts = [
+      system_prompt: run_context.system_prompt,
+      api_key: Keyword.get(config, :api_key) || System.get_env("GEMINI_API_KEY"),
+      model:
+        model_from_run_context(run_context) ||
+          Keyword.get(config, :model, "gemini-3.5-flash"),
+      timeout_ms: Keyword.get(config, :timeout_ms, 120_000)
+    ]
+
+    Foundry.GeminiProvider.stream(messages, opts, fn
+      {:delta, text} -> on_event.({:delta, text})
+      _event -> :ok
+    end)
+  rescue
+    _ -> {:error, {:gemini_error, "Gemini API not available"}}
   end
 
   defp provider_from_run_context(%{selected_model: %{provider: provider}}), do: provider

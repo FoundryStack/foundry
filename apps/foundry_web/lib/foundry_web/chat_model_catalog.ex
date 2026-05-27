@@ -23,7 +23,7 @@ defmodule FoundryWeb.ChatModelCatalog do
   @anthropic_models @claude_models
 
   def catalog do
-    codex_entries() ++ claude_code_entries() ++ anthropic_entries() ++ lm_studio_entries()
+    codex_entries() ++ claude_code_entries() ++ anthropic_entries() ++ gemini_entries() ++ lm_studio_entries()
   end
 
   def default_model_id(catalog \\ catalog()) do
@@ -68,6 +68,7 @@ defmodule FoundryWeb.ChatModelCatalog do
   def pretty_provider_label(:codex), do: "Codex"
   def pretty_provider_label(:lm_studio), do: "LM Studio"
   def pretty_provider_label(:anthropic), do: "Anthropic"
+  def pretty_provider_label(:gemini), do: "Gemini"
   def pretty_provider_label(provider), do: provider |> to_string() |> String.replace("_", " ")
 
   defp codex_entries do
@@ -93,6 +94,50 @@ defmodule FoundryWeb.ChatModelCatalog do
         context_window: 200_000
       )
     end)
+  end
+
+  defp gemini_entries do
+    case discover_gemini_models() do
+      {:ok, []} ->
+        [
+          build_entry(:gemini, "Gemini (API)", "unavailable",
+            available: false,
+            disabled_reason: "No Gemini models available"
+          )
+        ]
+
+      {:ok, models} ->
+        models
+        |> Enum.filter(&String.contains?(&1, "gemini"))
+        |> Enum.map(fn model_id ->
+          build_entry(:gemini, "Gemini (API)", model_id, available: true, context_window: 1_000_000)
+        end)
+
+      {:error, _reason} ->
+        [
+          build_entry(:gemini, "Gemini (API)", "unavailable",
+            available: false,
+            disabled_reason: "Gemini API unavailable"
+          )
+        ]
+    end
+  end
+
+  defp discover_gemini_models do
+    case Application.get_env(:foundry_web, :chat_model_catalog_gemini) do
+      fun when is_function(fun, 0) ->
+        fun.()
+
+      _ ->
+        api_key = System.get_env("GEMINI_API_KEY")
+        config = ChatConfig.gemini_config()
+
+        if api_key || Keyword.get(config, :api_key) do
+          Foundry.GeminiProvider.list_models(api_key: api_key)
+        else
+          {:error, {:gemini_no_api_key, "GEMINI_API_KEY not set"}}
+        end
+    end
   end
 
   defp lm_studio_entries do
@@ -151,6 +196,7 @@ defmodule FoundryWeb.ChatModelCatalog do
   defp pretty_model_label(:codex, model_id), do: "Codex #{upcase_gpt_series(model_id)}"
   defp pretty_model_label(:claude_code, model_id), do: pretty_model_name(model_id)
   defp pretty_model_label(:anthropic, model_id), do: "Anthropic #{pretty_model_name(model_id)}"
+  defp pretty_model_label(:gemini, model_id), do: "Gemini #{pretty_model_name(model_id)}"
   defp pretty_model_label(:lm_studio, model_id), do: pretty_model_name(model_id)
   defp pretty_model_label(_provider, model_id), do: pretty_model_name(model_id)
 
@@ -184,6 +230,9 @@ defmodule FoundryWeb.ChatModelCatalog do
   defp configured_model_for_provider(:lm_studio),
     do: Keyword.get(ChatConfig.lm_studio_config(), :model)
 
+  defp configured_model_for_provider(:gemini),
+    do: Keyword.get(ChatConfig.gemini_config(), :model)
+
   defp configured_model_for_provider(_provider), do: nil
 
   defp find(catalog, provider: provider, model_id: model_id) do
@@ -193,6 +242,7 @@ defmodule FoundryWeb.ChatModelCatalog do
   defp family_sort_key("Codex (Local)"), do: 0
   defp family_sort_key("Claude Code (Local)"), do: 1
   defp family_sort_key("Anthropic (API)"), do: 2
-  defp family_sort_key("LM Studio"), do: 3
+  defp family_sort_key("Gemini (API)"), do: 3
+  defp family_sort_key("LM Studio"), do: 4
   defp family_sort_key(_family), do: 99
 end

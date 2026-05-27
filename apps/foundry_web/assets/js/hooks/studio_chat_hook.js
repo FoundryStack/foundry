@@ -103,9 +103,14 @@ export const StudioChatHook = {
       this._form.requestSubmit()
     }
 
-    this._submitHandler = () => {
+    this._submitHandler = (e) => {
       const message = this._input.value.trim()
       if (!message) return
+
+      // Add user message to chat immediately on client side
+      this._addMessageToChat('user', message)
+      // Add thinking bubble to show assistant is responding
+      this._addThinkingBubble()
 
       this._autoScrollEnabled = true
       requestAnimationFrame(() => {
@@ -169,6 +174,63 @@ export const StudioChatHook = {
       this._conversationScroller.scrollTop
 
     return remaining <= threshold
+  },
+
+  _addThinkingBubble() {
+    if (!this._conversation) return
+
+    const wrapper = document.createElement('div')
+    wrapper.className = 'flex justify-start'
+    wrapper.setAttribute('data-role', 'thinking-bubble')
+
+    const bubble = document.createElement('div')
+    bubble.className = 'max-w-[92%] rounded-box border border-base-300 bg-base-200/80 px-4 py-3 text-base-content shadow-sm'
+
+    const header = document.createElement('div')
+    header.className = 'mb-1 flex items-center gap-2'
+    header.innerHTML = `
+      <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">Assistant</p>
+      <span class="text-[10px] uppercase tracking-[0.12em] text-neutral-content/70">Thinking</span>
+    `
+
+    const dots = document.createElement('div')
+    dots.className = 'foundry-thinking-dots'
+    dots.setAttribute('aria-label', 'Assistant is thinking')
+    dots.innerHTML = '<span></span><span></span><span></span>'
+
+    bubble.appendChild(header)
+    bubble.appendChild(dots)
+    wrapper.appendChild(bubble)
+    this._conversation.appendChild(wrapper)
+    this._scrollConversationToBottom(false)
+  },
+
+  _addMessageToChat(role, text) {
+    if (!this._conversation) return
+
+    const wrapper = document.createElement('div')
+    wrapper.className = role === 'user' ? 'flex justify-end' : 'flex justify-start'
+
+    const bubble = document.createElement('div')
+    bubble.className = `max-w-[92%] rounded-box px-4 py-3 text-base-content shadow-sm ${
+      role === 'user' ? 'bg-primary/8' : ''
+    }`
+
+    const header = document.createElement('div')
+    header.className = 'mb-1 flex items-center gap-2'
+    header.innerHTML = `<p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">${
+      role === 'user' ? 'You' : 'Assistant'
+    }</p>`
+
+    const content = document.createElement('div')
+    content.className = 'space-y-3 break-words leading-6'
+    content.textContent = text
+
+    bubble.appendChild(header)
+    bubble.appendChild(content)
+    wrapper.appendChild(bubble)
+    this._conversation.appendChild(wrapper)
+    this._scrollConversationToBottom(false)
   },
 
   _parseLocalFileTarget(anchor) {

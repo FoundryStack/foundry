@@ -408,6 +408,11 @@ defmodule FoundryWeb.ChatSession do
     end
   end
 
+  def handle_event("cancel_message", _params, socket) do
+    socket = cancel_active_task(socket)
+    {:noreply, assign(socket, :chat_loading, false)}
+  end
+
   def handle_event("update_chat_input", params, socket) do
     message = params["value"] || ""
     {:noreply, assign(socket, :input, message)}

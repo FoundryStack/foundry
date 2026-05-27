@@ -83,6 +83,6 @@ jobs:
       - name: Verify health
         run: |
           ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
-            "sleep 10 && for i in \$(seq 1 25); do curl -sf http://localhost:4001/healthz && echo 'Studio healthy' && exit 0; sleep 3; done; echo 'Health check timed out'; exit 1"
+            "sleep 10 && for i in \$(seq 1 25); do docker exec saas_foundry curl -sf http://localhost:4000/healthz && echo 'Studio healthy' && exit 0; sleep 3; done; echo 'Studio health check timed out'; exit 1"
           ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
-            "for i in \$(seq 1 30); do curl -sf http://localhost:4000/health && echo 'Panel healthy' && exit 0; sleep 3; done; echo 'Panel health check timed out'; exit 1"
+            "for i in \$(seq 1 30); do curl -sf http://localhost:4000/healthz && echo 'Panel healthy' && exit 0; sleep 3; done; echo 'Panel health check timed out'; exit 1"

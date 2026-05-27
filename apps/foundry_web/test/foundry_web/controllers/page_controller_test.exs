@@ -132,6 +132,25 @@ defmodule FoundryWeb.PageControllerTest do
     assert is_binary(body["version"])
   end
 
+  test "GET /healthz returns mode=local in cloud mode (FOUNDRY_STANDALONE=0)", %{conn: conn} do
+    # Regression: CI healthcheck was hitting localhost:4001 (host) but saas_foundry
+    # exposes no host port — it only listens internally on port 4000 (reached via Caddy).
+    # This test verifies the healthz endpoint is reachable at the correct internal path.
+    prev = System.get_env("FOUNDRY_STANDALONE")
+
+    try do
+      System.put_env("FOUNDRY_STANDALONE", "0")
+      conn = get(conn, ~p"/healthz")
+      body = json_response(conn, 200)
+
+      assert body["ok"] == true
+      assert body["mode"] == "local"
+      assert is_binary(body["version"])
+    after
+      if prev, do: System.put_env("FOUNDRY_STANDALONE", prev), else: System.delete_env("FOUNDRY_STANDALONE")
+    end
+  end
+
   test "GET /project-onboarding with empty folder shows deps check", %{conn: conn} do
     dir = System.tmp_dir!() |> Path.join("pm_onboard_#{:rand.uniform(99999)}")
     File.mkdir_p!(dir)
