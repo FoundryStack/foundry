@@ -24,6 +24,7 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   alias Foundry.ChatTrace
   alias Foundry.SpecKit.SessionMemory
   alias FoundryWeb.ChatConfig
+  alias FoundryWeb.ChatToolEvent
 
   # --- Proposal Management ---
 
@@ -94,6 +95,7 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
       proposal: run_context.proposal,
       user_message: message,
       response_preview: nil,
+      stream_cursor: 0,
       events: [],
       grouped_events: [],
       phase_groups: [],
@@ -124,8 +126,10 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   end
 
   def append_trace_event_to_run(run, trace_event) do
+    cursor = Map.get(run, :stream_cursor, 0)
     normalized = ChatTrace.normalize(trace_event["provider"] || "unknown", trace_event)
-    events = [normalized | run.events] |> Enum.take(250)
+    stamped = Map.put(normalized, :text_cursor, cursor)
+    events = [stamped | run.events] |> Enum.take(250)
     summary = ChatTrace.summarize_run(events)
 
     run
@@ -354,6 +358,12 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
     message
     |> maybe_put_partial(run)
     |> maybe_put_message_proposal(run.proposal)
+    |> maybe_put_tool_events(run)
+  end
+
+  defp maybe_put_tool_events(message, run) do
+    events = ChatToolEvent.normalize_many(run.grouped_events || [])
+    if events == [], do: message, else: Map.put(message, "tool_events", events)
   end
 
   def maybe_put_partial(message, %{metadata: metadata}) when is_map(metadata) do

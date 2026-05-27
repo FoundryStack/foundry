@@ -588,13 +588,24 @@ defmodule Foundry.Chat.Retrieval do
 
     module_events =
       Enum.map(tool_results.module_contexts, fn module_context ->
+        output =
+          try do
+            Jason.encode!(
+              %{id: module_context.id, summary: module_context.summary, node: module_context.node},
+              pretty: true
+            )
+          rescue
+            _ -> inspect(module_context.summary, pretty: true)
+          end
+
         %{
           "provider" => "foundry",
           "type" => "foundry.tool.module_context",
           "phase" => "retrieval",
           "tool" => "module_context",
           "path" => module_context.id,
-          "message" => "Loaded module context for #{module_context.id}"
+          "message" => "Loaded module context for #{module_context.id}",
+          "output" => output
         }
       end)
 
@@ -606,7 +617,8 @@ defmodule Foundry.Chat.Retrieval do
           "phase" => "retrieval",
           "tool" => "read_doc",
           "path" => document.path,
-          "message" => "Read spec-kit document #{document.path}"
+          "message" => "Read spec-kit document #{document.path}",
+          "output" => document.excerpt
         }
       end)
 

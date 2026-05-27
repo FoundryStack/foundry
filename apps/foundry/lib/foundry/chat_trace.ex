@@ -279,7 +279,11 @@ defmodule Foundry.ChatTrace do
   end
 
   defp build_title(:context, _phase, _type, _item_type, _tool, _command, _paths, raw_event) do
-    Map.get(raw_event, "message", "Loaded Foundry context")
+    case Map.get(raw_event, "cache") do
+      "miss" -> "Context cache miss — rebuilding"
+      "hit" -> "Loaded context (cached)"
+      _ -> Map.get(raw_event, "message", "Loaded Foundry context")
+    end
   end
 
   defp build_title(:session, _phase, _type, _item_type, _tool, _command, _paths, raw_event) do
@@ -290,24 +294,41 @@ defmodule Foundry.ChatTrace do
     Map.get(raw_event, "message", "Proposal flow event")
   end
 
-  defp build_title(:tool, _phase, _type, item_type, tool, _command, _paths, _raw_event) do
+  defp build_title(:tool, _phase, _type, item_type, tool, _command, paths, raw_event) do
     cond do
-      present?(tool) -> "Used tool #{tool}"
+      tool == "module_context" and paths != [] ->
+        "Read module #{List.first(paths)}"
+
+      tool == "module_context" ->
+        case Map.get(raw_event, "path") || Map.get(raw_event, "message") do
+          nil -> "Read module context"
+          path when is_binary(path) -> "Read module #{path}"
+        end
+
+      tool == "read_doc" and paths != [] ->
+        "Read document #{Path.basename(List.first(paths))}"
+
+      tool == "read_doc" ->
+        case Map.get(raw_event, "path") do
+          nil -> "Read document"
+          path -> "Read document #{Path.basename(path)}"
+        end
+
+      tool in ["apply_patch", "write_file", "create_file"] and paths != [] ->
+        "Write #{path_tail_str(List.first(paths))}"
+
+      tool in ["read_file", "cat", "open"] and paths != [] ->
+        "Read #{path_tail_str(List.first(paths))}"
+
+      present?(tool) -> "Tool: #{tool}"
       present?(item_type) -> "Completed #{item_type}"
       true -> "Tool activity"
     end
   end
 
-  defp build_title(:command, phase, _type, _item_type, _tool, command, _paths, _raw_event) do
-    prefix =
-      case phase do
-        :verification -> "Verified with"
-        :shell_retrieval -> "Inspected via shell"
-        :shell_fallback -> "Ran fallback command"
-        _ -> "Ran command"
-      end
-
-    "#{prefix} #{truncate(command, 80)}"
+  defp build_title(:command, _phase, _type, _item_type, _tool, command, _paths, _raw_event) do
+    inner = unwrap_shell_command(command)
+    "Shell: #{truncate(inner, 100)}"
   end
 
   defp build_title(:file, _phase, _type, _item_type, _tool, _command, [path], _raw_event) do
@@ -344,18 +365,26 @@ defmodule Foundry.ChatTrace do
   end
 
   defp build_detail(type, item_type, command, paths, raw_event) do
+    output =
+      Map.get(raw_event, "output") ||
+        Map.get(raw_event, "result") ||
+        Map.get(raw_event, "content") ||
+        Map.get(raw_event, "data")
+
     parts =
       [
-        if(present?(item_type), do: "item: #{item_type}"),
-        if(present?(command), do: "command: #{truncate(command, 140)}"),
-        if(present?(Map.get(raw_event, "message")), do: Map.get(raw_event, "message")),
-        path_detail(paths)
+        if(present?(command), do: unwrap_shell_command(command)),
+        if(present?(output) and is_binary(output), do: truncate(output, 1200)),
+        if(present?(Map.get(raw_event, "message")) and not present?(command) and is_nil(output),
+          do: Map.get(raw_event, "message")
+        ),
+        if(paths == [] and present?(item_type), do: item_type)
       ]
       |> Enum.reject(&is_nil/1)
 
     case parts do
-      [] -> "event type: #{type}"
-      _ -> Enum.join(parts, " • ")
+      [] -> if type != "unknown", do: type, else: nil
+      _ -> Enum.join(parts, "\n")
     end
   end
 
@@ -375,12 +404,24 @@ defmodule Foundry.ChatTrace do
     String.replace(command, ~r/\s+/, " ")
   end
 
-  defp merged_detail(existing, _event) do
-    base_detail = Map.get(existing, :detail, "Repeated activity")
+  defp merged_detail(existing, event) do
+    base_detail = Map.get(existing, :detail)
+    incoming_detail = Map.get(event, :detail)
 
-    case existing.count do
-      count when count >= 1 -> "#{base_detail} • repeated #{count + 1}x"
-      _ -> base_detail
+    combined =
+      case {base_detail, incoming_detail} do
+        {nil, nil} -> nil
+        {nil, inc} -> inc
+        {base, nil} -> base
+        {base, inc} when base == inc -> base
+        {base, inc} -> "#{base}\n---\n#{inc}"
+      end
+
+    if existing.count > 1 do
+      repeat_note = "repeated #{existing.count + 1}x"
+      if combined, do: "#{combined}\n#{repeat_note}", else: repeat_note
+    else
+      combined
     end
   end
 
@@ -433,10 +474,6 @@ defmodule Foundry.ChatTrace do
   defp phase_sort_order(:verification), do: 7
   defp phase_sort_order(:final), do: 8
   defp phase_sort_order(_), do: 9
-
-  defp path_detail([]), do: nil
-  defp path_detail([path]), do: "path: #{path}"
-  defp path_detail(paths), do: "paths: #{Enum.take(paths, 3) |> Enum.join(", ")}"
 
   defp find_first(map, keys) when is_map(map), do: Enum.find_value(keys, &Map.get(map, &1))
   defp find_first(_map, _keys), do: nil
@@ -492,4 +529,27 @@ defmodule Foundry.ChatTrace do
 
   defp present?(value) when is_binary(value), do: String.trim(value) != ""
   defp present?(value), do: not is_nil(value)
+
+  defp unwrap_shell_command(nil), do: nil
+
+  defp unwrap_shell_command(command) do
+    cond do
+      # /bin/zsh -lc "..." or /bin/bash -c "..."
+      match = Regex.run(~r{/bin/\w+\s+-\w+\s+"(.+)"$}s, command) ->
+        String.trim(Enum.at(match, 1))
+
+      # /bin/sh -c '...' or /bin/bash -c '...'
+      match = Regex.run(~r{/bin/(?:ba)?sh\s+-\w+\s+'(.+)'$}s, command) ->
+        String.trim(Enum.at(match, 1))
+
+      true ->
+        command
+    end
+  end
+
+  defp path_tail_str(path) when is_binary(path) do
+    path |> String.split("/") |> Enum.take(-2) |> Enum.join("/")
+  end
+
+  defp path_tail_str(path), do: to_string(path)
 end

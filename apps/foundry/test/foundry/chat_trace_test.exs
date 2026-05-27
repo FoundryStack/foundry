@@ -194,7 +194,7 @@ defmodule Foundry.ChatTraceTest do
     assert summary.grouped_event_count == 1
     grouped = List.first(summary.grouped_events)
     assert grouped.count == 2
-    assert grouped.detail =~ "repeated 2x"
+    assert is_nil(grouped.detail)
   end
 
   test "does not merge events with nil duplicate_key" do

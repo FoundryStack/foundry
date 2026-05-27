@@ -3,6 +3,9 @@ defmodule FoundryWeb.ChatComponents do
   use FoundryWeb, :html
 
   alias Foundry.ChatTrace
+  alias FoundryWeb.ChatToolEvent
+  alias FoundryWeb.ChatTokenMeter
+  alias FoundryWeb.ChatPathUtils
 
   attr :open_session_ids, :list, default: []
   attr :active_session_id, :string, default: nil
@@ -28,7 +31,7 @@ defmodule FoundryWeb.ChatComponents do
     selected_run = selected_run(assigns.activity_runs, assigns.selected_activity_run_id)
 
     token_meter =
-      token_meter(
+      ChatTokenMeter.build(
         assigns.messages,
         assigns.session_digest,
         assigns.input,
@@ -97,52 +100,6 @@ defmodule FoundryWeb.ChatComponents do
           </button>
         </div>
       <% end %>
-        <%!-- <div class="flex items-start justify-between gap-3">
-          <div class="space-y-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <%= if @latest_run do %>
-                <span class={mode_badge_class(@latest_run.mode)}>
-                  {mode_label(@latest_run.mode)}
-                </span>
-                <%= if proposal_id = get_in(@latest_run, [:proposal, :id]) do %>
-                  <span class="inline-flex items-center rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent">
-                    proposal {proposal_id}
-                  </span>
-                <% end %>
-              <% end %>
-            </div>
-          </div>
-          <%= if @latest_run do %>
-            <div class="flex flex-wrap justify-end gap-2">
-              <span class="inline-flex items-center rounded-full border border-base-300 bg-base-100/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content">
-                {token_badge_label(@latest_run)}
-              </span>
-              <%= if @latest_run.read_files != [] do %>
-                <span class="inline-flex items-center rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info">
-                  read {length(@latest_run.read_files)}
-                </span>
-              <% end %>
-              <%= if @latest_run.written_files != [] do %>
-                <span class="inline-flex items-center rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning">
-                  wrote {length(@latest_run.written_files)}
-                </span>
-              <% end %>
-            </div>
-          <% end %>
-        </div> --%>
-
-        <%!-- <div class="grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_auto]">
-          <%= if @latest_run do %>
-            <div class="grid grid-cols-4 gap-2">
-              <.trace_stat label="Last run" value={status_label(@latest_run.status)} />
-              <.trace_stat label="Grouped trace" value={@latest_run.grouped_event_count || 0} />
-              <.trace_stat label="Files surfaced" value={@latest_run.file_count} />
-              <.trace_stat label="Tokens" value={run_total_tokens(@latest_run) || "n/a"} />
-            </div>
-          <% end %>
-        </div> --%>
-
-
       <%= if @show_system_context do %>
         <div class="border-b border-white/10 px-4 py-3">
           <div class="rounded-[18px] border border-white/10 bg-transparent">
@@ -220,33 +177,13 @@ defmodule FoundryWeb.ChatComponents do
                   </div>
                 <% end %>
 
-                <%!-- <%= if @latest_run do %>
-                  <div class="rounded-box border border-base-300/80 bg-base-200/55 px-4 py-3">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class={mode_badge_class(@latest_run.mode)}>
-                        {mode_label(@latest_run.mode)}
-                      </span>
-                      <span class={trace_status_class(@latest_run.status)}>
-                        {status_label(@latest_run.status)}
-                      </span>
-                      <%= if proposal_id = get_in(@latest_run, [:proposal, :id]) do %>
-                        <span class="rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent">
-                          Proposal {proposal_id}
-                        </span>
-                      <% end %>
-                    </div>
-                    <p class="mt-2 text-xs leading-5 text-neutral-content">
-                      Context cache {trace_cache_label(@latest_run)}. Foundry preloads global context and may inspect source directly when exact evidence is needed, while governed change requests stay attached to proposal metadata.
-                    </p>
-                  </div>
-                <% end %> --%>
-
                 <%= for {msg, index} <- Enum.with_index(@messages) do %>
                   <.message_bubble
                     message={msg}
                     message_index={index}
                     streaming={streaming_message?(msg, index, @message_count, @chat_loading)}
                     active_run={message_active_run(msg, index, @message_count, @chat_loading, @latest_run)}
+                    project_root={@project_root}
                   />
                 <% end %>
 
@@ -366,17 +303,17 @@ defmodule FoundryWeb.ChatComponents do
                     type="button"
                     phx-click="summarize_session"
                     disabled={@chat_loading}
-                    title={token_meter_title(@token_meter)}
+                    title={ChatTokenMeter.title(@token_meter)}
                     class="group relative grid h-10 w-10 place-items-center rounded-full border border-base-300/80 bg-base-200/70 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
                     data-role="token-meter-summarize"
-                    style={token_meter_style(@token_meter)}
+                    style={ChatTokenMeter.ring_style(@token_meter)}
                   >
                     <div class="grid h-7 w-7 place-items-center rounded-full bg-base-100/95 text-[9px] font-semibold uppercase tracking-[0.08em] text-base-content">
-                      {token_meter_inner_label(@token_meter)}
+                      {ChatTokenMeter.ring_label(@token_meter)}
                     </div>
                     <div class="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden w-48 -translate-x-1/2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-[10px] text-base-content shadow-lg group-hover:block">
                       <p class="font-semibold uppercase tracking-[0.12em] text-neutral-content">
-                        {token_meter_summary(@token_meter)}
+                        {ChatTokenMeter.summary(@token_meter)}
                       </p>
                       <p class="mt-1 text-xs leading-4 text-base-content/70">
                         Click to summarize session
@@ -700,7 +637,7 @@ defmodule FoundryWeb.ChatComponents do
             />
             <.digest_card
               label="Recent tokens"
-              value={token_usage_label(Map.get(@session_digest, "recent_token_usage", %{}))}
+              value={ChatTokenMeter.usage_label(Map.get(@session_digest, "recent_token_usage", %{}))}
             />
           </div>
         </div>
@@ -825,28 +762,27 @@ defmodule FoundryWeb.ChatComponents do
   attr :message_index, :integer, required: true
   attr :streaming, :boolean, default: false
   attr :active_run, :map, default: nil
+  attr :project_root, :string, default: nil
 
   defp message_bubble(assigns) do
     is_user = assigns.message["role"] == "user"
-    runtime = runtime_message_metadata(assigns.message, assigns.active_run, assigns.streaming)
-    proposal = runtime.proposal
-    read_files = runtime.read_files
-    written_files = runtime.written_files
-    tools = runtime.tools
-    token_usage = runtime.token_usage
-    total_tokens = runtime.total_tokens
+    active_run = assigns.active_run
+
+    proposal =
+      if active_run, do: active_run.proposal || assigns.message["proposal"], else: assigns.message["proposal"]
+
+    tool_events =
+      cond do
+        is_user -> []
+        active_run != nil -> build_live_tool_events(active_run.grouped_events || [])
+        true -> assigns.message["tool_events"] || []
+      end
 
     assigns =
       assigns
       |> assign(:is_user, is_user)
       |> assign(:proposal, proposal)
-      |> assign(:read_files, read_files)
-      |> assign(:written_files, written_files)
-      |> assign(:tools, tools)
-      |> assign(:token_usage, token_usage)
-      |> assign(:total_tokens, total_tokens)
-      |> assign(:provider, runtime.provider)
-      |> assign(:partial, runtime.partial)
+      |> assign(:tool_events, tool_events)
       |> assign(:delivery_status, assigns.message["delivery_status"])
       |> assign(:content, assigns.message["content"] || "")
       |> assign(:markdown_id, message_markdown_id(assigns.message, assigns.message_index))
@@ -863,132 +799,62 @@ defmodule FoundryWeb.ChatComponents do
     ~H"""
     <div class={@wrapper_class}>
       <div class={@bubble_class}>
-        <div class="mb-1 flex items-center gap-2">
+        <div class="mb-2 flex items-center gap-2">
           <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-content">
             {if @is_user, do: "You", else: "Assistant"}
           </p>
         </div>
-        <div
-          class="space-y-3 break-words leading-6"
-          data-role="chat-markdown"
-          data-variant={@markdown_variant}
-        >
-          <PhoenixStreamdown.markdown
-            content={@content}
-            id={@markdown_id}
-            streaming={@streaming}
-            theme="github_dark"
-            class="chat-markdown-body"
-            block_class="chat-markdown-block"
-            mdex_opts={markdown_options()}
-          />
+        <div class="space-y-2">
+          <%= if !@is_user do %>
+            <% segments = interleave_tool_events(@content, @tool_events, @streaming) %>
+            <%= for {{segment_text, segment_events, is_last}, seg_idx} <- Enum.with_index(segments) do %>
+              <.inline_tool_event
+                :for={event <- segment_events}
+                event={event}
+                project_root={@project_root}
+              />
+              <div
+                :if={segment_text != ""}
+                class="break-words leading-6"
+                data-role="chat-markdown"
+                data-variant={@markdown_variant}
+              >
+                <PhoenixStreamdown.markdown
+                  content={segment_text}
+                  id={@markdown_id <> if(is_last, do: "", else: "_seg#{seg_idx}")}
+                  streaming={is_last && @streaming}
+                  theme="github_dark"
+                  class="chat-markdown-body"
+                  block_class="chat-markdown-block"
+                  mdex_opts={markdown_options()}
+                />
+              </div>
+            <% end %>
+          <% end %>
+          <%= if @is_user do %>
+            <div
+              :if={@content != ""}
+              class="break-words leading-6"
+              data-role="chat-markdown"
+              data-variant={@markdown_variant}
+            >
+              <PhoenixStreamdown.markdown
+                content={@content}
+                id={@markdown_id}
+                streaming={@streaming}
+                theme="github_dark"
+                class="chat-markdown-body"
+                block_class="chat-markdown-block"
+                mdex_opts={markdown_options()}
+              />
+            </div>
+          <% end %>
+          <.proposal_preview_card :if={!@is_user and is_map(@proposal)} proposal={@proposal} />
         </div>
-        <.copilot_options
-          :if={!@is_user and !@streaming}
-          content={@content}
-        />
-        <%= if !@is_user and (@total_tokens || @read_files != [] || @written_files != [] || @tools != [] || @partial) do %>
-          <div class="mt-3 flex flex-wrap gap-2">
-            <span
-              :if={@total_tokens || map_size(@token_usage) > 0}
-              class="rounded-full border border-base-300 bg-base-100/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
-            >
-              {token_usage_label(@token_usage, @total_tokens)}
-            </span>
-            <span
-              :if={@read_files != []}
-              class="rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info"
-            >
-              read {length(@read_files)}
-            </span>
-            <span
-              :if={@written_files != []}
-              class="rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
-            >
-              wrote {length(@written_files)}
-            </span>
-            <span
-              :if={@tools != []}
-              class="rounded-full border border-secondary/25 bg-secondary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-secondary"
-            >
-              {length(@tools)} tools
-            </span>
-            <span
-              :if={@partial}
-              class="rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
-            >
-              partial
-            </span>
-          </div>
-        <% end %>
-        <%= if !@is_user and (@read_files != [] || @written_files != [] || @tools != []) do %>
-          <div class="mt-3 space-y-3">
-            <.activity_chip_row :if={@read_files != []} label="Read" tone={:read} items={@read_files} />
-            <.activity_chip_row
-              :if={@written_files != []}
-              label="Wrote"
-              tone={:write}
-              items={@written_files}
-            />
-            <.activity_chip_row :if={@tools != []} label="Tools" tone={:tool} items={@tools} />
-          </div>
-        <% end %>
-        <.proposal_preview_card :if={!@is_user and is_map(@proposal)} proposal={@proposal} />
       </div>
     </div>
     """
   end
-
-  attr :content, :string, required: true
-
-  defp copilot_options(assigns) do
-    questions = parse_dn_options(assigns.content)
-    assigns = assign(assigns, :questions, questions)
-
-    ~H"""
-    <%= if @questions != [] do %>
-      <div class="mt-4 space-y-4">
-        <%= for question <- @questions do %>
-          <div class="rounded-box border border-primary/20 bg-primary/5 px-4 py-3">
-            <p class="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
-              {question.label}
-            </p>
-            <div class="mt-3 flex flex-col gap-2">
-              <%= for option <- question.options do %>
-                <button
-                  type="button"
-                  phx-click="copilot_option_select"
-                  phx-value-label={option.letter}
-                  phx-value-question={question.label}
-                  phx-value-text={option.text}
-                  class="rounded-box border border-base-300/60 bg-base-100/60 px-3 py-2.5 text-left text-sm text-base-content transition-colors hover:border-primary/50 hover:bg-primary/8"
-                >
-                  <span class="font-semibold text-primary">{option.letter})</span>
-                  {" "}{option.text}
-                </button>
-              <% end %>
-            </div>
-          </div>
-        <% end %>
-      </div>
-    <% end %>
-    """
-  end
-
-  defp parse_dn_options(content) when is_binary(content) do
-    ~r/D\d+\s*[—–-]\s*([^\n]+)\n(?:.*\n)*?(?=(?:A\))|(?:A\s+—))((?:(?:[A-C]\)|[A-C]\s+—)[^\n]*\n?)+)/
-    |> Regex.scan(content, capture: :all)
-    |> Enum.map(fn [_full, title, options_block] ->
-      options =
-        Regex.scan(~r/([A-C])\)\s*([^\n]+)/, options_block, capture: :all)
-        |> Enum.map(fn [_full, letter, text] -> %{letter: letter, text: String.trim(text)} end)
-
-      %{label: String.trim(title), options: options}
-    end)
-    |> Enum.reject(fn q -> q.options == [] end)
-  end
-
-  defp parse_dn_options(_), do: []
 
   attr :proposal, :map, required: true
 
@@ -1123,29 +989,186 @@ defmodule FoundryWeb.ChatComponents do
     """
   end
 
-  attr :label, :string, required: true
-  attr :items, :list, default: []
-  attr :tone, :atom, default: :neutral
+  attr :event, :map, required: true
+  attr :project_root, :string, default: nil
 
-  defp activity_chip_row(assigns) do
+  defp inline_tool_event(assigns) do
     ~H"""
-    <div>
-      <div class="mb-1 flex items-center gap-2">
-        <span class={activity_label_class(@tone)}>{@label}</span>
-        <span
-          :if={length(@items) > 4}
-          class="text-[10px] uppercase tracking-[0.12em] text-neutral-content/70"
-        >
-          +{length(@items) - 4} more
+    <details class="group pl-3 border-l-2 border-white/10 hover:border-white/20 transition-colors">
+      <summary class="flex cursor-pointer list-none items-center gap-2 py-0.5 select-none">
+        <span class={inline_tool_icon_class(@event["category"])}>
+          {inline_tool_icon(@event["category"])}
         </span>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <span :for={item <- Enum.take(@items, 4)} class={activity_chip_class(@tone)}>
-          {activity_chip_text(item)}
+        <span class="min-w-0 flex-1 truncate text-[12px] text-base-content/60 group-open:text-base-content/80">
+          {format_tool_title(@event)}
         </span>
+        <span :if={(@event["count"] || 1) > 1} class="shrink-0 text-[10px] text-neutral-content/40">
+          ×{@event["count"]}
+        </span>
+        <svg class="shrink-0 h-3 w-3 text-neutral-content/30 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+      </summary>
+      <div class="mt-1 ml-1 space-y-1.5 pb-1">
+        <pre
+          :if={@event["output"]}
+          class="whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-neutral-content/50"
+        >{@event["output"]}</pre>
+        <pre
+          :if={!@event["output"] && @event["detail"]}
+          class="whitespace-pre-wrap break-all font-mono text-[11px] leading-5 text-neutral-content/50"
+        >{@event["detail"]}</pre>
+        <div :if={(@event["paths"] || []) != []} class="flex flex-wrap gap-1">
+          <%= for path <- Enum.take(@event["paths"] || [], 6) do %>
+            <% {rel_path, line} = ChatPathUtils.parse_path_ref(path, @project_root) %>
+            <button
+              :if={rel_path != nil}
+              phx-click="fetch_file"
+              phx-value-path={rel_path}
+              phx-value-line={line}
+              class={["cursor-pointer hover:opacity-80 active:opacity-60", inline_tool_path_class(@event["file_access"])]}
+            >
+              {ChatPathUtils.path_tail(path)}
+            </button>
+            <span
+              :if={rel_path == nil}
+              class={inline_tool_path_class(@event["file_access"])}
+            >
+              {ChatPathUtils.path_tail(path)}
+            </span>
+          <% end %>
+          <span
+            :if={length(@event["paths"] || []) > 6}
+            class="rounded px-1 py-0.5 text-[10px] text-neutral-content/40"
+          >
+            +{length(@event["paths"]) - 6} more
+          </span>
+        </div>
       </div>
-    </div>
+    </details>
     """
+  end
+
+  @inline_tool_icons %{"tool" => "⚙", "command" => ">", "file" => "□", "context" => "◈", "proposal" => "◉", "error" => "!"}
+  defp inline_tool_icon(cat), do: Map.get(@inline_tool_icons, cat, "·")
+
+  @inline_tool_icon_classes %{
+    "tool" => "shrink-0 text-[11px] text-secondary/70",
+    "command" => "shrink-0 text-[11px] font-mono text-base-content/50",
+    "file" => "shrink-0 text-[11px] text-info/70",
+    "context" => "shrink-0 text-[11px] text-accent/70",
+    "proposal" => "shrink-0 text-[11px] text-success/70",
+    "error" => "shrink-0 text-[11px] text-error/70"
+  }
+  defp inline_tool_icon_class(cat),
+    do: Map.get(@inline_tool_icon_classes, cat, "shrink-0 text-[11px] text-neutral-content/40")
+
+  defp format_tool_title(event) do
+    tool = event["tool"]
+    command = event["command"]
+    category = event["category"]
+    paths = event["paths"] || []
+    first_path = List.first(paths)
+
+    cond do
+      tool == "module_context" and first_path ->
+        "Read module #{first_path}"
+
+      tool == "module_context" ->
+        "Read module context"
+
+      tool == "read_doc" and first_path ->
+        "Read doc #{Path.basename(first_path)}"
+
+      tool == "read_doc" ->
+        "Read document"
+
+      tool in ["apply_patch", "write_file", "create_file"] and first_path ->
+        "Write #{ChatPathUtils.path_tail(first_path)}"
+
+      tool in ["read_file", "cat", "open"] and first_path ->
+        "Read #{ChatPathUtils.path_tail(first_path)}"
+
+      category == "command" and is_binary(command) ->
+        inner = strip_shell_wrapper(command)
+        "Shell #{String.slice(inner, 0, 100)}"
+
+      is_binary(tool) and tool != "" ->
+        "Tool: #{tool}"
+
+      true ->
+        event["title"] || event["command"] || category || "Tool activity"
+    end
+  end
+
+  defp strip_shell_wrapper(command) do
+    case Regex.run(~r{/bin/(?:ba|z)?sh\s+-\w+\s+"(.+)"$}s, command) do
+      [_, inner] -> String.trim(inner)
+      _ ->
+        case Regex.run(~r{/bin/(?:ba|z)?sh\s+-\w+\s+'(.+)'$}s, command) do
+          [_, inner] -> String.trim(inner)
+          _ -> command
+        end
+    end
+  end
+
+  defp inline_tool_path_class("write"),
+    do: "rounded border border-warning/20 bg-warning/10 px-1.5 py-0.5 font-mono text-[10px] text-warning"
+
+  defp inline_tool_path_class(_),
+    do: "rounded border border-info/20 bg-info/10 px-1.5 py-0.5 font-mono text-[10px] text-info"
+
+
+  # Returns [{text_segment, [tool_events_preceding_segment], is_last_segment}]
+  # Each tuple means: render the tool events, then render the text segment.
+  # The last segment is flagged so the caller can set streaming=true on it.
+  defp interleave_tool_events(content, tool_events, _streaming) do
+    sorted_events = Enum.sort_by(tool_events, &(&1["text_cursor"] || 0))
+    grouped = Enum.group_by(sorted_events, &(&1["text_cursor"] || 0))
+
+    # Collect the unique cursor positions where text should be split
+    split_cursors = grouped |> Map.keys() |> Enum.filter(&(&1 > 0)) |> Enum.sort()
+
+    events_at_zero = Map.get(grouped, 0, [])
+
+    # Build list of {text_before_split, events_at_split} pairs.
+    # Snap split position to nearest preceding newline or whitespace to avoid mid-word breaks.
+    {pairs, remaining_text, _offset} =
+      Enum.reduce(split_cursors, {[], content, 0}, fn cursor, {acc, rest, offset} ->
+        raw_pos = max(0, min(cursor - offset, String.length(rest)))
+        local_pos = ChatPathUtils.snap_to_word_boundary(rest, raw_pos)
+        {before, after_text} = String.split_at(rest, local_pos)
+        events_here = Map.get(grouped, cursor, [])
+        {acc ++ [{before, events_here}], after_text, offset + local_pos}
+      end)
+
+    case pairs do
+      [] ->
+        # No mid-text splits: all events at cursor 0, render before full text
+        [{content, events_at_zero, true}]
+
+      _ ->
+        # First segment: events_at_zero before the first piece of text
+        first_text = elem(List.first(pairs), 0)
+        first = {first_text, events_at_zero, false}
+
+        # Middle segments: events from position N before the text chunk after position N
+        middle =
+          pairs
+          |> Enum.drop(1)
+          |> Enum.zip(pairs |> Enum.map(&elem(&1, 1)))
+          |> Enum.map(fn {{text, _}, events_before} -> {text, events_before, false} end)
+
+        # Last segment: events from the last split before the remaining tail text
+        last_events = elem(List.last(pairs), 1)
+        last = {remaining_text, last_events, true}
+
+        [first | middle] ++ [last]
+    end
+  end
+
+  defp build_live_tool_events(grouped_events) do
+    ChatToolEvent.normalize_many(grouped_events)
   end
 
   defp streaming_message?(%{"role" => "assistant"}, index, message_count, true),
@@ -1187,7 +1210,8 @@ defmodule FoundryWeb.ChatComponents do
         smart: true
       ],
       render: [
-        escape: true
+        escape: true,
+        unsafe: true
       ]
     ]
   end
@@ -1279,182 +1303,6 @@ defmodule FoundryWeb.ChatComponents do
 
   defp run_total_tokens(_run), do: nil
 
-  defp runtime_message_metadata(message, active_run, true) when is_map(active_run) do
-    %{
-      proposal: active_run.proposal || message["proposal"],
-      read_files: active_run.read_files || message["read_files"] || [],
-      written_files: active_run.written_files || message["written_files"] || [],
-      tools: active_run.tools || message["tools"] || [],
-      token_usage: active_run.token_usage || message["token_usage"] || %{},
-      total_tokens: active_run.total_tokens || message["total_tokens"],
-      provider: active_run.provider || message["provider"],
-      partial: false
-    }
-  end
-
-  defp runtime_message_metadata(message, _active_run, _streaming) do
-    %{
-      proposal: message["proposal"],
-      read_files: message["read_files"] || [],
-      written_files: message["written_files"] || [],
-      tools: message["tools"] || [],
-      token_usage: message["token_usage"] || %{},
-      total_tokens: message["total_tokens"],
-      provider: message["provider"],
-      partial: !!message["partial"]
-    }
-  end
-
-  defp activity_label_class(:read),
-    do:
-      "rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info"
-
-  defp activity_label_class(:write),
-    do:
-      "rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
-
-  defp activity_label_class(:tool),
-    do:
-      "rounded-full border border-secondary/25 bg-secondary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-secondary"
-
-  defp activity_label_class(_tone),
-    do:
-      "rounded-full border border-base-300 bg-base-100/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
-
-  defp activity_chip_class(:read),
-    do:
-      "rounded-full border border-info/20 bg-info/10 px-2.5 py-1 font-mono text-[11px] text-info"
-
-  defp activity_chip_class(:write),
-    do:
-      "rounded-full border border-warning/20 bg-warning/10 px-2.5 py-1 font-mono text-[11px] text-warning"
-
-  defp activity_chip_class(:tool),
-    do:
-      "rounded-full border border-secondary/20 bg-secondary/10 px-2.5 py-1 text-[11px] font-semibold text-secondary"
-
-  defp activity_chip_class(_tone),
-    do:
-      "rounded-full border border-base-300 bg-base-100/70 px-2.5 py-1 text-[11px] text-base-content/80"
-
-  defp activity_chip_text(item) when is_binary(item) do
-    item
-    |> String.split("/")
-    |> Enum.take(-2)
-    |> Enum.join("/")
-  end
-
-  defp activity_chip_text(item), do: to_string(item)
-
-  defp token_meter(messages, session_digest, input, llm_diagnostics) do
-    model = Map.get(llm_diagnostics || %{}, :model) || Map.get(llm_diagnostics || %{}, "model")
-
-    provider =
-      Map.get(llm_diagnostics || %{}, :provider) || Map.get(llm_diagnostics || %{}, "provider")
-
-    exact_usage = Map.get(session_digest || %{}, "recent_token_usage", %{})
-    exact_total = Map.get(exact_usage, :total_tokens) || Map.get(exact_usage, "total_tokens")
-    estimate = estimated_tokens(messages, session_digest, input, provider, model)
-    window = context_window(provider, model)
-    total = exact_total || estimate
-    ratio = if is_integer(window) and window > 0, do: min(total / window, 1.0), else: nil
-
-    %{
-      provider: provider,
-      model: model,
-      exact_total: exact_total,
-      estimate_total: estimate,
-      total: total,
-      window: window,
-      ratio: ratio
-    }
-  end
-
-  defp estimated_tokens(messages, session_digest, input, provider, model) do
-    parts =
-      [
-        Map.get(session_digest || %{}, "working_summary", ""),
-        Jason.encode!(session_digest || %{}),
-        Enum.map_join(messages || [], "\n", &"#{&1["role"]}: #{&1["content"] || ""}"),
-        input || "",
-        to_string(provider || ""),
-        to_string(model || "")
-      ]
-
-    parts
-    |> Enum.join("\n")
-    |> String.length()
-    |> Kernel./(4)
-    |> Float.ceil()
-    |> trunc()
-    |> Kernel.+(400)
-  end
-
-  defp context_window(:codex, model) when is_binary(model) do
-    cond do
-      String.starts_with?(model, "gpt-5") -> 400_000
-      true -> nil
-    end
-  end
-
-  defp context_window(:claude_code, model) when is_binary(model) do
-    cond do
-      String.contains?(model, "sonnet") -> 200_000
-      String.contains?(model, "haiku") -> 200_000
-      String.contains?(model, "opus") -> 200_000
-      true -> nil
-    end
-  end
-
-  defp context_window(:lm_studio, _model), do: nil
-  defp context_window("codex", model), do: context_window(:codex, model)
-  defp context_window("claude_code", model), do: context_window(:claude_code, model)
-  defp context_window("lm_studio", model), do: context_window(:lm_studio, model)
-  defp context_window(_provider, _model), do: nil
-
-  defp token_meter_style(%{ratio: ratio}) when is_number(ratio) do
-    angle = Float.round(ratio * 360.0, 2)
-
-    "background: conic-gradient(color-mix(in oklch, var(--color-primary) 78%, white) #{angle}deg, color-mix(in oklch, var(--color-base-300) 88%, transparent) #{angle}deg);"
-  end
-
-  defp token_meter_style(_meter) do
-    "background: color-mix(in oklch, var(--color-base-300) 72%, transparent);"
-  end
-
-  defp token_meter_inner_label(%{ratio: ratio}) when is_number(ratio) do
-    "#{round(ratio * 100)}%"
-  end
-
-  defp token_meter_inner_label(_meter), do: "?"
-
-  defp token_meter_summary(%{total: total, window: window})
-       when is_integer(total) and is_integer(window) do
-    "#{format_compact_number(total)} / #{format_compact_number(window)}"
-  end
-
-  defp token_meter_summary(%{estimate_total: total, window: nil}) when is_integer(total) do
-    "~#{format_compact_number(total)} • window unknown"
-  end
-
-  defp token_meter_summary(_meter), do: "window unknown"
-
-  defp token_meter_title(%{total: total, exact_total: exact, window: window, model: model}) do
-    usage =
-      cond do
-        is_integer(exact) -> "#{exact} exact tokens from provider"
-        is_integer(total) -> "~#{total} estimated tokens"
-        true -> "Token usage unavailable"
-      end
-
-    window_text =
-      if is_integer(window), do: "window #{window}", else: "window unknown"
-
-    [usage, window_text, model || "model unknown"]
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.join(" • ")
-  end
-
   defp summary_timestamp(value) when is_binary(value) do
     case DateTime.from_iso8601(value) do
       {:ok, datetime, _offset} -> Calendar.strftime(datetime, "%H:%M:%S UTC")
@@ -1464,114 +1312,52 @@ defmodule FoundryWeb.ChatComponents do
 
   defp summary_timestamp(_value), do: "just now"
 
-  defp format_compact_number(value) when is_integer(value) and value >= 1000 do
-    cond do
-      value >= 1_000_000 -> "#{Float.round(value / 1_000_000, 1)}M"
-      value >= 1000 -> "#{Float.round(value / 1000, 1)}K"
-    end
-  end
+  @trace_status_classes %{
+    running: "rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info",
+    completed: "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success",
+    error: "rounded-full border border-error/25 bg-error/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error"
+  }
+  @badge_neutral "rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
 
-  defp format_compact_number(value) when is_integer(value), do: Integer.to_string(value)
+  defp trace_status_class(status), do: Map.get(@trace_status_classes, status, @badge_neutral)
 
-  defp token_usage_label(usage, total \\ nil) do
-    total = total || Map.get(usage || %{}, :total_tokens) || Map.get(usage || %{}, "total_tokens")
-    input = Map.get(usage || %{}, :input_tokens) || Map.get(usage || %{}, "input_tokens")
-    output = Map.get(usage || %{}, :output_tokens) || Map.get(usage || %{}, "output_tokens")
+  @proposal_status_labels %{applied: "Applied", awaiting_revision: "Awaiting revision", cancelled: "Cancelled"}
 
-    cond do
-      is_integer(total) and is_integer(input) and is_integer(output) ->
-        "#{total} total • #{input} in • #{output} out"
+  defp proposal_status_label(status) when is_atom(status),
+    do: Map.get(@proposal_status_labels, status, "Draft")
 
-      is_integer(total) ->
-        "#{total} tokens"
-
-      is_integer(input) or is_integer(output) ->
-        "#{input || 0} in • #{output || 0} out"
-
-      true ->
-        "tokens unavailable"
-    end
-  end
-
-  defp trace_status_class(:running),
-    do:
-      "rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info"
-
-  defp trace_status_class(:completed),
-    do:
-      "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success"
-
-  defp trace_status_class(:error),
-    do:
-      "rounded-full border border-error/25 bg-error/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error"
-
-  defp trace_status_class(_status),
-    do:
-      "rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
-
-  defp proposal_status_label(:applied), do: "Applied"
-  defp proposal_status_label(:awaiting_revision), do: "Awaiting revision"
-  defp proposal_status_label(:cancelled), do: "Cancelled"
   defp proposal_status_label(status) when is_binary(status), do: status
-  defp proposal_status_label(_status), do: "Draft"
+  defp proposal_status_label(_), do: "Draft"
 
-  defp proposal_status_class(:applied),
-    do:
-      "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success"
+  @proposal_status_classes %{
+    applied: "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success",
+    awaiting_revision: "rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning",
+    cancelled: "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
+  }
+  @badge_accent "rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent"
 
-  defp proposal_status_class(:awaiting_revision),
-    do:
-      "rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning"
+  defp proposal_status_class(status), do: Map.get(@proposal_status_classes, status, @badge_accent)
 
-  defp proposal_status_class(:cancelled),
-    do:
-      "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
+  @trace_category_labels %{
+    proposal: "Proposal", context: "Context", session: "Session", tool: "Tool",
+    command: "Command", file: "File", reasoning: "Reasoning", message: "Message",
+    result: "Result", error: "Error"
+  }
 
-  defp proposal_status_class(_status),
-    do:
-      "rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent"
+  defp trace_category_label(category),
+    do: Map.get(@trace_category_labels, category, "Event")
 
-  defp trace_category_label(:proposal), do: "Proposal"
-  defp trace_category_label(:context), do: "Context"
-  defp trace_category_label(:session), do: "Session"
-  defp trace_category_label(:tool), do: "Tool"
-  defp trace_category_label(:command), do: "Command"
-  defp trace_category_label(:file), do: "File"
-  defp trace_category_label(:reasoning), do: "Reasoning"
-  defp trace_category_label(:message), do: "Message"
-  defp trace_category_label(:result), do: "Result"
-  defp trace_category_label(:error), do: "Error"
-  defp trace_category_label(_category), do: "Event"
+  @trace_category_classes %{
+    proposal: "rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent",
+    context: "rounded-full border border-info/20 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info",
+    session: "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content",
+    tool: "rounded-full border border-secondary/20 bg-secondary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-secondary",
+    command: "rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary",
+    file: "rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent",
+    error: "rounded-full border border-error/20 bg-error/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error"
+  }
+  @badge_base "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
 
-  defp trace_category_class(:proposal),
-    do:
-      "rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent"
-
-  defp trace_category_class(:context),
-    do:
-      "rounded-full border border-info/20 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info"
-
-  defp trace_category_class(:session),
-    do:
-      "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
-
-  defp trace_category_class(:tool),
-    do:
-      "rounded-full border border-secondary/20 bg-secondary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-secondary"
-
-  defp trace_category_class(:command),
-    do:
-      "rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary"
-
-  defp trace_category_class(:file),
-    do:
-      "rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent"
-
-  defp trace_category_class(:error),
-    do:
-      "rounded-full border border-error/20 bg-error/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error"
-
-  defp trace_category_class(_category),
-    do:
-      "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
+  defp trace_category_class(category),
+    do: Map.get(@trace_category_classes, category, @badge_base)
 end

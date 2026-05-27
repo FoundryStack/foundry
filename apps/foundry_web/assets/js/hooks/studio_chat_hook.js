@@ -236,13 +236,21 @@ export const StudioChatHook = {
   _parseLocalFileTarget(anchor) {
     const href = anchor.getAttribute('href')
     if (!href || href.startsWith('#')) return null
-    if (/^(https?:|mailto:|tel:)/i.test(href)) return null
 
     const projectRoot = this.el.dataset.projectRoot
     let path = href
     let isAbsolutePath = false
 
-    if (href.startsWith('file://')) {
+    if (/^https?:\/\/localhost(:\d+)?\//i.test(href)) {
+      const url = new URL(href)
+      path = decodeURIComponent(url.pathname)
+      if (url.hash && url.hash.startsWith('#L')) {
+        path = path + url.hash
+      }
+      isAbsolutePath = true
+    } else if (/^(https?:|mailto:|tel:)/i.test(href)) {
+      return null
+    } else if (href.startsWith('file://')) {
       path = decodeURIComponent(new URL(href).pathname)
       isAbsolutePath = true
     } else if (href.startsWith('/')) {
@@ -253,10 +261,16 @@ export const StudioChatHook = {
     path = decodeURIComponent(path)
 
     let line = null
-    const lineMatch = path.match(/:(\d+)$/)
+    const lineMatch = path.match(/#L(\d+)$/)
     if (lineMatch) {
       line = parseInt(lineMatch[1], 10)
       path = path.slice(0, -lineMatch[0].length)
+    } else {
+      const colonMatch = path.match(/:(\d+)$/)
+      if (colonMatch) {
+        line = parseInt(colonMatch[1], 10)
+        path = path.slice(0, -colonMatch[0].length)
+      }
     }
 
     if (isAbsolutePath) {

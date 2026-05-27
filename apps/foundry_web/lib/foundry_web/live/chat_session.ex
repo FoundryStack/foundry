@@ -455,17 +455,7 @@ defmodule FoundryWeb.ChatSession do
   end
 
   def handle_event("summarize_session", _params, socket) do
-    summary =
-      build_session_summary(
-        socket.assigns.session_digest,
-        socket.assigns.messages,
-        socket.assigns.activity_runs
-      )
-
-    {:noreply,
-     socket
-     |> assign(:session_summary, summary)
-     |> assign(:last_session_summary_at, DateTime.utc_now())}
+    {:noreply, assign(socket, :last_session_summary_at, DateTime.utc_now() |> DateTime.to_iso8601())}
   end
 
   # --- Proposal Events ---
@@ -508,22 +498,20 @@ defmodule FoundryWeb.ChatSession do
     _ -> {:noreply, socket}
   end
 
-  # D<N> structured option selection — bypasses re-classification, sends option label directly
-  def handle_event(
-        "copilot_option_select",
-        %{"label" => letter, "question" => _question, "text" => option_text},
-        socket
-      ) do
-    handle_event("send_message", %{"message" => "#{letter}) #{option_text}"}, socket)
-  end
-
   def handle_event(_event, _params, _socket), do: :unhandled
 
   # --- Streaming Events ---
 
   def handle_info({:llm_stream_delta, request_ref, delta}, socket) do
     if request_ref == socket.assigns.active_request_ref do
-      {:noreply, update(socket, :messages, &append_to_streaming_response(&1, delta))}
+      socket =
+        socket
+        |> update(:messages, &append_to_streaming_response(&1, delta))
+        |> DomainLogic.update_activity_run(request_ref, fn run ->
+          Map.update(run, :stream_cursor, String.length(delta), &(&1 + String.length(delta)))
+        end)
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -736,8 +724,19 @@ defmodule FoundryWeb.ChatSession do
   defp finalize_streaming_response(messages, response, run) do
     messages
     |> mark_latest_user_message_complete()
-    |> update_last_assistant_message(&Map.put(&1, "content", response))
+    |> update_last_assistant_message(fn msg ->
+      # Prefer existing streamed content so text_cursor positions remain valid.
+      # Fall back to the cleaned response only if streamed content is absent.
+      existing = msg["content"] || ""
+      content = if existing != "", do: strip_hidden_tail(existing), else: response
+      Map.put(msg, "content", content)
+    end)
     |> update_last_assistant_message(&DomainLogic.maybe_attach_message_metadata(&1, run))
+  end
+
+  @hidden_block_regex ~r/\s*```(?:foundry-memory|foundry-session)\s*\{.*?\}\s*```\s*$/s
+  defp strip_hidden_tail(content) do
+    Regex.replace(@hidden_block_regex, content, "")
   end
 
   defp drop_empty_streaming_response(messages) do
@@ -1020,16 +1019,6 @@ defmodule FoundryWeb.ChatSession do
   end
 
   # --- Session Helpers ---
-
-  defp build_session_summary(digest, messages, activity_runs) do
-    {:ok,
-     %{
-       message_count: length(messages),
-       activity_count: length(activity_runs),
-       digest_size: map_size(digest || %{}),
-       generated_at: DateTime.utc_now()
-     }}
-  end
 
   defp parse_chat_view("trace"), do: :trace
   defp parse_chat_view("session"), do: :session

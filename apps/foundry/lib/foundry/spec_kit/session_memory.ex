@@ -276,7 +276,7 @@ defmodule Foundry.SpecKit.SessionMemory do
 
     case last_hidden_block_start(trimmed_response) do
       nil ->
-        %{acc | response: String.trim(response)}
+        %{acc | response: String.trim_trailing(response)}
 
       start_index ->
         block =
@@ -307,7 +307,7 @@ defmodule Foundry.SpecKit.SessionMemory do
             |> then(&extract_hidden_blocks(cleaned_response, &1))
 
           _ ->
-            %{acc | response: String.trim(response)}
+            %{acc | response: String.trim_trailing(response)}
         end
     end
   end
