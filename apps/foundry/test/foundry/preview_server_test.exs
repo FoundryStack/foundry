@@ -336,6 +336,48 @@ defmodule Foundry.PreviewServerTest do
     assert status.last_error == nil
   end
 
+  test "cloud mode E2E: server process binds on 4002 even when manifest specifies port 4001", %{
+    project_root: project_root
+  } do
+    # End-to-end regression for the cloud 502 bug:
+    # manifest.exs declares port: 4001, but in cloud mode Caddy proxies to :4002.
+    # Verify that start_preview respects cloud mode and the process actually opens 4002.
+    prev_standalone = System.get_env("FOUNDRY_STANDALONE")
+    prev_host = System.get_env("PHX_HOST")
+
+    try do
+      System.put_env("FOUNDRY_STANDALONE", "0")
+      System.put_env("PHX_HOST", "studio.example.com")
+
+      # Simulate a project whose manifest hardcodes port 4001 (like foundry-igaming).
+      # The server command listens on $PORT — preview_server sets PORT=4002 in cloud mode.
+      File.write!(
+        Path.join(project_root, "manifest.exs"),
+        """
+        [preview_server: [command: "sh -c 'nc -l 0.0.0.0 $PORT'", port: 4001, env: []]]
+        """
+      )
+
+      PreviewServer.start_preview(project_root)
+
+      # Wait for running state — means :gen_tcp.connect to 4002 succeeded.
+      assert wait_for_state(:running, 80),
+             "Preview server did not reach :running state within 20s in cloud mode"
+
+      assert {:ok, status} = PreviewServer.get_status()
+      assert status.state == :running
+      assert status.port == 4002, "Expected port 4002 in cloud mode, got #{status.port}"
+    after
+      if prev_standalone,
+        do: System.put_env("FOUNDRY_STANDALONE", prev_standalone),
+        else: System.delete_env("FOUNDRY_STANDALONE")
+
+      if prev_host,
+        do: System.put_env("PHX_HOST", prev_host),
+        else: System.delete_env("PHX_HOST")
+    end
+  end
+
   defp wait_for_state(expected_state, attempts_left \\ 40)
 
   defp wait_for_state(_expected_state, 0), do: false
