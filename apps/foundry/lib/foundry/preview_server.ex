@@ -38,7 +38,7 @@ defmodule Foundry.PreviewServer do
 
   require Logger
 
-  @default_preview_port 4001
+  @default_preview_port 4002
   @startup_check_delay_ms 250
   # 3 minutes default: first-run compilation can take 2+ minutes; activity-based
   # reset means fast starts (no compile needed) still detect port open in <1s.
