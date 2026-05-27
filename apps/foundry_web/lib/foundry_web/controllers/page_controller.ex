@@ -10,7 +10,7 @@ defmodule FoundryWeb.PageController do
 
     if project_manager_ready? do
       case Foundry.PreviewServer.get_status() do
-        {:ok, %{state: state}} when state not in [:starting, :running] ->
+        {:ok, %{state: :idle}} ->
           Foundry.PreviewServer.start_preview(preview_project_root())
 
         _ ->
@@ -29,7 +29,7 @@ defmodule FoundryWeb.PageController do
     # compiling — the page polls this endpoint and we start the preview as soon as it's safe.
     if pm_status.state == :ready do
       case Foundry.PreviewServer.get_status() do
-        {:ok, %{state: state}} when state not in [:starting, :running] ->
+        {:ok, %{state: :idle}} ->
           Foundry.PreviewServer.start_preview(preview_project_root())
 
         _ ->
