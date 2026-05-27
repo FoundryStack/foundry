@@ -800,13 +800,13 @@ export class DrawerManager {
 
   _bodyCard(body) {
     if (!body || body.trim() === '') return ''
-    return `<section class="rounded-2xl border border-white/8 bg-white/5 p-3">${body}</section>`
+    return `<section class="rounded-2xl border border-white/8 bg-white/5 p-3 mx-3 mt-2">${body}</section>`
   }
 
   _fieldCard(label, body) {
     if (!body || body.trim() === '') return ''
     return `
-      <section class="rounded-2xl border border-white/8 bg-white/5 p-3">
+      <section class="rounded-2xl border border-white/8 bg-white/5 p-3 mx-3 mt-2">
         <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-content/55">${this._esc(label)}</p>
         <div class="mt-2">${body}</div>
       </section>

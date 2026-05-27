@@ -23,7 +23,8 @@ defmodule FoundryWeb.ChatModelCatalog do
   @anthropic_models @claude_models
 
   def catalog do
-    codex_entries() ++ claude_code_entries() ++ anthropic_entries() ++ gemini_entries() ++ lm_studio_entries()
+    codex_entries() ++
+      claude_code_entries() ++ anthropic_entries() ++ gemini_entries() ++ lm_studio_entries()
   end
 
   def default_model_id(catalog \\ catalog()) do
@@ -42,6 +43,9 @@ defmodule FoundryWeb.ChatModelCatalog do
           ) ->
         match.id
 
+      cloud_default_match(catalog) ->
+        cloud_default_match(catalog).id
+
       match = Enum.find(catalog, &(&1.availability == :available)) ->
         match.id
 
@@ -50,6 +54,16 @@ defmodule FoundryWeb.ChatModelCatalog do
 
       true ->
         nil
+    end
+  end
+
+  defp cloud_default_match(catalog) do
+    unless Foundry.RuntimeConfig.standalone?() do
+      Enum.find(
+        catalog,
+        &(&1.provider == :gemini and &1.model_id == "gemini-3.5-flash" and
+            &1.availability == :available)
+      )
     end
   end
 
@@ -90,7 +104,7 @@ defmodule FoundryWeb.ChatModelCatalog do
     Enum.map(@anthropic_models, fn model_id ->
       build_entry(:anthropic, "Anthropic (API)", model_id,
         available: false,
-        disabled_reason: "Anthropic API backend not implemented",
+        disabled_reason: "Anthropic API backend not available",
         context_window: 200_000
       )
     end)
@@ -110,7 +124,10 @@ defmodule FoundryWeb.ChatModelCatalog do
         models
         |> Enum.filter(&String.contains?(&1, "gemini"))
         |> Enum.map(fn model_id ->
-          build_entry(:gemini, "Gemini (API)", model_id, available: true, context_window: 1_000_000)
+          build_entry(:gemini, "Gemini (API)", model_id,
+            available: true,
+            context_window: 1_000_000
+          )
         end)
 
       {:error, _reason} ->
@@ -196,7 +213,7 @@ defmodule FoundryWeb.ChatModelCatalog do
   defp pretty_model_label(:codex, model_id), do: "Codex #{upcase_gpt_series(model_id)}"
   defp pretty_model_label(:claude_code, model_id), do: pretty_model_name(model_id)
   defp pretty_model_label(:anthropic, model_id), do: "Anthropic #{pretty_model_name(model_id)}"
-  defp pretty_model_label(:gemini, model_id), do: "Gemini #{pretty_model_name(model_id)}"
+  defp pretty_model_label(:gemini, model_id), do: pretty_model_name(model_id)
   defp pretty_model_label(:lm_studio, model_id), do: pretty_model_name(model_id)
   defp pretty_model_label(_provider, model_id), do: pretty_model_name(model_id)
 
