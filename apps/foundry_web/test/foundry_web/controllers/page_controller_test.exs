@@ -65,6 +65,53 @@ defmodule FoundryWeb.PageControllerTest do
     refute html =~ "etc/passwd"
   end
 
+  test "GET /preview-launch in cloud mode falls back to preview subdomain URL", %{conn: conn} do
+    prev_standalone = System.get_env("FOUNDRY_STANDALONE")
+    prev_host = System.get_env("PHX_HOST")
+
+    try do
+      System.put_env("FOUNDRY_STANDALONE", "0")
+      System.put_env("PHX_HOST", "studio.example.com")
+      conn = get(conn, "/preview-launch?target=https://evil.com")
+      html = html_response(conn, 200)
+
+      assert html =~ "Starting preview"
+      assert html =~ "https://preview.studio.example.com/"
+      refute html =~ "evil.com"
+    after
+      if prev_standalone,
+        do: System.put_env("FOUNDRY_STANDALONE", prev_standalone),
+        else: System.delete_env("FOUNDRY_STANDALONE")
+
+      if prev_host,
+        do: System.put_env("PHX_HOST", prev_host),
+        else: System.delete_env("PHX_HOST")
+    end
+  end
+
+  test "GET /preview-launch in cloud mode accepts target on preview subdomain", %{conn: conn} do
+    prev_standalone = System.get_env("FOUNDRY_STANDALONE")
+    prev_host = System.get_env("PHX_HOST")
+
+    try do
+      System.put_env("FOUNDRY_STANDALONE", "0")
+      System.put_env("PHX_HOST", "studio.example.com")
+      conn = get(conn, "/preview-launch?target=https://preview.studio.example.com/games")
+      html = html_response(conn, 200)
+
+      assert html =~ "Starting preview"
+      assert html =~ "https://preview.studio.example.com/games"
+    after
+      if prev_standalone,
+        do: System.put_env("FOUNDRY_STANDALONE", prev_standalone),
+        else: System.delete_env("FOUNDRY_STANDALONE")
+
+      if prev_host,
+        do: System.put_env("PHX_HOST", prev_host),
+        else: System.delete_env("PHX_HOST")
+    end
+  end
+
   test "GET /preview-status returns preview server status payload", %{conn: conn} do
     conn = get(conn, ~p"/preview-status")
     body = json_response(conn, 200)
