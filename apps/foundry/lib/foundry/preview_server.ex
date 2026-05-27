@@ -70,6 +70,10 @@ defmodule Foundry.PreviewServer do
     GenServer.cast(__MODULE__, :stop)
   end
 
+  def cloud_preview_port do
+    Foundry.RuntimeConfig.cloud_preview_port()
+  end
+
   def preview_base_url(project_root) do
     if not Foundry.RuntimeConfig.standalone?() do
       # In cloud mode the preview dev server is proxied through a dedicated subdomain
@@ -395,7 +399,7 @@ defmodule Foundry.PreviewServer do
         %{}
       end
 
-    overrides = Map.merge(%{"MIX_HOME" => "/tmp/.mix", "HEX_HOME" => "/tmp/.hex", "MIX_ENV" => "dev", "PORT" => Integer.to_string(state.port_num)}, cloud_overrides)
+    overrides = Map.merge(%{"MIX_HOME" => "/tmp/.mix", "HEX_HOME" => "/tmp/.hex", "MIX_ENV" => "dev", "PORT" => Integer.to_string(state.port_num), "HEX_OFFLINE" => "false"}, cloud_overrides)
 
     base_env =
       System.get_env()
@@ -429,7 +433,14 @@ defmodule Foundry.PreviewServer do
         {:error, "Preview command is empty."}
 
       [executable | args] ->
-        {:ok, %{command: command, executable: executable, args: args}}
+        # Prepend mix local.hex --force to auto-install Hex if needed
+        full_command = if executable == "mix" do
+          "mix local.hex --force && #{command}"
+        else
+          command
+        end
+
+        {:ok, %{command: full_command, executable: "sh", args: ["-c", full_command]}}
     end
   end
 
@@ -441,11 +452,19 @@ defmodule Foundry.PreviewServer do
         {:error, "Preview command is empty."}
 
       [executable | args] ->
+        full_command = if executable == "mix" do
+          rebuilt_command = [executable | args]
+          command_str = Enum.join(rebuilt_command, " ")
+          "mix local.hex --force && #{command_str}"
+        else
+          Enum.join([executable | args], " ")
+        end
+
         {:ok,
          %{
-           command: Enum.join(Enum.map([executable | args], &inspect/1), " "),
-           executable: executable,
-           args: args
+           command: full_command,
+           executable: "sh",
+           args: ["-c", full_command]
          }}
     end
   rescue

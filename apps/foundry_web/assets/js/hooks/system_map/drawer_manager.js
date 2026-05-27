@@ -2,6 +2,12 @@ import { covColor } from '../../foundry_graph'
 import { UI_CONFIG } from '../../graph/config'
 import { formatNodeDisplayLabel, formatStepKindLabel } from '../../graph/semantics'
 import { ResizablePanel } from './resizable_panel'
+import { EditorState } from '@codemirror/state'
+import { EditorView, lineNumbers, highlightActiveLineGutter } from '@codemirror/view'
+import { syntaxHighlighting, HighlightStyle, foldGutter, indentOnInput } from '@codemirror/language'
+import { tags as t } from '@lezer/highlight'
+import { markdown } from '@codemirror/lang-markdown'
+import { elixir } from 'codemirror-lang-elixir'
 
 const SELECTORS = {
   drawer: 'fm-drawer',
@@ -33,6 +39,7 @@ export class DrawerManager {
     this._activeNodeSelection = null
     this._activeScenario = null
     this._activeFileView = null
+    this._cmEditor = null
     this._panel = new ResizablePanel({
       elementId: SELECTORS.drawer,
       handleId: 'drawer-resize-handle',
@@ -173,7 +180,86 @@ export class DrawerManager {
 
   switchTab(_tabName) {}
 
+  _destroyEditor() {
+    if (this._cmEditor) {
+      this._cmEditor.destroy()
+      this._cmEditor = null
+    }
+  }
+
+  _getCMTheme() {
+    const styles = getComputedStyle(document.documentElement)
+    const getCSSVar = (name) => styles.getPropertyValue(name).trim()
+
+    return EditorView.theme({
+      '.cm-editor': {
+        backgroundColor: getCSSVar('--fg-s2'),
+        color: getCSSVar('--fg-tx'),
+        fontFamily: "'Geist Mono', ui-monospace, monospace",
+        fontSize: '12px',
+        height: '100%',
+      },
+      '.cm-gutters': {
+        backgroundColor: getCSSVar('--fg-s3'),
+        color: getCSSVar('--fg-t3'),
+        borderRight: `1px solid ${getCSSVar('--fg-b1')}`,
+      },
+      '.cm-activeLineGutter': {
+        backgroundColor: getCSSVar('--fg-b1'),
+      },
+      '.cm-activeLine': {
+        backgroundColor: getCSSVar('--fg-b1'),
+      },
+      '.cm-cursor': {
+        borderLeftColor: getCSSVar('--fg-ac'),
+      },
+      '.cm-selectionBackground': {
+        backgroundColor: getCSSVar('--fg-b2'),
+      },
+    })
+  }
+
+  _getLanguageExt(filepath) {
+    if (!filepath) return null
+    const lower = filepath.toLowerCase()
+    if (lower.endsWith('.ex') || lower.endsWith('.exs') || lower.endsWith('.heex')) {
+      return elixir()
+    }
+    if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+      return markdown()
+    }
+    return null
+  }
+
+  _getCustomHighlightStyle() {
+    const styles = getComputedStyle(document.documentElement)
+    const getCSSVar = (name) => styles.getPropertyValue(name).trim()
+
+    return HighlightStyle.define([
+      { tag: t.keyword, color: getCSSVar('--fg-pu') },
+      { tag: t.string, color: getCSSVar('--fg-gn') },
+      { tag: t.number, color: getCSSVar('--fg-or') },
+      { tag: t.bool, color: getCSSVar('--fg-bl') },
+      { tag: t.null, color: getCSSVar('--fg-bl') },
+      { tag: t.atom, color: getCSSVar('--fg-bl') },
+      { tag: t.function(t.variableName), color: getCSSVar('--fg-yw') },
+      { tag: t.function(t.propertyName), color: getCSSVar('--fg-yw') },
+      { tag: t.typeName, color: getCSSVar('--fg-cy') },
+      { tag: t.tagName, color: getCSSVar('--fg-cy') },
+      { tag: t.className, color: getCSSVar('--fg-cy') },
+      { tag: t.operator, color: getCSSVar('--fg-t2') },
+      { tag: t.punctuation, color: getCSSVar('--fg-t3') },
+      { tag: t.comment, color: getCSSVar('--fg-t3'), fontStyle: 'italic' },
+      { tag: t.docComment, color: getCSSVar('--fg-t2'), fontStyle: 'italic' },
+      { tag: t.variableName, color: getCSSVar('--fg-tx') },
+      { tag: t.propertyName, color: getCSSVar('--fg-tx') },
+      { tag: t.attributeName, color: getCSSVar('--fg-tx') },
+      { tag: t.invalid, color: getCSSVar('--fg-rd') },
+    ])
+  }
+
   renderForNode(nodeId, nodeData = null) {
+    this._destroyEditor()
     this._activeScenario = null
     this._activeFileView = null
     this._activeNodeSelection = { nodeId, nodeData }
@@ -237,6 +323,7 @@ export class DrawerManager {
 
   renderForScenario(scenario) {
     if (!scenario) return
+    this._destroyEditor()
     this._activeNodeSelection = null
     this._activeFileView = null
     this._activeScenario = scenario
@@ -246,6 +333,7 @@ export class DrawerManager {
   }
 
   clearScenario() {
+    this._destroyEditor()
     this._activeScenario = null
     this._activeNodeSelection = null
     this._activeFileView = null
@@ -261,41 +349,47 @@ export class DrawerManager {
     const panel = document.getElementById(SELECTORS.panelDetails)
     if (!panel) return
 
+    this._destroyEditor()
     this._activeNodeSelection = null
     this._activeScenario = null
     this._activeFileView = { kind: 'content', path, content, line }
 
     this._setHeader(path || 'File preview', line ? `Line ${line}` : 'Source')
 
-    const lines = String(content || '').split('\n')
+    const container = document.createElement('div')
+    container.className = 'overflow-hidden rounded-2xl border border-white/10 bg-base-100/90 h-full'
+    panel.innerHTML = ''
+    panel.appendChild(container)
 
-    panel.innerHTML = `
-      <div class="space-y-3">
-        <div class="overflow-hidden rounded-2xl border border-white/10 bg-base-100/90">
-          <div class="max-h-[32rem] overflow-auto">
-            <table class="w-full border-collapse font-mono text-[11px] leading-5">
-              <tbody>
-                ${lines.map((fileLine, index) => {
-                  const lineNumber = index + 1
-                  const isActive = lineNumber === line
+    const langExt = this._getLanguageExt(path)
+    const extensions = [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      foldGutter(),
+      indentOnInput(),
+      syntaxHighlighting(this._getCustomHighlightStyle()),
+      this._getCMTheme(),
+      EditorView.lineWrapping,
+      EditorState.readOnly.of(true),
+    ]
 
-                  return `
-                    <tr class="${isActive ? 'bg-primary/10' : ''}" data-line="${lineNumber}">
-                      <td class="select-none border-r border-white/10 px-3 py-0.5 text-right align-top text-base-content/40">${lineNumber}</td>
-                      <td class="whitespace-pre-wrap break-words px-3 py-0.5 align-top text-base-content">${this._esc(fileLine)}</td>
-                    </tr>
-                  `
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    `
+    if (langExt) {
+      extensions.push(langExt)
+    }
 
-    if (line) {
-      const activeLine = panel.querySelector(`[data-line="${line}"]`)
-      activeLine?.scrollIntoView({ block: 'center' })
+    this._cmEditor = new EditorView({
+      state: EditorState.create({
+        doc: String(content || ''),
+        extensions,
+      }),
+      parent: container,
+    })
+
+    if (line && line > 0) {
+      const lineStart = this._cmEditor.state.doc.line(line).from
+      this._cmEditor.dispatch({
+        effects: EditorView.scrollIntoView(lineStart, { y: 'center' }),
+      })
     }
   }
 
@@ -303,6 +397,7 @@ export class DrawerManager {
     const panel = document.getElementById(SELECTORS.panelDetails)
     if (!panel) return
 
+    this._destroyEditor()
     this._activeNodeSelection = null
     this._activeScenario = null
     this._activeFileView = { kind: 'error', path, reason }
@@ -319,13 +414,12 @@ export class DrawerManager {
     const panel = document.getElementById(SELECTORS.panelDetails)
     if (!panel) return
 
+    this._destroyEditor()
     this._activeNodeSelection = null
     this._activeScenario = null
     this._activeFileView = { kind: 'proposal', path, content, diff, status, added_lines, removed_lines }
 
     this._setHeader(path || 'Proposal preview', `${status || 'modified'} · ${added_lines}+ ${removed_lines}-`)
-
-    const lines = String(content || '').split('\n')
 
     panel.innerHTML = `
       <div class="space-y-3">
@@ -337,25 +431,36 @@ export class DrawerManager {
             <pre class="overflow-x-auto rounded-xl bg-[#0d1117] px-3 py-3 font-mono text-[11px] leading-5 text-[#c9d1d9]">${this._esc(diff || '')}</pre>
           </div>
         </details>
-        <div class="overflow-hidden rounded-2xl border border-white/10 bg-base-100/90">
-          <div class="max-h-[32rem] overflow-auto">
-            <table class="w-full border-collapse font-mono text-[11px] leading-5">
-              <tbody>
-                ${lines.map((fileLine, index) => {
-                  const lineNumber = index + 1
-                  return `
-                    <tr data-line="${lineNumber}">
-                      <td class="select-none border-r border-white/10 px-3 py-0.5 text-right align-top text-base-content/40">${lineNumber}</td>
-                      <td class="whitespace-pre-wrap break-words px-3 py-0.5 align-top text-base-content">${this._esc(fileLine)}</td>
-                    </tr>
-                  `
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
     `
+
+    const container = document.createElement('div')
+    container.className = 'overflow-hidden rounded-2xl border border-white/10 bg-base-100/90 h-full'
+    panel.appendChild(container)
+
+    const langExt = this._getLanguageExt(path)
+    const extensions = [
+      lineNumbers(),
+      highlightActiveLineGutter(),
+      foldGutter(),
+      indentOnInput(),
+      syntaxHighlighting(this._getCustomHighlightStyle()),
+      this._getCMTheme(),
+      EditorView.lineWrapping,
+      EditorState.readOnly.of(true),
+    ]
+
+    if (langExt) {
+      extensions.push(langExt)
+    }
+
+    this._cmEditor = new EditorView({
+      state: EditorState.create({
+        doc: String(content || ''),
+        extensions,
+      }),
+      parent: container,
+    })
   }
 
   _renderActionDetailsPanel(action, parentNode) {
@@ -815,6 +920,8 @@ export class DrawerManager {
   }
 
   destroy() {
+    this._destroyEditor()
+
     if (this._boundCloseBtn && this._closeHandler) {
       this._boundCloseBtn.removeEventListener('click', this._closeHandler)
     }
