@@ -35,7 +35,7 @@ FROM --platform=linux/amd64 elixir:1.19-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates openssl curl git build-essential \
+    ca-certificates openssl curl git build-essential su-exec \
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-install hex/rebar into /tmp/.mix so the foundry (non-root) user can use mix
@@ -46,12 +46,16 @@ RUN mix local.hex --force && mix local.rebar --force && chmod -R 755 /tmp/.mix
 COPY --from=builder /build/_build/prod/rel/server ./
 
 RUN groupadd -g 1000 deploy && useradd -u 1000 -g deploy deploy && \
-    chown -R deploy:deploy /app
+    mkdir -p /app/projects /home/deploy && \
+    chown -R deploy:deploy /app /home/deploy
 
-USER deploy
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 4001
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:${PORT:-4001}/healthz || exit 1
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/app/bin/server", "start"]

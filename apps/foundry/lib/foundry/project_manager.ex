@@ -277,8 +277,22 @@ defmodule Foundry.ProjectManager do
       not File.dir?(normalized_parent) ->
         {:error, "Destination folder does not exist: #{normalized_parent}"}
 
+      not writable_dir?(normalized_parent) ->
+        {:error, "Destination folder is not writable (permission denied): #{normalized_parent}"}
+
       true ->
         {:ok, normalized_parent}
+    end
+  end
+
+  defp writable_dir?(path) do
+    test_file = Path.join(path, ".foundry_write_check_#{:erlang.unique_integer([:positive])}")
+    case File.touch(test_file) do
+      :ok ->
+        File.rm(test_file)
+        true
+      {:error, _} ->
+        false
     end
   end
 

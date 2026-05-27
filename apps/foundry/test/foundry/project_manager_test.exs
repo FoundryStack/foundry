@@ -457,6 +457,59 @@ defmodule Foundry.ProjectManagerTest do
     end
   end
 
+  describe "clone_project into unwritable parent dir" do
+    # Regression: Docker named volumes are created by the daemon with root:root ownership.
+    # The foundry container runs as deploy (uid 1000), so git clone into /app/projects fails
+    # with "Permission denied" (exit 128). validate_parent_dir only checks File.dir?, not
+    # writability — the clone command itself discovered the problem too late.
+
+    test "clone_project fails fast with clear error when parent dir is not writable" do
+      # Create a temp dir and remove write permission to simulate root-owned volume mount
+      parent = System.tmp_dir!() |> Path.join("pm_unwritable_#{:rand.uniform(99999)}")
+      File.mkdir_p!(parent)
+      File.chmod!(parent, 0o555)
+
+      try do
+        # We need a fake repo URL — use a local git repo so the test is fast
+        src = System.tmp_dir!() |> Path.join("pm_src_unwritable_#{:rand.uniform(99999)}")
+        File.mkdir_p!(src)
+        System.cmd("git", ["init", src])
+        System.cmd("git", ["-C", src, "config", "user.email", "test@test.com"])
+        System.cmd("git", ["-C", src, "config", "user.name", "Test"])
+        File.write!(Path.join(src, "mix.exs"), "# mix")
+        System.cmd("git", ["-C", src, "add", "."])
+        System.cmd("git", ["-C", src, "commit", "-m", "init"])
+
+        Foundry.ProjectManager.clone_project(src, parent)
+
+        # Wait for terminal state
+        deadline = System.monotonic_time(:millisecond) + 10_000
+        status =
+          Stream.repeatedly(fn -> Process.sleep(100) end)
+          |> Enum.reduce_while(nil, fn _, _ ->
+            s = Foundry.ProjectManager.get_status()
+            cond do
+              s.state in [:ready, :failed] -> {:halt, s}
+              System.monotonic_time(:millisecond) >= deadline -> {:halt, s}
+              true -> {:cont, nil}
+            end
+          end)
+
+        assert status.state == :failed,
+               "Expected clone to fail with Permission denied, got: #{status.state}"
+
+        assert status.last_error =~ "not writable" or status.last_error =~ "permission denied" or
+                 status.last_error =~ "Permission denied",
+               "Expected a permission-related error, got: #{inspect(status.last_error)}"
+
+        File.rm_rf!(src)
+      after
+        File.chmod!(parent, 0o755)
+        File.rm_rf!(parent)
+      end
+    end
+  end
+
   describe "configure_runtime does not corrupt FOUNDRY_STANDALONE in cloud mode" do
     # Regression: configure_runtime called System.put_env("FOUNDRY_STANDALONE", "1")
     # unconditionally. After first project open, any ?repo_url= visit saw FOUNDRY_STANDALONE=1
