@@ -101,11 +101,13 @@ defmodule FoundryWeb.ChatProviders do
       model:
         model_from_run_context(run_context) ||
           Keyword.get(config, :model, "gemini-3.5-flash"),
-      timeout_ms: Keyword.get(config, :timeout_ms, 120_000)
+      timeout_ms: Keyword.get(config, :timeout_ms, 120_000),
+      project_root: ChatConfig.project_root()
     ]
 
     Foundry.GeminiProvider.stream(messages, opts, fn
       {:delta, text} -> on_event.({:delta, text})
+      {:trace, event} -> on_event.({:trace, event})
       _event -> :ok
     end)
   rescue
