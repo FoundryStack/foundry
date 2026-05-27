@@ -35,7 +35,7 @@ FROM --platform=linux/amd64 elixir:1.19-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates openssl curl git build-essential su-exec \
+    ca-certificates openssl curl git build-essential gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-install hex/rebar into /tmp/.mix so the foundry (non-root) user can use mix
