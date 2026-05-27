@@ -74,16 +74,19 @@ defmodule Foundry.PreviewServerTest do
     assert PreviewServer.preview_base_url(project_root) == "http://localhost:4202"
   end
 
-  test "preview_base_url returns /preview-app path in cloud mode (FOUNDRY_STANDALONE=0)", %{
+  test "preview_base_url returns subdomain URL in cloud mode (FOUNDRY_STANDALONE=0)", %{
     project_root: project_root
   } do
-    prev = System.get_env("FOUNDRY_STANDALONE")
+    prev_standalone = System.get_env("FOUNDRY_STANDALONE")
+    prev_host = System.get_env("PHX_HOST")
 
     try do
       System.put_env("FOUNDRY_STANDALONE", "0")
-      assert PreviewServer.preview_base_url(project_root) == "/preview-app"
+      System.put_env("PHX_HOST", "studio.example.com")
+      assert PreviewServer.preview_base_url(project_root) == "https://preview.studio.example.com"
     after
-      if prev, do: System.put_env("FOUNDRY_STANDALONE", prev), else: System.delete_env("FOUNDRY_STANDALONE")
+      if prev_standalone, do: System.put_env("FOUNDRY_STANDALONE", prev_standalone), else: System.delete_env("FOUNDRY_STANDALONE")
+      if prev_host, do: System.put_env("PHX_HOST", prev_host), else: System.delete_env("PHX_HOST")
     end
   end
 

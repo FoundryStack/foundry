@@ -126,21 +126,20 @@ defmodule FoundryWeb.PageController do
     end
   end
 
-  defp preview_target_url(_params), do: "http://localhost:4001/"
+  defp preview_target_url(_params), do: Foundry.PreviewServer.preview_base_url(preview_project_root()) <> "/"
 
   defp preview_project_root do
     Foundry.ProjectManager.current_project_root()
   end
 
   defp validate_preview_target(target) do
-    # In cloud mode the target is a server-relative path like "/preview-app/route".
-    # Accept paths that start with "/" and contain no traversal sequences.
+    # Accept a server-relative path (no traversal) or a full URL on an allowed host.
     if String.starts_with?(target, "/") and not String.contains?(target, "..") do
       {:ok, normalize_route(target)}
     else
       with %URI{} = uri <- URI.parse(target),
            true <- preview_host?(uri.host),
-           true <- is_integer(uri.port) do
+           true <- is_integer(uri.port) or uri.scheme in ["http", "https"] do
         {:ok, URI.to_string(%{uri | query: nil, fragment: nil, path: normalize_route(uri.path)})}
       else
         _ -> :error
@@ -150,15 +149,19 @@ defmodule FoundryWeb.PageController do
 
   defp validate_preview_base(base) do
     with %URI{} = uri <- URI.parse(base),
-         true <- preview_host?(uri.host),
-         true <- is_integer(uri.port) do
+         true <- preview_host?(uri.host) do
       uri
     else
       _ -> :error
     end
   end
 
-  defp preview_host?(host), do: host in ["localhost", "127.0.0.1"]
+  defp preview_host?(host) do
+    allowed = ["localhost", "127.0.0.1"]
+    phx_host = System.get_env("PHX_HOST")
+    preview_host = if phx_host, do: "preview." <> phx_host, else: nil
+    host in allowed or (preview_host != nil and host == preview_host)
+  end
 
   defp normalize_route("/" <> _ = route), do: route
   defp normalize_route(route) when is_binary(route), do: "/" <> route

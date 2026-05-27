@@ -72,10 +72,11 @@ defmodule Foundry.PreviewServer do
 
   def preview_base_url(project_root) do
     if System.get_env("FOUNDRY_STANDALONE", "1") == "0" do
-      # In cloud mode the preview dev server (port 4001) is proxied through
-      # the studio container's public endpoint via the /preview-app path prefix.
-      # The browser cannot reach localhost:4001 directly.
-      "/preview-app"
+      # In cloud mode the preview dev server is proxied through a dedicated subdomain
+      # (preview.<studio-host>) so the tenant app sees itself at the root of that
+      # subdomain — no path-prefix stripping needed, and all absolute links work.
+      phx_host = System.get_env("PHX_HOST", "localhost")
+      "https://preview." <> phx_host
     else
       case load_manifest_config(project_root) do
         {:ok, config} ->
@@ -375,7 +376,19 @@ defmodule Foundry.PreviewServer do
 
   defp build_clean_env(state) do
     release_root = System.get_env("RELEASE_ROOT")
-    overrides = %{"MIX_HOME" => "/tmp/.mix", "HEX_HOME" => "/tmp/.hex", "MIX_ENV" => "dev", "PORT" => Integer.to_string(state.port_num)}
+    cloud_overrides =
+      if System.get_env("FOUNDRY_STANDALONE", "1") == "0" do
+        # In cloud mode the preview server must bind to 0.0.0.0 so that Caddy
+        # (running in a separate container) can reach it via the Docker network.
+        # PHX_HOST tells Phoenix the public hostname for URL generation.
+        phx_host = System.get_env("PHX_HOST", "localhost")
+        preview_host = "preview." <> phx_host
+        %{"PHX_BIND_IP" => "0.0.0.0", "PHX_HOST" => preview_host}
+      else
+        %{}
+      end
+
+    overrides = Map.merge(%{"MIX_HOME" => "/tmp/.mix", "HEX_HOME" => "/tmp/.hex", "MIX_ENV" => "dev", "PORT" => Integer.to_string(state.port_num)}, cloud_overrides)
 
     base_env =
       System.get_env()
