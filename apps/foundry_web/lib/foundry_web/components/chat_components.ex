@@ -124,7 +124,7 @@ defmodule FoundryWeb.ChatComponents do
       <% end %>
 
         <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px]">
-          <div class="px-4 py-3">
+          <%!-- <div class="px-4 py-3">
             <div class="flex items-center justify-between gap-3">
               <div class="inline-flex rounded-2xl text-xs uppercase text-neutral-content">
                 <button
@@ -161,7 +161,7 @@ defmodule FoundryWeb.ChatComponents do
                 {if @show_system_context, do: "Hide context", else: "Show context"}
               </button>
             </div>
-          </div>
+          </div> --%>
 
           <%= if @chat_view == :conversation do %>
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -769,7 +769,9 @@ defmodule FoundryWeb.ChatComponents do
     active_run = assigns.active_run
 
     proposal =
-      if active_run, do: active_run.proposal || assigns.message["proposal"], else: assigns.message["proposal"]
+      if active_run,
+        do: active_run.proposal || assigns.message["proposal"],
+        else: assigns.message["proposal"]
 
     tool_events =
       cond do
@@ -1049,7 +1051,14 @@ defmodule FoundryWeb.ChatComponents do
     """
   end
 
-  @inline_tool_icons %{"tool" => "⚙", "command" => ">", "file" => "□", "context" => "◈", "proposal" => "◉", "error" => "!"}
+  @inline_tool_icons %{
+    "tool" => "⚙",
+    "command" => ">",
+    "file" => "□",
+    "context" => "◈",
+    "proposal" => "◉",
+    "error" => "!"
+  }
   defp inline_tool_icon(cat), do: Map.get(@inline_tool_icons, cat, "·")
 
   @inline_tool_icon_classes %{
@@ -1103,7 +1112,9 @@ defmodule FoundryWeb.ChatComponents do
 
   defp strip_shell_wrapper(command) do
     case Regex.run(~r{/bin/(?:ba|z)?sh\s+-\w+\s+"(.+)"$}s, command) do
-      [_, inner] -> String.trim(inner)
+      [_, inner] ->
+        String.trim(inner)
+
       _ ->
         case Regex.run(~r{/bin/(?:ba|z)?sh\s+-\w+\s+'(.+)'$}s, command) do
           [_, inner] -> String.trim(inner)
@@ -1113,11 +1124,11 @@ defmodule FoundryWeb.ChatComponents do
   end
 
   defp inline_tool_path_class("write"),
-    do: "rounded border border-warning/20 bg-warning/10 px-1.5 py-0.5 font-mono text-[10px] text-warning"
+    do:
+      "rounded border border-warning/20 bg-warning/10 px-1.5 py-0.5 font-mono text-[10px] text-warning"
 
   defp inline_tool_path_class(_),
     do: "rounded border border-info/20 bg-info/10 px-1.5 py-0.5 font-mono text-[10px] text-info"
-
 
   # Returns [{text_segment, [tool_events_preceding_segment], is_last_segment}]
   # Each tuple means: render the tool events, then render the text segment.
@@ -1313,15 +1324,22 @@ defmodule FoundryWeb.ChatComponents do
   defp summary_timestamp(_value), do: "just now"
 
   @trace_status_classes %{
-    running: "rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info",
-    completed: "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success",
-    error: "rounded-full border border-error/25 bg-error/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error"
+    running:
+      "rounded-full border border-info/25 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info",
+    completed:
+      "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success",
+    error:
+      "rounded-full border border-error/25 bg-error/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error"
   }
   @badge_neutral "rounded-full border border-base-300 bg-base-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
 
   defp trace_status_class(status), do: Map.get(@trace_status_classes, status, @badge_neutral)
 
-  @proposal_status_labels %{applied: "Applied", awaiting_revision: "Awaiting revision", cancelled: "Cancelled"}
+  @proposal_status_labels %{
+    applied: "Applied",
+    awaiting_revision: "Awaiting revision",
+    cancelled: "Cancelled"
+  }
 
   defp proposal_status_label(status) when is_atom(status),
     do: Map.get(@proposal_status_labels, status, "Draft")
@@ -1330,31 +1348,48 @@ defmodule FoundryWeb.ChatComponents do
   defp proposal_status_label(_), do: "Draft"
 
   @proposal_status_classes %{
-    applied: "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success",
-    awaiting_revision: "rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning",
-    cancelled: "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
+    applied:
+      "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-success",
+    awaiting_revision:
+      "rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-warning",
+    cancelled:
+      "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
   }
   @badge_accent "rounded-full border border-accent/25 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent"
 
   defp proposal_status_class(status), do: Map.get(@proposal_status_classes, status, @badge_accent)
 
   @trace_category_labels %{
-    proposal: "Proposal", context: "Context", session: "Session", tool: "Tool",
-    command: "Command", file: "File", reasoning: "Reasoning", message: "Message",
-    result: "Result", error: "Error"
+    proposal: "Proposal",
+    context: "Context",
+    session: "Session",
+    tool: "Tool",
+    command: "Command",
+    file: "File",
+    reasoning: "Reasoning",
+    message: "Message",
+    result: "Result",
+    error: "Error"
   }
 
   defp trace_category_label(category),
     do: Map.get(@trace_category_labels, category, "Event")
 
   @trace_category_classes %{
-    proposal: "rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent",
-    context: "rounded-full border border-info/20 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info",
-    session: "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content",
-    tool: "rounded-full border border-secondary/20 bg-secondary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-secondary",
-    command: "rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary",
-    file: "rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent",
-    error: "rounded-full border border-error/20 bg-error/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error"
+    proposal:
+      "rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent",
+    context:
+      "rounded-full border border-info/20 bg-info/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-info",
+    session:
+      "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content",
+    tool:
+      "rounded-full border border-secondary/20 bg-secondary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-secondary",
+    command:
+      "rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary",
+    file:
+      "rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-accent",
+    error:
+      "rounded-full border border-error/20 bg-error/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-error"
   }
   @badge_base "rounded-full border border-base-300 bg-base-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-neutral-content"
 

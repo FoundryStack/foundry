@@ -2,9 +2,9 @@ defmodule Foundry.Chat.ToolLoop do
   @moduledoc """
   Agentic tool-calling loop for API-based LLM providers.
 
-  Delegates to Gemini's native tool calling. Since ReqLLM doesn't expose
-  tool call handling in stream_text, we use generate_text instead which
-  returns structured responses, then re-query with tool results on tool calls.
+  Calls Gemini's generateContent API with tool definitions, executes any tool
+  calls in the response, appends results to the conversation, and repeats until
+  the model returns final text with no pending tool calls.
   """
 
   require Logger
@@ -31,9 +31,10 @@ defmodule Foundry.Chat.ToolLoop do
     system_prompt = Keyword.get(opts, :system_prompt)
 
     tool_schemas = Foundry.Chat.ShellTools.all()
+    gemini_messages = convert_messages(messages)
 
     run_loop(
-      messages,
+      gemini_messages,
       %{
         api_key: api_key,
         model: model,
@@ -52,7 +53,6 @@ defmodule Foundry.Chat.ToolLoop do
     %{
       api_key: api_key,
       model: model,
-      timeout_ms: _timeout_ms,
       system_prompt: system_prompt,
       tool_schemas: tool_schemas,
       iterations: iterations,
@@ -64,15 +64,28 @@ defmodule Foundry.Chat.ToolLoop do
     if iterations >= max_iterations do
       {:error, {:max_iterations_exceeded, max_iterations}}
     else
-      # Call Gemini with tools and structured output
-      case call_gemini_with_tools(
-             messages,
-             system_prompt,
-             tool_schemas,
-             model,
-             api_key
-           ) do
-        {:ok, text, _has_tool_calls} ->
+      case call_gemini_with_tools(messages, system_prompt, tool_schemas, model, api_key) do
+        {:ok, content, true} ->
+          tool_calls = extract_tool_calls(content)
+          text = extract_text_from_content(content)
+
+          if text != "" do
+            on_event.({:delta, text})
+          end
+
+          {tool_results, updated_messages} =
+            execute_tool_calls(tool_calls, messages, content, project_root, on_event)
+
+          if tool_results == [] do
+            # No tool calls actually executed despite has_tool_calls=true
+            on_event.({:result, text, %{}})
+            {:ok, text, %{}}
+          else
+            run_loop(updated_messages, %{state | iterations: iterations + 1})
+          end
+
+        {:ok, content, false} ->
+          text = extract_text_from_content(content)
           on_event.({:delta, text})
           on_event.({:result, text, %{}})
           {:ok, text, %{}}
@@ -87,8 +100,37 @@ defmodule Foundry.Chat.ToolLoop do
       {:error, {:tool_loop_error, Exception.message(e)}}
   end
 
+  defp execute_tool_calls(tool_calls, messages, model_content, project_root, on_event) do
+    tool_results =
+      Enum.map(tool_calls, fn %{"name" => name, "args" => args} ->
+        on_event.({:trace, {:tool_call, name, args}})
+
+        result =
+          case Foundry.Chat.ShellTools.execute(name, args, project_root) do
+            {:ok, output} ->
+              on_event.({:trace, {:tool_result, name, :ok}})
+              %{"output" => output}
+
+            {:error, reason} ->
+              on_event.({:trace, {:tool_result, name, :error}})
+              %{"error" => reason}
+          end
+
+        %{
+          "functionResponse" => %{
+            "name" => name,
+            "response" => result
+          }
+        }
+      end)
+
+    model_turn = %{"role" => "model", "parts" => model_content["parts"]}
+    tool_turn = %{"role" => "user", "parts" => tool_results}
+
+    {tool_results, messages ++ [model_turn, tool_turn]}
+  end
+
   defp call_gemini_with_tools(messages, system_prompt, tool_schemas, model, api_key) do
-    # Build request body with tools for Gemini
     body = build_gemini_request(messages, system_prompt, tool_schemas)
 
     case Req.post(
@@ -101,9 +143,8 @@ defmodule Foundry.Chat.ToolLoop do
     ) do
       {:ok, %Req.Response{status: 200, body: %{"candidates" => [candidate | _]}}} ->
         content = candidate["content"]
-        text = extract_text_from_content(content)
         has_tools = has_tool_calls(content)
-        {:ok, text, has_tools}
+        {:ok, content, has_tools}
 
       {:ok, %Req.Response{status: status, body: body}} ->
         Logger.error("Gemini error: #{status} - #{inspect(body)}")
@@ -115,10 +156,8 @@ defmodule Foundry.Chat.ToolLoop do
   end
 
   defp build_gemini_request(messages, system_prompt, tool_schemas) do
-    contents = convert_messages(messages)
-
     body = %{
-      "contents" => contents,
+      "contents" => messages,
       "generationConfig" => %{"temperature" => 1.0},
       "tools" => [
         %{
@@ -153,18 +192,22 @@ defmodule Foundry.Chat.ToolLoop do
   defp is_system_message?(_), do: false
 
   defp extract_text_from_content(%{"parts" => parts}) when is_list(parts) do
-    parts
-    |> Enum.map_join("", fn part ->
-      part["text"] || ""
-    end)
+    Enum.map_join(parts, "", fn part -> part["text"] || "" end)
   end
 
   defp extract_text_from_content(_), do: ""
 
+  defp extract_tool_calls(%{"parts" => parts}) when is_list(parts) do
+    parts
+    |> Enum.filter(&Map.has_key?(&1, "functionCall"))
+    |> Enum.map(& &1["functionCall"])
+  end
+
+  defp extract_tool_calls(_), do: []
+
   defp has_tool_calls(%{"parts" => parts}) when is_list(parts) do
-    Enum.any?(parts, fn part -> Map.has_key?(part, "functionCall") end)
+    Enum.any?(parts, &Map.has_key?(&1, "functionCall"))
   end
 
   defp has_tool_calls(_), do: false
-
 end

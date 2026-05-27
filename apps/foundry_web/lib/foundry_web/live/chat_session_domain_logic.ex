@@ -127,7 +127,8 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
 
   def append_trace_event_to_run(run, trace_event) do
     cursor = Map.get(run, :stream_cursor, 0)
-    normalized = ChatTrace.normalize(trace_event["provider"] || "unknown", trace_event)
+    provider = if is_map(trace_event), do: trace_event["provider"] || "unknown", else: "unknown"
+    normalized = ChatTrace.normalize(provider, trace_event)
     stamped = Map.put(normalized, :text_cursor, cursor)
     events = [stamped | run.events] |> Enum.take(250)
     summary = ChatTrace.summarize_run(events)

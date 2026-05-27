@@ -123,9 +123,6 @@ defmodule Foundry.Chat.ShellTools do
       {output, exit_code} ->
         truncated = String.slice(output, 0, 8_000)
         {:ok, "Exit code: #{exit_code}\n#{truncated}"}
-
-      {:error, reason} ->
-        {:error, "Command failed: #{inspect(reason)}"}
     end
   rescue
     e ->
