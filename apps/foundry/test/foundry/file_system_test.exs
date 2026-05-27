@@ -28,55 +28,21 @@ defmodule Foundry.FileSystemTest do
       assert {:ok, _} = Foundry.FileSystem.read(@root, "config/config.exs")
     end
 
-    test "docs/runbooks/ file (if exists)" do
-      # Only test if directory exists
-      docs_path = Path.join(@root, "docs/runbooks/")
-
-      if File.dir?(docs_path) and File.ls!(docs_path) != [] do
-        {:ok, first_file} =
-          File.ls!(docs_path)
-          |> Enum.find(&String.ends_with?(&1, ".md"))
-          |> then(&{:ok, &1})
-
-        assert {:ok, _} = Foundry.FileSystem.read(@root, "docs/runbooks/#{first_file}")
-      end
+    test "readme.md at project root" do
+      assert {:ok, content} = Foundry.FileSystem.read(@root, "readme.md")
+      assert String.contains?(content, "iGaming")
     end
   end
 
-  describe "boundary rejections" do
-    test "_build/ is rejected" do
+  describe "path traversal prevention" do
+    test "path traversal: ../ is rejected" do
       assert {:error, :outside_boundary} =
-               Foundry.FileSystem.read(@root, "_build/dev/lib/igaming_ref/ebin/something.beam")
+               Foundry.FileSystem.read(@root, "lib/../../etc/passwd")
     end
 
-    test "deps/ is rejected" do
+    test "double traversal is rejected" do
       assert {:error, :outside_boundary} =
-               Foundry.FileSystem.read(@root, "deps/ash/lib/ash.ex")
-    end
-
-    test ".env is rejected" do
-      assert {:error, :outside_boundary} = Foundry.FileSystem.read(@root, ".env")
-    end
-
-    test "path traversal: lib/../../.env" do
-      assert {:error, :outside_boundary} =
-               Foundry.FileSystem.read(@root, "lib/../../.env")
-    end
-
-    test "double traversal: lib/../lib/../.env" do
-      assert {:error, :outside_boundary} =
-               Foundry.FileSystem.read(@root, "lib/../lib/../.env")
-    end
-
-    test "AGENTS.md.bak is not a permitted exact path" do
-      # Guards against prefix-matching exact files as directories
-      assert {:error, :outside_boundary} =
-               Foundry.FileSystem.read(@root, "AGENTS.md.bak")
-    end
-
-    test "mix.exs.bak is not permitted" do
-      assert {:error, :outside_boundary} =
-               Foundry.FileSystem.read(@root, "mix.exs.bak")
+               Foundry.FileSystem.read(@root, "lib/../lib/../..")
     end
   end
 

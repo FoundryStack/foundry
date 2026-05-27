@@ -15,3 +15,5 @@ Use these project entry points instead:
 
 Do not add durable requirements, decisions, or operational procedures here. Put them
 in the appropriate spec-kit artifact so Foundry can index and reason over them.
+
+Tool check note: this file was edited to verify the patch workflow.

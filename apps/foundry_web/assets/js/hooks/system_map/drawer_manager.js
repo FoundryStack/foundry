@@ -404,7 +404,7 @@ export class DrawerManager {
 
     this._setHeader('File preview unavailable', path || 'unknown')
     panel.innerHTML = `
-      <div class="rounded-2xl border border-error/30 bg-error/10 px-4 py-4">
+      <div class="rounded-2xl border border-error/30 bg-error/10 px-4 py-4 mx-3">
         <p class="text-sm text-error">${this._esc(reason || 'unknown error')}</p>
       </div>
     `
