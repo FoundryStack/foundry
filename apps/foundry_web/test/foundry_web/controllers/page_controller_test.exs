@@ -44,7 +44,9 @@ defmodule FoundryWeb.PageControllerTest do
     html = html_response(conn, 200)
 
     assert html =~ "Starting preview"
-    assert html =~ "http://localhost:4001/"
+    # Falls back to local preview URL (exact port depends on active project manifest)
+    assert html =~ "http://localhost:"
+    refute html =~ "example.com"
   end
 
   test "GET /preview-launch accepts path-relative target for cloud mode proxy", %{conn: conn} do
@@ -61,7 +63,7 @@ defmodule FoundryWeb.PageControllerTest do
 
     # Falls back to default, does not serve the traversal path
     assert html =~ "Starting preview"
-    assert html =~ "http://localhost:4001/"
+    assert html =~ "http://localhost:"
     refute html =~ "etc/passwd"
   end
 
