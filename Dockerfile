@@ -52,10 +52,10 @@ RUN groupadd -g 1000 deploy && useradd -u 1000 -g deploy deploy && \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 4001
+EXPOSE 4000
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -sf http://localhost:${PORT:-4001}/healthz || exit 1
+    CMD curl -sf http://localhost:${PORT:-4000}/healthz || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/app/bin/server", "start"]

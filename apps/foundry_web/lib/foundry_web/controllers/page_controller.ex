@@ -93,7 +93,7 @@ defmodule FoundryWeb.PageController do
 
   def project_manager(conn, _params) do
     render(conn, :project_manager,
-      can_open_local_dir: System.get_env("FOUNDRY_STANDALONE", "0") == "1",
+      can_open_local_dir: Foundry.RuntimeConfig.standalone?(),
       recent_projects: ProjectManager.recent_projects()
     )
   end
@@ -101,7 +101,7 @@ defmodule FoundryWeb.PageController do
   def healthz(conn, _params) do
     json(conn, %{
       ok: true,
-      mode: System.get_env("FOUNDRY_STANDALONE", "0") == "1" && "standalone" || "local",
+      mode: Foundry.RuntimeConfig.standalone?() && "standalone" || "local",
       version: to_string(Application.spec(:foundry, :vsn) || "0.0.0")
     })
   end
@@ -158,8 +158,7 @@ defmodule FoundryWeb.PageController do
 
   defp preview_host?(host) do
     allowed = ["localhost", "127.0.0.1"]
-    phx_host = System.get_env("PHX_HOST")
-    preview_host = if phx_host, do: "preview." <> phx_host, else: nil
+    preview_host = if Foundry.RuntimeConfig.standalone?(), do: nil, else: Foundry.RuntimeConfig.preview_host()
     host in allowed or (preview_host != nil and host == preview_host)
   end
 

@@ -50,39 +50,43 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     environment: production
+    env:
+      DEPLOY_TARGET: deploy@178.128.17.11
+      DEPLOY_PATH: /opt/saas_panel
+      STUDIO_CONTAINER: saas_foundry
     steps:
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H 178.128.17.11 >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ env.DEPLOY_TARGET }} >> ~/.ssh/known_hosts
 
       - name: Free up disk space on server
         run: |
-          ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
+          ssh -i ~/.ssh/id_ed25519 ${{ env.DEPLOY_TARGET }} \
             "docker image prune -a --force --filter 'until=24h' && \
              docker container prune --force && \
              docker builder prune --force"
 
       - name: Pull and restart foundry service
         run: |
-          ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
-            "cd /opt/saas_panel && \
+          ssh -i ~/.ssh/id_ed25519 ${{ env.DEPLOY_TARGET }} \
+            "cd ${{ env.DEPLOY_PATH }} && \
              docker compose pull foundry && \
              docker compose up -d foundry"
 
       - name: Restart saas_panel to redeploy studio container
         run: |
-          ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
+          ssh -i ~/.ssh/id_ed25519 ${{ env.DEPLOY_TARGET }} \
             "docker pull ghcr.io/maxsvargal/foundry:latest && \
              docker rm -f foundry-studio 2>/dev/null || true && \
-             cd /opt/saas_panel && \
+             cd ${{ env.DEPLOY_PATH }} && \
              docker compose restart app"
 
       - name: Verify health
         run: |
-          ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
-            "sleep 10 && for i in \$(seq 1 25); do docker exec saas_foundry curl -sf http://localhost:4000/healthz && echo 'Studio healthy' && exit 0; sleep 3; done; echo 'Studio health check timed out'; exit 1"
-          ssh -i ~/.ssh/id_ed25519 deploy@178.128.17.11 \
+          ssh -i ~/.ssh/id_ed25519 ${{ env.DEPLOY_TARGET }} \
+            "sleep 10 && for i in \$(seq 1 25); do docker exec ${{ env.STUDIO_CONTAINER }} curl -sf http://localhost:4000/healthz && echo 'Studio healthy' && exit 0; sleep 3; done; echo 'Studio health check timed out'; exit 1"
+          ssh -i ~/.ssh/id_ed25519 ${{ env.DEPLOY_TARGET }} \
             "for i in \$(seq 1 30); do curl -sf http://localhost:4000/healthz && echo 'Panel healthy' && exit 0; sleep 3; done; echo 'Panel health check timed out'; exit 1"

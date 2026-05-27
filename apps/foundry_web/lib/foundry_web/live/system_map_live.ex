@@ -55,7 +55,7 @@ defmodule FoundryWeb.SystemMapLive do
   defp start_project_action(%{"repo_url" => url} = params)
        when url != "" do
     dir =
-      if System.get_env("FOUNDRY_STANDALONE", "0") == "1" do
+      if Foundry.RuntimeConfig.standalone?() do
         params["parent_dir"] || System.user_home!()
       else
         cloud_projects_dir()

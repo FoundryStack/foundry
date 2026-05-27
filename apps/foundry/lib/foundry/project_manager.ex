@@ -516,7 +516,7 @@ defmodule Foundry.ProjectManager do
   # scan /app/projects for the first directory that looks like a ready Mix+Foundry project.
   # This recovers gracefully when the container restarts without a persistent home volume.
   defp discover_cloud_project do
-    if System.get_env("FOUNDRY_STANDALONE", "1") != "1" do
+    if not Foundry.RuntimeConfig.standalone?() do
       cloud_dir = "/app/projects"
 
       case File.ls(cloud_dir) do

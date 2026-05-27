@@ -66,19 +66,16 @@ defmodule Foundry.PreviewServer do
     GenServer.cast(__MODULE__, {:start, project_root})
   end
 
-  def cloud_preview_port, do: @default_preview_port
-
   def stop_preview do
     GenServer.cast(__MODULE__, :stop)
   end
 
   def preview_base_url(project_root) do
-    if System.get_env("FOUNDRY_STANDALONE", "1") == "0" do
+    if not Foundry.RuntimeConfig.standalone?() do
       # In cloud mode the preview dev server is proxied through a dedicated subdomain
       # (preview.<studio-host>) so the tenant app sees itself at the root of that
       # subdomain — no path-prefix stripping needed, and all absolute links work.
-      phx_host = System.get_env("PHX_HOST", "localhost")
-      "https://preview." <> phx_host
+      "https://" <> Foundry.RuntimeConfig.preview_host()
     else
       case load_manifest_config(project_root) do
         {:ok, config} ->
@@ -282,8 +279,8 @@ defmodule Foundry.PreviewServer do
   defp effective_preview_port(config) do
     # In cloud mode Caddy is hardwired to proxy preview.* → container:4002.
     # Manifest port is a local-dev convenience and must be ignored in cloud mode.
-    if System.get_env("FOUNDRY_STANDALONE", "1") == "0" do
-      @default_preview_port
+    if not Foundry.RuntimeConfig.standalone?() do
+      Foundry.RuntimeConfig.cloud_preview_port()
     else
       config[:port] || @default_preview_port
     end
@@ -389,13 +386,11 @@ defmodule Foundry.PreviewServer do
   defp build_clean_env(state) do
     release_root = System.get_env("RELEASE_ROOT")
     cloud_overrides =
-      if System.get_env("FOUNDRY_STANDALONE", "1") == "0" do
+      if not Foundry.RuntimeConfig.standalone?() do
         # In cloud mode the preview server must bind to 0.0.0.0 so that Caddy
         # (running in a separate container) can reach it via the Docker network.
         # PHX_HOST tells Phoenix the public hostname for URL generation.
-        phx_host = System.get_env("PHX_HOST", "localhost")
-        preview_host = "preview." <> phx_host
-        %{"PHX_BIND_IP" => "0.0.0.0", "PHX_HOST" => preview_host}
+        %{"PHX_BIND_IP" => "0.0.0.0", "PHX_HOST" => Foundry.RuntimeConfig.preview_host()}
       else
         %{}
       end
@@ -609,13 +604,13 @@ defmodule Foundry.PreviewServer do
     |> Enum.each(fn line ->
       cond do
         String.downcase(line) =~ ~r/error|exception|failed/ ->
-          Logger.error("[IGAMING] #{line}")
+          Logger.error("[PREVIEW] #{line}")
 
         String.downcase(line) =~ ~r/warn/ ->
-          Logger.warning("[IGAMING] #{line}")
+          Logger.warning("[PREVIEW] #{line}")
 
         true ->
-          Logger.debug("[IGAMING] #{line}")
+          Logger.debug("[PREVIEW] #{line}")
       end
     end)
   end
