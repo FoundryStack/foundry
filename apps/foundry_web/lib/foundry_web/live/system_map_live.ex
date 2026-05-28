@@ -262,7 +262,7 @@ defmodule FoundryWeb.SystemMapLive do
             if connected?(socket) do
               assign(socket, loading: false, loading_visible: false)
             else
-              socket |> assign(loading_visible: false) |> maybe_schedule_finish_loading()
+              maybe_schedule_finish_loading(socket)
             end
 
           {:ok, socket}
