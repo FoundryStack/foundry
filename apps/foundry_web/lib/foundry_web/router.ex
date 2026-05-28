@@ -66,6 +66,12 @@ defmodule FoundryWeb.Router do
     get "/preview-status", PageController, :preview_status
   end
 
+  scope "/.well-known" do
+    pipe_through :browser
+
+    get "/mcp.json", FoundryWeb.WellKnownController, :mcp_discovery
+  end
+
   # MCP server — exposes Foundry.Context tools to external agents
   # (Claude Code, Cursor, Codex CLI, etc.)
   # Agents use OAuth 2.0 Dynamic Client Registration to obtain tokens at runtime
