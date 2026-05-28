@@ -26,11 +26,18 @@ defmodule FoundryWeb.Router do
           # No key configured — allow all requests (dev mode only)
           conn
 
-        expected_key ->
-          with ["Bearer " <> token] <- get_req_header(conn, "authorization"),
-               true <- token == expected_key do
-            conn
-          else
+        _expected_key ->
+          case get_req_header(conn, "authorization") do
+            ["Bearer " <> token] ->
+              if FoundryWeb.McpDcrController.valid_token?(token) do
+                conn
+              else
+                conn
+                |> put_resp_header("www-authenticate", "Bearer")
+                |> send_resp(401, Jason.encode!(%{error: "Unauthorized"}))
+                |> halt()
+              end
+
             _ ->
               conn
               |> put_resp_header("www-authenticate", "Bearer")

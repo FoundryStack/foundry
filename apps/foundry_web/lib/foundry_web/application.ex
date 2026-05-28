@@ -10,8 +10,7 @@ defmodule FoundryWeb.Application do
     children = [
       FoundryWeb.Telemetry,
       {Task.Supervisor, name: FoundryWeb.ChatTaskSupervisor, max_children: 20},
-      # Start a worker by calling: FoundryWeb.Worker.start_link(arg)
-      # {FoundryWeb.Worker, arg},
+      FoundryWeb.McpTokenStore,
       # Start to serve requests, typically the last entry
       FoundryWeb.Endpoint
     ]
