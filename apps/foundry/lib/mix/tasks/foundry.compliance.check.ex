@@ -50,10 +50,16 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
   def run(args) do
     app = Mix.Project.config()[:app]
     Application.put_env(app, :foundry_tasks_only, true)
-
     Mix.Task.run("app.start")
+    run_check(File.cwd!(), args)
+  end
 
-    project_root = File.cwd!()
+  @doc """
+  Run the compliance check for the given project root and args. Separated from
+  `run/1` so tests can call this without triggering Mix.Task.run("app.start") /
+  Mix.Sync.PubSub startup. Returns the `Foundry.Compliance.CheckResult` struct.
+  """
+  def run_check(project_root, args \\ []) do
     filter = parse_filter(args)
     manifest = load_manifest(project_root)
 
@@ -84,6 +90,8 @@ defmodule Mix.Tasks.Foundry.Compliance.Check do
         exit({:shutdown, 1})
       end
     end
+
+    result
   end
 
   # ---------------------------------------------------------------------------

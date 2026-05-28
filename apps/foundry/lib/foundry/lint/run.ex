@@ -52,6 +52,43 @@ defmodule Foundry.Lint.Run do
   end
 
   actions do
-    defaults [:read]
+    read :read do
+      prepare fn query, _ ->
+        project_root = query.context[:project_root] || File.cwd!()
+
+        with {:ok, lint_map} <- build_lint(project_root) do
+          record = Map.merge(%{"id" => Ash.UUIDv7.generate()}, lint_map)
+          Ash.Query.load_data(query, [record])
+        else
+          {:error, _} = error -> error
+        end
+      end
+    end
+  end
+
+  defp build_lint(project_root) do
+    report = Foundry.Lint.Runner.run(project_root)
+
+    {:ok, %{
+      "passed" => report.passed,
+      "error_count" => report.error_count,
+      "warning_count" => report.warning_count,
+      "info_count" => report.info_count,
+      "total_violations" => length(report.violations || []),
+      "violations" => Enum.map(report.violations || [], &violation_to_map/1),
+      "generated_at" => DateTime.utc_now()
+    }}
+  catch
+    _ -> {:error, :build_failed}
+  end
+
+  defp violation_to_map(violation) do
+    %{
+      "rule_id" => violation.rule_id,
+      "severity" => violation.severity,
+      "message" => violation.message,
+      "module" => violation.module,
+      "file_path" => violation.file_path
+    }
   end
 end

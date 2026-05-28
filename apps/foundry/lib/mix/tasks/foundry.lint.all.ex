@@ -43,16 +43,46 @@ defmodule Mix.Tasks.Foundry.Lint.All do
 
   alias Foundry.Lint.Runner
 
+  defp parse_format(args) do
+    cond do
+      "--format=text" in args -> :text
+      "--text" in args -> :text
+      true -> :json
+    end
+  end
+
   @impl Mix.Task
   def run(args) do
     app = Mix.Project.config()[:app]
     Application.put_env(app, :foundry_tasks_only, true)
-
     Mix.Task.run("app.start")
+    report = run_lint(File.cwd!(), args)
 
     format = parse_format(args)
-    project_root = File.cwd!()
 
+    case format do
+      :json ->
+        unless report.passed, do: exit({:shutdown, 1})
+
+      :text ->
+        unless report.passed do
+          Mix.shell().error(
+            "\n#{report.error_count} error(s), #{report.warning_count} warning(s). Lint failed."
+          )
+
+          exit({:shutdown, 1})
+        end
+    end
+  end
+
+  @doc """
+  Run lint for the given project root and args. Separated from `run/1` so tests
+  can call this without triggering Mix.Task.run("app.start") / Mix.Sync.PubSub.
+  Returns the `Foundry.Lint.LintReport` struct. Does NOT call exit/1 — that is
+  the responsibility of the caller (run/1).
+  """
+  def run_lint(project_root, args \\ []) do
+    format = parse_format(args)
     report = Runner.run(project_root)
 
     sorted_report = %{
@@ -64,19 +94,9 @@ defmodule Mix.Tasks.Foundry.Lint.All do
     case format do
       :json ->
         IO.puts(Jason.encode!(sorted_report, pretty: true))
-        unless report.passed do
-          exit({:shutdown, 1})
-        end
 
       :text ->
         print_text_report(sorted_report)
-        unless report.passed do
-          Mix.shell().error(
-            "\n#{report.error_count} error(s), #{report.warning_count} warning(s). Lint failed."
-          )
-
-          exit({:shutdown, 1})
-        end
 
         if report.warning_count > 0 do
           Mix.shell().info("\n#{report.warning_count} warning(s). Lint passed with warnings.")
@@ -84,19 +104,13 @@ defmodule Mix.Tasks.Foundry.Lint.All do
           Mix.shell().info("\nLint passed. No violations.")
         end
     end
+
+    sorted_report
   end
 
   # ---------------------------------------------------------------------------
   # Private
   # ---------------------------------------------------------------------------
-
-  defp parse_format(args) do
-    cond do
-      "--format=text" in args -> :text
-      "--text" in args -> :text
-      true -> :json
-    end
-  end
 
   defp severity_order(:error), do: 0
   defp severity_order(:warning), do: 1

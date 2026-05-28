@@ -117,6 +117,60 @@ defmodule Foundry.Project.Module do
   end
 
   actions do
-    defaults [:read]
+    read :read do
+      prepare fn query, _ ->
+        project_root = query.context[:project_root] || File.cwd!()
+        module_filter = query.filter[Access.key(:id)]
+
+        with {:ok, records} <- build_modules(project_root, module_filter) do
+          Ash.Query.load_data(query, records)
+        else
+          {:error, _} = error -> error
+        end
+      end
+    end
+  end
+
+  defp build_modules(project_root, module_filter) do
+    if module_filter do
+      with {:ok, json} <- Mix.Tasks.Foundry.Project.Context.run_single(module_filter, project_root),
+           {:ok, decoded} <- Jason.decode(json) do
+        {:ok, [module_map_to_record(decoded)]}
+      else
+        {:error, :module_not_found} -> {:ok, []}
+        {:error, _} = error -> error
+      end
+    else
+      {nodes, _edges} = Foundry.Context.GraphBuilder.build(project_root, nil)
+      records = Enum.map(nodes, &module_map_to_record/1)
+      {:ok, records}
+    end
+  catch
+    _ -> {:error, :build_failed}
+  end
+
+  defp module_map_to_record(map) when is_map(map) do
+    %{
+      "id" => map["id"] || map["module"],
+      "module" => map["module"],
+      "type" => String.to_atom(map["type"] || "unknown"),
+      "domain" => map["domain"],
+      "app" => map["app"],
+      "description" => map["description"],
+      "sensitive" => map["sensitive"] || false,
+      "rules" => map["rules"] || [],
+      "compliance" => map["compliance"] || [],
+      "adrs" => map["adrs"] || [],
+      "runbook" => map["runbook"],
+      "data_layer" => map["data_layer"],
+      "pending_migrations" => map["pending_migrations"] || false,
+      "paper_trail" => map["paper_trail"] || false,
+      "archival" => map["archival"] || false,
+      "test_coverage" => map["test_coverage"] || %{},
+      "state_machine" => map["state_machine"] || %{},
+      "agent_steps" => map["agent_steps"] || [],
+      "telemetry_prefix" => map["telemetry_prefix"] || [],
+      "last_modified" => map["last_modified"]
+    }
   end
 end

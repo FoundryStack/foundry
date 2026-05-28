@@ -17,7 +17,7 @@ defmodule Mix.Tasks.Foundry.Project.Status do
     - Project manifest metadata
 
   ## Options
-    - `--json` - Output raw JSON (default: false, outputs formatted)
+    - `--json` - Output compact JSON (default: false, outputs pretty-printed JSON)
   """
 
   use Mix.Task
@@ -29,14 +29,24 @@ defmodule Mix.Tasks.Foundry.Project.Status do
       OptionParser.parse!(args, strict: [json: :boolean])
 
     project_root = File.cwd!()
+    pretty = not Keyword.get(opts, :json, false)
+    output = build_output(project_root, pretty)
+    IO.write(output)
+  end
+
+  @doc """
+  Build status JSON for the given project root.
+
+  Accepts `pretty: boolean` option. Separated from `run/1` so tests can call
+  this without triggering Mix.Task.run("compile") or Mix.Sync.PubSub startup.
+  """
+  def build_output(project_root, pretty \\ true) do
     status = Foundry.Status.build(project_root)
 
-    json = Jason.encode!(status)
-
-    if Keyword.get(opts, :json, false) do
-      IO.write(json)
+    if pretty do
+      Jason.encode!(status, pretty: true)
     else
-      json |> Jason.decode!() |> Jason.encode!(pretty: true) |> IO.write()
+      Jason.encode!(status)
     end
   end
 end

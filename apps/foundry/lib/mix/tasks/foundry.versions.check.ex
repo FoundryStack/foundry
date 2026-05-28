@@ -91,7 +91,17 @@ defmodule Mix.Tasks.Foundry.Versions.Check do
 
   @impl Mix.Task
   def run(_args) do
-    versions_by_dep = read_lock!()
+    output = build_output(File.cwd!())
+    IO.puts(output)
+  end
+
+  @doc """
+  Build the versions JSON string for the given project root. Separated from
+  `run/1` so tests can call this without triggering Mix.Sync.PubSub startup.
+  Returns `{:ok, json_string}` or `{:error, reason}`.
+  """
+  def build_output(project_root) do
+    versions_by_dep = read_lock!(project_root)
 
     versions =
       Map.new(@known_deps, fn dep ->
@@ -104,15 +114,18 @@ defmodule Mix.Tasks.Foundry.Versions.Check do
       |> Map.put(:otp_version, otp_version())
       |> Map.put(:generated_at, DateTime.utc_now() |> DateTime.to_iso8601())
 
-    IO.puts(Jason.encode!(result, pretty: true))
+    Jason.encode!(result, pretty: true)
   end
+
+  @doc "The list of known deps this task checks. Exposed for testing."
+  def known_deps, do: @known_deps
 
   # ---------------------------------------------------------------------------
   # Private
   # ---------------------------------------------------------------------------
 
-  defp read_lock! do
-    lock_path = Path.join(File.cwd!(), "mix.lock")
+  defp read_lock!(project_root) do
+    lock_path = Path.join(project_root, "mix.lock")
 
     unless File.exists?(lock_path) do
       Mix.raise("mix.lock not found at #{lock_path}. Run `mix deps.get` first.")

@@ -206,7 +206,7 @@ checks INV-001..023               collects @description fields
 
 **SpecKitNavigator** — Spawned always for `change` intent; for `question` when ADR citation needed. Reads ADR graph rooted at affected NodeEntry. Tools: `bash` (read-only). Returns: applicable constraints, `{blocked: bool, rule: string}`, spec-kit gap list.
 
-**CodeContextGatherer** — Spawned in parallel with SpecKitNavigator for all `change` intents. Tools: `mix foundry.project.context`, `mix foundry.pattern.find`, `mix foundry.exdoc`. Returns: NodeEntry, pattern example, `@description` fields, `pending_migrations` status.
+**CodeContextGatherer** — Spawned in parallel with SpecKitNavigator for all `change` intents. Tools: `module_context` MCP tool (primary), `mix foundry.pattern.find`, `mix foundry.exdoc`. Returns: NodeEntry, pattern example, `@description` fields, `pending_migrations` status.
 
 **PlanArchitect** — Spawned after both complete and contradiction check passes. Tools: none (pure reasoning). Returns: ordered plan with per-step rationale + interface assessment for `:behavioral`, `:compliance`, and `:structural` changes introducing a new module.
 
@@ -228,8 +228,9 @@ The confirmed public surface is **binding** for CodeGenerator. Adding functions 
 
 - Answer questions from spec-kit and live project context. Cite the ADR, regulation, runbook, module, field, or invariant that grounds the answer.
 - **Tier 1 answers "which/where" — bash answers "what exactly".** Never run bash to answer a question Tier 1 already resolves. Never trust a Tier 1 summary as full constraint text for contradiction checks — fetch the full document.
-- Prefer `mix foundry.project.context <Module>` over source-file prose for structural facts.
+- Prefer the `module_context` MCP tool over source-file prose for structural facts. `mix foundry.project.context` is a developer CLI alias for the same data — use MCP in agent context to avoid Mix PubSub startup.
 - Treat `Project Status`, `System Architecture`, and per-turn `Foundry Retrieval Summary` as pre-loaded. Do not re-fetch `project_status` or `system_graph` in the same turn unless stale, missing, or exact source evidence is required.
+- **Shell tool failure fallback:** If a bash shell command fails (module not found, file missing, sandbox restrictions), silently fall back to Tier 1/2 injected context. Never surface a "Verification note: <tool> failed" message to the user. Only escalate if Tier 1/2 context is also absent and the missing data is blocking the plan. Note: `mix foundry.project.*` commands are **not** agent tools — they trigger Mix.Sync.PubSub TCP startup and will always fail in sandboxed environments. Use MCP tools instead.
 - Batch related shell retrieval into grouped discovery and grouped file reads. Avoid repeated global-context fetches.
 - On the first assistant reply in a session, append one trailing hidden `foundry-session` JSON fence with a short session tab label, for example ````foundry-session {"title":"Wallet flow"} ````. Do not mention the label in visible prose, and do not emit this fence on later replies in the same session.
 - For Reactors or Transfers with external side effects: verify idempotency and compensation expectations before proposing changes.
@@ -247,6 +248,8 @@ The confirmed public surface is **binding** for CodeGenerator. Adding functions 
 
 Shell discovery is only warranted for **exact source text** not present in injected summaries.
 
+**Do not shell out to `mix foundry.project.status` or `mix foundry.project.context` in agent context.** These are developer CLI commands that start Mix.Sync.PubSub (opens TCP socket, fails in sandboxes). Use the `project_status`, `module_context`, and `system_graph` MCP tools instead — they call the same data layer over HTTP without spawning a Mix process. If MCP tools are unavailable, fall back to Tier 2 injected context without comment.
+
 ---
 
 ## Agent Reasoning Sequence — `change` intents
@@ -257,7 +260,7 @@ Shell discovery is only warranted for **exact source text** not present in injec
 1.  Read spec-kit index (Tier 1) — identify relevant ADRs/INVs/regulations by tag
 2.  Fetch those documents via bash — follow cross-references
 3.  Run pre-generation checklist (below) — identify missing spec-kit items
-4.  mix foundry.project.context <Module> --json  — live NodeEntry
+4.  module_context MCP tool — live NodeEntry (use MCP, not mix shell command)
 5.  mix foundry.pattern.find <type> --domain <D> — closest existing example
 6.  Check @description fields on all touched attributes against proposed change
 7.  Contradiction check — BLOCKED if violated; else proceed

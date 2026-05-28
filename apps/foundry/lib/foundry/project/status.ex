@@ -87,6 +87,52 @@ defmodule Foundry.Project.Status do
   end
 
   actions do
-    defaults [:read]
+    read :read do
+      prepare fn query, _ ->
+        project_root = query.context[:project_root] || File.cwd!()
+
+        with {:ok, status_map} <- build_status(project_root) do
+          record = Map.merge(%{"id" => Ash.UUIDv7.generate()}, status_map)
+          Ash.Query.load_data(query, [record])
+        else
+          {:error, _} = error -> error
+        end
+      end
+    end
   end
+
+  defp build_status(project_root) do
+    try do
+      status = Foundry.Status.build(project_root)
+
+      {:ok, %{
+        "project" => status["project"],
+        "project_type" => status["project_type"],
+        "domain_type" => status["domain_type"],
+        "domains" => status["domains"] || [],
+        "sensitive_modules" => status["sensitive_modules"] || [],
+        "lint_errors" => get_in(status, ["lint", "error_count"]) || 0,
+        "lint_warnings" => get_in(status, ["lint", "warning_count"]) || 0,
+        "pending_migrations" => get_in(status, ["migrations", "count"]) || 0,
+        "open_proposals" => get_in(status, ["proposals", "count"]) || 0,
+        "compliance_total" => get_in(status, ["compliance", "total"]) || 0,
+        "compliance_covered" => get_in(status, ["compliance", "covered"]) || 0,
+        "stack_versions" => status["stack"] || %{},
+        "compiled_at" => parse_datetime(status["compiled_at"]),
+        "generated_at" => parse_datetime(status["generated_at"]) || DateTime.utc_now()
+      }}
+    catch
+      :exit, reason -> {:error, reason}
+      kind, error -> {:error, {kind, error}}
+    end
+  end
+
+  defp parse_datetime(nil), do: nil
+  defp parse_datetime(iso_str) when is_binary(iso_str) do
+    case DateTime.from_iso8601(iso_str) do
+      {:ok, dt, _} -> dt
+      {:error, _} -> nil
+    end
+  end
+  defp parse_datetime(dt), do: dt
 end

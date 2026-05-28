@@ -52,6 +52,41 @@ defmodule Foundry.Project.Graph do
   end
 
   actions do
-    defaults [:read]
+    read :read do
+      prepare fn query, _ ->
+        project_root = query.context[:project_root] || File.cwd!()
+
+        with {:ok, graph_map} <- build_graph(project_root) do
+          record = Map.merge(%{"id" => Ash.UUIDv7.generate()}, graph_map)
+          Ash.Query.load_data(query, [record])
+        else
+          {:error, _} = error -> error
+        end
+      end
+    end
+  end
+
+  defp build_graph(project_root) do
+    {:ok, manifest} = Foundry.Manifest.Parser.read(project_root)
+    {nodes, edges} = Foundry.Context.GraphBuilder.build(project_root, manifest)
+
+    project_name = Keyword.get(manifest, :project_name, "")
+    project_type = Keyword.get(manifest, :project_type, "standard")
+    domain_type = Keyword.get(manifest, :domain_type, "")
+    domain_type_str = if is_atom(domain_type), do: Atom.to_string(domain_type), else: domain_type
+
+    spec_kit = Foundry.Context.SpecKitIndexBuilder.build(project_root)
+
+    {:ok, %{
+      "project" => project_name,
+      "project_type" => project_type,
+      "domain_type" => domain_type_str,
+      "nodes" => nodes,
+      "edges" => edges,
+      "spec_kit" => spec_kit || %{},
+      "generated_at" => DateTime.utc_now()
+    }}
+  catch
+    _ -> {:error, :build_failed}
   end
 end
