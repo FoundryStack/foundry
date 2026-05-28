@@ -32,6 +32,7 @@ defmodule Foundry.Context do
     resource Foundry.Lint.Run
     resource Foundry.SpecKit.Document
     resource Foundry.Proposals.Proposal
+    resource Foundry.FileOperations.Edit
   end
 
   # MCP tools — each wraps an Ash action on a Simple data layer resource.
@@ -44,6 +45,7 @@ defmodule Foundry.Context do
     tool :read_doc, Foundry.SpecKit.Document, :read
     tool :submit_proposal, Foundry.Proposals.Proposal, :create_draft
     tool :proposal_status, Foundry.Proposals.Proposal, :read
+    tool :edit_file, Foundry.FileOperations.Edit, :write
   end
 
   # MCP resources intentionally disabled until the backing Ash actions are modeled

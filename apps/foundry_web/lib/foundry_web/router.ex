@@ -91,7 +91,8 @@ defmodule FoundryWeb.Router do
         :submit_proposal,
         :proposal_status,
         :run_lint,
-        :read_doc
+        :read_doc,
+        :edit_file
       ],
       protocol_version_statement: "2024-11-05",
       otp_app: :foundry
