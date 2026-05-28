@@ -30,6 +30,6 @@ binaries
 burrito_out
 package-lock.json
 join_files.sh
-.env.mcp.json
+.mcp.json
 reference_projects/**/.mcp.json
 .env
