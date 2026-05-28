@@ -121,6 +121,7 @@ Or describe what you have in mind:
 ```
 
 **Rules:**
+
 - D-numbering starts at D1 each session, increments per question
 - Always include a Recommendation
 - Maximum 3 options (A/B/C) — if you have more, scope down
@@ -154,21 +155,25 @@ Forces: Compensate (Reactor)? Retry? Alert operator? Hard block?
 **Domain-specific additions (inject when manifest.domain_type matches):**
 
 **:igaming**
+
 - "Does this action affect player balance, wagering requirement, or withdrawal eligibility?"
 - "Is this action subject to responsible gambling limits (daily/weekly/monthly)?"
 - "Must this action be reversible by a compliance officer within 24h?"
 
 **:fintech**
+
 - "Does this action touch a ledger entry, transfer, or settlement record?"
 - "Is this action subject to AML/fraud screening before or after execution?"
 - "Must this action produce a regulatory report entry?"
 
 **:healthcare**
+
 - "Does this action access, modify, or create PHI?"
 - "Is consent verified before this action runs?"
 - "Is this action subject to HIPAA minimum-necessary access controls?"
 
 **:legal / :insurance**
+
 - "Does this action affect a policy, claim, or coverage record?"
 - "Is this action subject to jurisdiction-specific regulatory rules?"
 - "Must this action produce a legally admissible audit record?"
@@ -230,9 +235,8 @@ The confirmed public surface is **binding** for CodeGenerator. Adding functions 
 - **Tier 1 answers "which/where" — bash answers "what exactly".** Never run bash to answer a question Tier 1 already resolves. Never trust a Tier 1 summary as full constraint text for contradiction checks — fetch the full document.
 - Prefer the `module_context` MCP tool over source-file prose for structural facts. `mix foundry.project.context` is a developer CLI alias for the same data — use MCP in agent context to avoid Mix PubSub startup.
 - Treat `Project Status`, `System Architecture`, and per-turn `Foundry Retrieval Summary` as pre-loaded. Do not re-fetch `project_status` or `system_graph` in the same turn unless stale, missing, or exact source evidence is required.
-- **Shell tool failure fallback:** If a bash shell command fails (module not found, file missing, sandbox restrictions), silently fall back to Tier 1/2 injected context. Never surface a "Verification note: <tool> failed" message to the user. Only escalate if Tier 1/2 context is also absent and the missing data is blocking the plan. Note: `mix foundry.project.*` commands are **not** agent tools — they trigger Mix.Sync.PubSub TCP startup and will always fail in sandboxed environments. Use MCP tools instead.
 - Batch related shell retrieval into grouped discovery and grouped file reads. Avoid repeated global-context fetches.
-- On the first assistant reply in a session, append one trailing hidden `foundry-session` JSON fence with a short session tab label, for example ````foundry-session {"title":"Wallet flow"} ````. Do not mention the label in visible prose, and do not emit this fence on later replies in the same session.
+- On the first assistant reply in a session, append one trailing hidden `foundry-session` JSON fence with a short session tab label, for example `foundry-session {"title":"Wallet flow"} `. Do not mention the label in visible prose, and do not emit this fence on later replies in the same session.
 - For Reactors or Transfers with external side effects: verify idempotency and compensation expectations before proposing changes.
 - For `:compliance` changes: require an ADR link or surface the missing ADR as a blocker before generation.
 - For underspecified `:behavioral` or `:compliance` intents: run a structured requirements interview (INV-022) before `speckit.specify`. Begin asking immediately — do not wait for the user to discover the gap.
@@ -247,8 +251,6 @@ The confirmed public surface is **binding** for CodeGenerator. Adding functions 
 - **Project status, lint state, open proposals, compliance flags** (Tier 2)
 
 Shell discovery is only warranted for **exact source text** not present in injected summaries.
-
-**Do not shell out to `mix foundry.project.status` or `mix foundry.project.context` in agent context.** These are developer CLI commands that start Mix.Sync.PubSub (opens TCP socket, fails in sandboxes). Use the `project_status`, `module_context`, and `system_graph` MCP tools instead — they call the same data layer over HTTP without spawning a Mix process. If MCP tools are unavailable, fall back to Tier 2 injected context without comment.
 
 ---
 
