@@ -94,6 +94,14 @@ defmodule FoundryWeb.Router do
         :read_doc,
         :edit_file
       ],
+      mcp_resources: [
+        :agents_guide,
+        :adr_index,
+        :runbooks,
+        :build_sequence,
+        :implementation_summary,
+        :lint_catalogue
+      ],
       protocol_version_statement: "2024-11-05",
       otp_app: :foundry
   end
