@@ -16,23 +16,33 @@ defmodule FoundryWeb.Router do
   end
 
   defp mcp_auth(conn, _opts) do
-    case System.get_env("FOUNDRY_MCP_API_KEY") do
-      nil ->
-        # No key configured — allow all requests (dev mode only)
-        conn
-
-      expected_key ->
-        with ["Bearer " <> token] <- get_req_header(conn, "authorization"),
-             true <- token == expected_key do
+    # Allow DCR endpoints without auth (agents register here to get tokens)
+    if dcr_endpoint?(conn) do
+      conn
+    else
+      # Protect MCP tool endpoints with Bearer token
+      case System.get_env("FOUNDRY_MCP_API_KEY") do
+        nil ->
+          # No key configured — allow all requests (dev mode only)
           conn
-        else
-          _ ->
+
+        expected_key ->
+          with ["Bearer " <> token] <- get_req_header(conn, "authorization"),
+               true <- token == expected_key do
             conn
-            |> put_resp_header("www-authenticate", "Bearer")
-            |> send_resp(401, Jason.encode!(%{error: "Unauthorized"}))
-            |> halt()
-        end
+          else
+            _ ->
+              conn
+              |> put_resp_header("www-authenticate", "Bearer")
+              |> send_resp(401, Jason.encode!(%{error: "Unauthorized"}))
+              |> halt()
+          end
+      end
     end
+  end
+
+  defp dcr_endpoint?(conn) do
+    conn.request_path =~ ~r{/(register|\.well-known/oauth2-configuration)$}
   end
 
   live_session :default, on_mount: [Foundry.TestScenario.LiveViewHook] do
@@ -58,8 +68,13 @@ defmodule FoundryWeb.Router do
 
   # MCP server — exposes Foundry.Context tools to external agents
   # (Claude Code, Cursor, Codex CLI, etc.)
+  # Agents use OAuth 2.0 Dynamic Client Registration to obtain tokens at runtime
   scope "/foundry/mcp" do
     pipe_through :mcp
+
+    # DCR endpoints (no auth required for registration)
+    post "/register", FoundryWeb.McpDcrController, :register
+    get "/.well-known/oauth2-configuration", FoundryWeb.McpDcrController, :well_known
 
     forward "/", AshAi.Mcp.Router,
       tools: [

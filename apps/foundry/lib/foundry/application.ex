@@ -7,7 +7,7 @@ defmodule Foundry.Application do
 
   @impl true
   def start(_type, _args) do
-    # Load .env file to make FOUNDRY_MCP_API_KEY available to external tools (Codex, Claude Code)
+    # Load .env file to make FOUNDRY_MCP_API_KEY available
     load_env_file(".env")
 
     case Foundry.Studio.parse_studio_argv(System.argv()) do
