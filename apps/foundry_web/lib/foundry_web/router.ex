@@ -16,34 +16,27 @@ defmodule FoundryWeb.Router do
   end
 
   defp mcp_auth(conn, _opts) do
-    # Allow DCR endpoints without auth (agents register here to get tokens)
+    # DCR endpoints allow registration without auth
     if dcr_endpoint?(conn) do
       conn
     else
-      # Protect MCP tool endpoints with Bearer token
-      case System.get_env("FOUNDRY_MCP_API_KEY") do
-        nil ->
-          # No key configured — allow all requests (dev mode only)
-          conn
-
-        _expected_key ->
-          case get_req_header(conn, "authorization") do
-            ["Bearer " <> token] ->
-              if FoundryWeb.McpDcrController.valid_token?(token) do
-                conn
-              else
-                conn
-                |> put_resp_header("www-authenticate", "Bearer")
-                |> send_resp(401, Jason.encode!(%{error: "Unauthorized"}))
-                |> halt()
-              end
-
-            _ ->
-              conn
-              |> put_resp_header("www-authenticate", "Bearer")
-              |> send_resp(401, Jason.encode!(%{error: "Unauthorized"}))
-              |> halt()
+      # Tool/resource endpoints require valid DCR token
+      case get_req_header(conn, "authorization") do
+        ["Bearer " <> token] ->
+          if FoundryWeb.McpDcrController.valid_token?(token) do
+            conn
+          else
+            conn
+            |> put_resp_header("www-authenticate", "Bearer")
+            |> send_resp(401, Jason.encode!(%{error: "Unauthorized"}))
+            |> halt()
           end
+
+        _ ->
+          conn
+          |> put_resp_header("www-authenticate", "Bearer")
+          |> send_resp(401, Jason.encode!(%{error: "Unauthorized"}))
+          |> halt()
       end
     end
   end
@@ -94,14 +87,7 @@ defmodule FoundryWeb.Router do
         :read_doc,
         :edit_file
       ],
-      mcp_resources: [
-        :agents_guide,
-        :adr_index,
-        :runbooks,
-        :build_sequence,
-        :implementation_summary,
-        :lint_catalogue
-      ],
+      mcp_resources: :*,
       protocol_version_statement: "2024-11-05",
       otp_app: :foundry
   end
