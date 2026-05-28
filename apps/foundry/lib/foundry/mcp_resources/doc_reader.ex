@@ -7,7 +7,7 @@ defmodule Foundry.MCP.DocReader do
   """
 
   use Ash.Resource,
-    domain: nil,
+    domain: Foundry.Context,
     data_layer: Ash.DataLayer.Simple
 
   attributes do
