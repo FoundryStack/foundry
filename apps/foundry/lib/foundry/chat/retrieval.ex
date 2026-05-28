@@ -365,7 +365,7 @@ defmodule Foundry.Chat.Retrieval do
          true <- File.exists?(path),
          {:ok, content} <- File.read(path),
          relative_path <- Path.relative_to(path, project_root) do
-      diff = build_file_diff(relative_path, content, status)
+      diff = build_file_diff(relative_path, content, status, project_root)
       {added_lines, removed_lines} = diff_line_counts(diff)
 
       %{
@@ -444,15 +444,29 @@ defmodule Foundry.Chat.Retrieval do
     end
   end
 
-  defp proposal_graph_overlay(tool_results) do
+  defp proposal_graph_overlay(tool_results, proposal \\ nil) do
+    affected_modules =
+      get_in(proposal, [:impact_analysis, :affected_modules]) ||
+        get_in(proposal, ["impact_analysis", "affected_modules"])
+
     modified_nodes =
-      Enum.map(tool_results.module_contexts || [], fn module_context ->
-        %{
-          id: module_context.id,
-          label: short_module_name(module_context.id),
-          tone: "warning"
-        }
-      end)
+      if is_list(affected_modules) and affected_modules != [] do
+        Enum.map(affected_modules, fn module_id ->
+          %{
+            id: module_id,
+            label: short_module_name(module_id),
+            tone: "warning"
+          }
+        end)
+      else
+        Enum.map(tool_results.module_contexts || [], fn module_context ->
+          %{
+            id: module_context.id,
+            label: short_module_name(module_context.id),
+            tone: "warning"
+          }
+        end)
+      end
 
     %{
       nodes_added: [],
@@ -480,7 +494,19 @@ defmodule Foundry.Chat.Retrieval do
     |> Enum.join("\n")
   end
 
-  defp build_file_diff(path, content, :modified) do
+  defp build_file_diff(path, content, :modified, project_root) do
+    pr = project_root || File.cwd!()
+
+    case System.cmd("git", ["diff", "HEAD", "--", path], cd: pr, stderr_to_stdout: false) do
+      {diff, 0} when diff != "" ->
+        String.trim_trailing(diff)
+
+      _ ->
+        fake_diff(path, content)
+    end
+  end
+
+  defp fake_diff(path, content) do
     preview_lines =
       content
       |> String.split("\n")

@@ -270,6 +270,7 @@ defmodule Foundry.Proposals.Proposal do
 
       change(transition_state(:pending_review))
       change(set_attribute(:submitted_at, &DateTime.utc_now/0))
+      change(Foundry.Proposals.Changes.ComputeImpactAnalysis)
       validate(present(:diff), message: "cannot submit a proposal without a diff")
       validate(Foundry.Proposals.Validations.ComplianceAdrLinkPresent)
     end

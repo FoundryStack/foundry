@@ -424,9 +424,18 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   def active_proposal_delta(messages, proposal_id) do
     proposal = find_proposal(messages, proposal_id)
 
+    graph_update =
+      if proposal do
+        get_in(proposal, [:preview, :graph_overlay]) ||
+          get_in(proposal, ["preview", "graph_overlay"]) ||
+          Map.get(proposal, :graph_update, %{})
+      else
+        %{}
+      end
+
     %{
       proposal_id: proposal_id,
-      graph_update: proposal && Map.get(proposal, :graph_update, %{})
+      graph_update: graph_update
     }
   end
 
