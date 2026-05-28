@@ -234,7 +234,7 @@ The confirmed public surface is **binding** for CodeGenerator. Adding functions 
 - Answer questions from spec-kit and live project context. Cite the ADR, regulation, runbook, module, field, or invariant that grounds the answer.
 - **Tier 1 answers "which/where" — bash answers "what exactly".** Never run bash to answer a question Tier 1 already resolves. Never trust a Tier 1 summary as full constraint text for contradiction checks — fetch the full document.
 - Prefer the `module_context` MCP tool over source-file prose for structural facts. `mix foundry.project.context` is a developer CLI alias for the same data — use MCP in agent context to avoid Mix PubSub startup.
-- **MCP tools are auto-discovered** — on session start, agents query `.well-known/oauth2-configuration` and self-register via OAuth 2.0 Dynamic Client Registration. No manual configuration needed. Tools available: `module_context`, `project_status`, `system_graph`, `run_lint`, `read_doc`, `submit_proposal`, `proposal_status`.
+- **MCP tools and resources are auto-discovered via DCR** — agents connect to `http://localhost:4000/foundry/mcp/` and self-register via OAuth 2.0 Dynamic Client Registration at `/register` to obtain a Bearer token. All subsequent tool calls and resource reads use that token. No manual configuration or file discovery needed. Available tools: `project_status`, `module_context`, `system_graph`, `run_lint`, `read_doc`, `submit_proposal`, `proposal_status`, `edit_file`. Available resources: `agents_guide` (AGENTS.md), `adr_index`, `runbooks`, `build_sequence`, `implementation_summary`, `lint_catalogue`.
 - Treat `Project Status`, `System Architecture`, and per-turn `Foundry Retrieval Summary` as pre-loaded. Do not re-fetch `project_status` or `system_graph` in the same turn unless stale, missing, or exact source evidence is required.
 - Batch related shell retrieval into grouped discovery and grouped file reads. Avoid repeated global-context fetches.
 - On the first assistant reply in a session, append one trailing hidden `foundry-session` JSON fence with a short session tab label, for example `foundry-session {"title":"Wallet flow"} `. Do not mention the label in visible prose, and do not emit this fence on later replies in the same session.
@@ -252,6 +252,26 @@ The confirmed public surface is **binding** for CodeGenerator. Adding functions 
 - **Project status, lint state, open proposals, compliance flags** (Tier 2)
 
 Shell discovery is only warranted for **exact source text** not present in injected summaries.
+
+### MCP Resources
+
+Foundry exposes 6 static documentation resources via MCP that are *always available* after DCR registration:
+
+| Resource | URI | Purpose |
+|---|---|---|
+| **Agents Guide** | `foundry://docs/agents.md` | Project constitution, domain risk model, agent role definitions |
+| **ADR Index** | `foundry://docs/adrs/index.json` | Architecture Decision Records with summaries, tags, links |
+| **Runbooks** | `foundry://docs/runbooks/index.json` | Operational procedures for troubleshooting and incident response |
+| **Build Sequence** | `foundry://docs/build-sequence.md` | How Foundry's build process works, phases, architecture |
+| **Implementation Summary** | `foundry://docs/implementation.md` | Current system implementation, component diagrams, data flow |
+| **Lint Catalogue** | `foundry://docs/lint-rules.md` | Complete lint rules catalog with descriptions and fixes |
+
+**Access:**
+1. Register via POST to `/register` with `client_name` → receive Bearer token
+2. Use `resources/list` with token → discover all 6 resources  
+3. Use `resources/read` with token + resource URI → fetch full content
+
+Treat resources as **always present** after registration. If you need AGENTS.md philosophy or ADR details, fetch them via MCP resource read. Resources are read-only and do not require approval.
 
 ---
 
