@@ -88,6 +88,7 @@ defmodule Foundry.Project.Status do
 
   actions do
     read :read do
+      primary? true
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
 

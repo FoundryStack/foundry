@@ -50,6 +50,7 @@ defmodule Foundry.SpecKit.Document do
 
   actions do
     read :read do
+      primary? true
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
         doc_filter = query.filter[Access.key(:id)]

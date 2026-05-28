@@ -7,6 +7,9 @@ defmodule Foundry.Application do
 
   @impl true
   def start(_type, _args) do
+    # Load .env file to make FOUNDRY_MCP_API_KEY available to external tools (Codex, Claude Code)
+    load_env_file(".env")
+
     case Foundry.Studio.parse_studio_argv(System.argv()) do
       {:ok, launch_opts} ->
         start_studio_mode(launch_opts)
@@ -19,9 +22,43 @@ defmodule Foundry.Application do
     end
   end
 
+  defp load_env_file(path) do
+    if File.exists?(path) do
+      File.read!(path)
+      |> String.split("\n")
+      |> Enum.each(fn line ->
+        case String.trim(line) do
+          "" ->
+            :ok
+
+          "# " <> _comment ->
+            :ok
+
+          line ->
+            case String.split(line, "=", parts: 2) do
+              [key, value] ->
+                System.put_env(String.trim(key), String.trim(value))
+
+              _ ->
+                :ok
+            end
+        end
+      end)
+    end
+  rescue
+    _ -> :ok
+  end
+
   defp start_default_mode do
     # Initialize Mnesia schema and tables before starting the supervisor
     init_mnesia()
+
+    # Generate .mcp.json in the project root for external tools (Codex, Claude Code)
+    # Only do this in dev or when in a project directory
+    project_root = Application.get_env(:foundry, :current_project_root) || File.cwd!()
+    if File.dir?(project_root) do
+      Foundry.Studio.write_mcp_json(project_root)
+    end
 
     children = [
       {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},

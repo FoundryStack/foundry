@@ -53,6 +53,7 @@ defmodule Foundry.Lint.Run do
 
   actions do
     read :read do
+      primary? true
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
 

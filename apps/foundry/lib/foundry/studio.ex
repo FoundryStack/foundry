@@ -100,7 +100,66 @@ defmodule Foundry.Studio do
     Application.put_env(:foundry, :igaming_project_root, project_root)
     Application.put_env(:foundry_web, :current_project_root, project_root)
     Application.put_env(:foundry_web, :igaming_project_root, project_root)
+    write_mcp_json(project_root)
     :ok
+  end
+
+  @spec write_mcp_json(String.t()) :: :ok
+  def write_mcp_json(project_root) do
+    url = mcp_server_url()
+    # Get the key from environment or .env file
+    api_key = System.get_env("FOUNDRY_MCP_API_KEY") || read_env_key("FOUNDRY_MCP_API_KEY")
+
+    config = %{
+      mcpServers: %{
+        foundry: %{
+          type: "http",
+          url: url,
+          headers: %{
+            "Authorization" => "Bearer #{api_key || "your-key-here"}"
+          }
+        }
+      }
+    }
+
+    path = Path.join(project_root, ".mcp.json")
+    File.write!(path, Jason.encode!(config, pretty: true))
+    :ok
+  rescue
+    _ -> :ok
+  end
+
+  defp read_env_key(key_name) do
+    env_path = ".env"
+
+    if File.exists?(env_path) do
+      File.read!(env_path)
+      |> String.split("\n")
+      |> Enum.find_value(fn line ->
+        case String.split(line, "=", parts: 2) do
+          [^key_name, value] -> String.trim(value)
+          _ -> nil
+        end
+      end)
+    end
+  rescue
+    _ -> nil
+  end
+
+  @spec mcp_server_url() :: String.t()
+  def mcp_server_url do
+    if Foundry.RuntimeConfig.standalone?() do
+      port =
+        case read_port_file() do
+          {:ok, p} -> p
+          _ -> @default_port
+        end
+
+      "http://localhost:#{port}/foundry/mcp"
+    else
+      phx_host = System.get_env("PHX_HOST", "localhost")
+      "https://#{phx_host}/foundry/mcp"
+    end
   end
 
   @spec finalize_launch(map()) :: :ok | {:error, term()}

@@ -37,25 +37,12 @@ defmodule Foundry.Context do
   # MCP tools — each wraps an Ash action on a Simple data layer resource.
   # The tool names are the ergonomic names exposed to agents via MCP.
   tools do
-    # Project health summary (lint, migrations, proposals, compliance gaps)
     tool :project_status, Foundry.Project.Status, :read
-
-    # Single module context (equivalent to `mix foundry.context <Module>`)
     tool :module_context, Foundry.Project.Module, :read
-
-    # Full system graph (equivalent to `mix foundry.project.context`)
     tool :system_graph, Foundry.Project.Graph, :read
-
-    # Run lint and return results
     tool :run_lint, Foundry.Lint.Run, :read
-
-    # Read a spec-kit document by path
     tool :read_doc, Foundry.SpecKit.Document, :read
-
-    # Submit a new proposal (create action on Proposal resource)
     tool :submit_proposal, Foundry.Proposals.Proposal, :create_draft
-
-    # Read a proposal by ID
     tool :proposal_status, Foundry.Proposals.Proposal, :read
   end
 
