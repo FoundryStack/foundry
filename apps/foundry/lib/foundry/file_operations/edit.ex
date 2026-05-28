@@ -32,7 +32,6 @@ defmodule Foundry.FileOperations.Edit do
 
     attribute :edit_type, :string do
       allow_nil? true
-      constraints one_of: ["raw", "spark_add_function", "spark_add_attribute", "spark_replace_function"]
       description "For .ex/.exs files: 'raw' (full rewrite) or 'spark_*' for AST edits. Other files: always 'raw'"
     end
 
@@ -74,7 +73,7 @@ defmodule Foundry.FileOperations.Edit do
 
   actions do
     action :write, :struct do
-      argument :path, :string, required: true, description: "Relative path to file"
+      argument :path, :string, allow_nil?: false, description: "Relative path to file"
       argument :content, :string, description: "Raw file content (for non-.ex files or full rewrites)"
       argument :edit_type, :string, description: "'raw' or 'spark_*' for Elixir files"
       argument :module_name, :string, description: "For Spark edits: target module"

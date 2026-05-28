@@ -33,6 +33,7 @@ defmodule Foundry.Context do
     resource Foundry.SpecKit.Document
     resource Foundry.Proposals.Proposal
     resource Foundry.FileOperations.Edit
+    resource Foundry.MCP.DocReader
   end
 
   # MCP tools — each wraps an Ash action on a Simple data layer resource.
@@ -48,6 +49,37 @@ defmodule Foundry.Context do
     tool :edit_file, Foundry.FileOperations.Edit, :write
   end
 
-  # MCP resources intentionally disabled until the backing Ash actions are modeled
-  # with return metadata compatible with the AshAi mcp_resource verifier.
+  # MCP resources — static documentation and reference data for agent context grounding.
+  # Agents can read these directly via MCP resources/read without making tool calls.
+  mcp_resources do
+    mcp_resource :agents_guide, "foundry://docs/agents.md", Foundry.MCP.DocReader, :agents_guide,
+      title: "Agents Guide",
+      description: "Agent specifications, capabilities, and integration patterns",
+      mime_type: "text/markdown"
+
+    mcp_resource :adr_index, "foundry://docs/adrs/index.json", Foundry.MCP.DocReader, :adr_index_json,
+      title: "Architecture Decision Records",
+      description: "Architecture Decision Records index with links to all ADRs",
+      mime_type: "application/json"
+
+    mcp_resource :runbooks, "foundry://docs/runbooks/index.json", Foundry.MCP.DocReader, :runbooks_index_json,
+      title: "Runbooks",
+      description: "Operational runbooks for troubleshooting and incident response",
+      mime_type: "application/json"
+
+    mcp_resource :build_sequence, "foundry://docs/build-sequence.md", Foundry.MCP.DocReader, :build_sequence,
+      title: "Build Sequence",
+      description: "Foundry's build process, phases, and build system architecture",
+      mime_type: "text/markdown"
+
+    mcp_resource :implementation_summary, "foundry://docs/implementation.md", Foundry.MCP.DocReader, :implementation_summary,
+      title: "Implementation Summary",
+      description: "Current system implementation: components, flow diagrams, architecture",
+      mime_type: "text/markdown"
+
+    mcp_resource :lint_catalogue, "foundry://docs/lint-rules.md", Foundry.MCP.DocReader, :lint_catalogue,
+      title: "Lint Catalogue",
+      description: "Complete catalog of lint rules, checks, and code analysis capabilities",
+      mime_type: "text/markdown"
+  end
 end
