@@ -53,13 +53,6 @@ defmodule Foundry.Application do
     # Initialize Mnesia schema and tables before starting the supervisor
     init_mnesia()
 
-    # Generate .mcp.json in the project root for external tools (Codex, Claude Code)
-    # Only do this in dev or when in a project directory
-    project_root = Application.get_env(:foundry, :current_project_root) || File.cwd!()
-    if File.dir?(project_root) do
-      Foundry.Studio.write_mcp_json(project_root)
-    end
-
     children = [
       {DNSCluster, query: Application.get_env(:foundry, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Foundry.PubSub},
