@@ -1,0 +1,9 @@
+#!/bin/bash
+# Foundry MCP stdio bridge — runs mix task from the foundry root regardless of cwd.
+# Used by .codex/config.toml in reference projects so Codex can find foundry Mix tasks.
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+FOUNDRY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+exec sh -c "cd '$FOUNDRY_ROOT' && exec mix run --no-start --eval ':code.load_file(:http_util); Mix.Task.run(\"foundry.mcp.stdio\")'"

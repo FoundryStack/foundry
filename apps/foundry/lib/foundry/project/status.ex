@@ -9,7 +9,7 @@ defmodule Foundry.Project.Status do
   """
 
   use Ash.Resource,
-    domain: nil,
+    domain: Foundry.Context,
     data_layer: Ash.DataLayer.Simple
 
   attributes do
@@ -89,12 +89,14 @@ defmodule Foundry.Project.Status do
   actions do
     read :read do
       primary? true
+
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
 
         with {:ok, status_map} <- build_status(project_root) do
-          record = Map.merge(%{"id" => Ash.UUIDv7.generate()}, status_map)
-          Ash.Query.load_data(query, [record])
+          data = Map.merge(%{"id" => Ash.UUIDv7.generate()}, status_map)
+          record = struct(__MODULE__, atomize_keys(data))
+          Ash.DataLayer.Simple.set_data(query, [record])
         else
           {:error, _} = error -> error
         end
@@ -123,8 +125,7 @@ defmodule Foundry.Project.Status do
         "generated_at" => parse_datetime(status["generated_at"]) || DateTime.utc_now()
       }}
     catch
-      :exit, reason -> {:error, reason}
-      kind, error -> {:error, {kind, error}}
+      kind, error -> {:error, Exception.format(kind, error, __STACKTRACE__)}
     end
   end
 
@@ -136,4 +137,8 @@ defmodule Foundry.Project.Status do
     end
   end
   defp parse_datetime(dt), do: dt
+
+  defp atomize_keys(map) do
+    Map.new(map, fn {k, v} -> {String.to_atom(k), v} end)
+  end
 end

@@ -28,10 +28,23 @@ defmodule Foundry.Context.ModuleDiscovery do
         |> Enum.flat_map(fn beam_file ->
           mod = beam_file |> Path.basename(".beam") |> String.to_atom()
           abs = beam_file |> Path.rootname() |> String.to_charlist()
-          :code.purge(mod)
-          case :code.load_abs(abs) do
-            {:module, ^mod} -> [mod]
-            _ -> []
+
+          # Only reload if not already loaded from this exact path.
+          # Calling :code.purge in a running server kills active processes using the module.
+          already_loaded =
+            case :code.which(mod) do
+              path when is_list(path) -> to_string(path) == "#{abs}.beam"
+              _ -> false
+            end
+
+          if already_loaded do
+            [mod]
+          else
+            :code.purge(mod)
+            case :code.load_abs(abs) do
+              {:module, ^mod} -> [mod]
+              _ -> []
+            end
           end
         end)
         |> Enum.filter(&is_project_module?/1)

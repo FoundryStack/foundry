@@ -1,6 +1,5 @@
 [mcp_servers.foundry]
-command = "mix"
-args = ["run", "--no-start", "--eval", ":code.load_file(:http_util); Mix.Task.run(\"foundry.mcp.stdio\")"]
+command = "../../bin/foundry-mcp-stdio"
 startup_timeout_sec = 120.0
 
 [mcp_servers.foundry.env]

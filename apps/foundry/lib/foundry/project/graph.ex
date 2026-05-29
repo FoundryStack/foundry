@@ -9,7 +9,7 @@ defmodule Foundry.Project.Graph do
   """
 
   use Ash.Resource,
-    domain: nil,
+    domain: Foundry.Context,
     data_layer: Ash.DataLayer.Simple
 
   attributes do
@@ -54,12 +54,14 @@ defmodule Foundry.Project.Graph do
   actions do
     read :read do
       primary? true
+
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
 
         with {:ok, graph_map} <- build_graph(project_root) do
-          record = Map.merge(%{"id" => Ash.UUIDv7.generate()}, graph_map)
-          Ash.Query.load_data(query, [record])
+          data = Map.merge(%{"id" => Ash.UUIDv7.generate()}, graph_map)
+          record = struct(__MODULE__, atomize_keys(data))
+          Ash.DataLayer.Simple.set_data(query, [record])
         else
           {:error, _} = error -> error
         end
@@ -88,6 +90,10 @@ defmodule Foundry.Project.Graph do
       "generated_at" => DateTime.utc_now()
     }}
   catch
-    _ -> {:error, :build_failed}
+    kind, error -> {:error, Exception.format(kind, error, __STACKTRACE__)}
+  end
+
+  defp atomize_keys(map) do
+    Map.new(map, fn {k, v} -> {String.to_atom(k), v} end)
   end
 end

@@ -9,7 +9,7 @@ defmodule Foundry.SpecKit.Document do
   """
 
   use Ash.Resource,
-    domain: nil,
+    domain: Foundry.Context,
     data_layer: Ash.DataLayer.Simple
 
   attributes do
@@ -51,12 +51,14 @@ defmodule Foundry.SpecKit.Document do
   actions do
     read :read do
       primary? true
+
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
         doc_filter = query.filter[Access.key(:id)]
 
-        with {:ok, records} <- build_documents(project_root, doc_filter) do
-          Ash.Query.load_data(query, records)
+        with {:ok, record_maps} <- build_documents(project_root, doc_filter) do
+          records = Enum.map(record_maps, &struct(__MODULE__, atomize_keys(&1)))
+          Ash.DataLayer.Simple.set_data(query, records)
         else
           {:error, _} = error -> error
         end
@@ -69,18 +71,21 @@ defmodule Foundry.SpecKit.Document do
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
 
-        with {:ok, content} <- Foundry.FileSystem.read(project_root, "AGENTS.md") do
-          record = %{
-            "id" => "agents",
-            "path" => "AGENTS.md",
-            "title" => "AGENTS.md",
-            "type" => :agents,
-            "summary" => String.slice(content, 0..300),
-            "tags" => []
-          }
-          Ash.Query.load_data(query, [record])
-        else
-          _ -> Ash.Query.load_data(query, [])
+        case Foundry.FileSystem.read(project_root, "AGENTS.md") do
+          {:ok, content} ->
+            record_map = %{
+              "id" => "agents",
+              "path" => "AGENTS.md",
+              "title" => "AGENTS.md",
+              "type" => :agents,
+              "summary" => String.slice(content, 0..300),
+              "tags" => []
+            }
+            record = struct(__MODULE__, atomize_keys(record_map))
+            Ash.DataLayer.Simple.set_data(query, [record])
+
+          _ ->
+            Ash.DataLayer.Simple.set_data(query, [])
         end
       end
     end
@@ -91,19 +96,27 @@ defmodule Foundry.SpecKit.Document do
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
 
-        with {:ok, index} <- Foundry.Context.SpecKitIndexBuilder.build(project_root)[:adrs] |> Jason.encode(),
-             {:ok, _} <- Jason.decode(index) do
-          record = %{
-            "id" => "adr_index",
-            "path" => "docs/adrs/index.json",
-            "title" => "ADR Index",
-            "type" => :adr,
-            "summary" => "Architecture Decision Records index",
-            "tags" => ["adr", "architecture", "decisions"]
-          }
-          Ash.Query.load_data(query, [record])
-        else
-          _ -> Ash.Query.load_data(query, [])
+        case Foundry.Context.SpecKitIndexBuilder.build(project_root)[:adrs] |> Jason.encode() do
+          {:ok, index} ->
+            case Jason.decode(index) do
+              {:ok, _} ->
+                record_map = %{
+                  "id" => "adr_index",
+                  "path" => "docs/adrs/index.json",
+                  "title" => "ADR Index",
+                  "type" => :adr,
+                  "summary" => "Architecture Decision Records index",
+                  "tags" => ["adr", "architecture", "decisions"]
+                }
+                record = struct(__MODULE__, atomize_keys(record_map))
+                Ash.DataLayer.Simple.set_data(query, [record])
+
+              _ ->
+                Ash.DataLayer.Simple.set_data(query, [])
+            end
+
+          _ ->
+            Ash.DataLayer.Simple.set_data(query, [])
         end
       end
     end
@@ -127,7 +140,7 @@ defmodule Foundry.SpecKit.Document do
 
     {:ok, filtered}
   catch
-    _ -> {:error, :build_failed}
+    kind, error -> {:error, Exception.format(kind, error, __STACKTRACE__)}
   end
 
   defp build_adr_docs(spec_kit) do
@@ -184,5 +197,9 @@ defmodule Foundry.SpecKit.Document do
         "tags" => ["finding"] ++ (finding["tags"] || [])
       }
     end)
+  end
+
+  defp atomize_keys(map) do
+    Map.new(map, fn {k, v} -> {String.to_atom(k), v} end)
   end
 end

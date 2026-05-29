@@ -13,6 +13,7 @@ defmodule FoundryWeb.Router do
   pipeline :mcp do
     plug :accepts, ["json"]
     plug :mcp_auth
+    plug :set_mcp_project_context
   end
 
   defp mcp_auth(conn, _opts) do
@@ -43,6 +44,11 @@ defmodule FoundryWeb.Router do
 
   defp dcr_endpoint?(conn) do
     conn.request_path =~ ~r{/(register|\.well-known/oauth2-configuration)$}
+  end
+
+  defp set_mcp_project_context(conn, _opts) do
+    project_root = FoundryWeb.ChatConfig.project_root()
+    Ash.PlugHelpers.set_context(conn, %{project_root: project_root})
   end
 
   live_session :default, on_mount: [Foundry.TestScenario.LiveViewHook] do

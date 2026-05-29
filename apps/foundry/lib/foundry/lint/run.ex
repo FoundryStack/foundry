@@ -9,7 +9,7 @@ defmodule Foundry.Lint.Run do
   """
 
   use Ash.Resource,
-    domain: nil,
+    domain: Foundry.Context,
     data_layer: Ash.DataLayer.Simple
 
   attributes do
@@ -54,12 +54,14 @@ defmodule Foundry.Lint.Run do
   actions do
     read :read do
       primary? true
+
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
 
         with {:ok, lint_map} <- build_lint(project_root) do
-          record = Map.merge(%{"id" => Ash.UUIDv7.generate()}, lint_map)
-          Ash.Query.load_data(query, [record])
+          data = Map.merge(%{"id" => Ash.UUIDv7.generate()}, lint_map)
+          record = struct(__MODULE__, atomize_keys(data))
+          Ash.DataLayer.Simple.set_data(query, [record])
         else
           {:error, _} = error -> error
         end
@@ -80,7 +82,7 @@ defmodule Foundry.Lint.Run do
       "generated_at" => DateTime.utc_now()
     }}
   catch
-    _ -> {:error, :build_failed}
+    kind, error -> {:error, Exception.format(kind, error, __STACKTRACE__)}
   end
 
   defp violation_to_map(violation) do
@@ -91,5 +93,9 @@ defmodule Foundry.Lint.Run do
       "module" => violation.module,
       "file_path" => violation.file_path
     }
+  end
+
+  defp atomize_keys(map) do
+    Map.new(map, fn {k, v} -> {String.to_atom(k), v} end)
   end
 end

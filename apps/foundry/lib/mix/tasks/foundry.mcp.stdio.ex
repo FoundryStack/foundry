@@ -3,6 +3,8 @@ defmodule Mix.Tasks.Foundry.Mcp.Stdio do
 
   require Logger
 
+  @shortdoc "MCP stdio bridge — proxies JSON-RPC to Foundry HTTP MCP endpoint"
+
   @moduledoc """
   Foundry MCP stdio bridge for Codex and other CLI tools.
 
@@ -16,6 +18,12 @@ defmodule Mix.Tasks.Foundry.Mcp.Stdio do
   def run(_args) do
     # Suppress all output except JSON-RPC messages
     _ = :logger.set_module_level(Logger, :error)
+
+    # :httpc requires :http_util which is lazily-loaded in OTP 28.
+    # Explicitly load it now so it's available when :httpc makes its first request.
+    _ = :inets.start()
+    _ = :ssl.start()
+    :code.load_file(:http_util)
 
     token = System.get_env("BEARER_TOKEN") || raise "BEARER_TOKEN env var required"
     host = System.get_env("FOUNDRY_MCP_HOST", "localhost")
@@ -66,16 +74,30 @@ defmodule Mix.Tasks.Foundry.Mcp.Stdio do
         new_client_id = request["params"]["clientInfo"]["name"]
         {:ok, new_client_id}
       else
-        # Forward all other requests to HTTP endpoint
-        response =
-          Req.post!(url,
-            json: request,
-            headers: [
-              {"Authorization", "Bearer #{token}"},
-              {"Content-Type", "application/json"}
-            ]
+        # Forward all other requests to HTTP endpoint using :httpc (built-in OTP)
+        body = Jason.encode!(request)
+        auth_header = {~c"Authorization", String.to_charlist("Bearer #{token}")}
+
+        result =
+          :httpc.request(
+            :post,
+            {String.to_charlist(url), [auth_header], ~c"application/json",
+             String.to_charlist(body)},
+            [],
+            body_format: :binary
           )
-          |> Map.get(:body)
+
+        response =
+          case result do
+            {:ok, {{_, 200, _}, _headers, resp_body}} ->
+              Jason.decode!(resp_body)
+
+            {:ok, {{_, status, _}, _headers, resp_body}} ->
+              %{"error" => %{"code" => status, "message" => to_string(resp_body)}}
+
+            {:error, reason} ->
+              %{"error" => %{"code" => -32603, "message" => inspect(reason)}}
+          end
 
         IO.write(Jason.encode!(response) <> "\n")
         {:ok, client_id}

@@ -10,7 +10,7 @@ defmodule Foundry.Project.Module do
   """
 
   use Ash.Resource,
-    domain: nil,
+    domain: Foundry.Context,
     data_layer: Ash.DataLayer.Simple
 
   attributes do
@@ -119,12 +119,14 @@ defmodule Foundry.Project.Module do
   actions do
     read :read do
       primary? true
+
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
         module_filter = query.filter[Access.key(:id)]
 
-        with {:ok, records} <- build_modules(project_root, module_filter) do
-          Ash.Query.load_data(query, records)
+        with {:ok, record_maps} <- build_modules(project_root, module_filter) do
+          records = Enum.map(record_maps, &struct(__MODULE__, atomize_keys(&1)))
+          Ash.DataLayer.Simple.set_data(query, records)
         else
           {:error, _} = error -> error
         end
@@ -147,7 +149,7 @@ defmodule Foundry.Project.Module do
       {:ok, records}
     end
   catch
-    _ -> {:error, :build_failed}
+    kind, error -> {:error, Exception.format(kind, error, __STACKTRACE__)}
   end
 
   defp module_map_to_record(map) when is_map(map) do
@@ -173,5 +175,9 @@ defmodule Foundry.Project.Module do
       "telemetry_prefix" => map["telemetry_prefix"] || [],
       "last_modified" => map["last_modified"]
     }
+  end
+
+  defp atomize_keys(map) do
+    Map.new(map, fn {k, v} -> {String.to_atom(k), v} end)
   end
 end
