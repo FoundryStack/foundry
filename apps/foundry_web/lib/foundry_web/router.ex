@@ -70,6 +70,7 @@ defmodule FoundryWeb.Router do
     pipe_through :browser
 
     get "/mcp.json", FoundryWeb.WellKnownController, :mcp_discovery
+    get "/oauth-authorization-server", FoundryWeb.McpDcrController, :well_known
   end
 
   # MCP server — exposes Foundry.Context tools to external agents

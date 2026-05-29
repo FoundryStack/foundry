@@ -409,8 +409,15 @@ defmodule FoundryWeb.ChatSession do
   end
 
   def handle_event("cancel_message", _params, socket) do
-    socket = cancel_active_task(socket)
-    {:noreply, assign(socket, :chat_loading, false)}
+    socket =
+      socket
+      |> cancel_active_task()
+      |> assign(:chat_loading, false)
+      |> assign(:active_request_ref, nil)
+      |> assign(:active_request_task, nil)
+      |> assign(:pending_messages, [])
+
+    {:noreply, socket}
   end
 
   def handle_event("update_chat_input", params, socket) do
@@ -821,7 +828,7 @@ defmodule FoundryWeb.ChatSession do
       end
     end
 
-    socket
+    assign(socket, :active_request_task, nil)
   end
 
   defp cancel_active_task(socket) do

@@ -32,11 +32,13 @@ defmodule FoundryWeb.McpDcrController do
   end
 
   def well_known(conn, _params) do
+    base = mcp_base_url(conn)
+
     config = %{
-      "issuer" => mcp_server_url(),
-      "registration_endpoint" => mcp_server_url() <> "/register",
-      "token_endpoint" => mcp_server_url() <> "/token",
-      "authorization_endpoint" => mcp_server_url() <> "/authorize"
+      "issuer" => base,
+      "registration_endpoint" => base <> "/register",
+      "token_endpoint" => base <> "/token",
+      "authorization_endpoint" => base <> "/authorize"
     }
 
     json(conn, config)
@@ -57,7 +59,23 @@ defmodule FoundryWeb.McpDcrController do
     System.system_time(:second) |> Integer.to_string()
   end
 
-  defp mcp_server_url do
-    Foundry.Studio.mcp_server_url()
+  defp mcp_base_url(conn) do
+    host = conn.host
+    scheme = case Plug.Conn.get_req_header(conn, "x-forwarded-proto") do
+      [proto] -> proto
+      [] -> "http"
+    end
+    port = case Plug.Conn.get_req_header(conn, "x-forwarded-port") do
+      [p] -> String.to_integer(p)
+      [] -> conn.port
+    end
+
+    base = case {scheme, port} do
+      {"http", 80} -> "http://#{host}"
+      {"https", 443} -> "https://#{host}"
+      _ -> "#{scheme}://#{host}:#{port}"
+    end
+
+    base <> "/foundry/mcp"
   end
 end

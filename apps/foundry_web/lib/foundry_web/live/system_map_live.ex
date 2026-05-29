@@ -411,6 +411,11 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   @impl true
+  def handle_event("cancel_message", params, socket) do
+    ChatSession.handle_event("cancel_message", params, socket)
+  end
+
+  @impl true
   def handle_event("summarize_session", params, socket) do
     ChatSession.handle_event("summarize_session", params, socket)
   end
