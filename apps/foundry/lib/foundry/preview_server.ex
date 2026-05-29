@@ -432,7 +432,7 @@ defmodule Foundry.PreviewServer do
       [] ->
         {:error, "Preview command is empty."}
 
-      [executable | args] ->
+      [executable | _args] ->
         # Prepend mix local.hex --force to auto-install Hex if needed
         full_command = if executable == "mix" do
           "mix local.hex --force && #{command}"

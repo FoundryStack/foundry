@@ -64,12 +64,6 @@ defmodule FoundryWeb.SystemMapLive do
     Foundry.ProjectManager.clone_project(url, dir)
   end
 
-  defp cloud_projects_dir do
-    dir = "/app/projects"
-    File.mkdir_p!(dir)
-    dir
-  end
-
   defp start_project_action(%{"path" => path, "new_project" => "1", "project_name" => name})
        when path != "" and name != "" do
     Foundry.ProjectManager.new_project(path, name)
@@ -80,6 +74,12 @@ defmodule FoundryWeb.SystemMapLive do
   end
 
   defp start_project_action(_params), do: :ok
+
+  defp cloud_projects_dir do
+    dir = "/app/projects"
+    File.mkdir_p!(dir)
+    dir
+  end
 
   defp mount_loading(params, session, socket) do
     if connected?(socket) do

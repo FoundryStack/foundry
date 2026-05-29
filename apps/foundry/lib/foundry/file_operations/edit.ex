@@ -250,7 +250,7 @@ defmodule Foundry.FileOperations.Edit do
     end
   end
 
-  defp insert_into_module({:defmodule, meta, args}, new_code) do
+  defp insert_into_module({:defmodule, meta, args}, _new_code) do
     {:defmodule, meta, args}
   end
 

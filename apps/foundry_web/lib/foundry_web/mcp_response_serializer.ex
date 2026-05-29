@@ -41,7 +41,7 @@ defmodule FoundryWeb.McpResponseSerializer do
     end
   end
 
-  defp fix_bandit_response(conn, fun) do
+  defp fix_bandit_response(conn, _fun) do
     # This is a best-effort approach - ideally fix at source
     conn
   end
@@ -62,7 +62,7 @@ defmodule FoundryWeb.McpResponseSerializer do
 
   defp fix_tool_response(body), do: body
 
-  defp enhance_tool_result([%{"id" => _id} = record | _rest] = records) do
+  defp enhance_tool_result([%{"id" => _id} = _record | _rest] = records) do
     Enum.map(records, &enhance_record/1)
   end
 
