@@ -43,8 +43,8 @@ defmodule FoundryWeb.ChatModelCatalog do
           ) ->
         match.id
 
-      cloud_default_match(catalog) ->
-        cloud_default_match(catalog).id
+      match = cloud_default_match(catalog) ->
+        match.id
 
       match = Enum.find(catalog, &(&1.availability == :available)) ->
         match.id
@@ -72,10 +72,14 @@ defmodule FoundryWeb.ChatModelCatalog do
 
   def available?(entry), do: entry && entry.availability == :available
 
+  defp local_available? do
+    Foundry.RuntimeConfig.standalone?()
+  end
+
   def family_groups(catalog) do
     catalog
     |> Enum.group_by(& &1.family_label)
-    |> Enum.sort_by(fn {family_label, _entries} -> family_sort_key(family_label) end)
+    |> Enum.sort_by(fn {_label, [first | _]} -> provider_sort_key(first.provider) end)
   end
 
   def pretty_provider_label(:claude_code), do: "Claude Code"
@@ -86,25 +90,43 @@ defmodule FoundryWeb.ChatModelCatalog do
   def pretty_provider_label(provider), do: provider |> to_string() |> String.replace("_", " ")
 
   defp codex_entries do
+    available = local_available?()
+
     Enum.map(@codex_models, fn model_id ->
-      build_entry(:codex, "Codex (Local)", model_id, available: true, context_window: 400_000)
+      build_entry(:codex, "Codex (Local)", model_id,
+        available: available,
+        disabled_reason: unless(available, do: "Only available in local/desktop mode"),
+        context_window: 400_000
+      )
     end)
   end
 
   defp claude_code_entries do
+    available = local_available?()
+
     Enum.map(@claude_models, fn model_id ->
       build_entry(:claude_code, "Claude Code (Local)", model_id,
-        available: true,
+        available: available,
+        disabled_reason: unless(available, do: "Only available in local/desktop mode"),
         context_window: 200_000
       )
     end)
   end
 
   defp anthropic_entries do
+    available = not local_available?() and !!System.get_env("ANTHROPIC_API_KEY")
+
+    reason =
+      cond do
+        local_available?() -> "Only available via API in cloud/server mode"
+        not available -> "Set ANTHROPIC_API_KEY to enable"
+        true -> nil
+      end
+
     Enum.map(@anthropic_models, fn model_id ->
       build_entry(:anthropic, "Anthropic (API)", model_id,
-        available: false,
-        disabled_reason: "Anthropic API backend not available",
+        available: available,
+        disabled_reason: reason,
         context_window: 200_000
       )
     end)
@@ -158,27 +180,36 @@ defmodule FoundryWeb.ChatModelCatalog do
   end
 
   defp lm_studio_entries do
-    case discover_lm_studio_models() do
-      {:ok, []} ->
-        [
-          build_entry(:lm_studio, "LM Studio", "unavailable",
-            available: false,
-            disabled_reason: "No LM Studio models available"
-          )
-        ]
+    unless local_available?() do
+      [
+        build_entry(:lm_studio, "LM Studio", "unavailable",
+          available: false,
+          disabled_reason: "Only available in local/desktop mode"
+        )
+      ]
+    else
+      case discover_lm_studio_models() do
+        {:ok, []} ->
+          [
+            build_entry(:lm_studio, "LM Studio", "unavailable",
+              available: false,
+              disabled_reason: "No LM Studio models available"
+            )
+          ]
 
-      {:ok, models} ->
-        Enum.map(models, fn model_id ->
-          build_entry(:lm_studio, "LM Studio", model_id, available: true)
-        end)
+        {:ok, models} ->
+          Enum.map(models, fn model_id ->
+            build_entry(:lm_studio, "LM Studio", model_id, available: true)
+          end)
 
-      {:error, _reason} ->
-        [
-          build_entry(:lm_studio, "LM Studio", "unavailable",
-            available: false,
-            disabled_reason: "LM Studio unavailable"
-          )
-        ]
+        {:error, _reason} ->
+          [
+            build_entry(:lm_studio, "LM Studio", "unavailable",
+              available: false,
+              disabled_reason: "LM Studio unavailable"
+            )
+          ]
+      end
     end
   end
 
@@ -256,10 +287,10 @@ defmodule FoundryWeb.ChatModelCatalog do
     Enum.find(catalog, &(&1.provider == provider and &1.model_id == model_id))
   end
 
-  defp family_sort_key("Codex (Local)"), do: 0
-  defp family_sort_key("Claude Code (Local)"), do: 1
-  defp family_sort_key("Anthropic (API)"), do: 2
-  defp family_sort_key("Gemini (API)"), do: 3
-  defp family_sort_key("LM Studio"), do: 4
-  defp family_sort_key(_family), do: 99
+  defp provider_sort_key(:codex), do: 0
+  defp provider_sort_key(:claude_code), do: 1
+  defp provider_sort_key(:anthropic), do: 2
+  defp provider_sort_key(:gemini), do: 3
+  defp provider_sort_key(:lm_studio), do: 4
+  defp provider_sort_key(_), do: 99
 end
