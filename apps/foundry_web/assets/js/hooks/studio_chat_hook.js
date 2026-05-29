@@ -65,6 +65,9 @@ export const StudioChatHook = {
   updated() {
     this._bindFormHandlers()
     this._scrollConversationToBottom(false)
+    // Clean up optimistic stop button if server re-rendered (should be replaced by now)
+    const optimisticStop = this.el.querySelector('[data-role="optimistic-stop"]')
+    if (optimisticStop) optimisticStop.remove()
   },
 
   destroyed() {
@@ -107,10 +110,17 @@ export const StudioChatHook = {
       const message = this._input.value.trim()
       if (!message) return
 
+      // Remove welcome block immediately
+      const welcomeBlock = this.el.querySelector('[data-role="welcome-block"]')
+      if (welcomeBlock) welcomeBlock.remove()
+
       // Add user message to chat immediately on client side
       this._addMessageToChat('user', message)
       // Add thinking bubble to show assistant is responding
       this._addThinkingBubble()
+
+      // Optimistically show Stop button before server round-trip
+      this._showOptimisticStop()
 
       this._autoScrollEnabled = true
       requestAnimationFrame(() => {
@@ -118,11 +128,18 @@ export const StudioChatHook = {
 
         this._input.value = ''
         this._input.focus()
+        this._updateSubmitButtonState()
       })
     }
 
+    this._inputHandler = (e) => {
+      this._updateSubmitButtonState()
+    }
+
     this._input.addEventListener('keydown', this._keydownHandler)
+    this._input.addEventListener('input', this._inputHandler)
     this._form.addEventListener('submit', this._submitHandler)
+    this._updateSubmitButtonState()
   },
 
   _unbindFormHandlers() {
@@ -130,9 +147,38 @@ export const StudioChatHook = {
       this._input.removeEventListener('keydown', this._keydownHandler)
     }
 
+    if (this._input && this._inputHandler) {
+      this._input.removeEventListener('input', this._inputHandler)
+    }
+
     if (this._form && this._submitHandler) {
       this._form.removeEventListener('submit', this._submitHandler)
     }
+  },
+
+  _updateSubmitButtonState() {
+    const button = this._form?.querySelector('button[type="submit"]')
+    if (!button) return
+
+    const isEmpty = !this._input.value.trim()
+    button.disabled = isEmpty
+  },
+
+  _showOptimisticStop() {
+    const button = this._form?.querySelector('button[type="submit"]')
+    if (!button) return
+
+    const stopButton = document.createElement('button')
+    stopButton.type = 'button'
+    stopButton.setAttribute('data-role', 'optimistic-stop')
+    stopButton.className = 'inline-flex items-center rounded-2xl border border-warning/30 bg-warning/10 px-3.5 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-warning transition-colors hover:bg-warning/15'
+    stopButton.textContent = 'Stop'
+    stopButton.onclick = (e) => {
+      e.preventDefault()
+      this.pushEvent('cancel_message')
+    }
+
+    button.replaceWith(stopButton)
   },
 
   _bindScrollHandler() {

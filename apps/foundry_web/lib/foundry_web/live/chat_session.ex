@@ -409,6 +409,26 @@ defmodule FoundryWeb.ChatSession do
   end
 
   def handle_event("cancel_message", _params, socket) do
+    # Before cancelling, attach accumulated tool_events from the active run
+    socket =
+      case DomainLogic.find_activity_run(socket.assigns.activity_runs, socket.assigns.active_request_ref) do
+        nil ->
+          socket
+
+        run ->
+          # Attach tool_events and metadata to the partial assistant message
+          socket
+          |> update(:messages, fn messages ->
+            case latest_assistant_index(messages) do
+              nil -> messages
+              index -> List.update_at(messages, index, &DomainLogic.maybe_attach_message_metadata(&1, run))
+            end
+          end)
+          |> update(:activity_runs, fn runs ->
+            DomainLogic.fail_activity_run(runs, socket.assigns.active_request_ref, "cancelled", fn _ -> nil end)
+          end)
+      end
+
     socket =
       socket
       |> cancel_active_task()

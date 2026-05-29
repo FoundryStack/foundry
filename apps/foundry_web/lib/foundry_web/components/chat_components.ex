@@ -53,35 +53,37 @@ defmodule FoundryWeb.ChatComponents do
       class="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
     >
       <%= if @open_session_ids != [] do %>
-        <div class="flex min-h-0 shrink-0 items-center gap-0.5 overflow-x-auto px-3">
-          <%= for id <- @open_session_ids do %>
-            <% session = Map.get(@sessions_by_id, id, %{})
-            title = session["title"] || "Session"
-            is_active = id == @active_session_id %>
-            <div class={[
-              "group flex min-w-0 max-w-[180px] shrink-0 items-center gap-1 border-0 border-b-2 border-transparent bg-transparent px-3 py-2 text-[11px] font-medium uppercase tracking-[0.04em] transition-colors",
-              if(is_active,
-                do: "border-primary text-gray-100",
-                else: "text-gray-100/72 hover:bg-white/8 hover:text-gray-100"
-              )
-            ]}>
-              <button
-                class="min-w-0 flex-1 truncate text-left"
-                phx-click="chat_session_switch"
-                phx-value-id={id}
-              >
-                {title}
-              </button>
-              <button
-                class="shrink-0 text-neutral-content opacity-0 transition-opacity group-hover:opacity-100 hover:text-base-content pl-2"
-                phx-click="chat_session_close"
-                phx-value-id={id}
-                title="Close tab"
-              >
-                ×
-              </button>
-            </div>
-          <% end %>
+        <div class="flex min-h-0 shrink-0 items-center gap-0.5 px-3">
+          <div class="flex-1 min-w-0 overflow-x-auto">
+            <%= for id <- @open_session_ids do %>
+              <% session = Map.get(@sessions_by_id, id, %{})
+              title = session["title"] || "Session"
+              is_active = id == @active_session_id %>
+              <div class={[
+                "group flex min-w-0 max-w-[180px] shrink-0 items-center gap-1 border-0 border-b-2 border-transparent bg-transparent px-3 py-2 text-[11px] font-medium uppercase tracking-[0.04em] transition-colors",
+                if(is_active,
+                  do: "border-primary text-gray-100",
+                  else: "text-gray-100/72 hover:bg-white/8 hover:text-gray-100"
+                )
+              ]}>
+                <button
+                  class="min-w-0 flex-1 truncate text-left"
+                  phx-click="chat_session_switch"
+                  phx-value-id={id}
+                >
+                  {title}
+                </button>
+                <button
+                  class="shrink-0 text-neutral-content opacity-0 transition-opacity group-hover:opacity-100 hover:text-base-content pl-2"
+                  phx-click="chat_session_close"
+                  phx-value-id={id}
+                  title="Close tab"
+                >
+                  ×
+                </button>
+              </div>
+            <% end %>
+          </div>
           <button
             class="ml-1 shrink-0 rounded-selector border border-transparent bg-transparent px-2 py-1.5 text-lg font-medium uppercase rounded-[50%] text-gray-100/72 transition-colors hover:bg-white/8 hover:text-gray-100"
             phx-click="chat_session_new"
@@ -167,7 +169,7 @@ defmodule FoundryWeb.ChatComponents do
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
               <div id="studio-chat-conversation" class="space-y-3" aria-live="polite">
                 <%= if Enum.empty?(@messages) do %>
-                  <div class="rounded-[18px] border border-dashed border-white/10 bg-transparent px-4 py-6 text-center">
+                  <div data-role="welcome-block" class="rounded-[18px] border border-dashed border-white/10 bg-transparent px-4 py-6 text-center">
                     <p class="text-sm font-medium text-base-content">
                       Start a governed project conversation.
                     </p>
@@ -228,6 +230,8 @@ defmodule FoundryWeb.ChatComponents do
                 rows="3"
                 placeholder="Ask about the system, or request a change..."
                 data-role="chat-input"
+                phx-change="update_chat_input"
+                phx-debounce="100"
                 class="w-full resize-none rounded-[18px] border border-white/10 bg-transparent px-3 py-3 text-sm leading-6 text-base-content outline-none backdrop-blur-sm placeholder:text-neutral-content/50"
               ><%= @input %></textarea>
               <% active_proposal_id = @session_digest["active_proposal_id"]
@@ -813,6 +817,8 @@ defmodule FoundryWeb.ChatComponents do
               <.inline_tool_event
                 :for={event <- segment_events}
                 event={event}
+                message_id={@message["id"] || "unknown"}
+                event_index={segment_events |> Enum.find_index(&(&1 == event)) || 0}
                 project_root={@project_root}
               />
               <div
@@ -992,11 +998,17 @@ defmodule FoundryWeb.ChatComponents do
   end
 
   attr :event, :map, required: true
+  attr :message_id, :string, required: true
+  attr :event_index, :integer, default: 0
   attr :project_root, :string, default: nil
 
   defp inline_tool_event(assigns) do
+    # Create stable ID for this tool event based on message and event attributes
+    event_id = "tool-#{assigns.message_id}-#{assigns.event_index}-#{assigns.event["category"]}"
+    assigns = assign(assigns, :event_id, event_id)
+
     ~H"""
-    <details class="group pl-3 border-l-2 border-white/10 hover:border-white/20 transition-colors">
+    <details id={@event_id} class="group pl-3 border-l-2 border-white/10 hover:border-white/20 transition-colors">
       <summary class="flex cursor-pointer list-none items-center gap-2 py-0.5 select-none">
         <span class={inline_tool_icon_class(@event["category"])}>
           {inline_tool_icon(@event["category"])}

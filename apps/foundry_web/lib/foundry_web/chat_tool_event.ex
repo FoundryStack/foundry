@@ -57,12 +57,22 @@ defmodule FoundryWeb.ChatToolEvent do
 
   @doc """
   Filters and normalizes a list of grouped trace events for display.
+
+  Excludes pre-LLM retrieval events (foundry.context, foundry.retrieval.summary)
+  which are preparation events that belong only in the trace sidebar, not inline
+  in chat messages.
   """
   @spec normalize_many([map()]) :: [normalized()]
   def normalize_many(events) when is_list(events) do
     events
     |> Enum.filter(&visible?/1)
+    |> Enum.reject(&is_pre_llm_retrieval_event?/1)
     |> Enum.map(&normalize/1)
+  end
+
+  defp is_pre_llm_retrieval_event?(event) do
+    cat = to_string(event[:category] || event["category"] || "")
+    cat in ~w(foundry.context foundry.retrieval.summary)
   end
 
   defp normalize_output(output) when is_binary(output) and output != "",
