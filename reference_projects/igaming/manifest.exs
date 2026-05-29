@@ -56,6 +56,8 @@
   preview_server: [
     command: "mix phx.server",
     port: 4001,
-    env: []
+    env: [
+      {~c"MIX_BUILD_PATH", ~c"_build/preview"}
+    ]
   ]
 ]

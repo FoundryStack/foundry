@@ -3,4 +3,5 @@
 .foundry/local
 _build
 _build_codex
-deps.mcp.json
+deps
+.specstory

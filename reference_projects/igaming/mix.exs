@@ -5,7 +5,7 @@ defmodule IgamingRef.MixProject do
     [
       app: :igaming_ref,
       version: "0.1.0",
-      elixir: "~> 1.16",
+      elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -42,7 +42,7 @@ defmodule IgamingRef.MixProject do
       {:ash_authentication, "~> 4.0"},
       {:ash_authentication_phoenix, "~> 2.0"},
       {:ash_state_machine, "~> 0.2"},
-      {:ash_paper_trail, "~> 0.1"},
+      {:ash_paper_trail, "~> 0.5"},
       {:ash_archival, "~> 2.0"},
       {:ash_json_api, "~> 1.0"},
 
@@ -74,7 +74,10 @@ defmodule IgamingRef.MixProject do
       {:igniter, "~> 0.6"},
 
       # Foundry — meta-framework for governance
-      {:foundry, "~> 0.1.6", hex: :foundry_stack},
+      {:foundry, "~> 0.2.0", hex: :foundry_stack},
+
+      # SAT solver — simple_sat is dependency-free (no native compilation)
+      {:simple_sat, ">= 0.1.1 and < 1.0.0-0"},
 
       # Server-Driven UI
       {:ash_sdui, "~> 0.1"},
