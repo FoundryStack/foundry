@@ -54,7 +54,7 @@ defmodule FoundryWeb.ChatComponents do
     >
       <%= if @open_session_ids != [] do %>
         <div class="flex min-h-0 shrink-0 items-center gap-0.5 px-3">
-          <div class="flex-1 min-w-0 overflow-x-auto">
+          <div class="flex flex-row flex-1 min-w-0 overflow-x-auto">
             <%= for id <- @open_session_ids do %>
               <% session = Map.get(@sessions_by_id, id, %{})
               title = session["title"] || "Session"
@@ -231,7 +231,6 @@ defmodule FoundryWeb.ChatComponents do
                 placeholder="Ask about the system, or request a change..."
                 data-role="chat-input"
                 phx-change="update_chat_input"
-                phx-value-value={@input}
                 phx-debounce="100"
                 class="w-full resize-none rounded-[18px] border border-white/10 bg-transparent px-3 py-3 text-sm leading-6 text-base-content outline-none backdrop-blur-sm placeholder:text-neutral-content/50"
               ><%= @input %></textarea>

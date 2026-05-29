@@ -313,10 +313,6 @@ defmodule FoundryWeb.ChatSession do
     {:noreply, update(socket, :show_system_context, &(!&1))}
   end
 
-  def handle_event("update_chat_input", %{"value" => value}, socket) do
-    {:noreply, assign(socket, :input, value)}
-  end
-
   def handle_event("send_message", %{"message" => message}, socket) do
     message = String.trim(message)
 
@@ -457,8 +453,7 @@ defmodule FoundryWeb.ChatSession do
     {:noreply, socket}
   end
 
-  def handle_event("update_chat_input", params, socket) do
-    message = params["value"] || ""
+  def handle_event("update_chat_input", %{"message" => message}, socket) do
     {:noreply, assign(socket, :input, message)}
   end
 
