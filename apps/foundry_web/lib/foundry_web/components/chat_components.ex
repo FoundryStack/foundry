@@ -231,6 +231,7 @@ defmodule FoundryWeb.ChatComponents do
                 placeholder="Ask about the system, or request a change..."
                 data-role="chat-input"
                 phx-change="update_chat_input"
+                phx-value-value={@input}
                 phx-debounce="100"
                 class="w-full resize-none rounded-[18px] border border-white/10 bg-transparent px-3 py-3 text-sm leading-6 text-base-content outline-none backdrop-blur-sm placeholder:text-neutral-content/50"
               ><%= @input %></textarea>
@@ -1301,7 +1302,12 @@ defmodule FoundryWeb.ChatComponents do
     |> Map.get(:diagnostics, %{})
     |> case do
       diagnostics when is_map(diagnostics) ->
-        Map.get(diagnostics, :context_cache, "n/a") || "n/a"
+        case Map.get(diagnostics, :context_cache) do
+          "hit" -> "Context cached"
+          "miss" -> "Context rebuilt"
+          cache_status when is_binary(cache_status) -> cache_status
+          _ -> "n/a"
+        end
 
       _ ->
         "n/a"

@@ -104,6 +104,8 @@ defmodule FoundryWeb.ChatSession do
       |> assign(:active_session_id, nil)
       |> assign(:sessions_by_id, %{})
       |> assign(:last_session_summary_at, nil)
+      |> assign(:session_inputs, %{})
+      |> assign(:per_session_state, %{})
 
     {:ok, socket}
   end
@@ -225,8 +227,9 @@ defmodule FoundryWeb.ChatSession do
     if id in socket.assigns.open_session_ids do
       socket =
         socket
+        |> save_active_session_state()
         |> assign(:active_session_id, id)
-        |> maybe_load_active_session_into_chat(id)
+        |> restore_session_state(id)
         |> push_workspace_state()
 
       {:noreply, socket}
@@ -245,11 +248,21 @@ defmodule FoundryWeb.ChatSession do
         socket.assigns.active_session_id
       end
 
+    case Map.get(socket.assigns.per_session_state, id) do
+      %{active_request_task: task} when is_reference(task) ->
+        Task.shutdown(task, :kill)
+      _ ->
+        :ok
+    end
+
     socket =
       socket
+      |> save_active_session_state()
       |> assign(:open_session_ids, open_ids)
       |> assign(:active_session_id, active_id)
-      |> maybe_load_active_session_into_chat(active_id)
+      |> update(:per_session_state, &Map.delete(&1, id))
+      |> update(:session_inputs, &Map.delete(&1, id))
+      |> restore_session_state(active_id)
       |> push_workspace_state()
 
     {:noreply, socket}
@@ -298,6 +311,10 @@ defmodule FoundryWeb.ChatSession do
 
   def handle_event("toggle_system_context", _params, socket) do
     {:noreply, update(socket, :show_system_context, &(!&1))}
+  end
+
+  def handle_event("update_chat_input", %{"value" => value}, socket) do
+    {:noreply, assign(socket, :input, value)}
   end
 
   def handle_event("send_message", %{"message" => message}, socket) do
@@ -540,6 +557,20 @@ defmodule FoundryWeb.ChatSession do
 
       {:noreply, socket}
     else
+      socket =
+        update_background_session(socket, request_ref, fn state ->
+          messages = append_to_streaming_response(state.messages, delta)
+          activity_runs =
+            Enum.map(state.activity_runs, fn run ->
+              if run.request_ref == request_ref do
+                Map.update(run, :stream_cursor, String.length(delta), &(&1 + String.length(delta)))
+              else
+                run
+              end
+            end)
+          %{state | messages: messages, activity_runs: activity_runs}
+        end)
+
       {:noreply, socket}
     end
   end
@@ -587,7 +618,40 @@ defmodule FoundryWeb.ChatSession do
       socket = process_pending_messages(socket)
       {:noreply, socket}
     else
-      {:noreply, socket}
+      case find_background_session_for_request(socket.assigns.per_session_state, request_ref) do
+        {session_id, state} ->
+          memory_result = DomainLogic.persist_turn_memory(socket, request_ref, response)
+
+          activity_runs =
+            Enum.map(state.activity_runs, fn run ->
+              if run.request_ref == request_ref do
+                %{run | status: :completed, response: memory_result.response}
+              else
+                run
+              end
+            end)
+
+          run = Enum.find(activity_runs, &(&1.request_ref == request_ref))
+          messages = finalize_streaming_response(state.messages, memory_result.response, run)
+
+          digest =
+            DomainLogic.finalize_session_digest(
+              Map.put(socket.assigns, :activity_runs, activity_runs),
+              request_ref,
+              memory_result.response,
+              memory_result.artifact,
+              true
+            )
+
+          new_state = %{state | messages: messages, chat_loading: false, session_digest: digest, activity_runs: activity_runs, active_request_ref: nil, active_request_task: nil}
+          socket = update(socket, :per_session_state, &Map.put(&1, session_id, new_state))
+
+          save_background_session_to_file(session_id, new_state, socket)
+          {:noreply, socket}
+
+        nil ->
+          {:noreply, socket}
+      end
     end
   end
 
@@ -598,6 +662,19 @@ defmodule FoundryWeb.ChatSession do
          DomainLogic.append_trace_event_to_run(run, raw_event)
        end)}
     else
+      socket =
+        update_background_session(socket, request_ref, fn state ->
+          activity_runs =
+            Enum.map(state.activity_runs, fn run ->
+              if run.request_ref == request_ref do
+                DomainLogic.append_trace_event_to_run(run, raw_event)
+              else
+                run
+              end
+            end)
+          %{state | activity_runs: activity_runs}
+        end)
+
       {:noreply, socket}
     end
   end
@@ -630,7 +707,38 @@ defmodule FoundryWeb.ChatSession do
       socket = process_pending_messages(socket)
       {:noreply, socket}
     else
-      {:noreply, socket}
+      case find_background_session_for_request(socket.assigns.per_session_state, request_ref) do
+        {session_id, state} ->
+          messages = drop_empty_streaming_response(state.messages)
+
+          activity_runs = Enum.map(state.activity_runs, fn run ->
+            if run.request_ref == request_ref do
+              run
+              |> Map.put(:status, :error)
+              |> Map.put(:finished_at, DateTime.utc_now() |> DateTime.to_iso8601())
+              |> Map.put(:error, format_request_error(reason))
+            else
+              run
+            end
+          end)
+
+          digest = DomainLogic.finalize_session_digest(
+            Map.put(socket.assigns, :activity_runs, activity_runs),
+            request_ref,
+            nil,
+            nil,
+            false
+          )
+
+          new_state = %{state | messages: messages, chat_loading: false, session_digest: digest, activity_runs: activity_runs, active_request_ref: nil, active_request_task: nil}
+          socket = update(socket, :per_session_state, &Map.put(&1, session_id, new_state))
+
+          save_background_session_to_file(session_id, new_state, socket)
+          {:noreply, socket}
+
+        nil ->
+          {:noreply, socket}
+      end
     end
   end
 
@@ -1059,6 +1167,63 @@ defmodule FoundryWeb.ChatSession do
     _ -> nil
   end
 
+  defp save_active_session_state(socket) do
+    current_session_id = socket.assigns.active_session_id
+
+    if current_session_id && current_session_id in socket.assigns.open_session_ids do
+      state = %{
+        messages: socket.assigns.messages,
+        chat_loading: socket.assigns.chat_loading,
+        active_request_ref: socket.assigns.active_request_ref,
+        active_request_task: socket.assigns.active_request_task,
+        pending_messages: socket.assigns.pending_messages,
+        session_digest: socket.assigns.session_digest,
+        activity_runs: socket.assigns.activity_runs,
+        selected_activity_run_id: socket.assigns.selected_activity_run_id,
+        error: socket.assigns.error
+      }
+
+      input = socket.assigns.input || ""
+
+      socket
+      |> update(:per_session_state, &Map.put(&1, current_session_id, state))
+      |> update(:session_inputs, &Map.put(&1, current_session_id, input))
+    else
+      socket
+    end
+  end
+
+  defp restore_session_state(socket, nil), do: socket
+
+  defp restore_session_state(socket, session_id) do
+    case Map.get(socket.assigns.per_session_state, session_id) do
+      # Active stream exists for this session
+      state when is_map(state) ->
+        input = Map.get(socket.assigns.session_inputs, session_id, "")
+
+        socket
+        |> assign(:session_id, session_id)
+        |> assign(:messages, state.messages)
+        |> assign(:chat_loading, state.chat_loading)
+        |> assign(:active_request_ref, state.active_request_ref)
+        |> assign(:active_request_task, state.active_request_task)
+        |> assign(:pending_messages, state.pending_messages)
+        |> assign(:session_digest, state.session_digest)
+        |> assign(:activity_runs, state.activity_runs)
+        |> assign(:selected_activity_run_id, state.selected_activity_run_id)
+        |> assign(:error, state.error)
+        |> assign(:input, input)
+
+      # No active stream, load from file
+      nil ->
+        input = Map.get(socket.assigns.session_inputs, session_id, "")
+
+        socket
+        |> maybe_load_active_session_into_chat(session_id)
+        |> assign(:input, input)
+    end
+  end
+
   defp maybe_load_active_session_into_chat(socket, nil), do: socket
 
   defp maybe_load_active_session_into_chat(socket, session_id) do
@@ -1129,6 +1294,37 @@ defmodule FoundryWeb.ChatSession do
         {socket, socket.assigns.open_session_ids, socket.assigns.sessions_by_id,
          socket.assigns.active_session_id}
     end
+  end
+
+  defp update_background_session(socket, request_ref, fun) do
+    update(socket, :per_session_state, fn states ->
+      Enum.reduce(states, states, fn {session_id, state}, acc ->
+        if state.active_request_ref == request_ref do
+          Map.put(acc, session_id, fun.(state))
+        else
+          acc
+        end
+      end)
+    end)
+  end
+
+  defp find_background_session_for_request(per_session_state, request_ref) do
+    Enum.find_value(per_session_state, fn {session_id, state} ->
+      if state.active_request_ref == request_ref, do: {session_id, state}, else: nil
+    end)
+  end
+
+  defp save_background_session_to_file(session_id, state, socket) do
+    Task.Supervisor.async_nolink(FoundryWeb.ChatTaskSupervisor, fn ->
+      DomainLogic.save_session_state(
+        session_id,
+        state.messages,
+        state.session_digest,
+        socket.assigns.workspace_id,
+        socket.assigns.project_fingerprint,
+        socket.assigns.selected_model
+      )
+    end)
   end
 
   defp resolve_selected_model(nil, model_catalog),
