@@ -7,10 +7,9 @@ defmodule FoundryWeb.McpDcrController do
     body = conn.body_params
 
     with client_name when is_binary(client_name) <- body["client_name"],
-         token <- generate_token(client_name) do
-      # Store token with expiration (3600 seconds = 1 hour)
-      expire_at = System.system_time(:second) + 3600
-      FoundryWeb.McpTokenStore.store_token(token, expire_at)
+         token <- FoundryWeb.McpAuth.generate_token(client_name) do
+      # Store token with nil expiry (permanent)
+      FoundryWeb.McpTokenStore.store_token(token, nil)
 
       response = %{
         "client_id" => client_name,
@@ -48,16 +47,6 @@ defmodule FoundryWeb.McpDcrController do
     FoundryWeb.McpTokenStore.valid_token?(token)
   end
 
-  defp generate_token(client_name) do
-    api_key = System.get_env("FOUNDRY_MCP_API_KEY", "dev-key")
-
-    :crypto.hash(:sha256, api_key <> client_name <> timestamp())
-    |> Base.encode16(case: :lower)
-  end
-
-  defp timestamp do
-    System.system_time(:second) |> Integer.to_string()
-  end
 
   defp mcp_base_url(conn) do
     host = conn.host

@@ -5,9 +5,8 @@
       "url": "http://localhost:4000/foundry/mcp/",
       "auth": {
         "type": "bearer",
-        "token": "cacfc24a2b59f30d8730b65168e507a0c66d4cc18798cbb89ffb35540b1b8313"
-      },
-      "note": "Use Codex Foundry tools instead: read_doc, module_context, system_graph, project_status, run_lint. This MCP endpoint is available but Codex's tool integration is more direct."
+        "token": "572537d0d5732e98f85d7f1a37ee3cfecf5b52d0a2e0a42ef25efafc0009f7d4"
+      }
     }
   }
 }

@@ -1,0 +1,9 @@
+[mcp_servers.foundry]
+command = "mix"
+args = ["foundry.mcp.stdio"]
+startup_timeout_sec = 120.0
+
+[mcp_servers.foundry.env]
+BEARER_TOKEN = "0001c9fc9128b88b917026866ef345e775c5b3dfa4e0b3c771c0194b858ae17e"
+FOUNDRY_MCP_HOST = "localhost"
+FOUNDRY_MCP_PORT = "4000"

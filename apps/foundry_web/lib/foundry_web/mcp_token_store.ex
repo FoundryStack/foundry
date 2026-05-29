@@ -17,7 +17,15 @@ defmodule FoundryWeb.McpTokenStore do
 
   @impl true
   def init(_opts) do
-    {:ok, %{}}
+    # Preload deterministic permanent tokens for known clients
+    tokens =
+      ["claude-code-foundry", "codex-foundry"]
+      |> Enum.reduce(%{}, fn client, acc ->
+        token = FoundryWeb.McpAuth.generate_token(client)
+        Map.put(acc, token, nil)
+      end)
+
+    {:ok, tokens}
   end
 
   @impl true
@@ -28,20 +36,25 @@ defmodule FoundryWeb.McpTokenStore do
 
   @impl true
   def handle_call({:valid, token}, _from, state) do
-    current_time = System.system_time(:second)
-
-    case Map.get(state, token) do
-      nil ->
-        {:reply, false, state}
-
-      expire_at ->
-        if current_time < expire_at do
+    if Map.has_key?(state, token) do
+      case Map.get(state, token) do
+        nil ->
+          # Token exists with nil expiry (permanent)
           {:reply, true, state}
-        else
-          # Token expired, remove it
-          new_state = Map.delete(state, token)
-          {:reply, false, new_state}
-        end
+
+        expire_at when is_integer(expire_at) ->
+          current_time = System.system_time(:second)
+
+          if current_time < expire_at do
+            {:reply, true, state}
+          else
+            # Token expired, remove it
+            new_state = Map.delete(state, token)
+            {:reply, false, new_state}
+          end
+      end
+    else
+      {:reply, false, state}
     end
   end
 end
