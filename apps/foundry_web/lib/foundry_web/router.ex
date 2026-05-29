@@ -14,6 +14,7 @@ defmodule FoundryWeb.Router do
     plug :accepts, ["json"]
     plug :mcp_auth
     plug :set_mcp_project_context
+    plug FoundryWeb.McpToolsHandler
   end
 
   defp mcp_auth(conn, _opts) do
@@ -89,6 +90,7 @@ defmodule FoundryWeb.Router do
     post "/register", FoundryWeb.McpDcrController, :register
     get "/.well-known/oauth2-configuration", FoundryWeb.McpDcrController, :well_known
 
+    # Fallback to AshAi for other endpoints
     forward "/", AshAi.Mcp.Router,
       tools: [
         :project_status,

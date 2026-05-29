@@ -10,7 +10,12 @@ defmodule Foundry.Project.Status do
 
   use Ash.Resource,
     domain: Foundry.Context,
-    data_layer: Ash.DataLayer.Simple
+    data_layer: Ash.DataLayer.Simple,
+    extensions: [AshJsonApi.Resource]
+
+  json_api do
+    type "project_status"
+  end
 
   attributes do
     uuid_primary_key :id
