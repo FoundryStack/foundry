@@ -22,6 +22,8 @@ defmodule Foundry.ClaudeCodeProvider do
     * `:timeout_ms` — Max wait time in milliseconds (default: 120_000)
     * `:model` — Model override (nil = Claude Code default)
     * `:project_root` — Working directory for Claude Code's tools
+    * `:mcp_config` — top-level Claude MCP server JSON used to ensure local registration
+    * `:bypass_permissions` — pass `--dangerously-skip-permissions`, defaults to true
 
   ## Returns
 
@@ -52,9 +54,11 @@ defmodule Foundry.ClaudeCodeProvider do
 
       claude_path ->
         prompt_text = format_conversation(messages)
-        claude_opts = build_claude_opts(system_prompt, model, prompt_text)
+        claude_opts = build_claude_opts(system_prompt, model, prompt_text, opts)
 
-        run_claude(claude_path, claude_opts, project_root, timeout_ms, on_event)
+        with :ok <- ensure_mcp_registration(claude_path, project_root, opts) do
+          run_claude(claude_path, claude_opts, project_root, timeout_ms, on_event)
+        end
     end
   end
 
@@ -72,10 +76,11 @@ defmodule Foundry.ClaudeCodeProvider do
     end)
   end
 
-  defp build_claude_opts(system_prompt, model, prompt_text) do
+  defp build_claude_opts(system_prompt, model, prompt_text, opts) do
+    bypass_permissions? = Keyword.get(opts, :bypass_permissions, true)
+
     base = [
       "-p",
-      prompt_text,
       "--output-format",
       "stream-json",
       "--verbose",
@@ -84,16 +89,81 @@ defmodule Foundry.ClaudeCodeProvider do
     ]
 
     base =
+      if bypass_permissions? do
+        base ++ ["--dangerously-skip-permissions"]
+      else
+        base
+      end
+
+    base =
       if String.trim(system_prompt) != "" do
         base ++ ["--system-prompt", system_prompt]
       else
         base
       end
 
-    if model do
-      base ++ ["--model", model]
+    base =
+      if model do
+        base ++ ["--model", model]
+      else
+        base
+      end
+
+    base ++ [prompt_text]
+  end
+
+  defp ensure_mcp_registration(claude_path, project_root, opts) do
+    case Keyword.get(opts, :mcp_config) do
+      nil ->
+        :ok
+
+      "" ->
+        :ok
+
+      mcp_config ->
+        with {:ok, foundry_config} <- extract_foundry_config(mcp_config),
+             false <- claude_mcp_registered?(claude_path, project_root) do
+          register_foundry_mcp(claude_path, project_root, foundry_config)
+        else
+          true -> :ok
+          {:error, _} = error -> error
+        end
+    end
+  end
+
+  defp extract_foundry_config(mcp_config) do
+    with {:ok, decoded} <- Jason.decode(mcp_config),
+         %{"foundry" => foundry_config} <- decoded do
+      {:ok, Jason.encode!(foundry_config)}
     else
-      base
+      _ -> {:error, :invalid_mcp_config}
+    end
+  end
+
+  defp claude_mcp_registered?(claude_path, project_root) do
+    case System.cmd(claude_path, ["mcp", "get", "foundry"],
+           cd: project_root,
+           env: [{"CLAUDECODE", ""}],
+           stderr_to_stdout: true
+         ) do
+      {_output, 0} -> true
+      _ -> false
+    end
+  end
+
+  defp register_foundry_mcp(claude_path, project_root, foundry_config) do
+    case System.cmd(
+           claude_path,
+           ["mcp", "add-json", "-s", "local", "foundry", foundry_config],
+           cd: project_root,
+           env: [{"CLAUDECODE", ""}],
+           stderr_to_stdout: true
+         ) do
+      {_output, 0} ->
+        :ok
+
+      {output, code} ->
+        {:error, {:mcp_registration_failed, code, output}}
     end
   end
 
@@ -127,7 +197,7 @@ defmodule Foundry.ClaudeCodeProvider do
 
     # Claude Code's print mode expects stdin to be closed for non-interactive use.
     inner =
-      "cd #{shell_escape(project_root)} && #{shell_escape(claude_path)} #{args_str} </dev/null 2>&1"
+      "cd #{shell_escape(project_root)} && env -u CLAUDECODE #{shell_escape(claude_path)} #{args_str} </dev/null 2>&1"
 
     "sh -c #{shell_escape(inner)}"
   end

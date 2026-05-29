@@ -54,13 +54,15 @@ defmodule Foundry.SpecKit.Document do
 
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
-        doc_filter = query.filter[Access.key(:id)]
+        doc_filter = query.context[:doc_id]
 
-        with {:ok, record_maps} <- build_documents(project_root, doc_filter) do
-          records = Enum.map(record_maps, &struct(__MODULE__, atomize_keys(&1)))
-          Ash.DataLayer.Simple.set_data(query, records)
-        else
-          {:error, _} = error -> error
+        case build_documents(project_root, doc_filter) do
+          {:ok, record_maps} ->
+            records = Enum.map(record_maps, &struct(__MODULE__, atomize_keys(&1)))
+            Ash.DataLayer.Simple.set_data(query, records)
+
+          {:error, reason} ->
+            Ash.Query.add_error(query, reason)
         end
       end
     end
@@ -146,13 +148,14 @@ defmodule Foundry.SpecKit.Document do
   defp build_adr_docs(spec_kit) do
     (spec_kit["adrs"] || [])
     |> Enum.map(fn adr ->
+      id = adr[:id] || adr["id"] || ""
       %{
-        "id" => String.downcase(adr["id"] || ""),
-        "path" => adr["path"] || "",
-        "title" => adr["title"] || adr["id"] || "",
+        "id" => String.downcase(id),
+        "path" => adr[:path] || adr["path"] || "",
+        "title" => adr[:title] || adr["title"] || id,
         "type" => :adr,
-        "summary" => adr["summary"],
-        "tags" => ["adr", "architecture"] ++ (adr["tags"] || [])
+        "summary" => adr[:summary] || adr["summary"],
+        "tags" => ["adr", "architecture"] ++ (adr[:tags] || adr["tags"] || [])
       }
     end)
   end
@@ -160,13 +163,14 @@ defmodule Foundry.SpecKit.Document do
   defp build_runbook_docs(spec_kit) do
     (spec_kit["runbooks"] || [])
     |> Enum.map(fn runbook ->
+      id = runbook[:id] || runbook["id"] || ""
       %{
-        "id" => String.downcase(runbook["id"] || ""),
-        "path" => runbook["path"] || "",
-        "title" => runbook["title"] || runbook["id"] || "",
+        "id" => String.downcase(id),
+        "path" => runbook[:path] || runbook["path"] || "",
+        "title" => runbook[:title] || runbook["title"] || id,
         "type" => :runbook,
-        "summary" => runbook["summary"],
-        "tags" => ["runbook"] ++ (runbook["tags"] || [])
+        "summary" => runbook[:summary] || runbook["summary"],
+        "tags" => ["runbook"] ++ (runbook[:tags] || runbook["tags"] || [])
       }
     end)
   end
@@ -174,13 +178,14 @@ defmodule Foundry.SpecKit.Document do
   defp build_regulation_docs(spec_kit) do
     (spec_kit["regulations"] || [])
     |> Enum.map(fn reg ->
+      id = reg[:id] || reg["id"] || ""
       %{
-        "id" => String.downcase(reg["id"] || ""),
-        "path" => reg["path"] || "",
-        "title" => reg["title"] || reg["id"] || "",
+        "id" => String.downcase(id),
+        "path" => reg[:path] || reg["path"] || "",
+        "title" => reg[:title] || reg["title"] || id,
         "type" => :regulation,
-        "summary" => reg["summary"],
-        "tags" => ["regulation", "compliance"] ++ (reg["tags"] || [])
+        "summary" => reg[:summary] || reg["summary"],
+        "tags" => ["regulation", "compliance"] ++ (reg[:tags] || reg["tags"] || [])
       }
     end)
   end
@@ -188,13 +193,14 @@ defmodule Foundry.SpecKit.Document do
   defp build_finding_docs(spec_kit) do
     (spec_kit["findings"] || [])
     |> Enum.map(fn finding ->
+      id = finding[:id] || finding["id"] || ""
       %{
-        "id" => String.downcase(finding["id"] || ""),
-        "path" => finding["path"] || "",
-        "title" => finding["title"] || finding["id"] || "",
+        "id" => String.downcase(id),
+        "path" => finding[:path] || finding["path"] || "",
+        "title" => finding[:title] || finding["title"] || id,
         "type" => :finding,
-        "summary" => finding["summary"],
-        "tags" => ["finding"] ++ (finding["tags"] || [])
+        "summary" => finding[:summary] || finding["summary"],
+        "tags" => ["finding"] ++ (finding[:tags] || finding["tags"] || [])
       }
     end)
   end

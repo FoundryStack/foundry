@@ -58,12 +58,14 @@ defmodule Foundry.Project.Graph do
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
 
-        with {:ok, graph_map} <- build_graph(project_root) do
-          data = Map.merge(%{"id" => Ash.UUIDv7.generate()}, graph_map)
-          record = struct(__MODULE__, atomize_keys(data))
-          Ash.DataLayer.Simple.set_data(query, [record])
-        else
-          {:error, _} = error -> error
+        case build_graph(project_root) do
+          {:ok, graph_map} ->
+            data = Map.merge(%{"id" => Ash.UUIDv7.generate()}, graph_map)
+            record = struct(__MODULE__, atomize_keys(data))
+            Ash.DataLayer.Simple.set_data(query, [record])
+
+          {:error, reason} ->
+            Ash.Query.add_error(query, reason)
         end
       end
     end

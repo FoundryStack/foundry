@@ -39,14 +39,29 @@ defmodule Foundry.Context do
   # MCP tools — each wraps an Ash action on a Simple data layer resource.
   # The tool names are the ergonomic names exposed to agents via MCP.
   tools do
-    tool :project_status, Foundry.Project.Status, :read
-    tool :module_context, Foundry.Project.Module, :read
-    tool :system_graph, Foundry.Project.Graph, :read
-    tool :run_lint, Foundry.Lint.Run, :read
-    tool :read_doc, Foundry.SpecKit.Document, :read
-    tool :submit_proposal, Foundry.Proposals.Proposal, :create_draft
-    tool :proposal_status, Foundry.Proposals.Proposal, :read
-    tool :edit_file, Foundry.FileOperations.Edit, :write
+    tool :project_status, Foundry.Project.Status, :read,
+      description: "Get full project status: domains, lint counts, stack versions, compliance coverage, pending migrations, and recent activity."
+
+    tool :module_context, Foundry.Project.Module, :read,
+      description: "Get detailed context for modules in the project: type, domain, rules, compliance links, test coverage, state machine, agent steps. Returns all modules when no filter is given."
+
+    tool :system_graph, Foundry.Project.Graph, :read,
+      description: "Get the system architecture graph: all nodes (modules, domains, pages) and edges (relationships, rules, data flow) as a structured JSON graph."
+
+    tool :run_lint, Foundry.Lint.Run, :read,
+      description: "Run the Foundry lint rules against the project and return violations, warnings, and a pass/fail summary."
+
+    tool :read_doc, Foundry.SpecKit.Document, :read,
+      description: "Read spec-kit documents: ADRs, runbooks, regulations, and findings. Returns all documents when no filter is given; filter by id to read a specific document."
+
+    tool :submit_proposal, Foundry.Proposals.Proposal, :create_draft,
+      description: "Submit a change proposal (code edit, architecture decision, config change) for review. Returns a proposal ID to track status."
+
+    tool :proposal_status, Foundry.Proposals.Proposal, :read,
+      description: "Get the status of a submitted change proposal: draft, pending review, approved, or rejected."
+
+    tool :edit_file, Foundry.FileOperations.Edit, :write,
+      description: "Edit a file in the project. Supports raw content writes and Spark DSL-aware edits for Elixir modules."
   end
 
   # MCP resources — static documentation and reference data for agent context grounding.

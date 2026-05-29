@@ -11,9 +11,12 @@ defmodule FoundryWeb.McpToolsHandler do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    # Check if this is a tool/call request by inspecting params
+    # Check if this is a tool/call or tools/list request by inspecting params
     # Note: params are parsed by Plug.Parsers before this runs
     case {conn.method, conn.params} do
+      {"POST", %{"method" => "tools/list"} = params} ->
+        handle_tools_list(conn, params)
+
       {"POST", %{"method" => "tools/call"} = params} ->
         handle_tool_call(conn, params)
 
@@ -21,6 +24,27 @@ defmodule FoundryWeb.McpToolsHandler do
         # Pass through to AshAi
         conn
     end
+  end
+
+  defp handle_tools_list(conn, %{"id" => req_id}) do
+    tools = FoundryWeb.McpToolDefinitions.tools()
+
+    response = %{
+      "jsonrpc" => "2.0",
+      "id" => req_id,
+      "result" => %{
+        "tools" => tools
+      }
+    }
+
+    conn
+    |> put_resp_header("content-type", "application/json")
+    |> send_resp(200, Jason.encode!(response))
+    |> halt()
+  end
+
+  defp handle_tools_list(conn, _params) do
+    conn
   end
 
   defp handle_tool_call(conn, %{"id" => req_id, "params" => params}) do

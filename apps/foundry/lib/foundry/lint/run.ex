@@ -58,12 +58,14 @@ defmodule Foundry.Lint.Run do
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
 
-        with {:ok, lint_map} <- build_lint(project_root) do
-          data = Map.merge(%{"id" => Ash.UUIDv7.generate()}, lint_map)
-          record = struct(__MODULE__, atomize_keys(data))
-          Ash.DataLayer.Simple.set_data(query, [record])
-        else
-          {:error, _} = error -> error
+        case build_lint(project_root) do
+          {:ok, lint_map} ->
+            data = Map.merge(%{"id" => Ash.UUIDv7.generate()}, lint_map)
+            record = struct(__MODULE__, atomize_keys(data))
+            Ash.DataLayer.Simple.set_data(query, [record])
+
+          {:error, reason} ->
+            Ash.Query.add_error(query, reason)
         end
       end
     end

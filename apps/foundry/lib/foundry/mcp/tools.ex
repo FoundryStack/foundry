@@ -6,8 +6,6 @@ defmodule Foundry.MCP.Tools do
   fully serialized JSON data suitable for MCP protocol responses.
   """
 
-  require Ash.Query
-
   def project_status(args) do
     project_root = args["project_root"] || File.cwd!()
 
@@ -24,11 +22,9 @@ defmodule Foundry.MCP.Tools do
     project_root = args["project_root"] || File.cwd!()
     module_id = args["module_id"]
 
-    # Build filter manually
-    query = Foundry.Project.Module
-    filtered_query = if module_id, do: Ash.Query.filter(query, id: module_id), else: query
+    context = %{project_root: project_root, module_id: module_id}
 
-    case Ash.read!(filtered_query, domain: Foundry.Context, context: %{project_root: project_root}) do
+    case Ash.read!(Foundry.Project.Module, domain: Foundry.Context, context: context) do
       [record | _] -> {:ok, struct_to_map(record)}
       [] -> {:error, :not_found}
       error -> error
@@ -65,10 +61,9 @@ defmodule Foundry.MCP.Tools do
     project_root = args["project_root"] || File.cwd!()
     doc_id = args["id"]
 
-    query = Foundry.SpecKit.Document
-    filtered_query = if doc_id, do: Ash.Query.filter(query, id: doc_id), else: query
+    context = %{project_root: project_root, doc_id: doc_id}
 
-    case Ash.read!(filtered_query, domain: Foundry.Context, context: %{project_root: project_root}) do
+    case Ash.read!(Foundry.SpecKit.Document, domain: Foundry.Context, context: context) do
       [record | _] -> {:ok, struct_to_map(record)}
       [] -> {:error, :not_found}
       error -> error

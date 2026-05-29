@@ -38,7 +38,8 @@ defmodule FoundryWeb.ChatProviders do
       model:
         model_from_run_context(run_context) ||
           Keyword.get(ChatConfig.claude_code_config(), :model),
-      project_root: ChatConfig.project_root()
+      project_root: ChatConfig.project_root(),
+      mcp_config: claude_mcp_config()
     ]
 
     Foundry.ClaudeCodeProvider.stream(messages, opts, fn
@@ -119,4 +120,21 @@ defmodule FoundryWeb.ChatProviders do
 
   defp model_from_run_context(%{selected_model: %{model_id: model_id}}), do: model_id
   defp model_from_run_context(_run_context), do: nil
+
+  defp claude_mcp_config do
+    Jason.encode!(%{
+      foundry: %{
+        command: foundry_mcp_stdio_path(),
+        env: %{
+          BEARER_TOKEN: FoundryWeb.McpAuth.generate_token("claude-code-foundry"),
+          FOUNDRY_MCP_HOST: "localhost"
+        }
+      }
+    })
+  end
+
+  defp foundry_mcp_stdio_path do
+    System.get_env("FOUNDRY_MCP_STDIO") ||
+      Path.expand("../../../../bin/foundry-mcp-stdio", __DIR__)
+  end
 end

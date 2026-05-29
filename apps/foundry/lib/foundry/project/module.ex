@@ -122,13 +122,15 @@ defmodule Foundry.Project.Module do
 
       prepare fn query, _ ->
         project_root = query.context[:project_root] || File.cwd!()
-        module_filter = query.filter[Access.key(:id)]
+        module_filter = query.context[:module_id]
 
-        with {:ok, record_maps} <- build_modules(project_root, module_filter) do
-          records = Enum.map(record_maps, &struct(__MODULE__, atomize_keys(&1)))
-          Ash.DataLayer.Simple.set_data(query, records)
-        else
-          {:error, _} = error -> error
+        case build_modules(project_root, module_filter) do
+          {:ok, record_maps} ->
+            records = Enum.map(record_maps, &struct(__MODULE__, atomize_keys(&1)))
+            Ash.DataLayer.Simple.set_data(query, records)
+
+          {:error, reason} ->
+            Ash.Query.add_error(query, reason)
         end
       end
     end
@@ -144,7 +146,8 @@ defmodule Foundry.Project.Module do
         {:error, _} = error -> error
       end
     else
-      {nodes, _edges} = Foundry.Context.GraphBuilder.build(project_root, nil)
+      {:ok, manifest} = Foundry.Manifest.Parser.read(project_root)
+      {nodes, _edges} = Foundry.Context.GraphBuilder.build(project_root, manifest)
       records = Enum.map(nodes, &module_map_to_record/1)
       {:ok, records}
     end
@@ -152,28 +155,34 @@ defmodule Foundry.Project.Module do
     kind, error -> {:error, Exception.format(kind, error, __STACKTRACE__)}
   end
 
+  defp get_field(map, key) when is_struct(map), do: Map.get(map, key)
+  defp get_field(map, key) when is_map(map), do: map[Atom.to_string(key)] || map[key]
+
   defp module_map_to_record(map) when is_map(map) do
+    type_val = get_field(map, :type) || "unknown"
+    type_str = if is_atom(type_val), do: Atom.to_string(type_val), else: type_val
+
     %{
-      "id" => map["id"] || map["module"],
-      "module" => map["module"],
-      "type" => String.to_atom(map["type"] || "unknown"),
-      "domain" => map["domain"],
-      "app" => map["app"],
-      "description" => map["description"],
-      "sensitive" => map["sensitive"] || false,
-      "rules" => map["rules"] || [],
-      "compliance" => map["compliance"] || [],
-      "adrs" => map["adrs"] || [],
-      "runbook" => map["runbook"],
-      "data_layer" => map["data_layer"],
-      "pending_migrations" => map["pending_migrations"] || false,
-      "paper_trail" => map["paper_trail"] || false,
-      "archival" => map["archival"] || false,
-      "test_coverage" => map["test_coverage"] || %{},
-      "state_machine" => map["state_machine"] || %{},
-      "agent_steps" => map["agent_steps"] || [],
-      "telemetry_prefix" => map["telemetry_prefix"] || [],
-      "last_modified" => map["last_modified"]
+      "id" => get_field(map, :id) || get_field(map, :module),
+      "module" => get_field(map, :module),
+      "type" => String.to_atom(type_str),
+      "domain" => get_field(map, :domain),
+      "app" => get_field(map, :app),
+      "description" => get_field(map, :description),
+      "sensitive" => get_field(map, :sensitive) || false,
+      "rules" => get_field(map, :rules) || [],
+      "compliance" => get_field(map, :compliance) || [],
+      "adrs" => get_field(map, :adrs) || [],
+      "runbook" => get_field(map, :runbook),
+      "data_layer" => get_field(map, :data_layer),
+      "pending_migrations" => get_field(map, :pending_migrations) || false,
+      "paper_trail" => get_field(map, :paper_trail) || false,
+      "archival" => get_field(map, :archival) || false,
+      "test_coverage" => get_field(map, :test_coverage) || %{},
+      "state_machine" => get_field(map, :state_machine) || %{},
+      "agent_steps" => get_field(map, :agent_steps) || [],
+      "telemetry_prefix" => get_field(map, :telemetry_prefix) || [],
+      "last_modified" => get_field(map, :last_modified)
     }
   end
 

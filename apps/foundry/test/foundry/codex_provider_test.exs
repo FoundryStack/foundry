@@ -6,10 +6,12 @@ defmodule Foundry.CodexProviderTest do
   setup do
     original_home = System.get_env("HOME")
     original_path = System.get_env("PATH")
+    original_stub_args_path = System.get_env("CODEX_STUB_ARGS_PATH")
 
     on_exit(fn ->
       restore_env("HOME", original_home)
       restore_env("PATH", original_path)
+      restore_env("CODEX_STUB_ARGS_PATH", original_stub_args_path)
     end)
   end
 
@@ -102,9 +104,62 @@ defmodule Foundry.CodexProviderTest do
              )
   end
 
+  test "bypasses Codex approvals and sandbox by default" do
+    tmp_dir = make_tmp_dir!()
+    executable = Path.join(tmp_dir, "codex")
+    args_path = Path.join(tmp_dir, "args.txt")
+    write_codex_stub!(executable, "bypass-ok")
+    System.put_env("CODEX_STUB_ARGS_PATH", args_path)
+
+    assert {:ok, "bypass-ok", %{}} =
+             CodexProvider.stream(
+               [%{"role" => "user", "content" => "hello"}],
+               [
+                 system_prompt: "",
+                 timeout_ms: 1_000,
+                 executable: executable,
+                 project_root: tmp_dir
+               ],
+               fn _event -> :ok end
+             )
+
+    args = File.read!(args_path)
+    assert args =~ "--dangerously-bypass-approvals-and-sandbox"
+    refute args =~ " -s "
+  end
+
+  test "can still run with an explicit sandbox when bypass is disabled" do
+    tmp_dir = make_tmp_dir!()
+    executable = Path.join(tmp_dir, "codex")
+    args_path = Path.join(tmp_dir, "args.txt")
+    write_codex_stub!(executable, "sandbox-ok")
+    System.put_env("CODEX_STUB_ARGS_PATH", args_path)
+
+    assert {:ok, "sandbox-ok", %{}} =
+             CodexProvider.stream(
+               [%{"role" => "user", "content" => "hello"}],
+               [
+                 system_prompt: "",
+                 timeout_ms: 1_000,
+                 executable: executable,
+                 project_root: tmp_dir,
+                 bypass_approvals_and_sandbox: false,
+                 sandbox: "read-only"
+               ],
+               fn _event -> :ok end
+             )
+
+    args = File.read!(args_path)
+    refute args =~ "--dangerously-bypass-approvals-and-sandbox"
+    assert args =~ " -s read-only "
+  end
+
   defp write_codex_stub!(path, text) do
     File.write!(path, """
     #!/bin/sh
+    if [ -n "$CODEX_STUB_ARGS_PATH" ]; then
+      printf '%s ' "$@" > "$CODEX_STUB_ARGS_PATH"
+    fi
     printf '%s\n' '{"type":"agent_message.delta","delta":"#{text}"}'
     printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"#{text}"}}'
     """)

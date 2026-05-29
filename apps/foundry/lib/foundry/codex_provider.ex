@@ -21,6 +21,7 @@ defmodule Foundry.CodexProvider do
     * `:profile` - Codex profile override
     * `:project_root` - working directory for Codex
     * `:sandbox` - Codex sandbox mode, defaults to `workspace-write`
+    * `:bypass_approvals_and_sandbox` - pass Codex's full bypass flag, defaults to true
     * `:executable` - executable name/path, defaults to `codex`
 
   ## Returns
@@ -139,6 +140,8 @@ defmodule Foundry.CodexProvider do
   defp take_conversation_window(messages, _window), do: messages
 
   defp build_codex_opts(prompt_text, opts) do
+    bypass? = Keyword.get(opts, :bypass_approvals_and_sandbox, true)
+
     base = [
       "exec",
       "--json",
@@ -146,10 +149,15 @@ defmodule Foundry.CodexProvider do
       "never",
       "--ephemeral",
       "-c",
-      "project_doc_max_bytes=0",
-      "-s",
-      Keyword.get(opts, :sandbox, "workspace-write")
+      "project_doc_max_bytes=0"
     ]
+
+    base =
+      if bypass? do
+        base ++ ["--dangerously-bypass-approvals-and-sandbox"]
+      else
+        base ++ ["-s", Keyword.get(opts, :sandbox, "workspace-write")]
+      end
 
     base =
       case Keyword.get(opts, :profile) do
