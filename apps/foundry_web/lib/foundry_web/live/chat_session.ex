@@ -1085,10 +1085,16 @@ defmodule FoundryWeb.ChatSession do
   # --- System Prompt Building ---
 
   defp build_run_system_prompt(project_root, retrieval, session_digest, mode, proposal) do
-    base_prompt = """
+    core_context =
+      try do
+        Foundry.Copilot.ContextBuilder.build(project_root: project_root)
+      rescue
+        _ -> ""
+      end
+
+    boundary = """
     # Target Project Boundary
 
-    The target platform for this chat is the reference iGaming project.
     Target project root: #{project_root}
 
     Treat this directory as the authoritative workspace for project discovery,
@@ -1097,13 +1103,15 @@ defmodule FoundryWeb.ChatSession do
     ---
     """
 
-    case mode do
-      :change ->
-        base_prompt <> "\n" <> build_proposal_prompt(proposal, retrieval, session_digest)
+    mode_prompt =
+      case mode do
+        :change -> build_proposal_prompt(proposal, retrieval, session_digest)
+        _ -> build_conversation_prompt(session_digest)
+      end
 
-      _ ->
-        base_prompt <> "\n" <> build_conversation_prompt(session_digest)
-    end
+    [core_context, boundary, mode_prompt]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n\n")
   end
 
   defp build_proposal_prompt(proposal, retrieval, _session_digest) do
