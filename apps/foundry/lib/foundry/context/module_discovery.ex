@@ -29,13 +29,11 @@ defmodule Foundry.Context.ModuleDiscovery do
           mod = beam_file |> Path.basename(".beam") |> String.to_atom()
           abs = beam_file |> Path.rootname() |> String.to_charlist()
 
-          # Only reload if not already loaded from this exact path.
+          # Only reload if not already loaded in the VM.
           # Calling :code.purge in a running server kills active processes using the module.
-          already_loaded =
-            case :code.which(mod) do
-              path when is_list(path) -> to_string(path) == "#{abs}.beam"
-              _ -> false
-            end
+          # Use :code.is_loaded/1 (not :code.which/1) — the latter returns paths even for
+          # unloaded modules on the code path, causing all modules to be skipped.
+          already_loaded = :code.is_loaded(mod) != false
 
           if already_loaded do
             [mod]
