@@ -190,6 +190,8 @@ Mis-answers to questions are recoverable. Mis-generated code changes are not.
     Nebulex key: `{:project_context, project_root, max_mtime}`. Pre-warmed at startup.
     ContextBuilder applies its own ~400-token view over the full status for Tier 2.
   - Tier 2 (per request): truncated view of `mix foundry.project.status`, 60s TTL
+    plus system-map navigation metadata. Tier 2 must not preload guessed module bodies
+    or spec-kit document excerpts; those remain explicit on-demand reads.
   - Tier 3 (shell): assembled dynamically by the agent during the loop
 
 **Agent loop and tool interface:**

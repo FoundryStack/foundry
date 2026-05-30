@@ -62,11 +62,33 @@ defmodule Foundry.ChatRetrievalTest do
     assert "foundry.retrieval.summary" in types
     refute "foundry.tool.project_status" in types
     refute "foundry.tool.system_graph" in types
+    refute "foundry.tool.module_context" in types
+    refute "foundry.tool.read_doc" in types
     refute "project_status" in tools
     refute "system_graph" in tools
+    refute "module_context" in tools
+    refute "read_doc" in tools
+    assert retrieval.tool_results.module_contexts == []
+    assert retrieval.tool_results.documents == []
   end
 
-  test "tool_prompt includes reuse and batching guidance" do
+  test "prepare does not preload selected nodes or guessed documents for meta questions" do
+    {:ok, retrieval} =
+      Retrieval.prepare(
+        @project_root,
+        "Show me what MCP tools you have?",
+        %{"selected_nodes" => ["IgamingRef.Finance.Rules.PlayerKYCVerified"]}
+      )
+
+    assert retrieval.tool_results.module_contexts == []
+    assert retrieval.tool_results.documents == []
+
+    refute Enum.any?(retrieval.trace_events, fn event ->
+             event["type"] in ["foundry.tool.module_context", "foundry.tool.read_doc"]
+           end)
+  end
+
+  test "tool_prompt includes on-demand retrieval guidance" do
     prompt =
       Retrieval.tool_prompt(%{
         tool_results: %{
@@ -76,10 +98,8 @@ defmodule Foundry.ChatRetrievalTest do
           documents: [],
           proposal_status: nil,
           retrieval_guidance: %{
-            inferred_module_ids: ["IgamingRef.Promotions.BonusGrant"],
-            inferred_document_paths: ["docs/runbooks/bonus_grant_transfer.md"],
-            related_file_hints: ["lib/promotions/bonus_grant.ex"],
-            grouped_shell_plan: "Prefer one grouped discovery step and one grouped read step."
+            grouped_shell_plan:
+              "Request module or document bodies only through explicit tool calls when exact source evidence is needed."
           }
         }
       })
@@ -87,6 +107,7 @@ defmodule Foundry.ChatRetrievalTest do
     assert prompt =~ "already-loaded global context"
     assert prompt =~ "Do not re-fetch `project_status` or `system_graph`"
     assert prompt =~ "batch related discovery and grouped file reads"
+    assert prompt =~ "explicit tool calls"
     assert prompt =~ "grouped_shell_plan"
   end
 end

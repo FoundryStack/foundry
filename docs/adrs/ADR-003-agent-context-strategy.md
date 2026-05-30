@@ -51,13 +51,19 @@ the prompt contains the compiled system map, compact node facts, edges, and spec
 index, while raw `lib/` and `test/` files remain available only through targeted reads
 or per-module context lookup.
 
+Startup and turn assembly must remain non-speculative. The system map may expose which
+modules and documents exist, but it must not eagerly inject guessed `module_context`
+payloads or full document excerpts into the LLM context. Exact module bodies and
+spec-kit text are fetched only after the agent explicitly asks for them.
+
 ### What uses compact inclusion (not RAG)
 
 The spec-kit documents — ADRs, runbooks, regulations — are parsed once to structured
 metadata and surfaced in the LLM context as part of the full project map: overview
 counts, short summaries, tags, and declared statuses. No embeddings, no vector search.
 When the orchestrator needs authoritative text, it follows the map to the exact file
-and reads that document via bash.
+and reads that document via bash. Prior UI focus, selected nodes, or token matching may
+help the agent choose its next explicit read, but they must not trigger hidden reads.
 
 **Why not RAG:** The orchestrator needs deterministic navigation, not probabilistic
 retrieval. A compact full-map view keeps every governed document visible enough for

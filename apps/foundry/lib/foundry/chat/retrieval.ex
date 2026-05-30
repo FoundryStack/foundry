@@ -10,35 +10,11 @@ defmodule Foundry.Chat.Retrieval do
   alias Foundry.Context.ProjectContext
   alias Foundry.SparkMeta.Helpers, as: SparkMetaHelpers
 
-  @max_modules 3
-  @max_documents 3
-
   @spec prepare(String.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
   def prepare(project_root, message, session_digest) do
     with {:ok, cached_context} <- ContextCache.get_or_build(project_root) do
-      modules =
-        infer_modules(cached_context.project_context[:nodes] || [], message, session_digest)
-
-      documents = infer_documents(cached_context.project_context[:spec_kit] || %{}, message)
-
-      module_contexts =
-        Enum.flat_map(modules, fn module_id ->
-          case ProjectContext.build_one(project_root, module_id) do
-            {:ok, node} -> [%{id: module_id, summary: summarize_node(node), node: node}]
-            {:error, _reason} -> []
-          end
-        end)
-
-      document_contexts =
-        Enum.flat_map(documents, fn doc ->
-          case Foundry.FileSystem.read(project_root, doc.path) do
-            {:ok, content} ->
-              [%{path: doc.path, title: doc.title, type: doc.type, excerpt: excerpt(content)}]
-
-            {:error, _reason} ->
-              [%{path: doc.path, title: doc.title, type: doc.type, excerpt: doc.summary}]
-          end
-        end)
+      module_contexts = []
+      document_contexts = []
 
       tool_results = %{
         project_status: summarize_status(cached_context.status),
@@ -47,14 +23,7 @@ defmodule Foundry.Chat.Retrieval do
         documents: document_contexts,
         proposal_status: summarize_proposal(session_digest),
         scenario_coverage: summarize_scenarios(cached_context),
-        retrieval_guidance:
-          build_retrieval_guidance(
-            project_root,
-            modules,
-            documents,
-            module_contexts,
-            document_contexts
-          )
+        retrieval_guidance: build_retrieval_guidance()
       }
 
       {:ok,
@@ -195,20 +164,6 @@ defmodule Foundry.Chat.Retrieval do
     }
   end
 
-  defp summarize_node(node) do
-    %{
-      module: node.module,
-      type: node.type,
-      domain: node.domain,
-      description: node.description,
-      sensitive: node.sensitive,
-      compliance: node.compliance,
-      adrs: node.adrs,
-      runbook: node.runbook,
-      pending_migrations: node.pending_migrations
-    }
-  end
-
   defp summarize_proposal(%{"last_proposal_id" => nil}), do: nil
   defp summarize_proposal(%{"last_proposal_id" => id}) when is_binary(id), do: %{id: id}
   defp summarize_proposal(_digest), do: nil
@@ -238,64 +193,11 @@ defmodule Foundry.Chat.Retrieval do
     end
   end
 
-  defp build_retrieval_guidance(
-         project_root,
-         modules,
-         documents,
-         module_contexts,
-         document_contexts
-       ) do
-    module_files =
-      module_contexts
-      |> Enum.flat_map(fn module_context ->
-        case module_source_path(module_context_module(module_context), project_root) do
-          nil -> []
-          path -> [Path.relative_to(path, project_root)]
-        end
-      end)
-      |> Enum.uniq()
-
-    document_paths =
-      document_contexts
-      |> Enum.map(& &1.path)
-      |> Enum.uniq()
-
-    file_hints = Enum.take(module_files ++ document_paths, 6)
-
+  defp build_retrieval_guidance do
     %{
-      inferred_module_ids: modules,
-      inferred_document_paths: Enum.map(documents, & &1.path),
-      related_file_hints: file_hints,
-      grouped_shell_plan: grouped_shell_plan(modules, file_hints)
+      grouped_shell_plan:
+        "Reuse the injected retrieval summary first. Do not shell-search for AGENTS.md, module names, or spec-kit paths — these are already in your system prompt. Request module or document bodies only through explicit tool calls when exact source evidence is needed, and batch related discovery before grouped reads."
     }
-  end
-
-  defp grouped_shell_plan([], []) do
-    "Reuse the injected retrieval summary first. Do not shell-search for AGENTS.md, module names, or spec-kit paths — these are already in your system prompt. If source evidence is still required, run one grouped discovery command followed by one grouped read command."
-  end
-
-  defp grouped_shell_plan(modules, file_hints) do
-    module_hint =
-      modules
-      |> Enum.map(&short_module_name/1)
-      |> Enum.join(", ")
-
-    file_hint =
-      file_hints
-      |> Enum.take(4)
-      |> Enum.join(", ")
-
-    [
-      "Reuse the injected retrieval summary before any global refetch.",
-      "Do not shell-search for AGENTS.md, module names, or spec-kit paths — these are already in your system prompt.",
-      if(module_hint != "", do: "Start with grouped module discovery around #{module_hint}."),
-      if(file_hint != "",
-        do: "If exact source evidence is needed, inspect grouped files such as #{file_hint}."
-      ),
-      "Prefer one grouped discovery step and one grouped read step over one-file-at-a-time inspection."
-    ]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.join(" ")
   end
 
   defp build_proposal_preview(message, tool_results, project_root) do
@@ -486,7 +388,8 @@ defmodule Foundry.Chat.Retrieval do
     "Update #{module_name}: #{description}"
   end
 
-  defp build_unified_diff([], message, tool_results), do: proposal_diff_placeholder(message, tool_results)
+  defp build_unified_diff([], message, tool_results),
+    do: proposal_diff_placeholder(message, tool_results)
 
   defp build_unified_diff(files, _message, _tool_results) do
     files
@@ -593,7 +496,7 @@ defmodule Foundry.Chat.Retrieval do
     |> List.last()
   end
 
-  defp build_tool_trace_events(cached_context, tool_results, message, session_digest) do
+  defp build_tool_trace_events(cached_context, _tool_results, message, session_digest) do
     base = [
       %{
         "provider" => "foundry",
@@ -612,42 +515,6 @@ defmodule Foundry.Chat.Retrieval do
       }
     ]
 
-    module_events =
-      Enum.map(tool_results.module_contexts, fn module_context ->
-        output =
-          try do
-            Jason.encode!(
-              %{id: module_context.id, summary: module_context.summary, node: module_context.node},
-              pretty: true
-            )
-          rescue
-            _ -> inspect(module_context.summary, pretty: true)
-          end
-
-        %{
-          "provider" => "foundry",
-          "type" => "foundry.tool.module_context",
-          "phase" => "retrieval",
-          "tool" => "module_context",
-          "path" => module_context.id,
-          "message" => "Loaded module context for #{module_context.id}",
-          "output" => output
-        }
-      end)
-
-    document_events =
-      Enum.map(tool_results.documents, fn document ->
-        %{
-          "provider" => "foundry",
-          "type" => "foundry.tool.read_doc",
-          "phase" => "retrieval",
-          "tool" => "read_doc",
-          "path" => document.path,
-          "message" => "Read spec-kit document #{document.path}",
-          "output" => document.excerpt
-        }
-      end)
-
     session_event = %{
       "provider" => "foundry",
       "type" => "foundry.session.digest",
@@ -662,83 +529,7 @@ defmodule Foundry.Chat.Retrieval do
       }
     }
 
-    base ++ module_events ++ document_events ++ [session_event]
-  end
-
-  defp infer_modules(nodes, message, session_digest) do
-    selected_nodes =
-      session_digest
-      |> Map.get("selected_nodes", [])
-      |> Enum.filter(&is_binary/1)
-
-    selected_matches =
-      Enum.filter(nodes, fn node ->
-        node.module in selected_nodes or Path.basename(node.module) in selected_nodes
-      end)
-
-    token_matches =
-      nodes
-      |> Enum.map(fn node -> {module_match_score(node, message), node} end)
-      |> Enum.filter(fn {score, _node} -> score > 0 end)
-      |> Enum.sort_by(fn {score, node} -> {-score, node.module} end)
-      |> Enum.map(&elem(&1, 1))
-
-    (selected_matches ++ token_matches)
-    |> Enum.uniq_by(& &1.module)
-    |> Enum.take(@max_modules)
-    |> Enum.map(&trim_elixir_prefix(&1.module))
-  end
-
-  defp infer_documents(spec_kit, message) do
-    docs =
-      Enum.flat_map(["adrs", "runbooks", "findings", "regulations", "usage_rules"], fn key ->
-        Map.get(spec_kit, key, [])
-      end)
-
-    docs
-    |> Enum.map(fn doc -> {document_match_score(doc, message), doc} end)
-    |> Enum.filter(fn {score, _doc} -> score > 0 end)
-    |> Enum.sort_by(fn {score, doc} -> {-score, doc.path} end)
-    |> Enum.take(@max_documents)
-    |> Enum.map(&elem(&1, 1))
-  end
-
-  defp module_match_score(node, message) do
-    haystack =
-      [node.module, node.domain, node.description]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join(" ")
-      |> String.downcase()
-
-    message
-    |> tokenize()
-    |> Enum.count(&String.contains?(haystack, &1))
-  end
-
-  defp document_match_score(doc, message) do
-    haystack =
-      [doc.title, doc.summary, Enum.join(doc.tags || [], " ")]
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join(" ")
-      |> String.downcase()
-
-    message
-    |> tokenize()
-    |> Enum.count(&String.contains?(haystack, &1))
-  end
-
-  defp tokenize(text) do
-    text
-    |> String.downcase()
-    |> String.split(~r/[^a-z0-9_]+/, trim: true)
-    |> Enum.reject(&(String.length(&1) < 3))
-    |> Enum.uniq()
-  end
-
-  defp excerpt(content) when is_binary(content) do
-    content
-    |> String.trim()
-    |> String.slice(0, 1000)
+    base ++ [session_event]
   end
 
   defp classify_change(message, tool_results) do
@@ -785,9 +576,6 @@ defmodule Foundry.Chat.Retrieval do
       if document.type == "adr", do: document.title
     end)
   end
-
-  defp trim_elixir_prefix("Elixir." <> rest), do: rest
-  defp trim_elixir_prefix(value), do: value
 
   defp coverage_uncovered_node_ids(%{uncovered_node_ids: uncovered_node_ids})
        when is_list(uncovered_node_ids),
@@ -878,7 +666,7 @@ defmodule Foundry.Chat.Retrieval do
     module_contexts
     |> Enum.flat_map(fn ctx ->
       node = ctx[:node] || ctx["node"] || %{}
-      (node[:side_effects] || node["side_effects"] || [])
+      node[:side_effects] || node["side_effects"] || []
     end)
     |> length()
   end

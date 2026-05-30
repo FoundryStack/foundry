@@ -378,8 +378,10 @@ All caching via Nebulex L1 (ETS):
 
 **Pre-warming on startup:** `Foundry.Context.SpecKitReader` pre-warms the project
 context (which includes the spec-kit index) and all spec-kit document ASTs during
-application start (20–40 files typically — acceptable for a local dev tool). First
-user request sees no cold-start delay.
+application start (20–40 files typically — acceptable for a local dev tool). This is
+an implementation cache warm-up, not LLM context injection. First user request sees no
+cold-start delay, but module bodies and document text are still fetched only through
+explicit tool reads.
 
 **Cloud mode:** Pre-warming runs after git clone/pull, before WebSocket accepts
 connections.
@@ -420,7 +422,9 @@ trusting code output.
   A bug here produces subtle reasoning errors, not hard failures. Test that the
   status view is present and correctly formatted before any LLM call is made.
 - There is no embedding model, no vector database, no similarity search. All retrieval
-  is via shell (bash + Mix tasks) or direct file reads. No ML infrastructure dependency
+  is via shell (bash + Mix tasks) or direct file reads. The startup prompt may include
+  summaries and indexes, but it must not speculate by preloading likely-relevant module
+  or document bodies before an explicit tool call. No ML infrastructure dependency
   beyond the LLM API.
 - INV-006 (stack versions always in system prompt) is enforced at ContextBuilder
   initialisation — structurally impossible to start the agent loop without stack
