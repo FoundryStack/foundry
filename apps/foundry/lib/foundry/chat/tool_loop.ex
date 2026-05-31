@@ -109,40 +109,44 @@ defmodule Foundry.Chat.ToolLoop do
 
   defp execute_tool_calls(tool_calls, messages, model_content, project_root, on_event) do
     tool_results =
-      Enum.map(tool_calls, fn %{"name" => name, "args" => args} ->
-        Logger.info("Tool call: #{name} with args: #{inspect(args)}")
+      Enum.map(tool_calls, fn tool_call ->
+        name = tool_call["name"]
+        args = tool_call["args"]
+        id = tool_call["id"]
+
+        Logger.info("Tool call: #{name} (id=#{id}) with args: #{inspect(args)}")
         on_event.({:trace, %{
           "provider" => "gemini",
           "type" => "tool.call",
           "item_type" => "tool_call",
           "tool" => name,
           "message" => "Tool call: #{name}",
-          "item" => %{"name" => name, "args" => args}
+          "item" => %{"name" => name, "args" => args, "id" => id}
         }})
 
         result =
           case Foundry.Chat.ShellTools.execute(name, args, project_root) do
             {:ok, output} ->
-              Logger.info("Tool result: #{name} succeeded")
+              Logger.info("Tool result: #{name} (id=#{id}) succeeded")
               on_event.({:trace, %{
                 "provider" => "gemini",
                 "type" => "tool.result",
                 "item_type" => "tool_call",
                 "tool" => name,
                 "message" => "Tool completed: #{name}",
-                "item" => %{"status" => "ok"}
+                "item" => %{"status" => "ok", "id" => id}
               }})
               %{"output" => output}
 
             {:error, reason} ->
-              Logger.info("Tool result: #{name} failed: #{inspect(reason)}")
+              Logger.info("Tool result: #{name} (id=#{id}) failed: #{inspect(reason)}")
               on_event.({:trace, %{
                 "provider" => "gemini",
                 "type" => "tool.error",
                 "item_type" => "tool_call",
                 "tool" => name,
                 "message" => "Tool failed: #{name}",
-                "item" => %{"status" => "error", "reason" => inspect(reason)}
+                "item" => %{"status" => "error", "reason" => inspect(reason), "id" => id}
               }})
               %{"error" => reason}
           end
@@ -150,7 +154,8 @@ defmodule Foundry.Chat.ToolLoop do
         %{
           "functionResponse" => %{
             "name" => name,
-            "response" => result
+            "response" => result,
+            "id" => id
           }
         }
       end)
