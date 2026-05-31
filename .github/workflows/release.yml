@@ -7,52 +7,129 @@ on:
       - "v*"
 
 jobs:
-  release:
+  build:
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - runner: macos-13
-            target: macos
           - runner: macos-14
-            target: macos_silicon
-          - runner: ubuntu-latest
-            target: linux
+            burrito_target: macos_silicon
+          - runner: ubuntu-22.04
+            burrito_target: linux
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Patch versions from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" \
+            desktop/foundry-desktop/src-tauri/tauri.conf.json
+          sed -i.bak "0,/^version = /s/^version = .*/version = \"${VERSION}\"/" \
+            desktop/foundry-desktop/src-tauri/Cargo.toml
+          rm -f desktop/foundry-desktop/src-tauri/tauri.conf.json.bak \
+                desktop/foundry-desktop/src-tauri/Cargo.toml.bak
+
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: "1.19.5"
           otp-version: "28.0"
+
       - uses: actions/setup-node@v4
         with:
           node-version: "25"
+          cache: "npm"
+          cache-dependency-path: desktop/foundry-desktop/package-lock.json
+
       - uses: mlugg/setup-zig@v2
         with:
           version: "0.15.2"
-      - run: ./scripts/release/build_burrito.sh ${{ matrix.target }}
-      - run: ./scripts/release/package_burrito_artifacts.sh ${GITHUB_REF_NAME#v}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: artifacts-${{ matrix.target }}
-          path: dist/*
-          if-no-files-found: warn
 
-  upload:
-    needs: release
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/foundry-desktop/src-tauri
+
+      - name: Install Linux system dependencies
+        if: matrix.runner == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xz-utils libwebkit2gtk-4.0-dev build-essential \
+            curl wget file libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Cache Elixir dependencies and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.mix
+            ~/.hex
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Build Burrito sidecar
+        run: ./scripts/release/build_burrito.sh ${{ matrix.burrito_target }}
+
+      - name: Install desktop npm dependencies
+        working-directory: desktop/foundry-desktop
+        run: npm ci
+
+      - name: Build Tauri app
+        working-directory: desktop/foundry-desktop
+        env:
+          FOUNDRY_DESKTOP_SKIP_BURRITO_BUILD: "1"
+        run: npm run tauri:build
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          BUNDLE_DIR="desktop/foundry-desktop/src-tauri/target/release/bundle"
+          mkdir -p ci-artifacts
+
+          if [[ "${{ matrix.runner }}" == "macos-14" ]]; then
+            find "${BUNDLE_DIR}/dmg" -name "*.dmg" -exec cp {} ci-artifacts/ \; 2>/dev/null || true
+          else
+            find "${BUNDLE_DIR}/appimage" -name "*.AppImage" -exec cp {} ci-artifacts/ \; 2>/dev/null || true
+            find "${BUNDLE_DIR}/deb" -name "*.deb" -exec cp {} ci-artifacts/ \; 2>/dev/null || true
+          fi
+
+          ls -la ci-artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.runner }}
+          path: ci-artifacts/*
+          if-no-files-found: error
+
+  create-release:
+    needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: all-artifacts
-          pattern: artifacts-*
-      - run: |
-          mkdir -p release-files
-          find all-artifacts -type f -name "*.tar.gz" -o -name "SHA256SUMS" | while read file; do
-            cp "$file" release-files/
-          done
-          ls -la release-files/
+          pattern: desktop-*
+          merge-multiple: true
+
+      - run: ls -la all-artifacts/
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: release-files/*
+          files: all-artifacts/**/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

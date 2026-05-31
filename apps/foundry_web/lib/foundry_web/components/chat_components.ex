@@ -127,6 +127,49 @@ defmodule FoundryWeb.ChatComponents do
       <% end %>
 
         <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px]">
+          <!-- View Toggle Buttons -->
+          <div class="flex gap-1 border-b border-white/10 px-3 py-2 shrink-0">
+            <button
+              phx-click="set_chat_view"
+              phx-value-view="conversation"
+              class={[
+                "px-3 py-1.5 rounded text-xs font-medium uppercase tracking-wider transition-colors",
+                if(@chat_view == :conversation,
+                  do: "bg-primary text-primary-content",
+                  else: "bg-white/10 text-gray-100/72 hover:bg-white/20"
+                )
+              ]}
+            >
+              💬 Conversation
+            </button>
+            <button
+              phx-click="set_chat_view"
+              phx-value-view="trace"
+              class={[
+                "px-3 py-1.5 rounded text-xs font-medium uppercase tracking-wider transition-colors",
+                if(@chat_view == :trace,
+                  do: "bg-primary text-primary-content",
+                  else: "bg-white/10 text-gray-100/72 hover:bg-white/20"
+                )
+              ]}
+            >
+              🔍 Debug Trace
+            </button>
+            <button
+              phx-click="set_chat_view"
+              phx-value-view="session"
+              class={[
+                "px-3 py-1.5 rounded text-xs font-medium uppercase tracking-wider transition-colors",
+                if(@chat_view == :session,
+                  do: "bg-primary text-primary-content",
+                  else: "bg-white/10 text-gray-100/72 hover:bg-white/20"
+                )
+              ]}
+            >
+              📋 Session
+            </button>
+          </div>
+
           <%= if @chat_view == :conversation do %>
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
               <div id="studio-chat-conversation" class="space-y-3" aria-live="polite">

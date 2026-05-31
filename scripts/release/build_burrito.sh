@@ -244,9 +244,9 @@ main() {
       rm -f "${picosat_c}.bak"
     fi
 
-    local picosat_makefile="deps/picosat_elixir/c_src/Makefile"
+    local picosat_makefile="deps/picosat_elixir/Makefile"
     if [[ -f "$picosat_makefile" ]]; then
-      sed -i.bak 's/-undefined suppress//' "$picosat_makefile"
+      sed -i.bak 's/-flat_namespace -undefined suppress//' "$picosat_makefile"
       rm -f "${picosat_makefile}.bak"
     fi
   }

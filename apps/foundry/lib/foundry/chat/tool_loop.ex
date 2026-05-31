@@ -9,7 +9,7 @@ defmodule Foundry.Chat.ToolLoop do
 
   require Logger
 
-  @default_max_iterations 10
+  @default_max_iterations 15
 
   @doc """
   Runs the agentic loop with an LLM provider.
@@ -68,20 +68,32 @@ defmodule Foundry.Chat.ToolLoop do
         {:ok, content, true} ->
           tool_calls = extract_tool_calls(content)
           text = extract_text_from_content(content)
+          tool_names = Enum.map(tool_calls, &(&1["name"]))
+          Logger.info("Gemini response: iteration=#{iterations}, tool_calls=#{inspect(tool_names)}, text_length=#{String.length(text)}")
+
+          if text != "" do
+            on_event.({:delta, text})
+          end
 
           {tool_results, updated_messages} =
             execute_tool_calls(tool_calls, messages, content, project_root, on_event)
 
-          if tool_results == [] do
+          if tool_results == [] or length(tool_calls) == 0 do
             # No tool calls actually executed despite has_tool_calls=true
+            Logger.info("No tool calls executed, ending loop at iteration #{iterations}")
             on_event.({:result, text, %{}})
             {:ok, text, %{}}
           else
+            Logger.info("Executed #{length(tool_results)} tools, looping to iteration #{iterations + 1}")
             run_loop(updated_messages, %{state | iterations: iterations + 1})
           end
 
         {:ok, content, false} ->
           text = extract_text_from_content(content)
+          Logger.info("Gemini response: has_tool_calls=false, text_length=#{String.length(text)}")
+          if text != "" do
+            on_event.({:delta, text})
+          end
           on_event.({:result, text, %{}})
           {:ok, text, %{}}
 
@@ -98,16 +110,40 @@ defmodule Foundry.Chat.ToolLoop do
   defp execute_tool_calls(tool_calls, messages, model_content, project_root, on_event) do
     tool_results =
       Enum.map(tool_calls, fn %{"name" => name, "args" => args} ->
-        on_event.({:trace, {:tool_call, name, args}})
+        Logger.info("Tool call: #{name} with args: #{inspect(args)}")
+        on_event.({:trace, %{
+          "provider" => "gemini",
+          "type" => "tool.call",
+          "item_type" => "tool_call",
+          "tool" => name,
+          "message" => "Tool call: #{name}",
+          "item" => %{"name" => name, "args" => args}
+        }})
 
         result =
           case Foundry.Chat.ShellTools.execute(name, args, project_root) do
             {:ok, output} ->
-              on_event.({:trace, {:tool_result, name, :ok}})
+              Logger.info("Tool result: #{name} succeeded")
+              on_event.({:trace, %{
+                "provider" => "gemini",
+                "type" => "tool.result",
+                "item_type" => "tool_call",
+                "tool" => name,
+                "message" => "Tool completed: #{name}",
+                "item" => %{"status" => "ok"}
+              }})
               %{"output" => output}
 
             {:error, reason} ->
-              on_event.({:trace, {:tool_result, name, :error}})
+              Logger.info("Tool result: #{name} failed: #{inspect(reason)}")
+              on_event.({:trace, %{
+                "provider" => "gemini",
+                "type" => "tool.error",
+                "item_type" => "tool_call",
+                "tool" => name,
+                "message" => "Tool failed: #{name}",
+                "item" => %{"status" => "error", "reason" => inspect(reason)}
+              }})
               %{"error" => reason}
           end
 
@@ -125,84 +161,28 @@ defmodule Foundry.Chat.ToolLoop do
     {tool_results, messages ++ [model_turn, tool_turn]}
   end
 
-  defp call_gemini_with_tools(messages, system_prompt, tool_schemas, model, api_key, on_event) do
+  defp call_gemini_with_tools(messages, system_prompt, tool_schemas, model, api_key, _on_event) do
     body = build_gemini_request(messages, system_prompt, tool_schemas)
 
-    request = [
-      url: "https://generativelanguage.googleapis.com/v1beta/models/#{model}:streamGenerateContent",
+    case Req.post(
+      url: "https://generativelanguage.googleapis.com/v1beta/models/#{model}:generateContent",
       params: [key: api_key],
-      headers: [
-        {"content-type", "application/json"},
-        {"accept", "text/event-stream"}
-      ],
+      headers: [{"content-type", "application/json"}],
       json: body,
       receive_timeout: 60_000,
-      retry: false,
-      into: :self
-    ]
+      retry: false
+    ) do
+      {:ok, %Req.Response{status: 200, body: %{"candidates" => [candidate | _]}}} ->
+        content = candidate["content"]
+        has_tools = has_tool_calls(content)
+        {:ok, content, has_tools}
 
-    with {:ok, response} <- Req.post(request),
-         {:ok, content, has_tools} <- collect_gemini_stream(response, "", nil, 60_000, on_event) do
-      {:ok, content, has_tools}
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  end
+      {:ok, %Req.Response{status: status, body: body}} ->
+        Logger.error("Gemini error: #{status} - #{inspect(body)}")
+        {:error, {:gemini_error, status}}
 
-  defp collect_gemini_stream(response, buffer, last_content, timeout_ms, on_event) do
-    receive do
-      message ->
-        case Req.parse_message(response, message) do
-          {:ok, [data: data]} ->
-            {next_buffer, last_content} = parse_gemini_sse(buffer <> data, last_content, on_event)
-            collect_gemini_stream(response, next_buffer, last_content, timeout_ms, on_event)
-
-          {:ok, [:done]} ->
-            if last_content do
-              has_tools = has_tool_calls(last_content)
-              {:ok, last_content, has_tools}
-            else
-              {:error, {:gemini_stream_error, "No content received"}}
-            end
-
-          {:error, reason} ->
-            {:error, {:gemini_stream_error, reason}}
-        end
-    after
-      timeout_ms -> {:error, {:timeout, "Gemini stream timeout"}}
-    end
-  end
-
-  defp parse_gemini_sse(data, last_content, on_event) do
-    parts = String.split(data, "\n\n")
-    {events, [buffer]} = Enum.split(parts, -1)
-
-    final_content =
-      Enum.reduce(events, last_content, fn event, acc ->
-        event
-        |> String.split("\n")
-        |> Enum.map(&String.trim/1)
-        |> Enum.filter(&String.starts_with?(&1, "data:"))
-        |> Enum.map(&(String.trim_leading(&1, "data:") |> String.trim()))
-        |> Enum.reduce(acc, fn json, content_acc ->
-          parse_gemini_data_line(json, content_acc, on_event)
-        end)
-      end)
-
-    {buffer, final_content}
-  end
-
-  defp parse_gemini_data_line(json, acc, on_event) do
-    case Jason.decode(json) do
-      {:ok, %{"candidates" => [%{"content" => content} | _]}} ->
-        text = extract_text_from_content(content)
-        if text != "" do
-          on_event.({:delta, text})
-        end
-        content
-
-      _ ->
-        acc
+      {:error, reason} ->
+        {:error, {:gemini_request_error, reason}}
     end
   end
 
