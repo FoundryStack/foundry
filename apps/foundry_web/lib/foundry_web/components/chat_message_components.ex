@@ -246,7 +246,10 @@ defmodule FoundryWeb.ChatMessageComponents do
   attr :project_root, :string, default: nil
 
   def inline_tool_event(assigns) do
-    event_id = "tool-#{assigns.message_id}-#{assigns.event_index}-#{assigns.event["category"]}"
+    # Generate unique id using hash of event content + indices to avoid collisions
+    # This ensures multiple identical events still get unique DOM ids
+    event_hash = :crypto.hash(:md5, inspect(assigns.event)) |> Base.encode16() |> String.slice(0..7)
+    event_id = "tool-#{assigns.message_id}-#{assigns.event_index}-#{event_hash}"
     assigns = assign(assigns, :event_id, event_id)
 
     ~H"""
