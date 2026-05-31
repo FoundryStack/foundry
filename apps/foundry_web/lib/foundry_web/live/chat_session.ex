@@ -364,6 +364,7 @@ defmodule FoundryWeb.ChatSession do
               persisted_messages = socket.assigns.messages ++ [user_msg]
 
               assistant_msg = %{
+                "id" => Ecto.UUID.generate(),
                 "role" => "assistant",
                 "content" => "",
                 "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
@@ -543,6 +544,12 @@ defmodule FoundryWeb.ChatSession do
 
   def handle_info({:llm_stream_delta, request_ref, delta}, socket) do
     if request_ref == socket.assigns.active_request_ref do
+      before_count = length(socket.assigns.messages)
+      latest_idx = latest_assistant_index(socket.assigns.messages)
+      latest_msg = if latest_idx, do: Enum.at(socket.assigns.messages, latest_idx), else: nil
+
+      Logger.info("Stream delta: len=#{String.length(delta)}, msg_count=#{before_count}, latest_idx=#{inspect(latest_idx)}, has_content_field=#{latest_msg && Map.has_key?(latest_msg, "content")}")
+
       socket =
         socket
         |> update(:messages, &append_to_streaming_response(&1, delta))
@@ -843,10 +850,17 @@ defmodule FoundryWeb.ChatSession do
     do: {:llm_stream_trace, request_ref, event}
 
   defp append_to_streaming_response(messages, delta) do
-    update_last_assistant_message(
+    result = update_last_assistant_message(
       messages,
       &Map.update(&1, "content", delta, fn c -> c <> delta end)
     )
+
+    # Check if the update actually changed anything
+    if result == messages do
+      Logger.warning("append_to_streaming_response: no change detected, latest_assistant_index may be returning nil")
+    end
+
+    result
   end
 
   defp finalize_streaming_response(messages, "", _run), do: messages
@@ -1377,6 +1391,7 @@ defmodule FoundryWeb.ChatSession do
         end)
 
       assistant_msg = %{
+        "id" => Ecto.UUID.generate(),
         "role" => "assistant",
         "content" => "",
         "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()

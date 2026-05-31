@@ -166,29 +166,111 @@ defmodule Foundry.Chat.ToolLoop do
     {tool_results, messages ++ [model_turn, tool_turn]}
   end
 
-  defp call_gemini_with_tools(messages, system_prompt, tool_schemas, model, api_key, _on_event) do
+  defp call_gemini_with_tools(messages, system_prompt, tool_schemas, model, api_key, on_event) do
     body = build_gemini_request(messages, system_prompt, tool_schemas)
 
-    case Req.post(
-      url: "https://generativelanguage.googleapis.com/v1beta/models/#{model}:generateContent",
+    request = [
+      url: "https://generativelanguage.googleapis.com/v1beta/models/#{model}:streamGenerateContent",
       params: [key: api_key],
-      headers: [{"content-type", "application/json"}],
+      headers: [{"content-type", "application/json"}, {"accept", "text/event-stream"}],
       json: body,
       receive_timeout: 60_000,
-      retry: false
-    ) do
-      {:ok, %Req.Response{status: 200, body: %{"candidates" => [candidate | _]}}} ->
-        content = candidate["content"]
-        has_tools = has_tool_calls(content)
-        {:ok, content, has_tools}
+      retry: false,
+      into: :self
+    ]
 
-      {:ok, %Req.Response{status: status, body: body}} ->
-        Logger.error("Gemini error: #{status} - #{inspect(body)}")
-        {:error, {:gemini_error, status}}
+    case Req.post(request) do
+      {:ok, response} ->
+        collect_gemini_stream(response, "", nil, 60_000, on_event)
 
       {:error, reason} ->
-        {:error, {:gemini_request_error, reason}}
+        Logger.error("Gemini streaming request failed: #{inspect(reason)}")
+        {:error, {:gemini_stream_request_error, reason}}
     end
+  end
+
+  defp collect_gemini_stream(response, buffer, last_content, timeout_ms, on_event) do
+    receive do
+      message ->
+        case Req.parse_message(response, message) do
+          {:ok, [data: data]} ->
+            {next_buffer, text_chunks, content} = parse_gemini_sse(buffer <> data)
+            Enum.each(text_chunks, fn text -> on_event.({:delta, text}) end)
+            collect_gemini_stream(response, next_buffer, content || last_content, timeout_ms, on_event)
+
+          {:ok, [:done]} ->
+            if last_content do
+              has_tools = has_tool_calls(last_content)
+              {:ok, last_content, has_tools}
+            else
+              Logger.warning("Gemini stream ended with no content")
+              {:error, :no_content}
+            end
+
+          {:error, reason} ->
+            Logger.error("Gemini stream parse error: #{inspect(reason)}")
+            {:error, {:gemini_stream_parse_error, reason}}
+        end
+    after
+      timeout_ms ->
+        Logger.error("Gemini stream timeout after #{timeout_ms}ms")
+        {:error, :gemini_stream_timeout}
+    end
+  end
+
+  # Test-accessible parsing function
+  def parse_gemini_sse_for_test(data) do
+    parse_gemini_sse(data)
+  end
+
+  defp parse_gemini_sse(data) do
+    # Gemini SSE format: each event is a JSON object with candidates[0].content
+    # Split by double-newline and parse each event
+    lines = String.split(data, "\n")
+
+    {buffer, chunks, content} =
+      Enum.reduce(lines, {"", [], nil}, fn line, {buf, chunks, cont} ->
+        trimmed = String.trim(line)
+
+        if String.starts_with?(trimmed, "data: ") do
+          json_str = String.slice(trimmed, 6..String.length(trimmed))
+
+          case Jason.decode(json_str) do
+            {:ok, %{"candidates" => [%{"content" => content_obj} | _]}} ->
+              # Extract text parts from content
+              text_chunks =
+                case content_obj do
+                  %{"parts" => parts} when is_list(parts) ->
+                    Enum.map_join(parts, "", fn part ->
+                      part["text"] || ""
+                    end)
+
+                  _ ->
+                    ""
+                end
+
+              chunks_list =
+                if text_chunks != "" do
+                  chunks ++ [text_chunks]
+                else
+                  chunks
+                end
+
+              {buf, chunks_list, content_obj}
+
+            {:ok, _} ->
+              # Valid JSON but no expected structure, skip it
+              {buf, chunks, cont}
+
+            {:error, _} ->
+              {buf, chunks, cont}
+          end
+        else
+          {buf <> line <> "\n", chunks, cont}
+        end
+      end)
+
+    {buffer, chunks, content}
   end
 
   defp build_gemini_request(messages, system_prompt, tool_schemas) do
@@ -240,6 +322,11 @@ defmodule Foundry.Chat.ToolLoop do
   end
 
   defp extract_tool_calls(_), do: []
+
+  # Test-accessible tool detection
+  def has_tool_calls_for_test(content) do
+    has_tool_calls(content)
+  end
 
   defp has_tool_calls(%{"parts" => parts}) when is_list(parts) do
     Enum.any?(parts, &Map.has_key?(&1, "functionCall"))

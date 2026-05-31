@@ -103,6 +103,81 @@ defmodule Foundry.Chat.ToolLoopTest do
     end
   end
 
+  describe "SSE streaming parsing" do
+    test "parse_gemini_sse extracts text from SSE events" do
+      sse_data = """
+      data: {"candidates":[{"content":{"parts":[{"text":"Hello "}],"role":"model"}}]}
+
+      data: {"candidates":[{"content":{"parts":[{"text":"world"}],"role":"model"}}]}
+      """
+
+      {_buffer, chunks, _content} = Foundry.Chat.ToolLoop.parse_gemini_sse_for_test(sse_data)
+
+      assert length(chunks) == 2
+      assert Enum.at(chunks, 0) == "Hello "
+      assert Enum.at(chunks, 1) == "world"
+    end
+
+    test "parse_gemini_sse handles partial data gracefully" do
+      # Simulate incomplete SSE event
+      partial = "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text"
+
+      {_buffer, chunks, _content} = Foundry.Chat.ToolLoop.parse_gemini_sse_for_test(partial)
+
+      # Should skip incomplete/invalid JSON events
+      assert chunks == []
+    end
+
+    test "parse_gemini_sse preserves last content for tool call detection" do
+      sse_data = """
+      data: {"candidates":[{"content":{"parts":[{"text":"Result "},{"functionCall":{"name":"tool1"}}],"role":"model"}}]}
+      """
+
+      {_buffer, _chunks, content} = Foundry.Chat.ToolLoop.parse_gemini_sse_for_test(sse_data)
+
+      assert content != nil
+      assert Foundry.Chat.ToolLoop.has_tool_calls_for_test(content)
+    end
+
+    test "parse_gemini_sse returns nil content for invalid SSE events" do
+      sse_data = """
+      data: invalid json
+      data: {}
+      """
+
+      {_buffer, chunks, content} = Foundry.Chat.ToolLoop.parse_gemini_sse_for_test(sse_data)
+
+      # Should skip invalid events and return nil if no valid content found
+      assert chunks == []
+      assert content == nil
+    end
+  end
+
+  describe "streaming error handling" do
+    test "returns error when stream ends with no content" do
+      # Simulate a stream that never sends any content, just closes
+      messages = [
+        %{"role" => "user", "content" => "Test message"}
+      ]
+
+      opts = [
+        api_key: "test-key-invalid",
+        model: "gemini-1.5-flash",
+        project_root: File.cwd!(),
+        max_iterations: 1,
+        timeout_ms: 100,
+        system_prompt: "Test"
+      ]
+
+      on_event = fn _event -> :ok end
+
+      result = Foundry.Chat.ToolLoop.run(messages, opts, on_event)
+
+      # Should return an error (either timeout or no_content) rather than crash
+      assert match?({:error, _}, result)
+    end
+  end
+
   describe "tool loop integration" do
     test "max_iterations limit prevents infinite loops" do
       # This test verifies that max_iterations=15 is set correctly
