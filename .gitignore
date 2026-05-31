@@ -31,3 +31,4 @@ burrito_out
 package-lock.json
 join_files.sh
 .env
+dist
