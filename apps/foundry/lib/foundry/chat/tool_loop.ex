@@ -135,28 +135,24 @@ defmodule Foundry.Chat.ToolLoop do
               "Error: #{inspect(reason)}"
           end
 
-        %{
-          "role" => "tool",
-          "tool_call_id" => id,
-          "name" => name,
-          "content" => result
-        }
+        ReqLLM.Message.tool_result(id, result)
+        |> then(&%{&1 | name: name})
       end)
 
-    assistant_turn = %{
-      "role" => "assistant",
-      "content" => text,
-      "tool_calls" => Enum.map(tool_calls, fn tc ->
-        %{
-          "id" => tc["id"],
-          "type" => "function",
-          "function" => %{
+    req_llm_tool_calls =
+      Enum.map(tool_calls, fn tc ->
+        %ReqLLM.ToolCall{
+          id: tc["id"],
+          type: "function",
+          function: %{
             "name" => tc["name"],
-            "arguments" => Jason.encode!(tc["args"])
+            "arguments" => tc["args"]
           }
         }
       end)
-    }
+
+    assistant_turn =
+      ReqLLM.Message.assistant_with_tools(req_llm_tool_calls, text)
 
     updated_messages = messages ++ [assistant_turn] ++ tool_results
 
