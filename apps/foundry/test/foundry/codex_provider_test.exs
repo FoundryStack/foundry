@@ -167,10 +167,92 @@ defmodule Foundry.CodexProviderTest do
     File.chmod!(path, 0o755)
   end
 
+  defp write_codex_stub_with_full_text_event!(path) do
+    File.write!(path, """
+    #!/bin/sh
+    printf '%s\\n' '{"type":"agent_message.delta","delta":"chunk1"}'
+    printf '%s\\n' '{"type":"item.updated","item":{"type":"agent_message","text":"chunk1"}}'
+    printf '%s\\n' '{"type":"agent_message.delta","delta":"chunk2"}'
+    printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"chunk1chunk2"}}'
+    """)
+
+    File.chmod!(path, 0o755)
+  end
+
+  # Simulates real `codex exec --json` output: only item.completed, no incremental deltas
+  defp write_codex_stub_only_completed!(path) do
+    File.write!(path, """
+    #!/bin/sh
+    printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"hello world"}}'
+    """)
+
+    File.chmod!(path, 0o755)
+  end
+
   defp make_tmp_dir! do
     path = Path.join(System.tmp_dir!(), "codex-provider-#{System.unique_integer([:positive])}")
     File.mkdir_p!(path)
     path
+  end
+
+  describe "streaming delta events" do
+    # codex exec --json only emits item.completed (full text at end), no true incremental deltas.
+    # We emit item.completed as a single delta so text appears rather than staying blank.
+    # item.updated is NOT emitted as a delta (it's a duplicate accumulated snapshot, not a delta).
+    test "emits agent_message.delta and item.completed as deltas, but not item.updated" do
+      tmp_dir = make_tmp_dir!()
+      executable = Path.join(tmp_dir, "codex")
+      write_codex_stub_with_full_text_event!(executable)
+
+      {:ok, collector} = Agent.start_link(fn -> [] end)
+
+      on_event = fn
+        {:delta, text} -> Agent.update(collector, &(&1 ++ [text]))
+        _other -> :ok
+      end
+
+      {:ok, result, _metadata} =
+        CodexProvider.stream(
+          [%{"role" => "user", "content" => "hello"}],
+          [system_prompt: "", timeout_ms: 1_000, executable: executable, project_root: tmp_dir],
+          on_event
+        )
+
+      deltas = Agent.get(collector, & &1)
+      Agent.stop(collector)
+
+      # Stub emits: agent_message.delta("chunk1"), item.updated(full), agent_message.delta("chunk2"), item.completed(full)
+      # Expected deltas: "chunk1", "chunk2", "chunk1chunk2" (item.updated skipped, item.completed included)
+      assert deltas == ["chunk1", "chunk2", "chunk1chunk2"]
+      assert result == "chunk1chunk2"
+    end
+
+    test "emits item.completed as a delta when no incremental deltas are present" do
+      tmp_dir = make_tmp_dir!()
+      executable = Path.join(tmp_dir, "codex")
+      write_codex_stub_only_completed!(executable)
+
+      {:ok, collector} = Agent.start_link(fn -> [] end)
+
+      on_event = fn
+        {:delta, text} -> Agent.update(collector, &(&1 ++ [text]))
+        _other -> :ok
+      end
+
+      {:ok, result, _metadata} =
+        CodexProvider.stream(
+          [%{"role" => "user", "content" => "hello"}],
+          [system_prompt: "", timeout_ms: 1_000, executable: executable, project_root: tmp_dir],
+          on_event
+        )
+
+      deltas = Agent.get(collector, & &1)
+      Agent.stop(collector)
+
+      # codex exec --json only produces item.completed — it must be emitted as a delta
+      assert deltas == ["hello world"]
+      assert result == "hello world"
+    end
   end
 
   defp restore_env(_key, nil), do: :ok

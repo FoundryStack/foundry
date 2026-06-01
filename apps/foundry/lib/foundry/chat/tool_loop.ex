@@ -135,8 +135,12 @@ defmodule Foundry.Chat.ToolLoop do
               "Error: #{inspect(reason)}"
           end
 
-        ReqLLM.Message.tool_result(id, result)
-        |> then(&%{&1 | name: name})
+        %ReqLLM.Message{
+          role: :tool,
+          content: [%ReqLLM.Message.ContentPart{type: :text, text: result}],
+          tool_call_id: id,
+          name: name
+        }
       end)
 
     req_llm_tool_calls =
@@ -151,8 +155,11 @@ defmodule Foundry.Chat.ToolLoop do
         }
       end)
 
-    assistant_turn =
-      ReqLLM.Message.assistant_with_tools(req_llm_tool_calls, text)
+    assistant_turn = %ReqLLM.Message{
+      role: :assistant,
+      content: [%ReqLLM.Message.ContentPart{type: :text, text: text}],
+      tool_calls: req_llm_tool_calls
+    }
 
     updated_messages = messages ++ [assistant_turn] ++ tool_results
 

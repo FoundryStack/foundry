@@ -1218,12 +1218,17 @@ defmodule FoundryWeb.ChatSession do
       state when is_map(state) ->
         input = Map.get(socket.assigns.session_inputs, session_id, "")
 
+        # Verify the task is still alive before restoring active request refs
+        task_alive? = is_map(state.active_request_task) &&
+          is_pid(state.active_request_task[:pid]) &&
+          Process.alive?(state.active_request_task[:pid])
+
         socket
         |> assign(:session_id, session_id)
         |> assign(:messages, state.messages)
-        |> assign(:chat_loading, state.chat_loading)
-        |> assign(:active_request_ref, state.active_request_ref)
-        |> assign(:active_request_task, state.active_request_task)
+        |> assign(:chat_loading, if(task_alive?, do: state.chat_loading, else: false))
+        |> assign(:active_request_ref, if(task_alive?, do: state.active_request_ref, else: nil))
+        |> assign(:active_request_task, if(task_alive?, do: state.active_request_task, else: nil))
         |> assign(:pending_messages, state.pending_messages)
         |> assign(:session_digest, state.session_digest)
         |> assign(:activity_runs, state.activity_runs)
@@ -1269,7 +1274,9 @@ defmodule FoundryWeb.ChatSession do
   end
 
   defp switch_to_session(socket, session_id) do
-    maybe_load_active_session_into_chat(socket, session_id)
+    socket
+    |> save_active_session_state()
+    |> restore_session_state(session_id)
   end
 
   defp push_workspace_state(socket) do

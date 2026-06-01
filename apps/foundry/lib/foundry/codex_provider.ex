@@ -387,17 +387,16 @@ defmodule Foundry.CodexProvider do
 
   defp stream_delta(line) do
     case Jason.decode(line) do
-      {:ok, %{"type" => "item.completed", "item" => %{"type" => "agent_message", "text" => text}}}
-      when is_binary(text) ->
-        text
-
+      # True incremental delta — emitted by codex exec when streaming is available
       {:ok, %{"type" => "agent_message.delta", "delta" => text}} when is_binary(text) ->
         text
 
       {:ok, %{"type" => "item.delta", "delta" => %{"text" => text}}} when is_binary(text) ->
         text
 
-      {:ok, %{"type" => "item.updated", "item" => %{"type" => "agent_message", "text" => text}}}
+      # codex exec --json only emits item.completed (full text, no true streaming).
+      # Emit it as a single delta so text appears instead of staying blank until finalize.
+      {:ok, %{"type" => "item.completed", "item" => %{"type" => "agent_message", "text" => text}}}
       when is_binary(text) ->
         text
 

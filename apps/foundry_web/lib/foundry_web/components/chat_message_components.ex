@@ -55,13 +55,14 @@ defmodule FoundryWeb.ChatMessageComponents do
         </div>
         <div class="space-y-2">
           <%= if !@is_user do %>
-            <% segments = interleave_tool_events(@content, @tool_events, @streaming) %>
+            <% indexed_tool_events = Enum.with_index(@tool_events) %>
+            <% segments = interleave_tool_events(@content, indexed_tool_events, @streaming) %>
             <%= for {{segment_text, segment_events, is_last}, seg_idx} <- Enum.with_index(segments) do %>
               <.inline_tool_event
-                :for={event <- segment_events}
+                :for={{event, global_idx} <- segment_events}
                 event={event}
                 message_id={@message["id"] || "unknown"}
-                event_index={segment_events |> Enum.find_index(&(&1 == event)) || 0}
+                event_index={global_idx}
                 project_root={@project_root}
               />
               <div
@@ -389,10 +390,11 @@ defmodule FoundryWeb.ChatMessageComponents do
   defp inline_tool_path_class(_),
     do: "rounded border border-info/20 bg-info/10 px-1.5 py-0.5 font-mono text-[10px] text-info"
 
-  # Returns [{text_segment, [tool_events_preceding_segment], is_last_segment}]
-  defp interleave_tool_events(content, tool_events, _streaming) do
-    sorted_events = Enum.sort_by(tool_events, &(&1["text_cursor"] || 0))
-    grouped = Enum.group_by(sorted_events, &(&1["text_cursor"] || 0))
+  # Returns [{text_segment, [{event, global_idx}, ...], is_last_segment}]
+  # Accepts tool_events as {event, global_idx} tuples from Enum.with_index
+  defp interleave_tool_events(content, indexed_tool_events, _streaming) do
+    sorted_events = Enum.sort_by(indexed_tool_events, fn {event, _idx} -> event["text_cursor"] || 0 end)
+    grouped = Enum.group_by(sorted_events, fn {event, _idx} -> event["text_cursor"] || 0 end)
 
     split_cursors = grouped |> Map.keys() |> Enum.filter(&(&1 > 0)) |> Enum.sort()
 
