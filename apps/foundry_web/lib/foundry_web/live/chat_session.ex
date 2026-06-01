@@ -548,8 +548,6 @@ defmodule FoundryWeb.ChatSession do
       latest_idx = latest_assistant_index(socket.assigns.messages)
       latest_msg = if latest_idx, do: Enum.at(socket.assigns.messages, latest_idx), else: nil
 
-      Logger.info("Stream delta: len=#{String.length(delta)}, msg_count=#{before_count}, latest_idx=#{inspect(latest_idx)}, has_content_field=#{latest_msg && Map.has_key?(latest_msg, "content")}")
-
       socket =
         socket
         |> update(:messages, &append_to_streaming_response(&1, delta))
