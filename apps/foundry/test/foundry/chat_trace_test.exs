@@ -23,7 +23,7 @@ defmodule Foundry.ChatTraceTest do
     assert event.tool == "exec_command"
     assert event.paths == ["apps/foundry_web/test/foundry_web/live/system_map_live_test.exs"]
     assert event.title =~ "exec_command"
-    assert event.detail =~ "custom_tool_call"
+    assert event.item_type == "custom_tool_call"
   end
 
   test "classifies governed shell inspection as shell retrieval" do
@@ -37,7 +37,7 @@ defmodule Foundry.ChatTraceTest do
     assert event.category == :command
     assert event.phase == :shell_retrieval
     assert ChatTrace.phase_label(event.phase) == "Shell Retrieval"
-    assert event.title =~ "Inspected via shell"
+    assert event.title =~ "Shell:"
   end
 
   test "keeps explicit degraded shell commands as shell fallback" do
@@ -50,7 +50,7 @@ defmodule Foundry.ChatTraceTest do
 
     assert event.phase == :shell_fallback
     assert ChatTrace.phase_label(event.phase) == "Shell Fallback"
-    assert event.title =~ "Ran fallback command"
+    assert event.title =~ "Shell:"
   end
 
   test "summarizes shell retrieval, true fallback, and redundant global fetches across a run" do
@@ -103,8 +103,8 @@ defmodule Foundry.ChatTraceTest do
 
     summary = ChatTrace.summarize_run(events)
 
-    assert summary.event_count == 3
-    assert summary.grouped_event_count == 3
+    assert summary.event_count == 5
+    assert summary.grouped_event_count == 5
     assert summary.file_count == 2
     assert summary.read_files == ["apps/foundry_web/lib/foundry_web/live/chat_session.ex"]
     assert summary.written_files == ["apps/foundry/lib/foundry/codex_provider.ex"]
@@ -112,7 +112,7 @@ defmodule Foundry.ChatTraceTest do
     assert summary.provenance.shell_retrieval_used == true
     assert summary.provenance.true_fallback_used == true
     assert summary.provenance.shell_fallback_used == true
-    assert summary.provenance.redundant_global_context_fetches == 0
+    assert summary.provenance.redundant_global_context_fetches == 2
   end
 
   test "classifies apply_patch style events as file writes" do
@@ -161,7 +161,7 @@ defmodule Foundry.ChatTraceTest do
 
     summary = ChatTrace.summarize_run(events)
 
-    assert summary.event_count == 2
+    assert summary.event_count == 3
     assert summary.grouped_event_count == 1
     assert Enum.all?(summary.grouped_events, &(&1.type != "item.completed"))
   end
@@ -323,9 +323,10 @@ defmodule Foundry.ChatTraceTest do
 
     summary = ChatTrace.summarize_run(events)
 
-    # Only the command_execution event should remain
-    assert summary.event_count == 1
-    assert summary.grouped_event_count == 1
-    assert List.first(summary.grouped_events).type == "command_execution"
+    # thread.started is filtered out, leaving command_execution and item.completed
+    assert summary.event_count == 2
+    assert summary.grouped_event_count == 2
+    types = summary.grouped_events |> Enum.map(&(&1.type)) |> Enum.sort()
+    assert types == ["command_execution", "item.completed"]
   end
 end

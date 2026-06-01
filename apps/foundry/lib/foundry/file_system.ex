@@ -21,14 +21,19 @@ defmodule Foundry.FileSystem do
     root = Path.expand(project_root)
     expanded = Path.expand(Path.join(root, relative_path))
 
-    if String.starts_with?(expanded, root <> "/") or expanded == root do
-      case File.read(expanded) do
-        {:ok, content} -> {:ok, content}
-        {:error, :enoent} -> {:error, :not_found}
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      {:error, :outside_boundary}
+    cond do
+      is_dotfile?(relative_path) ->
+        {:error, :outside_boundary}
+
+      String.starts_with?(expanded, root <> "/") or expanded == root ->
+        case File.read(expanded) do
+          {:ok, content} -> {:ok, content}
+          {:error, :enoent} -> {:error, :not_found}
+          {:error, reason} -> {:error, reason}
+        end
+
+      true ->
+        {:error, :outside_boundary}
     end
   end
 
@@ -39,7 +44,6 @@ defmodule Foundry.FileSystem do
     expanded = Path.expand(Path.join(root, relative_path))
 
     if String.starts_with?(expanded, root <> "/") or expanded == root do
-      # Create parent directories if needed
       expanded
       |> Path.dirname()
       |> File.mkdir_p!()
@@ -51,5 +55,11 @@ defmodule Foundry.FileSystem do
     else
       {:error, :outside_boundary}
     end
+  end
+
+  defp is_dotfile?(path) do
+    basename = Path.basename(path)
+    String.starts_with?(basename, ".") and
+      basename not in [".gitignore", ".formatter.exs", ".credo.exs"]
   end
 end

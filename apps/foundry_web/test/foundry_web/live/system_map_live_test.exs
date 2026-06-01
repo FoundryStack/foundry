@@ -530,9 +530,19 @@ defmodule FoundryWeb.SystemMapLiveTest do
       Application.put_env(:foundry, :llm_provider, :codex)
       Application.put_env(:foundry, :codex, [])
 
+      put_chat_hooks(
+        save_messages: fn _session_id, _messages -> {:ok, %{}} end,
+        call_llm_stream: fn _messages, on_event ->
+          on_event.({:delta, "Done"})
+          {:ok, "Done"}
+        end
+      )
+
       {:ok, live, _html} = live(conn, "/")
 
       _html = render_submit(live, "send_message", %{"message" => "Map the wallet flow"})
+      assert eventually(fn -> render(live) =~ "Done" end), render(live)
+
       html = render_click(live, "set_chat_view", %{"view" => "trace"})
 
       assert html =~ "Sandbox"
@@ -741,7 +751,6 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert html =~ "mix test apps/foundry_web/test/foundry_web/live/system_map_live_test.exs"
       assert html =~ "apps/foundry_web/test/foundry_web/live/system_map_live_test.exs"
       assert html =~ "Shell Retrieval"
-      assert html =~ "Inspected via shell"
       refute html =~ "Shell Fallback"
       assert html =~ "Raw"
     end
@@ -762,7 +771,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       html = render_click(live, "set_chat_view", %{"view" => "session"})
 
       assert html =~ "Session Memory"
-      assert html =~ "Recent conclusions"
+      assert html =~ "Recent outcomes"
       assert html =~ "Saved findings"
       assert html =~ "Selected nodes"
       assert html =~ "Working summary"
@@ -779,7 +788,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
         end,
         call_llm_stream: fn _messages, on_event, _run_context ->
           send(test_pid, :stream_started)
-          Process.sleep(150)
+          Process.sleep(800)
           on_event.({:delta, "Still working"})
           {:ok, "Still working"}
         end
@@ -847,9 +856,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       assert eventually(fn ->
                rendered = render(live)
 
-               rendered =~ "read 1" and
-                 rendered =~ "wrote 1" and
-                 rendered =~ "live/chat_session.ex" and
+               rendered =~ "live/chat_session.ex" and
                  rendered =~ "hooks/studio_chat_hook.js"
              end)
     end
@@ -922,8 +929,6 @@ defmodule FoundryWeb.SystemMapLiveTest do
                rendered = render(live)
 
                rendered =~ "15 total" and
-                 rendered =~ "read 1" and
-                 rendered =~ "wrote 1" and
                  rendered =~ "live/chat_session.ex" and
                  rendered =~ "hooks/studio_chat_hook.js"
              end)

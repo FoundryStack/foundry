@@ -318,7 +318,7 @@ defmodule FoundryWeb.ChatTraceComponents do
             items={Map.get(@session_digest, "recent_findings", [])}
           />
           <.digest_list
-            title="Recent conclusions"
+            title="Recent outcomes"
             items={Map.get(@session_digest, "recent_conclusions", [])}
           />
           <.digest_list
