@@ -177,10 +177,11 @@ defmodule FoundryWeb.ChatSession do
 
     socket =
       socket
+      |> save_active_session_state()
       |> assign(:open_session_ids, open_ids)
       |> assign(:active_session_id, session_id)
       |> assign(:sessions_by_id, sessions_by_id)
-      |> switch_to_session(session_id)
+      |> restore_session_state(session_id)
       |> push_event("chat:scroll_to_bottom", %{force: true})
       |> push_workspace_state()
 
@@ -1101,7 +1102,9 @@ defmodule FoundryWeb.ChatSession do
       try do
         Foundry.Copilot.ContextBuilder.build(project_root: project_root)
       rescue
-        _ -> ""
+        e ->
+          Logger.error("ContextBuilder.build failed: #{inspect(e)} — falling back to core.md only")
+          Application.app_dir(:foundry, "priv/prompts/core.md") |> File.read!()
       end
 
     boundary = """
@@ -1268,6 +1271,16 @@ defmodule FoundryWeb.ChatSession do
 
       _ ->
         socket
+        |> assign(:session_id, session_id)
+        |> assign(:messages, [])
+        |> assign(:session_digest, %{})
+        |> assign(:activity_runs, [])
+        |> assign(:selected_activity_run_id, nil)
+        |> assign(:chat_loading, false)
+        |> assign(:error, nil)
+        |> assign(:active_request_ref, nil)
+        |> assign(:active_request_task, nil)
+        |> assign(:pending_messages, [])
     end
   end
 
