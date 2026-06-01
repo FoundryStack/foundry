@@ -55,6 +55,62 @@ defmodule Foundry.ClaudeCodeProviderTest do
              ~s({"command":"/tmp/foundry-mcp-stdio","env":{"BEARER_TOKEN":"test-token","FOUNDRY_MCP_HOST":"localhost"}})
   end
 
+  test "emits deltas and trace events, returns final result from result event (not assistant event)" do
+    tmp_dir = make_tmp_dir!()
+    executable = Path.join(tmp_dir, "claude")
+
+    # Stub that emits a multi-turn stream: text delta, tool call, tool result, final result
+    File.write!(executable, """
+    #!/bin/sh
+    printf '%s\n' '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello "}}}'
+    printf '%s\n' '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"world"}}}'
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":"ls"}}]}}'
+    printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":"file.txt"}]}}'
+    printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"intermediate text"}]}}'
+    printf '%s\n' '{"type":"result","subtype":"success","result":"Final answer","session_id":"s1","duration_ms":1000,"total_cost_usd":0.01,"num_turns":2,"usage":{}}'
+    """)
+    File.chmod!(executable, 0o755)
+
+    System.put_env("PATH", tmp_dir <> ":" <> System.get_env("PATH", ""))
+
+    collector = fn event -> Process.put(:events, [event | (Process.get(:events) || [])]) end
+
+    assert {:ok, "Final answer", metadata} =
+             ClaudeCodeProvider.stream(
+               [%{"role" => "user", "content" => "hello"}],
+               [system_prompt: "", timeout_ms: 2_000, project_root: tmp_dir],
+               collector
+             )
+
+    assert metadata.session_id == "s1"
+
+    collected = Enum.reverse(Process.get(:events) || [])
+    deltas = for {:delta, t} <- collected, do: t
+    traces = for {:trace, e} <- collected, do: e
+
+    assert Enum.join(deltas) == "Hello world"
+    assert length(traces) == 2
+    assert Enum.at(traces, 0)["type"] == "tool.call"
+    assert Enum.at(traces, 0)["tool"] == "Bash"
+    assert Enum.at(traces, 1)["type"] == "tool.result"
+  end
+
+  test "CLAUDECODE env var is unset in child process even when set in parent" do
+    tmp_dir = make_tmp_dir!()
+    executable = Path.join(tmp_dir, "claude")
+    write_claude_stub!(executable)
+
+    System.put_env("PATH", tmp_dir <> ":" <> System.get_env("PATH", ""))
+    System.put_env("CLAUDECODE", "1")
+
+    assert {:ok, "claude-code-unset", %{}} =
+             ClaudeCodeProvider.stream(
+               [%{"role" => "user", "content" => "hello"}],
+               [system_prompt: "", timeout_ms: 1_000, project_root: tmp_dir],
+               fn _event -> :ok end
+             )
+  end
+
   defp write_claude_stub!(path) do
     File.write!(path, """
     #!/bin/sh

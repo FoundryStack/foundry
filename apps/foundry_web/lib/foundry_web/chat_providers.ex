@@ -44,6 +44,7 @@ defmodule FoundryWeb.ChatProviders do
 
     Foundry.ClaudeCodeProvider.stream(messages, opts, fn
       {:delta, text} -> on_event.({:delta, text})
+      {:trace, event} -> on_event.({:trace, event})
       _event -> :ok
     end)
   rescue

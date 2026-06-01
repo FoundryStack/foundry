@@ -84,8 +84,7 @@ defmodule Foundry.ClaudeCodeProvider do
       "--output-format",
       "stream-json",
       "--verbose",
-      "--include-partial-messages",
-      "--no-session-persistence"
+      "--include-partial-messages"
     ]
 
     base =
@@ -169,16 +168,25 @@ defmodule Foundry.ClaudeCodeProvider do
 
   defp run_claude(claude_path, claude_opts, project_root, timeout_ms, on_event) do
     args = Enum.map(claude_opts, &to_string/1)
-    cmd = build_command(claude_path, args, project_root)
+    sh_bin = System.find_executable("sh") || "/bin/sh"
+    env_bin = System.find_executable("env") || "/usr/bin/env"
 
-    IO.puts("[ClaudeCode] Command: #{String.slice(cmd, 0, 200)}")
+    IO.puts("[ClaudeCode] Spawning: #{claude_path} #{Enum.join(Enum.take(args, 5), " ")} ...")
     IO.puts("[ClaudeCode] Project root: #{project_root}")
 
+    # Port.open env: option only merges — cannot remove inherited vars like CLAUDECODE.
+    # Claude also hangs if stdin is an open pipe, requiring </dev/null.
+    # Solution: spawn sh -c with `env -i` for clean env + stdin redirect.
+    script = build_spawn_script(env_bin, claude_path, args)
+
     port =
-      Port.open({:spawn, cmd}, [
+      Port.open({:spawn_executable, sh_bin}, [
         :stream,
         :exit_status,
-        :binary
+        :binary,
+        :stderr_to_stdout,
+        {:args, ["-c", script]},
+        {:cd, project_root}
       ])
 
     result = collect_output(port, timeout_ms, on_event)
@@ -192,14 +200,15 @@ defmodule Foundry.ClaudeCodeProvider do
     result
   end
 
-  defp build_command(claude_path, args, project_root) do
+  defp build_spawn_script(env_bin, claude_path, args) do
+    env_vars =
+      System.get_env()
+      |> Map.delete("CLAUDECODE")
+      |> Enum.map_join(" ", fn {k, v} -> "#{k}=#{shell_escape(v)}" end)
+
     args_str = Enum.map_join(args, " ", &shell_escape/1)
 
-    # Claude Code's print mode expects stdin to be closed for non-interactive use.
-    inner =
-      "cd #{shell_escape(project_root)} && env -u CLAUDECODE #{shell_escape(claude_path)} #{args_str} </dev/null 2>&1"
-
-    "sh -c #{shell_escape(inner)}"
+    "exec #{env_bin} -i #{env_vars} #{shell_escape(claude_path)} #{args_str} </dev/null 2>&1"
   end
 
   defp shell_escape(arg) do
@@ -258,6 +267,7 @@ defmodule Foundry.ClaudeCodeProvider do
     Enum.flat_map(lines, fn line ->
       case stream_delta(line) do
         nil ->
+          emit_trace_event(line, on_event)
           []
 
         text ->
@@ -267,13 +277,56 @@ defmodule Foundry.ClaudeCodeProvider do
     end)
   end
 
-  defp parse_result(lines, buffer, streamed_chunks, on_event) do
+  defp emit_trace_event(line, on_event) do
+    case Jason.decode(line) do
+      {:ok, %{"type" => "assistant", "message" => %{"content" => content}}} when is_list(content) ->
+        Enum.each(content, fn
+          %{"type" => "tool_use", "id" => id, "name" => name, "input" => args} ->
+            on_event.({:trace, %{
+              "provider" => "claude_code",
+              "type" => "tool.call",
+              "item_type" => "tool_call",
+              "tool" => name,
+              "message" => "Tool call: #{name}",
+              "item" => %{"name" => name, "args" => args, "id" => id}
+            }})
+          _ -> :ok
+        end)
+
+      {:ok, %{"type" => "user", "message" => %{"content" => content}}} when is_list(content) ->
+        Enum.each(content, fn
+          %{"type" => "tool_result", "tool_use_id" => id, "content" => result} ->
+            output = extract_tool_result_output(result)
+            on_event.({:trace, %{
+              "provider" => "claude_code",
+              "type" => "tool.result",
+              "item_type" => "tool_call",
+              "message" => "Tool completed",
+              "item" => %{"status" => "ok", "id" => id, "output" => output}
+            }})
+          _ -> :ok
+        end)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp extract_tool_result_output(content) when is_binary(content), do: content
+
+  defp extract_tool_result_output(content) when is_list(content) do
+    content
+    |> Enum.filter(fn part -> Map.get(part, "type") == "text" end)
+    |> Enum.map_join("", fn part -> Map.get(part, "text", "") end)
+  end
+
+  defp extract_tool_result_output(_), do: ""
+
+  defp parse_result(lines, buffer, streamed_chunks, _on_event) do
     full_text = full_output(lines, buffer)
 
-    # Parse stream-json lines and extract the final result
     case parse_stream_json(full_text) do
       {:ok, result, metadata} ->
-        on_event.({:result, result, metadata})
         {:ok, result, metadata}
 
       {:error, reason} ->
@@ -285,9 +338,7 @@ defmodule Foundry.ClaudeCodeProvider do
         if streamed_text == "" do
           {:error, {:no_result_found, String.slice(full_text, 0, 1000)}}
         else
-          metadata = %{}
-          on_event.({:result, streamed_text, metadata})
-          {:ok, streamed_text, metadata}
+          {:ok, streamed_text, %{}}
         end
     end
   end
@@ -329,20 +380,6 @@ defmodule Foundry.ClaudeCodeProvider do
 
         {:ok, %{"type" => "result", "subtype" => subtype} = event} ->
           {:error, {String.to_atom(subtype), event}}
-
-        {:ok, %{"type" => "assistant", "message" => %{"content" => content}}}
-        when is_list(content) ->
-          # Extract text from content parts
-          text =
-            content
-            |> Enum.filter(fn part -> Map.get(part, "type") == "text" end)
-            |> Enum.map_join("", fn part -> Map.get(part, "text", "") end)
-
-          if text != "" do
-            {:ok, text, %{}}
-          else
-            nil
-          end
 
         {:ok, _} ->
           nil
