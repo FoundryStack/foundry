@@ -39,9 +39,12 @@ defmodule Foundry.Chat.ShellToolsTest do
   end
 
   test "execute/3 runs bash commands", %{tmp_dir: tmp_dir} do
+    Application.put_env(:foundry, :shell_tools_policy, :open)
     result = Foundry.Chat.ShellTools.execute("run_bash", %{"command" => "ls"}, tmp_dir)
     assert {:ok, output} = result
     assert String.contains?(output, "test.txt")
+  after
+    Application.delete_env(:foundry, :shell_tools_policy)
   end
 
   test "execute/3 handles missing parameters" do
@@ -57,5 +60,39 @@ defmodule Foundry.Chat.ShellToolsTest do
   test "execute/3 rejects path traversal", %{tmp_dir: tmp_dir} do
     result = Foundry.Chat.ShellTools.execute("read_file", %{"path" => "../../../etc/passwd"}, tmp_dir)
     assert {:error, _} = result
+  end
+
+  test "execute/3 rejects non-allowlisted commands in allowlist mode", %{tmp_dir: tmp_dir} do
+    Application.put_env(:foundry, :shell_tools_policy, :allowlist)
+    result = Foundry.Chat.ShellTools.execute("run_bash", %{"command" => "curl http://example.com"}, tmp_dir)
+    assert {:error, reason} = result
+    assert String.contains?(reason, "not allowed")
+  after
+    Application.delete_env(:foundry, :shell_tools_policy)
+  end
+
+  test "execute/3 allows allowlisted commands", %{tmp_dir: tmp_dir} do
+    Application.put_env(:foundry, :shell_tools_policy, :allowlist)
+    result = Foundry.Chat.ShellTools.execute("run_bash", %{"command" => "ls"}, tmp_dir)
+    assert {:ok, _output} = result
+  after
+    Application.delete_env(:foundry, :shell_tools_policy)
+  end
+
+  test "execute/3 allows arbitrary commands in open mode", %{tmp_dir: tmp_dir} do
+    Application.put_env(:foundry, :shell_tools_policy, :open)
+    result = Foundry.Chat.ShellTools.execute("run_bash", %{"command" => "curl http://example.com 2>&1 || echo 'curl not available'"}, tmp_dir)
+    assert {:ok, _output} = result
+  after
+    Application.delete_env(:foundry, :shell_tools_policy)
+  end
+
+  test "execute/3 rejects commands with shell metacharacters", %{tmp_dir: tmp_dir} do
+    Application.put_env(:foundry, :shell_tools_policy, :allowlist)
+    result = Foundry.Chat.ShellTools.execute("run_bash", %{"command" => "ls && rm -rf /"}, tmp_dir)
+    assert {:error, reason} = result
+    assert String.contains?(reason, "not allowed")
+  after
+    Application.delete_env(:foundry, :shell_tools_policy)
   end
 end

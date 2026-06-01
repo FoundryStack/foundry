@@ -4,6 +4,60 @@ defmodule FoundryWeb.ChatConfig do
   Reads from Application env instead of hardcoding paths or duplicating config.
   """
 
+  require Logger
+
+  # Expected arity for each hook key. Used by validate_hooks!/0 at startup.
+  @hook_specs %{
+    load_session: 1,
+    save_messages: 3,
+    rename_session: 2,
+    persist_session_memory: 4,
+    call_llm_stream: 3,
+    build_run_context: 2,
+    build_system_prompt: 2
+  }
+
+  @doc """
+  Validates all configured hooks at application startup.
+  Logs a warning for each hook that is configured but has the wrong arity.
+  Call this from Application.start/2 or a startup check.
+  """
+  def validate_hooks! do
+    hooks =
+      Application.get_env(:foundry_web, :chat_live_hooks) ||
+        Application.get_env(:foundry_web, :hooks, %{})
+
+    Enum.each(@hook_specs, fn {key, expected_arity} ->
+      value =
+        cond do
+          is_map(hooks) -> Map.get(hooks, key)
+          Keyword.keyword?(hooks) -> Keyword.get(hooks, key)
+          true -> nil
+        end
+
+      case value do
+        nil ->
+          :ok
+
+        fun when is_function(fun) ->
+          actual = Function.info(fun)[:arity]
+
+          if actual != expected_arity do
+            Logger.warning(
+              "ChatConfig hook :#{key} has arity #{actual}, expected #{expected_arity}. " <>
+                "This hook will be ignored at runtime."
+            )
+          end
+
+        other ->
+          Logger.warning(
+            "ChatConfig hook :#{key} is not a function (got #{inspect(other)}). " <>
+              "This hook will be ignored at runtime."
+          )
+      end
+    end)
+  end
+
   def project_root do
     Application.get_env(
       :foundry_web,

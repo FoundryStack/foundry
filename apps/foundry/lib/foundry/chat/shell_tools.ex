@@ -2,7 +2,15 @@ defmodule Foundry.Chat.ShellTools do
   @moduledoc """
   Shell tools for API-based LLM providers.
   Defines read_file, list_directory, and run_bash tools that can be used by Gemini and other API providers.
+
+  ## Security
+
+  The `run_bash` tool enforces a command allowlist by default to prevent LLM prompt injection.
+  Allowlisted prefixes are safe for read-only and basic queries (git, mix, ls, grep, etc.).
+  Configure `:shell_tools_policy` to `:open` to allow arbitrary commands (not recommended in production).
   """
+
+  @safe_command_prefixes ~w(mix cat ls grep find git echo wc head tail sort uniq pwd which)
 
   @doc """
   Returns tool definitions as maps suitable for Gemini tool declarations.
@@ -109,6 +117,46 @@ defmodule Foundry.Chat.ShellTools do
   end
 
   defp execute_run_bash(%{"command" => command}, project_root) when is_binary(command) do
+    case check_command_allowed?(command) do
+      :ok -> do_execute_bash(command, project_root)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp execute_run_bash(_, _) do
+    {:error, "Missing required parameter: command"}
+  end
+
+  defp check_command_allowed?(command) do
+    case Application.get_env(:foundry, :shell_tools_policy, :allowlist) do
+      :open ->
+        :ok
+
+      :allowlist ->
+        if is_allowlisted_command?(command) do
+          :ok
+        else
+          {:error, "Command not allowed by shell_tools_policy: allowlist. Use `:open` policy to allow arbitrary commands."}
+        end
+    end
+  end
+
+  defp is_allowlisted_command?(command) do
+    trimmed = String.trim(command)
+
+    safe? =
+      Enum.any?(@safe_command_prefixes, fn prefix ->
+        String.starts_with?(trimmed, prefix) and
+          (String.length(trimmed) == String.length(prefix) or
+             String.at(trimmed, String.length(prefix)) == " ")
+      end)
+
+    dangerous? = String.contains?(trimmed, ["&&", "||", ";", "$(", "`", "|"])
+
+    safe? and not dangerous?
+  end
+
+  defp do_execute_bash(command, project_root) do
     timeout_ms = 30_000
     root = Path.expand(project_root)
 
@@ -127,9 +175,5 @@ defmodule Foundry.Chat.ShellTools do
   rescue
     e ->
       {:error, "Command execution error: #{inspect(e)}"}
-  end
-
-  defp execute_run_bash(_, _) do
-    {:error, "Missing required parameter: command"}
   end
 end

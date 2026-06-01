@@ -523,7 +523,7 @@ defmodule FoundryWeb.SystemMapLiveTest do
       html = render_click(live, "toggle_system_context")
 
       assert html =~ "System Context Prompt"
-      assert html =~ "Target project root: #{project_root}"
+      assert html =~ "project_root: #{project_root}"
     end
 
     test "shows the active codex sandbox in the studio panel", %{conn: conn} do

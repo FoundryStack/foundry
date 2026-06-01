@@ -26,6 +26,24 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
   alias FoundryWeb.ChatConfig
   alias FoundryWeb.ChatToolEvent
 
+  @typedoc """
+  Accumulates per-session LLM context across turns. String-keyed map, all keys optional.
+
+  Keys (all strings at runtime):
+  - `"retrieval_mode"` — `:ask` or `:change` serialized as string
+  - `"cached_context_fingerprint"` — hash of last cached context build
+  - `"proposal_draft"` — proposal map from last `:change` turn
+  - `"active_proposal_id"` / `"active_proposal_status"` — current proposal state
+  - `"revision_of_proposal_id"` — set when revising an existing proposal
+  - `"session_label_locked"` — true after title is confirmed
+  - `"last_proposal"` — last finalized proposal map
+  - `"recent_finding"` / `"recent_findings"` — memory artifact from last turn
+  - `"recent_files"` — files touched in last turn
+  - `"selected_nodes"` — graph nodes selected by user
+  - `"recent_conclusions"` / `"sensitive_lead"` — LLM-extracted context hints
+  """
+  @type session_digest :: %{optional(String.t()) => term()}
+
   # --- Proposal Management ---
 
   def handle_proposal_apply(socket, proposal_id) do
@@ -447,8 +465,13 @@ defmodule FoundryWeb.ChatSessionDomainLogic do
         nil
 
       _ ->
-        files = proposal[:created_files] || proposal[:modified_files] || []
-        file = Enum.find(files, &(Map.get(&1, :path) == path))
+        files =
+          proposal[:created_files] || proposal["created_files"] ||
+            proposal[:modified_files] || proposal["modified_files"] ||
+            get_in(proposal, [:preview, :files]) || get_in(proposal, ["preview", "files"]) ||
+            []
+
+        file = Enum.find(files, fn f -> Map.get(f, :path) == path or Map.get(f, "path") == path end)
 
         if file do
           %{
