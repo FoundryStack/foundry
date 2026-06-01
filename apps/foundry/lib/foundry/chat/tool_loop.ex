@@ -1,20 +1,20 @@
 defmodule Foundry.Chat.ToolLoop do
   @moduledoc """
-  Agentic tool-calling loop for API-based LLM providers.
+  Agentic tool-calling loop using ReqLLM for streaming.
 
-  Calls Gemini's generateContent API with tool definitions, executes any tool
-  calls in the response, appends results to the conversation, and repeats until
-  the model returns final text with no pending tool calls.
+  Uses ReqLLM.stream_text/3 with the Google provider to handle Gemini streaming
+  correctly. Tool calls are detected via ReqLLM.StreamChunk, executed, and
+  results fed back as tool messages.
   """
 
   require Logger
 
-  @default_max_iterations 15
+  @default_max_iterations 50
 
   @doc """
-  Runs the agentic loop with an LLM provider.
+  Runs the agentic loop with Gemini via ReqLLM.
 
-  Accepts messages and opts, calls the provider with tool definitions,
+  Accepts messages and opts, streams from Gemini with tool definitions,
   handles tool execution, and yields events to the on_event callback.
 
   Events:
@@ -27,21 +27,19 @@ defmodule Foundry.Chat.ToolLoop do
     model = Keyword.get(opts, :model)
     project_root = Keyword.get(opts, :project_root)
     max_iterations = Keyword.get(opts, :max_iterations, @default_max_iterations)
-    timeout_ms = Keyword.get(opts, :timeout_ms, 120_000)
     system_prompt = Keyword.get(opts, :system_prompt)
 
-    tool_schemas = Foundry.Chat.ShellTools.all()
-    gemini_messages = convert_messages(messages)
+    req_llm_messages = convert_messages(messages)
+    req_llm_tools = build_req_llm_tools(project_root)
 
     run_loop(
-      gemini_messages,
+      req_llm_messages,
       %{
         api_key: api_key,
         model: model,
         project_root: project_root,
-        timeout_ms: timeout_ms,
         system_prompt: system_prompt,
-        tool_schemas: tool_schemas,
+        tools: req_llm_tools,
         iterations: 0,
         max_iterations: max_iterations,
         on_event: on_event
@@ -54,7 +52,7 @@ defmodule Foundry.Chat.ToolLoop do
       api_key: api_key,
       model: model,
       system_prompt: system_prompt,
-      tool_schemas: tool_schemas,
+      tools: tools,
       iterations: iterations,
       max_iterations: max_iterations,
       on_event: on_event,
@@ -64,38 +62,24 @@ defmodule Foundry.Chat.ToolLoop do
     if iterations >= max_iterations do
       {:error, {:max_iterations_exceeded, max_iterations}}
     else
-      case call_gemini_with_tools(messages, system_prompt, tool_schemas, model, api_key, on_event) do
-        {:ok, content, true} ->
-          tool_calls = extract_tool_calls(content)
-          text = extract_text_from_content(content)
-          tool_names = Enum.map(tool_calls, &(&1["name"]))
-          Logger.info("Gemini response: iteration=#{iterations}, tool_calls=#{inspect(tool_names)}, text_length=#{String.length(text)}")
+      case stream_from_gemini(messages, system_prompt, tools, model, api_key, on_event) do
+        {:ok, {tool_calls, text}} ->
+          Logger.info("Gemini response: iteration=#{iterations}, tool_calls=#{length(tool_calls)}, text_length=#{String.length(text)}")
 
-          if text != "" do
-            on_event.({:delta, text})
-          end
-
-          {tool_results, updated_messages} =
-            execute_tool_calls(tool_calls, messages, content, project_root, on_event)
-
-          if tool_results == [] or length(tool_calls) == 0 do
-            # No tool calls actually executed despite has_tool_calls=true
-            Logger.info("No tool calls executed, ending loop at iteration #{iterations}")
+          if tool_calls == [] do
             on_event.({:result, text, %{}})
             {:ok, text, %{}}
           else
-            Logger.info("Executed #{length(tool_results)} tools, looping to iteration #{iterations + 1}")
-            run_loop(updated_messages, %{state | iterations: iterations + 1})
+            execute_and_continue(
+              tool_calls,
+              text,
+              messages,
+              state,
+              iterations,
+              on_event,
+              project_root
+            )
           end
-
-        {:ok, content, false} ->
-          text = extract_text_from_content(content)
-          Logger.info("Gemini response: has_tool_calls=false, text_length=#{String.length(text)}")
-          if text != "" do
-            on_event.({:delta, text})
-          end
-          on_event.({:result, text, %{}})
-          {:ok, text, %{}}
 
         {:error, reason} ->
           {:error, reason}
@@ -107,7 +91,7 @@ defmodule Foundry.Chat.ToolLoop do
       {:error, {:tool_loop_error, Exception.message(e)}}
   end
 
-  defp execute_tool_calls(tool_calls, messages, model_content, project_root, on_event) do
+  defp execute_and_continue(tool_calls, text, messages, state, iterations, on_event, project_root) do
     tool_results =
       Enum.map(tool_calls, fn tool_call ->
         name = tool_call["name"]
@@ -136,7 +120,7 @@ defmodule Foundry.Chat.ToolLoop do
                 "message" => "Tool completed: #{name}",
                 "item" => %{"status" => "ok", "id" => id}
               }})
-              %{"output" => output}
+              output
 
             {:error, reason} ->
               Logger.info("Tool result: #{name} (id=#{id}) failed: #{inspect(reason)}")
@@ -148,149 +132,88 @@ defmodule Foundry.Chat.ToolLoop do
                 "message" => "Tool failed: #{name}",
                 "item" => %{"status" => "error", "reason" => inspect(reason), "id" => id}
               }})
-              %{"error" => reason}
+              "Error: #{inspect(reason)}"
           end
 
         %{
-          "functionResponse" => %{
-            "name" => name,
-            "response" => result,
-            "id" => id
+          "role" => "tool",
+          "tool_call_id" => id,
+          "name" => name,
+          "content" => result
+        }
+      end)
+
+    assistant_turn = %{
+      "role" => "assistant",
+      "content" => text,
+      "tool_calls" => Enum.map(tool_calls, fn tc ->
+        %{
+          "id" => tc["id"],
+          "type" => "function",
+          "function" => %{
+            "name" => tc["name"],
+            "arguments" => Jason.encode!(tc["args"])
           }
         }
       end)
-
-    model_turn = %{"role" => "model", "parts" => model_content["parts"]}
-    tool_turn = %{"role" => "user", "parts" => tool_results}
-
-    {tool_results, messages ++ [model_turn, tool_turn]}
-  end
-
-  defp call_gemini_with_tools(messages, system_prompt, tool_schemas, model, api_key, on_event) do
-    body = build_gemini_request(messages, system_prompt, tool_schemas)
-
-    request = [
-      url: "https://generativelanguage.googleapis.com/v1beta/models/#{model}:streamGenerateContent",
-      params: [key: api_key],
-      headers: [{"content-type", "application/json"}, {"accept", "text/event-stream"}],
-      json: body,
-      receive_timeout: 60_000,
-      retry: false,
-      into: :self
-    ]
-
-    case Req.post(request) do
-      {:ok, response} ->
-        collect_gemini_stream(response, "", nil, 60_000, on_event)
-
-      {:error, reason} ->
-        Logger.error("Gemini streaming request failed: #{inspect(reason)}")
-        {:error, {:gemini_stream_request_error, reason}}
-    end
-  end
-
-  defp collect_gemini_stream(response, buffer, last_content, timeout_ms, on_event) do
-    receive do
-      message ->
-        case Req.parse_message(response, message) do
-          {:ok, [data: data]} ->
-            {next_buffer, text_chunks, content} = parse_gemini_sse(buffer <> data)
-            Enum.each(text_chunks, fn text -> on_event.({:delta, text}) end)
-            collect_gemini_stream(response, next_buffer, content || last_content, timeout_ms, on_event)
-
-          {:ok, [:done]} ->
-            if last_content do
-              has_tools = has_tool_calls(last_content)
-              {:ok, last_content, has_tools}
-            else
-              Logger.warning("Gemini stream ended with no content")
-              {:error, :no_content}
-            end
-
-          {:error, reason} ->
-            Logger.error("Gemini stream parse error: #{inspect(reason)}")
-            {:error, {:gemini_stream_parse_error, reason}}
-        end
-    after
-      timeout_ms ->
-        Logger.error("Gemini stream timeout after #{timeout_ms}ms")
-        {:error, :gemini_stream_timeout}
-    end
-  end
-
-  # Test-accessible parsing function
-  def parse_gemini_sse_for_test(data) do
-    parse_gemini_sse(data)
-  end
-
-  defp parse_gemini_sse(data) do
-    # Gemini SSE format: each event is a JSON object with candidates[0].content
-    # Split by double-newline and parse each event
-    lines = String.split(data, "\n")
-
-    {buffer, chunks, content} =
-      Enum.reduce(lines, {"", [], nil}, fn line, {buf, chunks, cont} ->
-        trimmed = String.trim(line)
-
-        if String.starts_with?(trimmed, "data: ") do
-          json_str = String.slice(trimmed, 6..String.length(trimmed))
-
-          case Jason.decode(json_str) do
-            {:ok, %{"candidates" => [%{"content" => content_obj} | _]}} ->
-              # Extract text parts from content
-              text_chunks =
-                case content_obj do
-                  %{"parts" => parts} when is_list(parts) ->
-                    Enum.map_join(parts, "", fn part ->
-                      part["text"] || ""
-                    end)
-
-                  _ ->
-                    ""
-                end
-
-              chunks_list =
-                if text_chunks != "" do
-                  chunks ++ [text_chunks]
-                else
-                  chunks
-                end
-
-              {buf, chunks_list, content_obj}
-
-            {:ok, _} ->
-              # Valid JSON but no expected structure, skip it
-              {buf, chunks, cont}
-
-            {:error, _} ->
-              {buf, chunks, cont}
-          end
-        else
-          {buf <> line <> "\n", chunks, cont}
-        end
-      end)
-
-    {buffer, chunks, content}
-  end
-
-  defp build_gemini_request(messages, system_prompt, tool_schemas) do
-    body = %{
-      "contents" => messages,
-      "generationConfig" => %{"temperature" => 1.0},
-      "tools" => [
-        %{
-          "functionDeclarations" => tool_schemas
-        }
-      ]
     }
 
-    if system_prompt do
-      Map.put(body, "systemInstruction", %{
-        "parts" => [%{"text" => system_prompt}]
-      })
-    else
-      body
+    updated_messages = messages ++ [assistant_turn] ++ tool_results
+
+    Logger.info("Executed #{length(tool_results)} tools, looping to iteration #{iterations + 1}")
+    run_loop(updated_messages, %{state | iterations: iterations + 1})
+  end
+
+  defp stream_from_gemini(messages, system_prompt, tools, model, api_key, on_event) do
+    case ReqLLM.stream_text(
+      "google:#{model}",
+      messages,
+      tools: tools,
+      system_prompt: system_prompt,
+      api_key: api_key
+    ) do
+      {:ok, stream_response} ->
+        {tool_calls, text} =
+          Enum.reduce(stream_response.stream, {[], ""}, fn chunk, {calls, acc_text} ->
+            case chunk.type do
+              :content ->
+                on_event.({:delta, chunk.text})
+                {calls, acc_text <> chunk.text}
+
+              :tool_call ->
+                call_id = chunk.metadata[:id] || "call_#{System.unique_integer([:positive])}"
+                call = %{
+                  "name" => chunk.name,
+                  "args" => chunk.arguments,
+                  "id" => call_id
+                }
+                {calls ++ [call], acc_text}
+
+              _ ->
+                {calls, acc_text}
+            end
+          end)
+
+        {:ok, {tool_calls, text}}
+
+      {:error, reason} ->
+        Logger.error("ReqLLM streaming failed: #{inspect(reason)}")
+        {:error, {:req_llm_error, reason}}
     end
+  end
+
+  defp build_req_llm_tools(project_root) do
+    Foundry.Chat.ShellTools.all()
+    |> Enum.map(fn schema ->
+      ReqLLM.Tool.new!(
+        name: schema["name"],
+        description: schema["description"],
+        parameter_schema: schema["parameters"],
+        callback: fn args ->
+          Foundry.Chat.ShellTools.execute(schema["name"], args, project_root)
+        end
+      )
+    end)
   end
 
   defp convert_messages(messages) do
@@ -301,36 +224,11 @@ defmodule Foundry.Chat.ToolLoop do
 
   defp convert_message(%{"role" => role, "content" => content}) do
     %{
-      "role" => if(role == "assistant", do: "model", else: "user"),
-      "parts" => [%{"text" => content}]
+      "role" => if(role == "assistant", do: "assistant", else: "user"),
+      "content" => content
     }
   end
 
   defp is_system_message?(%{"role" => "system"}), do: true
   defp is_system_message?(_), do: false
-
-  defp extract_text_from_content(%{"parts" => parts}) when is_list(parts) do
-    Enum.map_join(parts, "", fn part -> part["text"] || "" end)
-  end
-
-  defp extract_text_from_content(_), do: ""
-
-  defp extract_tool_calls(%{"parts" => parts}) when is_list(parts) do
-    parts
-    |> Enum.filter(&Map.has_key?(&1, "functionCall"))
-    |> Enum.map(& &1["functionCall"])
-  end
-
-  defp extract_tool_calls(_), do: []
-
-  # Test-accessible tool detection
-  def has_tool_calls_for_test(content) do
-    has_tool_calls(content)
-  end
-
-  defp has_tool_calls(%{"parts" => parts}) when is_list(parts) do
-    Enum.any?(parts, &Map.has_key?(&1, "functionCall"))
-  end
-
-  defp has_tool_calls(_), do: false
 end
