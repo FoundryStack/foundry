@@ -62,6 +62,16 @@ defmodule FoundryWeb.StudioChatHookJsTest do
           return null
         }
 
+        setAttribute(name, value) {
+          this.dataset[name] = value
+        }
+
+        getAttribute(name) {
+          return this.dataset[name] || null
+        }
+
+        remove() {}
+
         requestSubmit() {
           const handlers = this.listeners.get('submit') || []
           handlers.forEach(handler => handler({ preventDefault() {} }))
@@ -123,7 +133,8 @@ defmodule FoundryWeb.StudioChatHookJsTest do
       })
       """)
 
-    assert result["bubbles"] == 0
+    # user message + thinking bubble added optimistically on submit
+    assert result["bubbles"] == 2
     assert result["autoScrollEnabled"]
     assert result["scrollCalls"] == 0
     assert result["inputValue"] == ""

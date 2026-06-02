@@ -128,7 +128,7 @@ defmodule FoundryWeb.ChatComponents do
 
         <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px]">
           <!-- View Toggle Buttons -->
-          <div class="flex gap-1 border-b border-white/10 px-3 py-2 shrink-0">
+          <%!-- <div class="flex gap-1 border-b border-white/10 px-3 py-2 shrink-0">
             <button
               phx-click="set_chat_view"
               phx-value-view="conversation"
@@ -168,7 +168,7 @@ defmodule FoundryWeb.ChatComponents do
             >
               📋 Session
             </button>
-          </div>
+          </div> --%>
 
           <%= if @chat_view == :conversation do %>
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
